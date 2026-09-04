@@ -1,0 +1,41 @@
+{
+  "name": "anvil",
+  "version": "0.1.0",
+  "description": "Coding agents as infrastructure. No conversation.",
+  "main": "./out/main/index.js",
+  "author": "lucasignaciopirito@gmail.com",
+  "license": "MIT",
+  "scripts": {
+    "postinstall": "electron-rebuild -f -o better-sqlite3",
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "start": "electron-vite preview",
+    "pack": "npm run build && electron-builder --win --dir",
+    "dist": "npm run build && electron-builder --win",
+    "rebuild": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@pierre/diffs": "^1.4.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "better-sqlite3": "^12.11.1",
+    "node-pty": "^1.0.0",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.1",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  }
+}
