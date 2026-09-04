@@ -5,6 +5,7 @@ export type DeliveryStatus =
   | 'finalizing'
   | 'did_not_commit'
   | 'reviewable'
+  | 'approved'
   | 'no_changes'
   | 'agent_failed'
   | 'failed'
@@ -21,12 +22,29 @@ export interface Project {
   gitPlatform: 'github'
 }
 
+export interface ProjectGitStatus {
+  /** True when the project folder resolves to a Git work tree. */
+  isRepository: boolean
+  /** Absolute path to the repository root, or null when there is none. */
+  repoRoot: string | null
+  /** False when the `git` binary could not be executed at all. */
+  gitAvailable: boolean
+  /** False when the project folder itself is gone (moved or deleted). */
+  pathExists: boolean
+}
+
 export interface AgentDefinition {
   id: string
   label: string
   description: string
   command: string
   args: string[]
+  /**
+   * Argument template for continuing an earlier session, with `{{session}}`
+   * substituted. Omitted when the CLI cannot resume; the follow-up then runs
+   * as a fresh session against the same worktree.
+   */
+  resumeArgs?: string[]
   defaultModel?: string
   outputProtocol?: 'opencode-json' | 'claude-json' | 'codex-json' | 'pi-json'
 }
@@ -34,12 +52,35 @@ export interface AgentDefinition {
 export type StreamName = 'stdout' | 'stderr' | 'system'
 export type RunEventKind = 'output' | 'did_not_commit' | 'delivery'
 
+/**
+ * How a line is shown in the run output. Agent work is split into the kinds of
+ * work the agent did; `system` is Anvil talking about itself (Git, spawning,
+ * exit codes); `error` is everything the task wrote to stderr.
+ */
+export type RunEventCategory =
+  | 'message'
+  | 'thinking'
+  | 'tool_use'
+  | 'tool_result'
+  | 'system'
+  | 'error'
+
+export const RUN_EVENT_CATEGORIES: RunEventCategory[] = [
+  'message',
+  'thinking',
+  'tool_use',
+  'tool_result',
+  'system',
+  'error'
+]
+
 export interface RunEvent {
   id: string
   runId: string
   ts: number
   stream: StreamName
   kind: RunEventKind
+  category: RunEventCategory
   text: string
 }
 
@@ -72,6 +113,23 @@ export interface Run {
   additions: number
   deletions: number
   deliveryError?: string
+  /** Agent session to resume, so review follow-ups keep the original context. */
+  sessionId?: string
+}
+
+/** A review note the developer left on a line of a task's diff. */
+export interface RunComment {
+  id: string
+  runId: string
+  /** Path of the file in the diff, as the patch names it. */
+  file: string
+  /** Which side of the diff the line belongs to. */
+  side: 'additions' | 'deletions'
+  lineNumber: number
+  body: string
+  createdAt: number
+  /** Null while the note is still a draft; set when it was sent to the agent. */
+  sentAt: number | null
 }
 
 export interface RunCommit {
@@ -89,7 +147,27 @@ export type RunUsage = Pick<
   'inputTokens' | 'outputTokens' | 'cachedTokens' | 'totalTokens' | 'costUsd'
 >
 
+/**
+ * Who rewrites a task's commits. `manual` opens a small interactive-rebase
+ * editor and Anvil performs the rebase itself; `agent` hands the job to the
+ * agent that wrote the code and accepts whatever it produces.
+ */
+export type RebaseMode = 'manual' | 'agent'
+
+/** What to do with one commit, spelled the way `git rebase -i` spells it. */
+export type RebaseAction = 'pick' | 'squash' | 'drop'
+
+export interface RebaseStep {
+  sha: string
+  action: RebaseAction
+  /** The resulting commit's message. Only read for a `pick`. */
+  message: string
+}
+
 export interface Settings {
   defaultAgentId: string
   defaultModel: string
+  rebaseMode: RebaseMode
+  /** Whether handing a rebase to the agent asks for confirmation first. */
+  confirmRebase: boolean
 }

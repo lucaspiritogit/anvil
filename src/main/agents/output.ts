@@ -1,13 +1,28 @@
-import type { AgentDefinition, RunUsage, StreamName } from '../../shared/types'
+import type {
+  AgentDefinition,
+  RunEventCategory,
+  RunUsage,
+  StreamName
+} from '../../shared/types'
 
 type JsonObject = Record<string, unknown>
 
+/** One rendered line of agent output, already classified for the run log. */
+export interface ParsedAgentPart {
+  text: string
+  category: RunEventCategory
+  stream: StreamName
+}
+
 export interface ParsedAgentLine {
-  text?: string
-  stream?: StreamName
+  parts: ParsedAgentPart[]
   usage?: Partial<RunUsage>
   usageMode?: 'add' | 'set'
+  /** Agent session this line belongs to, when the protocol reports one. */
+  sessionId?: string
 }
+
+const NOTHING: ParsedAgentLine = { parts: [] }
 
 function object(value: unknown): JsonObject | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -23,52 +38,126 @@ function string(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined
 }
 
-function contentText(value: unknown): string | undefined {
-  if (!Array.isArray(value)) return undefined
-  const text = value
-    .flatMap((entry) => {
-      const part = object(entry)
-      if (!part || part.type !== 'text') return []
-      const value = string(part.text)
-      return value ? [value] : []
-    })
-    .join('\n')
-  return text || undefined
+function part(
+  text: string | undefined,
+  category: RunEventCategory,
+  stream: StreamName = 'stdout'
+): ParsedAgentPart[] {
+  return text ? [{ text, category, stream }] : []
+}
+
+function line(
+  text: string | undefined,
+  category: RunEventCategory,
+  stream: StreamName = 'stdout'
+): ParsedAgentLine {
+  return { parts: part(text, category, stream) }
+}
+
+/** Compact preview of a tool's arguments, so a tool_use line says what it did. */
+function toolSummary(name: string | undefined, input: unknown): string | undefined {
+  if (!name) return undefined
+  const args = object(input)
+  const detail =
+    string(args?.command) ??
+    string(args?.file_path) ??
+    string(args?.path) ??
+    string(args?.pattern) ??
+    string(args?.query) ??
+    string(args?.description)
+  if (!detail) return name
+  const flat = detail.replace(/\s+/g, ' ').trim()
+  return `${name} · ${flat.length > 160 ? `${flat.slice(0, 159)}…` : flat}`
+}
+
+function blockText(block: JsonObject): string | undefined {
+  return (
+    string(block.text) ??
+    string(block.thinking) ??
+    string(block.content) ??
+    (Array.isArray(block.content) ? contentParts(block.content, 'tool_result')[0]?.text : undefined)
+  )
+}
+
+/**
+ * Walks a message's content blocks, mapping each block type onto a category.
+ * Block names differ between agents (`tool_use` / `toolUse`, `thinking` /
+ * `reasoning`), so both spellings are accepted. `fallback` is the category for
+ * plain text blocks, which is `message` for an assistant turn and
+ * `tool_result` for a tool-result turn.
+ */
+function contentParts(value: unknown, fallback: RunEventCategory): ParsedAgentPart[] {
+  if (typeof value === 'string') return part(string(value), fallback)
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((entry) => {
+    const block = object(entry)
+    if (!block) return string(entry) ? part(string(entry), fallback) : []
+
+    const type = string(block.type)?.toLowerCase()
+    if (type === 'thinking' || type === 'reasoning') {
+      return part(blockText(block), 'thinking')
+    }
+    if (type === 'redacted_thinking') {
+      return part('(redacted thinking)', 'thinking')
+    }
+    if (type === 'tool_use' || type === 'tooluse' || type === 'tool_call') {
+      return part(
+        toolSummary(string(block.name) ?? string(block.toolName), block.input ?? block.arguments),
+        'tool_use'
+      )
+    }
+    if (type === 'tool_result' || type === 'toolresult') {
+      const failed = block.is_error === true || block.isError === true
+      return part(blockText(block), failed ? 'error' : 'tool_result', failed ? 'stderr' : 'stdout')
+    }
+    if (type === 'text' || type === undefined) {
+      return part(blockText(block), fallback)
+    }
+    return []
+  })
 }
 
 function parseOpenCode(event: JsonObject): ParsedAgentLine {
-  const part = object(event.part)
-  if (event.type === 'text') return { text: string(part?.text) }
-  if (event.type === 'reasoning') {
-    const text = string(part?.text)
-    return { text: text ? `Thinking: ${text}` : undefined }
-  }
+  const eventPart = object(event.part)
+  if (event.type === 'text') return line(string(eventPart?.text), 'message')
+  if (event.type === 'reasoning') return line(string(eventPart?.text), 'thinking')
   if (event.type === 'tool_use') {
-    const state = object(part?.state)
-    const title = string(state?.title) ?? string(part?.tool)
+    const state = object(eventPart?.state)
+    const title = string(state?.title) ?? string(eventPart?.tool)
     const failed = state?.status === 'error'
-    return { text: title ? `${failed ? 'Failed' : 'Ran'} ${title}` : undefined, stream: failed ? 'stderr' : 'stdout' }
+    if (failed) return line(title ? `Failed ${title}` : undefined, 'error', 'stderr')
+    return line(title, 'tool_use')
+  }
+  if (event.type === 'tool_result') {
+    const state = object(eventPart?.state)
+    return line(string(state?.output) ?? string(eventPart?.output), 'tool_result')
   }
   if (event.type === 'error') {
     const error = object(event.error)
     const data = object(error?.data)
-    return { text: string(data?.message) ?? string(error?.message) ?? 'OpenCode failed', stream: 'stderr' }
+    return line(
+      string(data?.message) ?? string(error?.message) ?? 'OpenCode failed',
+      'error',
+      'stderr'
+    )
   }
-  if (event.type !== 'step_finish') return {}
+  if (event.type !== 'step_finish') return NOTHING
 
-  const tokens = object(part?.tokens)
+  const tokens = object(eventPart?.tokens)
   const cache = object(tokens?.cache)
   const inputTokens = number(tokens?.input)
   const outputTokens = number(tokens?.output) + number(tokens?.reasoning)
   const cachedTokens = number(cache?.read) + number(cache?.write)
   return {
+    parts: [],
     usageMode: 'add',
     usage: {
       inputTokens,
       outputTokens,
       cachedTokens,
       totalTokens: number(tokens?.total) || inputTokens + outputTokens + cachedTokens,
-      costUsd: number(part?.cost)
+      costUsd: number(eventPart?.cost)
     }
   }
 }
@@ -76,9 +165,14 @@ function parseOpenCode(event: JsonObject): ParsedAgentLine {
 function parseClaude(event: JsonObject): ParsedAgentLine {
   if (event.type === 'assistant') {
     const message = object(event.message)
-    return { text: contentText(message?.content) }
+    return { parts: contentParts(message?.content, 'message') }
   }
-  if (event.type !== 'result') return {}
+  // Tool results come back as a synthetic user turn.
+  if (event.type === 'user') {
+    const message = object(event.message)
+    return { parts: contentParts(message?.content, 'tool_result') }
+  }
+  if (event.type !== 'result') return NOTHING
 
   const usage = object(event.usage)
   const inputTokens = number(usage?.input_tokens)
@@ -86,6 +180,10 @@ function parseClaude(event: JsonObject): ParsedAgentLine {
   const cachedTokens =
     number(usage?.cache_creation_input_tokens) + number(usage?.cache_read_input_tokens)
   return {
+    parts:
+      event.is_error === true
+        ? part(string(event.result) ?? 'Claude Code reported an error', 'error', 'stderr')
+        : [],
     usageMode: 'set',
     usage: {
       inputTokens,
@@ -101,17 +199,34 @@ function parseCodex(event: JsonObject): ParsedAgentLine {
   if (event.type === 'item.completed') {
     const item = object(event.item)
     const itemType = item?.type
-    if (itemType === 'agent_message') return { text: string(item?.text) }
-    if (itemType === 'command_execution') return { text: string(item?.aggregated_output) }
-    if (itemType === 'error') return { text: string(item?.message), stream: 'stderr' }
+    if (itemType === 'agent_message') return line(string(item?.text), 'message')
+    if (itemType === 'reasoning') {
+      return line(string(item?.text) ?? string(item?.summary), 'thinking')
+    }
+    if (itemType === 'command_execution') {
+      return {
+        parts: [
+          ...part(string(item?.command), 'tool_use'),
+          ...part(string(item?.aggregated_output), 'tool_result')
+        ]
+      }
+    }
+    if (itemType === 'file_change') {
+      return line(toolSummary('file_change', item), 'tool_use')
+    }
+    if (itemType === 'mcp_tool_call') {
+      return line(toolSummary(string(item?.tool) ?? 'mcp_tool_call', item?.arguments), 'tool_use')
+    }
+    if (itemType === 'error') return line(string(item?.message), 'error', 'stderr')
   }
-  if (event.type !== 'turn.completed') return {}
+  if (event.type !== 'turn.completed') return NOTHING
 
   const usage = object(event.usage)
   const inputTokens = number(usage?.input_tokens)
   const outputTokens = number(usage?.output_tokens)
   const cachedTokens = number(usage?.cached_input_tokens)
   return {
+    parts: [],
     usageMode: 'set',
     usage: {
       inputTokens,
@@ -127,20 +242,31 @@ function parsePi(event: JsonObject): ParsedAgentLine {
   if (event.type === 'tool_execution_end') {
     const failed = event.isError === true
     const name = string(event.toolName)
-    return { text: name ? `${failed ? 'Failed' : 'Ran'} ${name}` : undefined, stream: failed ? 'stderr' : 'stdout' }
+    if (!name) return NOTHING
+    return failed ? line(`Failed ${name}`, 'error', 'stderr') : line(name, 'tool_use')
   }
-  if (event.type !== 'message_end') return {}
+  if (event.type === 'thinking' || event.type === 'reasoning') {
+    return line(string(event.text) ?? string(event.thinking), 'thinking')
+  }
+  if (event.type === 'error') {
+    return line(string(event.message) ?? 'Pi reported an error', 'error', 'stderr')
+  }
+  if (event.type !== 'message_end') return NOTHING
 
   const message = object(event.message)
-  if (message?.role !== 'assistant' && message?.role !== 'toolResult') return {}
-  const usage = object(message.usage)
-  if (!usage) return {}
+  const role = message?.role
+  if (role !== 'assistant' && role !== 'toolResult') return NOTHING
+
+  const parts = contentParts(message?.content, role === 'assistant' ? 'message' : 'tool_result')
+  const usage = object(message?.usage)
+  if (!usage) return { parts }
+
   const cost = object(usage.cost)
   const inputTokens = number(usage.input)
   const outputTokens = number(usage.output)
   const cachedTokens = number(usage.cacheRead) + number(usage.cacheWrite)
   return {
-    text: message.role === 'assistant' ? contentText(message.content) : undefined,
+    parts,
     usageMode: 'add',
     usage: {
       inputTokens,
@@ -152,21 +278,51 @@ function parsePi(event: JsonObject): ParsedAgentLine {
   }
 }
 
+const SESSION_KEYS = ['sessionID', 'session_id', 'sessionId']
+
+/**
+ * Pulls the agent's session id out of an event, wherever the protocol puts it.
+ * Agents spell and nest it differently (opencode `part.sessionID`, Claude Code
+ * `session_id` at the top level), so this walks a couple of levels rather than
+ * encoding one shape per protocol.
+ */
+function findSessionId(value: unknown, depth = 0): string | undefined {
+  const node = object(value)
+  if (!node || depth > 3) return undefined
+  for (const key of SESSION_KEYS) {
+    const found = string(node[key])
+    if (found) return found
+  }
+  for (const nested of Object.values(node)) {
+    const found = findSessionId(nested, depth + 1)
+    if (found) return found
+  }
+  return undefined
+}
+
 export function parseAgentLine(
   protocol: NonNullable<AgentDefinition['outputProtocol']>,
-  line: string
+  rawLine: string
 ): ParsedAgentLine {
   let event: JsonObject
   try {
-    const value = object(JSON.parse(line))
-    if (!value) return { text: line }
+    const value = object(JSON.parse(rawLine))
+    if (!value) return line(rawLine, 'message')
     event = value
   } catch {
-    return { text: line }
+    // Not JSON: an agent writing plain text through its JSON stream.
+    return line(rawLine, 'message')
   }
 
-  if (protocol === 'opencode-json') return parseOpenCode(event)
-  if (protocol === 'claude-json') return parseClaude(event)
-  if (protocol === 'codex-json') return parseCodex(event)
-  return parsePi(event)
+  const parsed =
+    protocol === 'opencode-json'
+      ? parseOpenCode(event)
+      : protocol === 'claude-json'
+        ? parseClaude(event)
+        : protocol === 'codex-json'
+          ? parseCodex(event)
+          : parsePi(event)
+
+  const sessionId = findSessionId(event)
+  return sessionId ? { ...parsed, sessionId } : parsed
 }

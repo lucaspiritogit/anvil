@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
 import { useStore } from '../state/store'
+import type { RebaseMode } from '@shared/types'
 
 function parseLimit(value: string): number | null {
   const parsed = Number(value)
@@ -19,6 +20,7 @@ export function SettingsModal(): JSX.Element {
 
   const [defaultAgentId, setDefaultAgentId] = useState(settings?.defaultAgentId ?? 'opencode')
   const [defaultModel, setDefaultModel] = useState(settings?.defaultModel ?? '')
+  const [rebaseMode, setRebaseMode] = useState<RebaseMode>(settings?.rebaseMode ?? 'manual')
   const [saved, setSaved] = useState(false)
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
@@ -40,7 +42,7 @@ export function SettingsModal(): JSX.Element {
 
   const save = async (): Promise<void> => {
     await Promise.all([
-      saveSettings({ defaultAgentId, defaultModel: defaultModel.trim() }),
+      saveSettings({ defaultAgentId, defaultModel: defaultModel.trim(), rebaseMode }),
       activeProject
         ? updateProject(activeProject.id, {
             monthlyTokenLimit: parseLimit(monthlyTokenLimit),
@@ -72,6 +74,22 @@ export function SettingsModal(): JSX.Element {
         <label className="field">
           <span>Default model</span>
           <input value={defaultModel} onChange={(e) => setDefaultModel(e.target.value)} />
+        </label>
+
+        <label className="field">
+          <span>Rebase mode</span>
+          <select
+            value={rebaseMode}
+            onChange={(e) => setRebaseMode(e.target.value as RebaseMode)}
+          >
+            <option value="manual">Manual — choose what happens to each commit</option>
+            <option value="agent">Agent — let the agent rewrite the history</option>
+          </select>
+          <small className="field-hint">
+            {rebaseMode === 'manual'
+              ? 'Rebase opens a small interactive editor and Anvil performs the rebase.'
+              : 'Rebase hands the branch to the agent that wrote the code and accepts its result.'}
+          </small>
         </label>
 
         {activeProject && (

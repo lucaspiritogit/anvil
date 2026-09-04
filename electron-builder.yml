@@ -7,6 +7,8 @@ directories:
 files:
   - out/**
   - package.json
+  # Drizzle applies these at startup by reading them from disk.
+  - src/main/db/migrations/**
 asarUnpack:
   - node_modules/node-pty/**
   - node_modules/better-sqlite3/**

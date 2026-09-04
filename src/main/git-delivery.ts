@@ -1,8 +1,14 @@
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import type { RunCommit, RunDiff } from '../shared/types'
+import type {
+  ProjectGitStatus,
+  RebaseStep,
+  RunCommit,
+  RunDiff
+} from '../shared/types'
 
 const execFileAsync = promisify(execFile)
 
@@ -21,8 +27,23 @@ export interface PreparedWorktree {
   initializedRepository: boolean
 }
 
+export interface RebasedBranch {
+  headCommit: string
+  commits: RunCommit[]
+  filesChanged: number
+  additions: number
+  deletions: number
+}
+
+export interface FinalizeOptions {
+  /** Called with each git command the finisher runs, as it runs. */
+  onFinisherCommand?: (command: string) => void
+}
+
 export interface FinalizedWorktree {
   headCommit: string
+  /** The branch the worktree ended on, when the agent renamed or switched it. */
+  branchName?: string
   hasChanges: boolean
   finisherCommitted: boolean
   filesChanged: number
@@ -49,6 +70,12 @@ async function git(cwd: string, args: string[], acceptedCodes: number[] = [0]): 
   }
 }
 
+/** Renders a git invocation the way a user would type it in the worktree. */
+function formatGitCommand(args: string[]): string {
+  const rendered = args.map((arg) => (/[\s"]/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')
+  return `$ git ${rendered}`
+}
+
 function slug(value: string): string {
   const clean = value
     .toLowerCase()
@@ -56,6 +83,30 @@ function slug(value: string): string {
     .replace(/^-|-$/g, '')
     .slice(0, 36)
   return clean || 'task'
+}
+
+interface RebaseGroup {
+  message: string
+  shas: string[]
+}
+
+/**
+ * Folds a step list into the commits it produces. A `squash` before any `pick`
+ * has nothing to fold into, so it is treated as starting its own commit — the
+ * same forgiving reading `git rebase` applies when a todo list starts with one.
+ */
+function planGroups(steps: RebaseStep[]): RebaseGroup[] {
+  const groups: RebaseGroup[] = []
+  for (const step of steps) {
+    if (step.action === 'drop') continue
+    const current = groups[groups.length - 1]
+    if (step.action === 'squash' && current) {
+      current.shas.push(step.sha)
+      continue
+    }
+    groups.push({ message: step.message.trim() || 'Rebased commit', shas: [step.sha] })
+  }
+  return groups
 }
 
 function parseNumstat(output: string): Pick<FinalizedWorktree, 'filesChanged' | 'additions' | 'deletions'> {
@@ -76,6 +127,36 @@ export class GitDeliveryManager {
   private readonly repoLocks = new Map<string, Promise<void>>()
 
   constructor(private readonly worktreesRoot: string) {}
+
+  /**
+   * Resolves whether a project folder is inside a Git work tree. Never throws:
+   * a folder without Git, or a machine without the `git` binary, has to keep
+   * working with the Git flow skipped rather than failing the run.
+   */
+  async status(projectPath: string): Promise<ProjectGitStatus> {
+    const pathExists = existsSync(projectPath)
+    if (!pathExists) {
+      return { isRepository: false, repoRoot: null, gitAvailable: true, pathExists }
+    }
+
+    try {
+      const result = await git(projectPath, ['rev-parse', '--show-toplevel'], [0, 128, 129])
+      const repoRoot = result.stdout.trim()
+      if (result.exitCode !== 0 || !repoRoot) {
+        return { isRepository: false, repoRoot: null, gitAvailable: true, pathExists }
+      }
+      return { isRepository: true, repoRoot, gitAvailable: true, pathExists }
+    } catch {
+      // The folder is there, so the failure is the `git` binary itself.
+      return { isRepository: false, repoRoot: null, gitAvailable: false, pathExists }
+    }
+  }
+
+  /** Runs `git init` in the project folder and reports the resulting status. */
+  async init(projectPath: string): Promise<ProjectGitStatus> {
+    await git(projectPath, ['init'])
+    return this.status(projectPath)
+  }
 
   async prepare(projectPath: string, runId: string, title: string): Promise<PreparedWorktree> {
     const repoRoot = (await git(projectPath, ['rev-parse', '--show-toplevel'])).stdout.trim()
@@ -104,7 +185,8 @@ export class GitDeliveryManager {
 
       const branchResult = await git(repoRoot, ['branch', '--show-current'])
       const baseBranch = branchResult.stdout.trim() || baseCommit.slice(0, 12)
-      const branchName = `anvil/${slug(title)}-${runId.slice(0, 8)}`
+      // A starting point only — the agent is free to rename it.
+      const branchName = `${slug(title)}-${runId.slice(0, 8)}`
       const projectRelativePath = relative(resolve(repoRoot), resolve(projectPath))
       if (projectRelativePath.startsWith('..')) {
         throw new Error('Project path is outside its Git repository')
@@ -143,30 +225,122 @@ export class GitDeliveryManager {
     }
   }
 
+  /**
+   * Re-opens a worktree on a branch a finished task left behind, so the agent
+   * can act on review notes. `finalize` removes the worktree when a task ends,
+   * but the branch survives — this checks it out again at the same path.
+   */
+  async reopen(projectPath: string, runId: string, branchName: string): Promise<PreparedWorktree> {
+    const repoRoot = (await git(projectPath, ['rev-parse', '--show-toplevel'])).stdout.trim()
+    return this.withRepoLock(repoRoot, async () => {
+      const worktreePath = join(this.worktreesRoot, runId)
+      await mkdir(this.worktreesRoot, { recursive: true })
+      // A worktree left behind by a failed cleanup would block `worktree add`.
+      await git(repoRoot, ['worktree', 'prune'], [0, 1, 128])
+      await git(repoRoot, ['worktree', 'add', worktreePath, branchName])
+
+      const baseCommit = (await git(worktreePath, ['rev-parse', 'HEAD'])).stdout.trim()
+      const projectRelativePath = relative(resolve(repoRoot), resolve(projectPath))
+      return {
+        baseBranch: branchName,
+        branchName,
+        baseCommit,
+        worktreePath,
+        cwd: projectRelativePath ? join(worktreePath, projectRelativePath) : worktreePath,
+        initializedRepository: false
+      }
+    })
+  }
+
+  /**
+   * Replays a task's commits according to a plan, the way `git rebase -i` does:
+   * a `pick` starts a commit, a following `squash` folds into it, and a `drop`
+   * is left out. Anvil runs this itself rather than asking git for an
+   * interactive session, so there is no editor to drive and the outcome is
+   * exactly what the plan said.
+   *
+   * The branch is reset to its base and the kept commits are re-applied with
+   * `cherry-pick --no-commit`. Nothing is lost if that fails part-way: the
+   * original tip is recorded first and restored before the error is raised.
+   */
+  async rebase(
+    projectPath: string,
+    runId: string,
+    branchName: string,
+    baseCommit: string,
+    steps: RebaseStep[]
+  ): Promise<RebasedBranch> {
+    const groups = planGroups(steps)
+    if (!groups.length) throw new Error('A rebase has to keep at least one commit')
+
+    const prepared = await this.reopen(projectPath, runId, branchName)
+    const worktree = prepared.worktreePath
+    const originalTip = (await git(worktree, ['rev-parse', 'HEAD'])).stdout.trim()
+
+    // The plan was built from a commit list that may since have moved.
+    const actual = (await git(worktree, ['rev-list', '--reverse', `${baseCommit}..HEAD`])).stdout
+      .split(/\r?\n/)
+      .filter(Boolean)
+    const planned = steps.map((step) => step.sha)
+    if (actual.length !== planned.length || actual.some((sha, i) => sha !== planned[i])) {
+      await git(projectPath, ['worktree', 'remove', '--force', worktree], [0, 1, 128])
+      throw new Error('This branch changed since the commit list was loaded. Reopen it and retry.')
+    }
+
+    try {
+      await git(worktree, ['reset', '--hard', baseCommit])
+      for (const group of groups) {
+        for (const sha of group.shas) {
+          await git(worktree, ['cherry-pick', '--no-commit', sha])
+        }
+        // A group whose changes cancel out leaves nothing staged; git drops such
+        // a commit during a real rebase, so this does too.
+        const staged = await git(worktree, ['diff', '--cached', '--quiet'], [0, 1])
+        if (staged.exitCode === 0) continue
+        await git(worktree, ['commit', '-m', group.message])
+      }
+    } catch (error) {
+      await git(worktree, ['cherry-pick', '--abort'], [0, 1, 128])
+      await git(worktree, ['reset', '--hard', originalTip], [0, 1, 128])
+      await git(projectPath, ['worktree', 'remove', '--force', worktree], [0, 1, 128])
+      throw new Error(
+        `Rebase failed and the branch was left untouched: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    }
+
+    const headCommit = (await git(worktree, ['rev-parse', 'HEAD'])).stdout.trim()
+    const numstat = await git(worktree, ['diff', '--numstat', baseCommit, headCommit, '--'])
+    const stats = parseNumstat(numstat.stdout)
+    await git(projectPath, ['worktree', 'remove', '--force', worktree], [0, 1, 128])
+
+    const { commits } = await this.getDiff(projectPath, baseCommit, headCommit)
+    return { headCommit, commits, ...stats }
+  }
+
   async finalize(
     repoPath: string,
     worktreePath: string,
     baseCommit: string,
-    title: string,
-    onUncommittedChanges?: () => void
+    fallbackMessage: string,
+    options: FinalizeOptions = {}
   ): Promise<FinalizedWorktree> {
+    const { onFinisherCommand } = options
     const dirty = (await git(worktreePath, ['status', '--porcelain=v1', '--untracked-files=all'])).stdout
     const finisherCommitted = dirty.trim().length > 0
     if (dirty.trim()) {
-      onUncommittedChanges?.()
-      await git(worktreePath, ['add', '--all'])
-      await git(worktreePath, [
-        '-c',
-        'user.name=Anvil',
-        '-c',
-        'user.email=anvil@localhost',
-        'commit',
-        '-m',
-        `anvil: ${title}`
-      ])
+      // The agent was asked to commit its own work and did not, so Anvil commits
+      // the remainder rather than losing it. Each command is reported as it runs.
+      for (const args of [['add', '--all'], ['commit', '-m', fallbackMessage]]) {
+        onFinisherCommand?.(formatGitCommand(args))
+        await git(worktreePath, args)
+      }
     }
 
     const headCommit = (await git(worktreePath, ['rev-parse', 'HEAD'])).stdout.trim()
+    // Read before the worktree goes away: the agent may have renamed the branch.
+    const branchName = (await git(worktreePath, ['branch', '--show-current'])).stdout.trim()
     const numstat = await git(worktreePath, ['diff', '--numstat', baseCommit, headCommit, '--'])
     const stats = parseNumstat(numstat.stdout)
     let cleanupWarning: string | undefined
@@ -177,6 +351,7 @@ export class GitDeliveryManager {
     }
     return {
       headCommit,
+      ...(branchName ? { branchName } : {}),
       hasChanges: stats.filesChanged > 0,
       finisherCommitted,
       ...stats,

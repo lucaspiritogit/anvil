@@ -1,5 +1,15 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { AgentDefinition, Project, Run, RunDiff, RunEvent, Settings } from '../shared/types'
+import type {
+  AgentDefinition,
+  RebaseStep,
+  Project,
+  ProjectGitStatus,
+  Run,
+  RunComment,
+  RunDiff,
+  RunEvent,
+  Settings
+} from '../shared/types'
 
 function subscribe<T>(channel: string, handler: (payload: T) => void): () => void {
   const listener = (_e: IpcRendererEvent, payload: T): void => handler(payload)
@@ -25,7 +35,10 @@ const api = {
       finishOnPush: boolean
     }): Promise<Project | undefined> => ipcRenderer.invoke('projects:update', input),
     remove: (id: string): Promise<Project[]> => ipcRenderer.invoke('projects:remove', id),
-    reveal: (path: string): Promise<string> => ipcRenderer.invoke('projects:reveal', path)
+    reveal: (path: string): Promise<string> => ipcRenderer.invoke('projects:reveal', path),
+    gitStatus: (id: string): Promise<ProjectGitStatus> =>
+      ipcRenderer.invoke('projects:git-status', id),
+    gitInit: (id: string): Promise<ProjectGitStatus> => ipcRenderer.invoke('projects:git-init', id)
   },
   runs: {
     list: (): Promise<Run[]> => ipcRenderer.invoke('runs:list'),
@@ -38,9 +51,28 @@ const api = {
       model?: string
     }): Promise<Run> => ipcRenderer.invoke('runs:start', input),
     cancel: (runId: string): Promise<boolean> => ipcRenderer.invoke('runs:cancel', runId),
+    rebase: (input: { runId: string; steps: RebaseStep[] }): Promise<Run> =>
+      ipcRenderer.invoke('runs:rebase', input),
+    rebaseWithAgent: (runId: string): Promise<Run> =>
+      ipcRenderer.invoke('runs:rebase-agent', runId),
+    approve: (runId: string): Promise<Run> => ipcRenderer.invoke('runs:approve', runId),
     onEvent: (handler: (event: RunEvent) => void): (() => void) =>
       subscribe<RunEvent>('run:event', handler),
     onUpdated: (handler: (run: Run) => void): (() => void) => subscribe<Run>('run:updated', handler)
+  },
+  comments: {
+    list: (runId: string): Promise<RunComment[]> => ipcRenderer.invoke('comments:list', runId),
+    add: (input: {
+      runId: string
+      file: string
+      side: RunComment['side']
+      lineNumber: number
+      body: string
+    }): Promise<RunComment[]> => ipcRenderer.invoke('comments:add', input),
+    remove: (input: { runId: string; id: string }): Promise<RunComment[]> =>
+      ipcRenderer.invoke('comments:remove', input),
+    send: (runId: string): Promise<{ run: Run; comments: RunComment[] }> =>
+      ipcRenderer.invoke('comments:send', runId)
   },
   terminal: {
     ensure: (input: { id: string; cwd: string; cols: number; rows: number }): Promise<boolean> =>

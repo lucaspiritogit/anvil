@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useMemo, useState } from 'react'
+import { useStore } from '../state/store'
 import type { Project, Run } from '@shared/types'
 
 interface Props {
@@ -66,19 +67,23 @@ function TaskCard({ run, now, onOpen }: { run: Run; now: number; onOpen: () => v
           ? 'Failed'
           : 'Cancelled'
   const codeLabel =
-    run.deliveryStatus === 'reviewable'
+    run.deliveryStatus === 'approved'
+      ? 'Approved'
+    : run.deliveryStatus === 'reviewable'
       ? 'Reviewable'
       : run.deliveryStatus === 'did_not_commit'
         ? 'Finisher committing'
-      : run.deliveryStatus === 'no_changes'
-        ? 'No changes'
-        : run.deliveryStatus === 'finalizing'
-          ? 'Saving branch'
-          : run.deliveryStatus === 'failed'
-            ? 'Delivery failed'
-            : run.deliveryStatus === 'agent_failed'
-              ? 'Not reviewable'
-              : null
+        : run.deliveryStatus === 'no_changes'
+          ? 'No changes'
+          : run.deliveryStatus === 'unavailable'
+            ? 'Not tracked by Git'
+            : run.deliveryStatus === 'finalizing'
+              ? 'Saving branch'
+              : run.deliveryStatus === 'failed'
+                ? 'Delivery failed'
+                : run.deliveryStatus === 'agent_failed'
+                  ? 'Not reviewable'
+                  : null
   return (
     <button className="home-task" onClick={onOpen}>
       <span className={`dot dot-${run.status}`} />
@@ -95,6 +100,46 @@ function TaskCard({ run, now, onOpen }: { run: Run; now: number; onOpen: () => v
         )}
       </span>
     </button>
+  )
+}
+
+function GitAlert({ project }: { project: Project }): JSX.Element | null {
+  const status = useStore((s) => s.gitStatusByProject[project.id])
+  const pending = useStore((s) => s.gitInitPending === project.id)
+  const error = useStore((s) => s.gitInitError)
+  const loadGitStatus = useStore((s) => s.loadGitStatus)
+  const initGitRepo = useStore((s) => s.initGitRepo)
+
+  useEffect(() => {
+    void loadGitStatus(project.id)
+  }, [loadGitStatus, project.id])
+
+  if (!status || status.isRepository) return null
+
+  const canInit = status.pathExists && status.gitAvailable
+  const detail = !status.pathExists
+    ? 'The project folder no longer exists at this path.'
+    : status.gitAvailable
+      ? 'Agents will run directly in the project folder. Branches, worktrees and reviewable diffs are skipped.'
+      : 'Git could not be run on this machine, so branches, worktrees and reviewable diffs are skipped.'
+
+  return (
+    <div className="git-alert" role="status">
+      <div className="git-alert-copy">
+        <strong>This project is not using Git</strong>
+        <span>{detail}</span>
+        {error && <span className="git-alert-error">{error}</span>}
+      </div>
+      {canInit && (
+        <button
+          className="git-alert-btn"
+          disabled={pending}
+          onClick={() => void initGitRepo(project.id)}
+        >
+          {pending ? 'Initializing…' : 'Initialize Git repository'}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -137,12 +182,13 @@ export function HomeView({
         <div>
           <span className="eyebrow">Project overview</span>
           <h1>{project.name}</h1>
-          <p>Track agent outcomes separately from code that is ready to review.</p>
         </div>
         <button className="primary-btn" onClick={onStartTask}>
           Start new task
         </button>
       </div>
+
+      <GitAlert project={project} />
 
       <section className="home-section usage-card">
         <div className="home-section-head">

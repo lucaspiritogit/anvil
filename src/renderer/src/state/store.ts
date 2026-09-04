@@ -1,5 +1,15 @@
 import { create } from 'zustand'
-import type { AgentDefinition, Project, Run, RunDiff, RunEvent, Settings } from '@shared/types'
+import type {
+  AgentDefinition,
+  RebaseStep,
+  Project,
+  ProjectGitStatus,
+  Run,
+  RunComment,
+  RunDiff,
+  RunEvent,
+  Settings
+} from '@shared/types'
 
 const MAX_LINES_IN_MEMORY = 4000
 
@@ -17,6 +27,14 @@ interface AnvilState {
   eventsByRun: Record<string, RunEvent[]>
   diffsByRun: Record<string, RunDiff>
   diffErrorsByRun: Record<string, string>
+  gitStatusByProject: Record<string, ProjectGitStatus>
+  commentsByRun: Record<string, RunComment[]>
+  rebaseRunId: string | null
+  rebasing: string | null
+  sendingComments: string | null
+  commentError: string | null
+  gitInitPending: string | null
+  gitInitError: string | null
 
   newTaskOpen: boolean
   settingsOpen: boolean
@@ -29,6 +47,24 @@ interface AnvilState {
     patch: Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush'>
   ) => Promise<void>
   selectProject: (id: string) => void
+  loadGitStatus: (id: string) => Promise<void>
+  initGitRepo: (id: string) => Promise<void>
+
+  approveRun: (runId: string) => Promise<void>
+  openRebase: (runId: string | null) => void
+  rebaseRun: (runId: string, steps: RebaseStep[]) => Promise<void>
+  rebaseWithAgent: (runId: string) => Promise<void>
+
+  loadComments: (runId: string) => Promise<void>
+  addComment: (input: {
+    runId: string
+    file: string
+    side: RunComment['side']
+    lineNumber: number
+    body: string
+  }) => Promise<void>
+  removeComment: (runId: string, id: string) => Promise<void>
+  sendComments: (runId: string) => Promise<void>
 
   startRun: (input: { agentId: string; prompt: string; model?: string }) => Promise<void>
   cancelRun: (runId: string) => Promise<void>
@@ -57,6 +93,14 @@ export const useStore = create<AnvilState>((set, get) => ({
   eventsByRun: {},
   diffsByRun: {},
   diffErrorsByRun: {},
+  gitStatusByProject: {},
+  gitInitPending: null,
+  gitInitError: null,
+  commentsByRun: {},
+  rebaseRunId: null,
+  rebasing: null,
+  sendingComments: null,
+  commentError: null,
 
   newTaskOpen: false,
   settingsOpen: false,
@@ -90,12 +134,16 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   removeProject: async (id) => {
     const projects = await window.anvil.projects.remove(id)
-    set((s) => ({
-      projects,
-      runs: s.runs.filter((r) => r.projectId !== id),
-      activeProjectId: s.activeProjectId === id ? (projects[0]?.id ?? null) : s.activeProjectId,
-      view: { kind: 'home' }
-    }))
+    set((s) => {
+      const { [id]: _removed, ...gitStatusByProject } = s.gitStatusByProject
+      return {
+        projects,
+        gitStatusByProject,
+        runs: s.runs.filter((r) => r.projectId !== id),
+        activeProjectId: s.activeProjectId === id ? (projects[0]?.id ?? null) : s.activeProjectId,
+        view: { kind: 'home' } as CenterView
+      }
+    })
   },
 
   updateProject: async (id, patch) => {
@@ -105,6 +153,27 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
 
   selectProject: (id) => set({ activeProjectId: id, view: { kind: 'home' } }),
+
+  loadGitStatus: async (id) => {
+    const status = await window.anvil.projects.gitStatus(id)
+    set((s) => ({ gitStatusByProject: { ...s.gitStatusByProject, [id]: status } }))
+  },
+
+  initGitRepo: async (id) => {
+    set({ gitInitPending: id, gitInitError: null })
+    try {
+      const status = await window.anvil.projects.gitInit(id)
+      set((s) => ({
+        gitStatusByProject: { ...s.gitStatusByProject, [id]: status },
+        gitInitPending: null
+      }))
+    } catch (error) {
+      set({
+        gitInitPending: null,
+        gitInitError: error instanceof Error ? error.message : String(error)
+      })
+    }
+  },
 
   startRun: async ({ agentId, prompt, model }) => {
     const projectId = get().activeProjectId
@@ -144,6 +213,106 @@ export const useStore = create<AnvilState>((set, get) => ({
           [runId]: error instanceof Error ? error.message : String(error)
         }
       }))
+    }
+  },
+
+  approveRun: async (runId) => {
+    try {
+      const run = await window.anvil.runs.approve(runId)
+      set((s) => ({
+        runs: s.runs.map((item) => (item.id === run.id ? run : item)),
+        commentError: null
+      }))
+    } catch (error) {
+      set({ commentError: error instanceof Error ? error.message : String(error) })
+    }
+  },
+
+  openRebase: (runId) => set({ rebaseRunId: runId, commentError: null }),
+
+  /** Applies a plan directly; the diff is reloaded because the commits moved. */
+  rebaseRun: async (runId, steps) => {
+    set({ rebasing: runId, commentError: null })
+    try {
+      const run = await window.anvil.runs.rebase({ runId, steps })
+      set((s) => ({
+        runs: s.runs.map((item) => (item.id === run.id ? run : item)),
+        diffsByRun: Object.fromEntries(
+          Object.entries(s.diffsByRun).filter(([key]) => key !== runId)
+        ),
+        rebasing: null,
+        rebaseRunId: null
+      }))
+      await get().loadRunDiff(runId)
+    } catch (error) {
+      set({
+        rebasing: null,
+        commentError: error instanceof Error ? error.message : String(error)
+      })
+    }
+  },
+
+  rebaseWithAgent: async (runId) => {
+    set({ rebasing: runId, rebaseRunId: null, commentError: null })
+    try {
+      const run = await window.anvil.runs.rebaseWithAgent(runId)
+      set((s) => ({
+        runs: s.runs.map((item) => (item.id === run.id ? run : item)),
+        // The commit list is about to change, so the cached diff is stale.
+        diffsByRun: Object.fromEntries(
+          Object.entries(s.diffsByRun).filter(([key]) => key !== runId)
+        ),
+        rebasing: null
+      }))
+    } catch (error) {
+      set({
+        rebasing: null,
+        commentError: error instanceof Error ? error.message : String(error)
+      })
+    }
+  },
+
+  loadComments: async (runId) => {
+    const comments = await window.anvil.comments.list(runId)
+    set((s) => ({ commentsByRun: { ...s.commentsByRun, [runId]: comments } }))
+  },
+
+  addComment: async (input) => {
+    try {
+      const comments = await window.anvil.comments.add(input)
+      set((s) => ({
+        commentsByRun: { ...s.commentsByRun, [input.runId]: comments },
+        commentError: null
+      }))
+    } catch (error) {
+      set({ commentError: error instanceof Error ? error.message : String(error) })
+    }
+  },
+
+  removeComment: async (runId, id) => {
+    const comments = await window.anvil.comments.remove({ runId, id })
+    set((s) => ({ commentsByRun: { ...s.commentsByRun, [runId]: comments } }))
+  },
+
+  sendComments: async (runId) => {
+    set({ sendingComments: runId, commentError: null })
+    try {
+      const { run, comments } = await window.anvil.comments.send(runId)
+      set((s) => ({
+        runs: s.runs.map((item) => (item.id === run.id ? run : item)),
+        commentsByRun: { ...s.commentsByRun, [runId]: comments },
+        // The task is running again, so its log is what matters now.
+        eventsByRun: { ...s.eventsByRun, [runId]: s.eventsByRun[runId] ?? [] },
+        diffsByRun: Object.fromEntries(
+          Object.entries(s.diffsByRun).filter(([key]) => key !== runId)
+        ),
+        sendingComments: null
+      }))
+    } catch (error) {
+      set({
+        sendingComments: null,
+        commentError: error instanceof Error ? error.message : String(error)
+      })
     }
   },
 

@@ -1,11 +1,50 @@
 # Anvil
 
-Coding agents as infrastructure, not conversation.
+An agentic development platform. No chats, clear tasks.
 
-Anvil is a small Electron desktop app for dispatching coding agents at project
-folders and watching them work. Agents are background workloads you start,
-observe, and review from the project overview. The terminal remains available
-when you need it, but it is not the home screen.
+Anvil is a desktop app for putting coding agents to work on a project folder.
+You write a task, dispatch it, and review a diff. There is no chat window and no
+persona to negotiate with — an agent here is an instrument you point at a
+problem, the same as a compiler or a test runner. The terminal is still one tab
+away when you want to do the work yourself.
+
+## Philosophy
+
+**An agent is a tool.** Agents keep being dressed up as teammates: chat threads,
+personalities, a conversation you steer turn by turn. That framing quietly moves
+agency from the developer to the agent, and it changes what you end up with — a
+transcript to read instead of a diff to review.
+
+Anvil takes the other position. Agency stays with you. You decide what the work
+is; the agent executes it the way any other tool in your toolchain does. You
+invoke it, it runs, you inspect the result. If the result is wrong you sharpen
+the task and run it again, the same way you would re-run a failing build. The
+agent is never in charge, and it is never asked to be.
+
+**Clear tasks beat conversation.** A chat lets an ambiguous request survive,
+because you can always clarify in the next message. A task cannot: it has to be
+stated well enough to run unattended. That constraint is the feature. Writing
+the task *is* the engineering, and it stays with the developer.
+
+**The agent works the way you would.** It gets a worktree, a branch, and your
+task. It uses Git normally and writes its own commit messages. Anvil does not
+intercept the workflow, impose a protocol for the agent to obey, or paraphrase
+the work back to you. What you see in the review view is what the agent actually
+did.
+
+**Nothing is hidden.** The run log shows the agent's own output — its thinking,
+its tool calls, its errors — and every Git command Anvil runs on your behalf.
+Anvil steps in for exactly one thing: not losing work. If an agent finishes
+without committing, Anvil commits the remainder so the branch survives, and says
+so plainly in the log.
+
+## Scope
+
+Anvil is a local development tool, not infrastructure. It runs agent CLIs as
+child processes against checkouts on your own machine — no cluster, no control
+plane, no fleet to operate. Fleet-scale agent orchestration is a real and
+different problem; this is not that. Anvil is for one developer and the projects
+on their disk.
 
 ## Requirements
 
@@ -19,6 +58,9 @@ when you need it, but it is not the home screen.
 npm install
 npm run dev
 ```
+
+After changing `src/main/db/schema.ts`, run `npm run db:generate` to write the
+matching migration and commit it alongside the schema change.
 
 If your shell exports `ELECTRON_RUN_AS_NODE=1`, unset it first or Electron will
 boot as plain Node and fail to open a window.
@@ -39,7 +81,10 @@ npm run dist    # NSIS installer in release/
    run view streams the agent's output live.
 4. A successful task with code changes appears under **Ready for review**. Open
    it to inspect its commits and local diff.
-5. Open the Terminal tab when you need to work in the project directly.
+5. In the **Changes** tab, select a line to leave a note on it. Notes stack as
+   drafts until you press **Send**, which puts the task back to running and
+   hands the whole batch to the agent that wrote the code.
+6. Open the Terminal tab when you need to work in the project directly.
 
 Anvil does not manage provider credentials. Each agent uses whatever auth it is
 already configured with (for example `opencode auth login`), so a harness that
@@ -76,15 +121,58 @@ one-line fix in the registry.
 - On Windows, npm installs CLIs as `.cmd` shims. Anvil reads the shim and spawns
   the real executable directly, so prompts containing quotes, `&`, or `%` are
   passed through untouched instead of being mangled by a shell.
-- Projects, settings, runs, and run output are stored in
-  `~/.anvil-composer/anvil.db`.
-- A task requires a Git repository. If it has no commits yet, Anvil creates the
-  initial commit from its current non-ignored files (or an empty commit when the
-  folder is empty). It then creates an isolated worktree and an
-  `anvil/<task>-<id>` branch from the repository's current checkout. Agents do
-  not need to commit. If they leave changes in the worktree, Anvil records a
-  `did_not_commit` event and creates the delivery commit before removing the
-  worktree.
+- Projects, settings, runs, comments, and run output are stored in
+  `~/.anvil-composer/anvil.db`, through [Drizzle](https://orm.drizzle.team/)
+  on `better-sqlite3`. `src/main/db/schema.ts` is the single declaration of the
+  schema; `npm run db:generate` diffs it and writes the next numbered migration
+  into `src/main/db/migrations`, and the app applies whatever is outstanding
+  when it opens the database. Never edit or rename a generated migration — the
+  journal records what has already been applied. `npm run db:drop` deletes the
+  database and `npm run db:reset` recreates it from the migrations.
+- A task in a Git repository gets an isolated worktree and a branch from the
+  repository's current checkout, named `<task>-<id>` as a starting point. If the
+  repository has no commits yet, Anvil creates the initial commit first (from
+  the current non-ignored files, or an empty commit when the folder is empty).
+- Agents are asked to use Git themselves. Every task in a repository is prefixed
+  with a short instruction: commit your own changes with a clear message, prefix
+  the subject with `fix:`, `feat:`, `chore:`, or `docs:` where the category is
+  clear, rename the branch when a clearer name fits, and do not push. The commit
+  message and the final branch name are the agent's own — Anvil never generates
+  a message from the task title or rewrites what the agent wrote, and it records
+  whichever branch the worktree ends on. Commits use your configured Git
+  identity, not a bot identity.
+- If an agent finishes with uncommitted changes anyway, Anvil records a
+  `did_not_commit` event, shows the `git add` and `git commit` it runs, and
+  commits the remainder under the task title before removing the worktree. This
+  is a safety net, not the intended path.
+- A project without a Git repository still works. The overview shows a notice
+  with a button to run `git init`, and until then agents run directly in the
+  project folder with branches, worktrees, and diffs skipped.
+- **Approve** in the review bar accepts the work: the task moves out of **Ready
+  for review** into **Completed** and stops offering Send, Squash and new
+  comments. The diff stays readable. Nothing is pushed or merged — approval is
+  a state, not yet an action.
+- **Rebase** above the commit list rewrites the task's commits, in one of two
+  modes set in Settings.
+  - *Manual* (the default) opens a small interactive rebase: each commit gets
+    `pick`, `squash` or `drop`, and a `pick`'s message is editable. Anvil
+    performs the rebase itself by resetting to the branch point and replaying
+    the kept commits, so the result is exactly the plan and no agent is
+    involved. If anything fails the branch is restored to where it was, and a
+    plan built from a stale commit list is refused rather than applied.
+  - *Agent* hands the branch to the agent that wrote the code and accepts its
+    result, confirming first unless you tick "don't ask again".
+  Neither mode touches anything at or before the branch point. Neither checks
+  for a remote: rebasing rewrites the branch, so it is on you to know whether
+  anyone else has it.
+- Review notes are line comments on a task's diff, the way a pull request works.
+  They are held as drafts — visible in the diff, removable — until **Send**.
+  Sending re-opens a worktree on the task's branch, resumes the agent's original
+  session where the CLI supports it (`opencode -s`, `claude --resume`) so the
+  context of the work is not lost, and runs it again against the notes. When
+  the CLI cannot resume, the follow-up runs as a fresh session in the same
+  worktree. The task keeps its original base commit, so the diff you review
+  afterwards covers the whole task, first pass and follow-ups together.
 - Agent success and code readiness are separate. Exit code `0` means the task
   succeeded. Code is ready for review only when that successful branch has a
   non-empty diff from its starting commit.
@@ -98,6 +186,8 @@ one-line fix in the registry.
 ## Layout
 
 ```
+src/main/db/schema.ts         Drizzle table definitions (the schema)
+src/main/db/migrations/       generated migrations, applied at startup
 src/main/agents/registry.ts   agent definitions
 src/main/agents/resolve.ts    PATH + Windows shim resolution
 src/main/agents/runner.ts     spawn, stream stdout/stderr, cancel
