@@ -18,6 +18,7 @@ import type {
   RunStatus,
   StreamName
 } from '../../shared/types'
+import type { IssueTracker } from '../../shared/types'
 
 /**
  * Renders a TypeScript union as a SQL `IN (...)` list for a CHECK constraint.
@@ -170,4 +171,9 @@ export const runEvents = sqliteTable(
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull()
+})
+
+export const taskIssueTrackers = sqliteTable('task_issue_trackers', {
+  runId: text('run_id').primaryKey().references(() => runs.id, { onDelete: 'cascade' }),
+  state: text('state', { mode: 'json' }).$type<IssueTracker>().notNull()
 })

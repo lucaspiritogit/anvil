@@ -14,6 +14,12 @@ export const GIT_SYSTEM_PROMPT = [
   'Do not push; the branch stays local for review.'
 ].join('\n')
 
+/**
+ * Codex cannot print its own catalogue, so the list ships with Anvil and is
+ * updated by hand when OpenAI ships a new generation.
+ */
+const CODEX_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']
+
 export const BUILTIN_AGENTS: AgentDefinition[] = [
   {
     id: 'opencode',
@@ -33,31 +39,17 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
       '{{prompt}}'
     ],
     defaultModel: 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
+    models: { kind: 'command', command: 'opencode', args: ['models'] },
     outputProtocol: 'opencode-json'
-  },
-  {
-    id: 'claude',
-    label: 'Claude Code',
-    description: 'Headless print mode.',
-    command: 'claude',
-    args: ['-p', '--output-format', 'stream-json', '--verbose', '{{prompt}}'],
-    resumeArgs: [
-      '-p',
-      '--output-format',
-      'stream-json',
-      '--verbose',
-      '--resume',
-      '{{session}}',
-      '{{prompt}}'
-    ],
-    outputProtocol: 'claude-json'
   },
   {
     id: 'codex',
     label: 'Codex',
     description: 'Non-interactive exec mode.',
     command: 'codex',
-    args: ['exec', '--json', '{{prompt}}'],
+    args: ['exec', '--json', '-m', '{{model}}', '{{prompt}}'],
+    defaultModel: CODEX_MODELS[0],
+    models: { kind: 'static', models: CODEX_MODELS },
     outputProtocol: 'codex-json'
   },
   {

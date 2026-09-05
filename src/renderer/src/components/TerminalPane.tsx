@@ -70,5 +70,5 @@ export function TerminalPane({ projectId, cwd }: Props): JSX.Element {
     }
   }, [projectId, cwd])
 
-  return <div className="terminal-host" ref={hostRef} />
+  return <div className="h-full pt-2 pr-1 pb-1 pl-2.5" ref={hostRef} />
 }

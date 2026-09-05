@@ -1,8 +1,12 @@
 import type { JSX } from 'react'
+import { IS_MAC } from '../keys'
 import { useStore } from '../state/store'
+import { btn, cn } from '../ui'
 import { TerminalPane } from './TerminalPane'
 import { RunView } from './RunView'
-import { HomeView } from './HomeView'
+import { ProjectOverview } from './ProjectOverview'
+
+const TAB = 'max-w-[260px] px-3 py-1.5 rounded-md overflow-hidden text-ellipsis whitespace-nowrap'
 
 export function Workspace(): JSX.Element {
   const projects = useStore((s) => s.projects)
@@ -15,16 +19,19 @@ export function Workspace(): JSX.Element {
   const setNewTaskOpen = useStore((s) => s.setNewTaskOpen)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const addProject = useStore((s) => s.addProject)
+  const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
 
   const project = projects.find((p) => p.id === activeProjectId)
 
   if (!project) {
     return (
-      <main className="workspace">
-        <div className="blank">
-          <h1>Add a project</h1>
-          <p>Point Anvil at a folder to get a terminal and start dispatching agents.</p>
-          <button className="primary-btn" onClick={() => void addProject()}>
+      <main className="flex flex-col min-w-0 h-full">
+        <div className="grid place-content-center justify-items-center gap-2.5 h-full text-center">
+          <h1 className="text-lg font-semibold">Add a project</h1>
+          <p className="max-w-[360px] mb-2 text-dim">
+            Point Anvil at a folder to get a terminal and start dispatching agents.
+          </p>
+          <button className={btn.primary} onClick={() => void addProject()}>
             Choose folder
           </button>
         </div>
@@ -36,37 +43,62 @@ export function Workspace(): JSX.Element {
   const projectRuns = runs.filter((run) => run.projectId === project.id)
 
   return (
-    <main className="workspace">
-      <header className="topbar">
-        <div className="tabs">
-          <button className={`tab ${view.kind === 'home' ? 'tab-active' : ''}`} onClick={showHome}>
+    <main className="flex flex-col min-w-0 h-full">
+      {/*
+       * On macOS the traffic lights normally sit over the sidebar's brand row.
+       * With the sidebar collapsed they land here instead, so the gutter moves
+       * to the tab bar and the row doubles as the window's drag handle.
+       */}
+      <header
+        className={cn(
+          'flex gap-4 items-center justify-between pr-3.5 py-2 border-b border-line',
+          IS_MAC && 'drag-region transition-[padding-left] duration-[180ms] ease-[ease] motion-reduce:transition-none',
+          IS_MAC && sidebarCollapsed ? 'pl-[78px]' : 'pl-3.5'
+        )}
+      >
+        <div className="flex gap-1 min-w-0">
+          <button
+            className={cn(
+              TAB,
+              'no-drag',
+              view.kind === 'home' ? 'text-fg bg-hover' : 'text-dim hover:bg-hover'
+            )}
+            onClick={showHome}
+          >
             Overview
           </button>
           <button
-            className={`tab ${view.kind === 'terminal' ? 'tab-active' : ''}`}
+            className={cn(
+              TAB,
+              'no-drag',
+              view.kind === 'terminal' ? 'text-fg bg-hover' : 'text-dim hover:bg-hover'
+            )}
             onClick={showTerminal}
           >
             Terminal
           </button>
-          {activeRun && <button className="tab tab-active">{activeRun.title}</button>}
+          {activeRun && <button className={cn(TAB, 'no-drag text-fg bg-hover')}>{activeRun.title}</button>}
         </div>
 
-        <div className="topbar-right">
-          <span className="path" title={project.path}>
+        <div className="flex gap-3 items-center min-w-0">
+          <span
+            className="max-w-[320px] overflow-hidden font-mono text-[11px] text-dim text-ellipsis whitespace-nowrap [direction:rtl]"
+            title={project.path}
+          >
             {project.path}
           </span>
-          <button className="primary-btn" onClick={() => setNewTaskOpen(true)}>
+          <button className={cn(btn.primary, 'no-drag')} onClick={() => setNewTaskOpen(true)}>
             Start new task
           </button>
         </div>
       </header>
 
-      <section className="pane">
-        <div className={view.kind === 'terminal' ? 'fill' : 'hidden'}>
+      <section className="relative flex-1 min-h-0">
+        <div className={view.kind === 'terminal' ? 'h-full' : 'hidden'}>
           <TerminalPane projectId={project.id} cwd={project.path} />
         </div>
         {view.kind === 'home' && (
-          <HomeView
+          <ProjectOverview
             project={project}
             runs={projectRuns}
             onOpenRun={(runId) => void openRun(runId)}

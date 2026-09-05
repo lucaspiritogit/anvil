@@ -1,42 +1,29 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
+import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
+import { IS_MAC } from '../keys'
 import { useStore } from '../state/store'
+import { btn, cn, dot } from '../ui'
 import type { Run } from '@shared/types'
 
-function StatusDot({ status }: { status: Run['status'] }): JSX.Element {
-  return <span className={`dot dot-${status}`} />
-}
-
-function formatDuration(run: Run, now: number): string {
-  const seconds = Math.max(0, Math.floor(((run.endedAt ?? now) - run.startedAt) / 1000))
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ${seconds % 60}s`
-  const hours = Math.floor(minutes / 60)
-  return `${hours}h ${minutes % 60}m`
-}
-
-function formatTokens(tokens: number): string {
-  return `${Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(tokens)} tok`
-}
-
-function formatCost(costUsd: number | null): string {
-  if (costUsd === null) return 'Cost n/a'
-  return `$${costUsd.toFixed(costUsd < 0.01 ? 4 : 2)}`
-}
+const SECTION_HEAD =
+  'flex items-center justify-between pt-3 px-1.5 pb-1.5 text-[11px] font-semibold text-dim uppercase tracking-[0.08em]'
+const ROW = 'flex gap-2 w-full px-2 py-[7px] rounded-md text-left hover:bg-hover hover:text-fg'
+const EMPTY = 'mx-2 my-1 text-xs text-dim'
+/** Metrics read as one line: every reading after the first is preceded by a dot. */
+const METRIC_NEXT = "before:content-['·'] before:mr-[7px] before:text-line"
 
 function TaskMetrics({ run, now }: { run: Run; now: number }): JSX.Element {
-  const tokenDetail = [
-    `${run.inputTokens.toLocaleString()} input`,
-    `${run.outputTokens.toLocaleString()} output`,
-    `${run.cachedTokens.toLocaleString()} cached`
-  ].join(', ')
-
   return (
-    <span className="task-meta" title={tokenDetail}>
-      <span>{formatTokens(run.totalTokens)}</span>
-      <span>{formatCost(run.costUsd)}</span>
-      <span>{formatDuration(run, now)}</span>
+    <span
+      className="flex gap-[7px] mt-[3px] overflow-hidden text-[10px] text-dim whitespace-nowrap"
+      title={tokenBreakdown(run)}
+    >
+      <span>{formatTokens(run.totalTokens)} tok</span>
+      <span className={METRIC_NEXT}>
+        {run.costUsd === null ? 'Cost n/a' : formatCost(run.costUsd)}
+      </span>
+      <span className={METRIC_NEXT}>{formatDuration(run, now)}</span>
     </span>
   )
 }
@@ -50,6 +37,7 @@ export function Sidebar(): JSX.Element {
   const addProject = useStore((s) => s.addProject)
   const openRun = useStore((s) => s.openRun)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const [now, setNow] = useState(Date.now())
 
   const projectRuns = runs.filter((r) => r.projectId === activeProjectId)
@@ -61,55 +49,81 @@ export function Sidebar(): JSX.Element {
     return () => window.clearInterval(timer)
   }, [hasRunningTask])
 
+  // Collapsed, the sidebar is only off-screen, so `inert` keeps its controls
+  // out of the tab order while it is hidden.
   return (
-    <aside className="sidebar">
-      <div className="brand">
-        <span className="brand-mark" />
+    <aside
+      className={cn(
+        'flex flex-col w-[232px] min-h-0 px-2.5 py-3.5 bg-raised border-r border-line',
+        'transition-transform duration-[180ms] ease-[ease] motion-reduce:transition-none',
+        sidebarCollapsed && '-translate-x-full'
+      )}
+      inert={sidebarCollapsed}
+    >
+      {/* macOS drops its traffic lights into this row, so the brand starts after them. */}
+      <div
+        className={cn(
+          'flex gap-2 items-center pr-1.5 pb-3.5 text-[15px] font-semibold tracking-[0.02em]',
+          IS_MAC ? 'drag-region pl-[78px]' : 'pl-1.5'
+        )}
+      >
+        <span className="size-2.5 bg-accent rounded-[3px]" />
         Anvil
       </div>
 
-      <div className="section-head">
+      <div className={SECTION_HEAD}>
         <span>Projects</span>
-        <button className="icon-btn" onClick={() => void addProject()} title="Add project">
+        <button
+          className={cn(btn.icon, 'no-drag')}
+          onClick={() => void addProject()}
+          title="Add project"
+        >
           +
         </button>
       </div>
 
-      <nav className="list">
-        {projects.length === 0 && <p className="empty">No projects yet.</p>}
+      <nav className="flex flex-col gap-0.5">
+        {projects.length === 0 && <p className={EMPTY}>No projects yet.</p>}
         {projects.map((project) => (
           <button
             key={project.id}
-            className={`row ${project.id === activeProjectId ? 'row-active' : ''}`}
+            className={cn(ROW, 'items-center', project.id === activeProjectId ? 'bg-hover text-fg' : 'text-dim')}
             onClick={() => selectProject(project.id)}
             title={project.path}
           >
-            <span className="row-title">{project.name}</span>
+            <span className="block truncate">{project.name}</span>
           </button>
         ))}
       </nav>
 
       {activeProjectId && (
         <>
-          <div className="section-head">
+          <div className={SECTION_HEAD}>
             <span>Tasks</span>
           </div>
-          <nav className="list list-scroll">
-            {projectRuns.length === 0 && <p className="empty">No tasks run yet.</p>}
+          <nav className="flex flex-col gap-0.5 min-h-0 overflow-y-auto">
+            {projectRuns.length === 0 && <p className={EMPTY}>No tasks run yet.</p>}
             {projectRuns.map((run) => (
               <button
                 key={run.id}
-                className={`row task-row ${view.kind === 'run' && view.runId === run.id ? 'row-active' : ''}`}
+                className={cn(
+                  ROW,
+                  'items-start',
+                  view.kind === 'run' && view.runId === run.id ? 'bg-hover text-fg' : 'text-dim'
+                )}
                 onClick={() => void openRun(run.id)}
                 title={run.prompt}
               >
-                <StatusDot status={run.status} />
-                <span className="task-copy">
-                  <span className="row-title">{run.title}</span>
+                <span className={dot(run.status, 'mt-[5px]')} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{run.title}</span>
                   <TaskMetrics run={run} now={now} />
                 </span>
                 {run.deliveryStatus === 'reviewable' && (
-                  <span className="sidebar-review-mark" title="Code ready for review">
+                  <span
+                    className="flex-none px-[5px] py-0.5 text-[9px] text-accent border border-accent-edge rounded"
+                    title="Code ready for review"
+                  >
                     Review
                   </span>
                 )}
@@ -119,8 +133,8 @@ export function Sidebar(): JSX.Element {
         </>
       )}
 
-      <div className="sidebar-foot">
-        <button className="ghost-btn" onClick={() => setSettingsOpen(true)}>
+      <div className="pt-2.5 mt-auto border-t border-line">
+        <button className={btn.ghost} onClick={() => setSettingsOpen(true)}>
           Settings
         </button>
       </div>

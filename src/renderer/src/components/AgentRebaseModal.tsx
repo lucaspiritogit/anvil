@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
 import { useStore } from '../state/store'
+import { btn, cn, modal } from '../ui'
 
 /**
  * Confirms handing a branch to the agent. Agent mode gives up per-commit
@@ -29,34 +30,40 @@ export function AgentRebaseModal({ runId }: { runId: string }): JSX.Element {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => openRebase(null)}>
-      <div className="modal modal-narrow" onClick={(e) => e.stopPropagation()}>
-        <h2>Are you sure?</h2>
-        <p className="modal-copy">
-          {run?.agentLabel ?? 'The agent'} will rebase <code>{run?.branchName}</code> into a single
-          commit and write its message. Every change is kept; only the commit history of this task
-          changes.
+    <div className={modal.backdrop} onClick={() => openRebase(null)}>
+      <div
+        className={cn(modal.panel, modal.width.narrow)}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className={modal.title}>Are you sure?</h2>
+        <p className={modal.copy}>
+          {run?.agentLabel ?? 'The agent'} will rebase{' '}
+          <code className="font-mono text-fg">{run?.branchName}</code> into a single commit and
+          write its message. Every change is kept; only the commit history of this task changes.
         </p>
 
-        <label className="toggle-field">
+        <label className={modal.toggle}>
           <input
+            className="mt-0.5"
             type="checkbox"
             checked={dontAskAgain}
             onChange={(event) => setDontAskAgain(event.target.checked)}
           />
-          <span>
-            <strong>Don&apos;t ask again</strong>
-            <small>Hand it straight to the agent from now on. Change this back in Settings.</small>
+          <span className="block">
+            <strong className="block">Don&apos;t ask again</strong>
+            <small className="block mt-1 text-dim leading-[1.4]">
+              Hand it straight to the agent from now on. Change this back in Settings.
+            </small>
           </span>
         </label>
 
-        <div className="modal-actions">
+        <div className={modal.actions}>
           <div />
-          <div>
-            <button className="ghost-btn" onClick={() => openRebase(null)}>
+          <div className="flex gap-2">
+            <button className={btn.ghost} onClick={() => openRebase(null)}>
               Cancel
             </button>
-            <button className="primary-btn" onClick={() => void confirm()}>
+            <button className={btn.primary} onClick={() => void confirm()}>
               Rebase
             </button>
           </div>

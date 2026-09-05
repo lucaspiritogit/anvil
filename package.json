@@ -6,11 +6,15 @@
   "author": "lucasignaciopirito@gmail.com",
   "license": "MIT",
   "scripts": {
+    "test:issue-tracker": "node scripts/test-issue-tracker.mjs",
     "postinstall": "electron-rebuild -f -o better-sqlite3 && node scripts/fix-pty-permissions.cjs",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "db:generate": "drizzle-kit generate",
+    "memory:generate": "drizzle-kit generate --config drizzle.memory.config.ts",
+    "memory:migrate": "drizzle-kit migrate --config drizzle.memory.config.ts",
+    "memory:inspect": "node scripts/memory-inspect.mjs",
     "db:drop": "node scripts/db.cjs drop",
     "db:reset": "node scripts/db.cjs reset",
     "start": "electron-vite preview",
@@ -19,18 +23,25 @@
     "rebuild": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.43",
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-pgvector": "^0.0.9",
     "@pierre/diffs": "^1.4.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
+    "ai": "^7.0.92",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.2",
     "node-pty": "^1.0.0",
+    "pg": "^8.23.0",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.6.1",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.2",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
@@ -40,6 +51,7 @@
     "electron-vite": "^2.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.7.2",
     "vite": "^5.4.11"
   }

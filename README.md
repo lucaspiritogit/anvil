@@ -27,10 +27,9 @@ stated well enough to run unattended. That constraint is the feature. Writing
 the task *is* the engineering, and it stays with the developer.
 
 **The agent works the way you would.** It gets a worktree, a branch, and your
-task. It uses Git normally and writes its own commit messages. Anvil does not
-intercept the workflow, impose a protocol for the agent to obey, or paraphrase
-the work back to you. What you see in the review view is what the agent actually
-did.
+task. It uses Git normally and writes its own commit messages. Anvil asks it to
+plan small issues and validate each one. It works through them sequentially,
+then presents the whole task result and local diff for your review.
 
 **Nothing is hidden.** The run log shows the agent's own output — its thinking,
 its tool calls, its errors — and every Git command Anvil runs on your behalf.
@@ -65,6 +64,52 @@ matching migration and commit it alongside the schema change.
 If your shell exports `ELECTRON_RUN_AS_NODE=1`, unset it first or Electron will
 boot as plain Node and fail to open a window.
 
+### Project memory
+
+SQLite stores app settings, projects, runs, issue trackers, comments, and logs. Project memory
+uses the `ProjectMemory` interface with two adapters:
+
+- PGlite is the desktop default. It runs PostgreSQL and pgvector inside Anvil and
+  persists under `~/.anvil-composer/memory/pglite`.
+- PostgreSQL supports self-hosted installations and a future managed backend.
+  Select it with `ANVIL_MEMORY_BACKEND=postgres` and
+  `ANVIL_MEMORY_DATABASE_URL`.
+
+Both adapters store memory derived from successful tasks. Each record contains
+the task, agent result, commit subjects, and a bounded patch excerpt. New tasks
+receive up to three related memories with a cosine similarity above 0.5.
+
+Ollama generates embeddings locally. For desktop development, start Ollama and
+run the app on the host:
+
+```
+cp .env.example .env
+docker compose up -d ollama
+docker compose run --rm ollama-pull
+set -a; . ./.env; set +a
+npm run dev
+```
+
+Run `docker compose up app` to test the self-hosted PostgreSQL adapter. Compose
+applies its Drizzle migrations, starts Ollama, downloads `mxbai-embed-large`,
+and runs Electron under Xvfb. The container has no interactive desktop window.
+
+`src/main/memory/schema.ts` declares the schema shared by PGlite and PostgreSQL.
+After changing it, run `npm run memory:generate` and commit the generated
+migration. The vector column has 1024 dimensions, matching
+`mxbai-embed-large`.
+
+Quit Anvil before inspecting its PGlite database, then run:
+
+```
+npm run memory:inspect
+npm run memory:inspect -- --project <project-id> --limit 50
+npm run memory:inspect -- --json
+```
+
+The inspector follows `ANVIL_MEMORY_BACKEND`. Set the PostgreSQL environment
+variables first when inspecting the self-hosted backend.
+
 ## Build an executable
 
 ```
@@ -77,18 +122,49 @@ npm run dist    # NSIS installer in release/
 1. Add a project folder from the sidebar.
 2. The project overview shows current work, tasks ready for review, and monthly
    usage against the limits set for that project.
-3. Hit **Start new task**, pick an agent, describe the work, and dispatch. The
-   run view streams the agent's output live.
-4. A successful task with code changes appears under **Ready for review**. Open
-   it to inspect its commits and local diff.
-5. In the **Changes** tab, select a line to leave a note on it. Notes stack as
-   drafts until you press **Send**, which puts the task back to running and
-   hands the whole batch to the agent that wrote the code.
+3. Hit **Start new task**, pick an agent, describe the work, and dispatch.
+   The agent organizes the task into up to 50 internal issues.
+4. Open **Output** to follow execution. Issues advance automatically after
+   validation, with no per-issue review or approval.
+5. When the task finishes, open **Changes** to review the cumulative local diff,
+   leave comments, or approve the task.
 6. Open the Terminal tab when you need to work in the project directly.
 
 Anvil does not manage provider credentials. Each agent uses whatever auth it is
 already configured with (for example `opencode auth login`), so a harness that
 works in your terminal works here unchanged.
+
+### Agent issue tracker
+
+The issue tracker is internal to agents. There is no Board UI or per-issue
+approval. SQLite stores its state in `task_issue_trackers`, including stable
+issue hashes, descriptions, checklists, validation evidence, labels, priorities,
+dependency hashes, and status. No issue files are written to the repository.
+
+The agent chooses up to 50 atomic issues. Planning uses unique temporary keys
+for dependencies; Anvil resolves them to hashes and rejects missing references,
+self-dependencies, and cycles. Priorities are `urgent`, `high`, `medium`, and
+`low`. Status progresses from `queued` to `working` to `complete`; failed or
+interrupted work becomes `blocked`.
+
+Anvil runs one issue at a time. All dependencies must be complete before an
+issue can start. Ready issues are selected by priority, then plan order. Agents
+are instructed not to delegate. Validation evidence is agent-reported, not an
+independent sandbox or verification service.
+
+Agent final messages use one `<anvil-issue-tracker>` JSON block. Planning returns
+`items` with `key`, `title`, `description`, `labels`, `priority`,
+`dependencies`, `status: "queued"`, `checklist`, and `validation`.
+Completion returns the current `id`, `status: "complete"`, a true value for
+each checklist entry, and nonempty `evidence`.
+
+Issues share one task worktree. Only after all issues complete does Anvil
+finalize Git delivery and offer the cumulative diff for user review. Invalid
+results or failed processes stop execution. Restarting preserves issue state
+and blocks interrupted work without automatically resuming it.
+
+Run `npm run test:issue-tracker` for backend scheduling, metadata validation,
+persistence, failure handling, and real Git delivery tests.
 
 ## Adding an agent
 
@@ -123,7 +199,10 @@ one-line fix in the registry.
   passed through untouched instead of being mangled by a shell.
 - Projects, settings, runs, comments, and run output are stored in
   `~/.anvil-composer/anvil.db`, through [Drizzle](https://orm.drizzle.team/)
-  on `better-sqlite3`. `src/main/db/schema.ts` is the single declaration of the
+  on `better-sqlite3`. Completed-task memory uses embedded PGlite by default or
+  PostgreSQL when `ANVIL_MEMORY_BACKEND=postgres`. Ollama generates embeddings
+  locally through `ANVIL_OLLAMA_BASE_URL`.
+  `src/main/db/schema.ts` is the single declaration of the SQLite
   schema; `npm run db:generate` diffs it and writes the next numbered migration
   into `src/main/db/migrations`, and the app applies whatever is outstanding
   when it opens the database. Never edit or rename a generated migration — the

@@ -1,10 +1,20 @@
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
 import { useStore } from '../state/store'
+import { btn, cn, deliveryTone, dot, field, statusTone } from '../ui'
+import { AgentIcon } from './AgentIcon'
 import { AgentRebaseModal } from './AgentRebaseModal'
 import { RebaseModal } from './RebaseModal'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
-import type { Run, RunComment, RunEvent, RunEventCategory } from '@shared/types'
+import type {
+  DeliveryStatus,
+  Run,
+  RunComment,
+  RunEvent,
+  RunEventCategory,
+  RunStatus
+} from '@shared/types'
 
 interface Props {
   run: Run
@@ -28,6 +38,10 @@ interface PatchFilesProps {
   onRemove: (id: string) => void
 }
 
+const PLACEHOLDER = 'mx-2 my-1 text-xs text-dim'
+/** The note and its composer share a card that hangs off a coloured spine. */
+const NOTE_CARD = 'px-3 py-2.5 my-1.5 bg-raised border-l-2 rounded-r-md'
+
 const PatchFiles = lazy(async () => {
   const [{ FileDiff }, { parsePatchFiles }] = await Promise.all([
     import('@pierre/diffs/react'),
@@ -47,7 +61,7 @@ const PatchFiles = lazy(async () => {
         () => parsePatchFiles(patch).flatMap((parsed) => parsed.files),
         [patch]
       )
-      if (files.length === 0) return <p className="empty">No file changes in this range.</p>
+      if (files.length === 0) return <p className={PLACEHOLDER}>No file changes in this range.</p>
       return (
         <>
           {files.map((file, index) => {
@@ -121,14 +135,20 @@ function CommentNote({
   onRemove: () => void
 }): JSX.Element {
   return (
-    <div className={`review-note ${comment.sentAt === null ? '' : 'review-note-sent'}`}>
-      <p>{comment.body}</p>
+    <div
+      className={cn(
+        NOTE_CARD,
+        'flex gap-3 items-start justify-between',
+        comment.sentAt === null ? 'border-l-accent' : 'border-l-dim opacity-70'
+      )}
+    >
+      <p className="text-[13px] whitespace-pre-wrap">{comment.body}</p>
       {comment.sentAt === null ? (
-        <button className="text-btn" onClick={onRemove}>
+        <button className={btn.text} onClick={onRemove}>
           Remove
         </button>
       ) : (
-        <span className="review-note-status">Sent</span>
+        <span className="flex-none text-[11px] text-dim">Sent</span>
       )}
     </div>
   )
@@ -143,8 +163,9 @@ function CommentComposer({
 }): JSX.Element {
   const [body, setBody] = useState('')
   return (
-    <div className="review-composer">
+    <div className={cn(NOTE_CARD, 'border-l-warn')}>
       <textarea
+        className={field.textarea}
         autoFocus
         rows={3}
         value={body}
@@ -155,11 +176,11 @@ function CommentComposer({
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && body.trim()) onSubmit(body)
         }}
       />
-      <div className="review-composer-actions">
-        <button className="ghost-btn" onClick={onCancel}>
+      <div className="flex gap-2 justify-end mt-2">
+        <button className={btn.ghost} onClick={onCancel}>
           Cancel
         </button>
-        <button className="primary-btn" disabled={!body.trim()} onClick={() => onSubmit(body)}>
+        <button className={btn.primary} disabled={!body.trim()} onClick={() => onSubmit(body)}>
           Add comment
         </button>
       </div>
@@ -176,26 +197,101 @@ const CATEGORY_LABEL: Record<RunEventCategory, string> = {
   error: 'error'
 }
 
+/* One colour per stream, so a log skims by kind. A row that reports the agent
+ * never committing is amber whatever category carried it. */
+const KIND_TONE: Record<RunEventCategory, string> = {
+  message: 'text-dim',
+  thinking: 'text-violet',
+  tool_use: 'text-accent',
+  tool_result: 'text-cyan',
+  system: 'text-ok',
+  error: 'text-danger'
+}
+
+const TEXT_TONE: Record<RunEventCategory, string> = {
+  message: '',
+  thinking: 'italic text-dim',
+  tool_use: '',
+  tool_result: 'text-dim',
+  system: 'text-dim',
+  error: 'text-danger'
+}
+
 function LogRow({ event }: { event: RunEvent }): JSX.Element {
   const [expanded, setExpanded] = useState(false)
+  const uncommitted = event.kind === 'did_not_commit'
   return (
     <div
-      className={`log-row log-${event.category} event-${event.kind}${
-        expanded ? ' log-row-expanded' : ''
-      }`}
+      className="grid grid-cols-[104px_1fr] gap-4 py-[5px] cursor-pointer border-b border-line/55 hover:bg-hover/45"
       onClick={() => setExpanded((value) => !value)}
     >
-      <span className="log-kind">{CATEGORY_LABEL[event.category]}</span>
-      <span className="log-text">{event.text || ' '}</span>
+      <span
+        className={cn(
+          'overflow-hidden text-ellipsis whitespace-nowrap select-none',
+          uncommitted ? 'text-warn' : KIND_TONE[event.category]
+        )}
+      >
+        {CATEGORY_LABEL[event.category]}
+      </span>
+      {/* Clicking a row lifts the 3-line clamp so long tool output stays reachable. */}
+      <span
+        className={cn(
+          'whitespace-pre-wrap break-words',
+          expanded ? 'line-clamp-none' : 'line-clamp-3',
+          uncommitted ? 'text-warn' : TEXT_TONE[event.category]
+        )}
+      >
+        {event.text || ' '}
+      </span>
     </div>
   )
 }
 
-function duration(run: Run): string {
-  const end = run.endedAt ?? Date.now()
-  const seconds = Math.max(0, Math.round((end - run.startedAt) / 1000))
-  if (seconds < 60) return `${seconds}s`
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+const STATUS_LABEL: Record<RunStatus, string> = {
+  running: 'Running',
+  succeeded: 'Succeeded',
+  failed: 'Failed',
+  cancelled: 'Cancelled'
+}
+
+const DELIVERY_LABEL: Record<DeliveryStatus, string> = {
+  preparing: 'Preparing branch',
+  working: 'Branch active',
+  finalizing: 'Saving branch',
+  did_not_commit: 'Finisher committing',
+  reviewable: 'Ready to review',
+  approved: 'Approved',
+  no_changes: 'No code changes',
+  agent_failed: 'Code not reviewable',
+  failed: 'Delivery failed',
+  unavailable: 'Not tracked by Git'
+}
+
+/** One cell of the header's metric strip: a labelled reading of the run. */
+function StatBlock({
+  label,
+  value,
+  detail,
+  tone
+}: {
+  label: string
+  /** A node, not a string, so a stat can split itself into parts. */
+  value: ReactNode
+  detail?: string
+  tone: RunStatus
+}): JSX.Element {
+  return (
+    <div
+      className="flex flex-col gap-[5px] px-3.5 py-2.5 border-l border-line first:border-l-0"
+      title={detail}
+    >
+      <span className="flex gap-[7px] items-center text-xs text-fg">
+        <span className={dot(tone)} />
+        {label}
+      </span>
+      <span className="pl-3.5 font-mono text-[13px] text-dim">{value}</span>
+    </div>
+  )
 }
 
 export function RunView({ run }: Props): JSX.Element {
@@ -223,14 +319,19 @@ export function RunView({ run }: Props): JSX.Element {
   const approved = run.deliveryStatus === 'approved'
 
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [now, setNow] = useState(Date.now())
   const [follow, setFollow] = useState(true)
-  const [panel, setPanel] = useState<'output' | 'changes'>(
-    run.deliveryStatus === 'reviewable' ? 'changes' : 'output'
-  )
+  const [panel, setPanel] = useState<'output' | 'changes'>('output')
 
   useEffect(() => {
     if (!events) void openRun(run.id)
   }, [events, openRun, run.id])
+
+  useEffect(() => {
+    if (run.status !== 'running') return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [run.status])
 
   useEffect(() => {
     if (follow) bottomRef.current?.scrollIntoView({ block: 'end' })
@@ -255,57 +356,86 @@ export function RunView({ run }: Props): JSX.Element {
   }
 
   return (
-    <div className="runview">
+    <div className="flex flex-col h-full min-h-0">
       {rebaseRunId === run.id &&
         (settings?.rebaseMode === 'agent' ? (
           <AgentRebaseModal runId={run.id} />
         ) : (
           diff && <RebaseModal runId={run.id} commits={diff.commits} />
         ))}
-      <div className="run-meta">
-        <span className={`badge badge-${run.status}`}>Agent {run.status}</span>
-        <span className={`badge delivery-badge delivery-${run.deliveryStatus}`}>
-          {run.deliveryStatus === 'approved'
-            ? 'Approved'
-          : run.deliveryStatus === 'reviewable'
-            ? 'Reviewable'
-            : run.deliveryStatus === 'did_not_commit'
-              ? 'Finisher committing'
-            : run.deliveryStatus === 'no_changes'
-              ? 'No code changes'
-              : run.deliveryStatus === 'finalizing'
-                ? 'Saving branch'
-                : run.deliveryStatus === 'working'
-                  ? 'Branch active'
-                  : run.deliveryStatus === 'unavailable'
-                    ? 'Not tracked by Git'
-                  : run.deliveryStatus === 'agent_failed'
-                    ? 'Code not reviewable'
-                    : run.deliveryStatus === 'failed'
-                      ? 'Delivery failed'
-                      : run.deliveryStatus}
-        </span>
-        <span className="meta-item">{run.agentLabel}</span>
-        {run.model && <span className="meta-item mono">{run.model}</span>}
-        <span className="meta-item">{duration(run)}</span>
-        {run.status === 'running' && (
-          <button className="danger-btn" onClick={() => void cancelRun(run.id)}>
-            Stop
-          </button>
+      <header className="flex flex-col gap-2.5 px-4 pt-3.5 pb-3">
+        <div className="flex gap-3 items-start justify-between">
+          <h1 className="text-[17px] font-semibold leading-[1.35] text-fg">{run.title}</h1>
+          {run.status === 'running' && (
+            <button className={btn.danger} onClick={() => void cancelRun(run.id)}>
+              Stop
+            </button>
+          )}
+        </div>
+
+        <div className="flex gap-2.5 items-center">
+          <AgentIcon agentId={run.agentId} label={run.agentLabel} size={26} />
+          <div className="flex flex-col gap-px min-w-0">
+            <span className="text-[13px] font-semibold text-fg">{run.agentLabel}</span>
+            {run.model && (
+              <span className="overflow-hidden font-mono text-xs text-dim text-ellipsis whitespace-nowrap">
+                {run.model}
+              </span>
+            )}
+          </div>
+          <div className="flex gap-3 items-center ml-auto pl-3 text-xs">
+            <span className={statusTone(run.status)}>{STATUS_LABEL[run.status]}</span>
+            <span className={deliveryTone(run.deliveryStatus)}>
+              {DELIVERY_LABEL[run.deliveryStatus] ?? run.deliveryStatus}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid auto-cols-[minmax(0,1fr)] grid-flow-col overflow-hidden bg-raised border border-line rounded-card">
+          <StatBlock label="Elapsed" value={formatDuration(run, now)} tone={run.status} />
+          <StatBlock
+            label="Tokens"
+            value={
+              <span className="flex flex-wrap gap-x-2.5">
+                <span>
+                  {formatTokens(run.inputTokens)}
+                  <span className="ml-1 text-dim/60">in</span>
+                </span>
+                <span>
+                  {formatTokens(run.outputTokens)}
+                  <span className="ml-1 text-dim/60">out</span>
+                </span>
+              </span>
+            }
+            detail={tokenBreakdown(run)}
+            tone={run.status}
+          />
+          <StatBlock label="Cost" value={formatCost(run.costUsd)} tone={run.status} />
+        </div>
+
+        {run.prompt.trim() !== run.title && (
+          <p className="text-[13px] text-dim whitespace-pre-wrap">{run.prompt}</p>
         )}
-      </div>
+      </header>
 
-      <div className="run-prompt">{run.prompt}</div>
+      {run.error && <div className="px-4 py-2.5 text-danger bg-danger/8">{run.error}</div>}
 
-      {run.error && <div className="run-error">{run.error}</div>}
-
-      <div className="run-panels">
-        <button className={panel === 'output' ? 'run-panel-active' : ''} onClick={() => setPanel('output')}>
+      <div className="flex gap-1 px-4 pt-2 border-b border-line">
+        <button
+          className={cn(
+            'px-2.5 pt-[7px] pb-[9px] border-b-2',
+            panel === 'output' ? 'text-fg border-b-accent' : 'text-dim border-b-transparent'
+          )}
+          onClick={() => setPanel('output')}
+        >
           Output
         </button>
         {(run.deliveryStatus === 'reviewable' || approved) && (
           <button
-            className={panel === 'changes' ? 'run-panel-active' : ''}
+            className={cn(
+              'px-2.5 pt-[7px] pb-[9px] border-b-2',
+              panel === 'changes' ? 'text-fg border-b-accent' : 'text-dim border-b-transparent'
+            )}
             onClick={() => setPanel('changes')}
           >
             Changes {run.filesChanged > 0 ? `(${run.filesChanged})` : ''}
@@ -314,29 +444,37 @@ export function RunView({ run }: Props): JSX.Element {
       </div>
 
       {panel === 'output' ? (
-        <div className="run-log" onScroll={onScroll}>
-          {!events && <p className="empty">Loading output…</p>}
-          {events?.length === 0 && <p className="empty">Waiting for output…</p>}
+        <div
+          className="flex-1 min-h-0 px-4 py-3 overflow-y-auto font-mono text-[12.5px] leading-[1.55]"
+          onScroll={onScroll}
+        >
+          {!events && <p className={PLACEHOLDER}>Loading output…</p>}
+          {events?.length === 0 && <p className={PLACEHOLDER}>Waiting for output…</p>}
           {events?.map((event) => (
             <LogRow key={event.id} event={event} />
           ))}
           <div ref={bottomRef} />
         </div>
       ) : (
-        <div className="review-view">
-          <div className="review-bar">
-            <div className="review-summary">
-              <div>
-                <strong>{run.branchName}</strong>
+        <div className="flex-1 min-h-0 px-4 pt-3.5 pb-6 overflow-auto [&_[data-diffs]]:border [&_[data-diffs]]:border-line [&_[data-diffs]]:rounded-md">
+          {/*
+           * Pinned to the top of the scrolling review pane. Negative margins pull
+           * it over the pane's own padding so diff content passes underneath, and
+           * it outranks the diff renderer's own sticky headers.
+           */}
+          <div className="sticky top-0 z-[5] -mx-4 -mt-3.5 mb-3.5 px-4 py-3 bg-canvas border-b border-line">
+            <div className="flex items-center justify-between text-xs text-dim">
+              <div className="flex gap-2 items-baseline">
+                <strong className="font-mono text-fg">{run.branchName}</strong>
                 <span>from {run.baseBranch}</span>
               </div>
               <span>
-                {run.filesChanged} files · <b className="additions">+{run.additions}</b> ·{' '}
-                <b className="deletions">-{run.deletions}</b>
+                {run.filesChanged} files · <b className="text-ok">+{run.additions}</b> ·{' '}
+                <b className="text-danger">-{run.deletions}</b>
               </span>
             </div>
-            <div className="review-send">
-              <span className="review-pending">
+            <div className="flex gap-3 items-center justify-end mt-2.5">
+              <span className="text-xs text-dim">
                 {approved
                   ? 'Approved'
                   : pending.length
@@ -344,14 +482,14 @@ export function RunView({ run }: Props): JSX.Element {
                     : 'Select a line to comment'}
               </span>
               <button
-                className="primary-btn"
+                className={btn.primary}
                 disabled={approved || !pending.length || sending}
                 onClick={() => void sendComments(run.id)}
               >
                 {sending ? 'Sending…' : 'Send'}
               </button>
               <button
-                className="approve-btn"
+                className="px-3.5 py-[7px] rounded-md font-medium whitespace-nowrap bg-ok text-canvas disabled:bg-transparent disabled:text-ok disabled:border disabled:border-ok/40 disabled:cursor-default"
                 disabled={approved}
                 title={approved ? 'Already approved' : 'Accept this work and close the review'}
                 onClick={() => void approveRun(run.id)}
@@ -359,18 +497,18 @@ export function RunView({ run }: Props): JSX.Element {
                 {approved ? 'Approved' : 'Approve'}
               </button>
             </div>
-            {commentError && <div className="review-error">{commentError}</div>}
+            {commentError && <div className="mt-2 text-xs text-danger">{commentError}</div>}
           </div>
-          {!diff && !diffError && <p className="empty">Loading code changes…</p>}
-          {diffError && <div className="run-error">{diffError}</div>}
+          {!diff && !diffError && <p className={PLACEHOLDER}>Loading code changes…</p>}
+          {diffError && <div className="px-4 py-2.5 text-danger bg-danger/8">{diffError}</div>}
           {diff && (
             <>
-              <div className="commit-head">
-                <span className="commit-count">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-dim">
                   {diff.commits.length} commit{diff.commits.length === 1 ? '' : 's'}
                 </span>
                 <button
-                  className="ghost-btn"
+                  className={btn.ghost}
                   disabled={approved || diff.commits.length < 2 || rebasing}
                   title={
                     diff.commits.length < 2
@@ -390,15 +528,18 @@ export function RunView({ run }: Props): JSX.Element {
                   {rebasing ? 'Rebasing…' : 'Rebase'}
                 </button>
               </div>
-              <div className="commit-list">
+              <div className="mb-3 overflow-hidden border border-line rounded-md">
                 {diff.commits.map((commit) => (
-                  <div key={commit.sha}>
-                    <code>{commit.sha.slice(0, 8)}</code>
+                  <div
+                    key={commit.sha}
+                    className="flex gap-2.5 px-2.5 py-[7px] text-[11px] border-b border-line last:border-b-0"
+                  >
+                    <code className="text-accent">{commit.sha.slice(0, 8)}</code>
                     <span>{commit.subject}</span>
                   </div>
                 ))}
               </div>
-              <Suspense fallback={<p className="empty">Loading diff renderer…</p>}>
+              <Suspense fallback={<p className={PLACEHOLDER}>Loading diff renderer…</p>}>
                 <PatchFiles
                   patch={diff.patch}
                   comments={comments ?? []}
@@ -417,7 +558,10 @@ export function RunView({ run }: Props): JSX.Element {
       )}
 
       {panel === 'output' && !follow && (
-        <button className="follow-btn" onClick={() => setFollow(true)}>
+        <button
+          className="absolute right-[22px] bottom-[18px] px-3 py-1.5 text-xs bg-hover border border-line rounded-full"
+          onClick={() => setFollow(true)}
+        >
           Jump to latest
         </button>
       )}

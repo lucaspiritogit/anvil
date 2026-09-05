@@ -1,3 +1,27 @@
+import type { Keybindings } from './keybindings'
+
+export interface Issue {
+  id: string
+  title: string
+  description: string
+  checklist: string[]
+  validation: string
+  labels: string[]
+  priority: 'urgent' | 'high' | 'medium' | 'low'
+  dependencies: string[]
+  status: 'queued' | 'working' | 'blocked' | 'complete'
+  evidence?: string
+  completedAt?: number
+}
+export interface IssueTracker {
+  runId: string
+  limit: 50
+  phase: 'planning' | 'working' | 'complete' | 'blocked'
+  items: Issue[]
+  error: string | null
+  eventOffset: number
+}
+
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type DeliveryStatus =
   | 'preparing'
@@ -33,6 +57,27 @@ export interface ProjectGitStatus {
   pathExists: boolean
 }
 
+/**
+ * Where an agent's selectable models come from. `command` runs a CLI that
+ * prints one model identifier per line; `static` is a list Anvil ships for
+ * CLIs that cannot report their own.
+ */
+export type ModelSource =
+  | { kind: 'command'; command: string; args: string[] }
+  | { kind: 'static'; models: string[] }
+
+/**
+ * The models one agent offers, spelled the way that agent's CLI expects them.
+ * Deliberately generic: anything that can produce an array of strings — a
+ * provider CLI, a hardcoded list, an API — fills this in the same way.
+ */
+export interface ProviderModelList {
+  agentId: string
+  models: string[]
+  /** Why the list came back empty; unset when the source succeeded. */
+  error?: string
+}
+
 export interface AgentDefinition {
   id: string
   label: string
@@ -46,7 +91,9 @@ export interface AgentDefinition {
    */
   resumeArgs?: string[]
   defaultModel?: string
-  outputProtocol?: 'opencode-json' | 'claude-json' | 'codex-json' | 'pi-json'
+  /** How to enumerate this agent's models. Omitted when the CLI takes none. */
+  models?: ModelSource
+  outputProtocol?: 'opencode-json' | 'codex-json' | 'pi-json'
 }
 
 export type StreamName = 'stdout' | 'stderr' | 'system'
@@ -170,4 +217,6 @@ export interface Settings {
   rebaseMode: RebaseMode
   /** Whether handing a rebase to the agent asks for confirmation first. */
   confirmRebase: boolean
+  /** Accelerator per shortcut, e.g. `{ toggleSidebar: 'Mod+B' }`. */
+  keybindings: Keybindings
 }

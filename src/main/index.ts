@@ -13,7 +13,11 @@ function createWindow(): void {
     show: false,
     backgroundColor: '#0d0f12',
     autoHideMenuBar: true,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // The window's own chrome is hidden and the traffic lights are placed into
+    // the app's top bar, next to the brand, so no vertical space is spent on a
+    // native title bar. The renderer reserves the matching gutter.
+    titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
+    trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 19 } : undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -53,6 +57,9 @@ app.whenReady().then(() => {
   app.on('before-quit', () => {
     services.runner.cancelAll()
     services.terminals.disposeAll()
+    void services.projectMemory
+      ?.close()
+      .catch((error) => console.warn('Could not close project memory:', error))
   })
 
   createWindow()

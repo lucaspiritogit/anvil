@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type {
   AgentDefinition,
+  ProviderModelList,
   RebaseStep,
   Project,
   ProjectGitStatus,
@@ -20,6 +21,9 @@ interface AnvilState {
   projects: Project[]
   runs: Run[]
   agents: AgentDefinition[]
+  /** Model catalogues, one per agent, fetched the first time they are needed. */
+  modelsByAgent: Record<string, ProviderModelList>
+  loadingModelsAgentId: string | null
   settings: Settings | null
 
   activeProjectId: string | null
@@ -38,6 +42,7 @@ interface AnvilState {
 
   newTaskOpen: boolean
   settingsOpen: boolean
+  sidebarCollapsed: boolean
 
   load: () => Promise<void>
   addProject: () => Promise<void>
@@ -66,6 +71,7 @@ interface AnvilState {
   removeComment: (runId: string, id: string) => Promise<void>
   sendComments: (runId: string) => Promise<void>
 
+  loadAgentModels: (agentId: string) => Promise<void>
   startRun: (input: { agentId: string; prompt: string; model?: string }) => Promise<void>
   cancelRun: (runId: string) => Promise<void>
   openRun: (runId: string) => Promise<void>
@@ -77,6 +83,7 @@ interface AnvilState {
   applyRunUpdate: (run: Run) => void
 
   saveSettings: (patch: Partial<Settings>) => Promise<void>
+  toggleSidebar: () => void
   setNewTaskOpen: (open: boolean) => void
   setSettingsOpen: (open: boolean) => void
 }
@@ -86,6 +93,8 @@ export const useStore = create<AnvilState>((set, get) => ({
   projects: [],
   runs: [],
   agents: [],
+  modelsByAgent: {},
+  loadingModelsAgentId: null,
   settings: null,
 
   activeProjectId: null,
@@ -104,6 +113,7 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   newTaskOpen: false,
   settingsOpen: false,
+  sidebarCollapsed: false,
 
   load: async () => {
     const [projects, runs, agents, settings] = await Promise.all([
@@ -172,6 +182,22 @@ export const useStore = create<AnvilState>((set, get) => ({
         gitInitPending: null,
         gitInitError: error instanceof Error ? error.message : String(error)
       })
+    }
+  },
+
+  loadAgentModels: async (agentId) => {
+    if (get().modelsByAgent[agentId] || get().loadingModelsAgentId === agentId) return
+    set({ loadingModelsAgentId: agentId })
+    try {
+      const list = await window.anvil.agents.models(agentId)
+      set((s) => ({ modelsByAgent: { ...s.modelsByAgent, [agentId]: list } }))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      set((s) => ({
+        modelsByAgent: { ...s.modelsByAgent, [agentId]: { agentId, models: [], error: message } }
+      }))
+    } finally {
+      set((s) => (s.loadingModelsAgentId === agentId ? { loadingModelsAgentId: null } : s))
     }
   },
 
@@ -333,13 +359,17 @@ export const useStore = create<AnvilState>((set, get) => ({
     }),
 
   applyRunUpdate: (run) =>
-    set((s) => ({ runs: s.runs.map((r) => (r.id === run.id ? run : r)) })),
+    set((s) => ({
+      runs: s.runs.map((r) => (r.id === run.id ? run : r)),
+      diffsByRun: Object.fromEntries(Object.entries(s.diffsByRun).filter(([id]) => id !== run.id))
+    })),
 
   saveSettings: async (patch) => {
     const settings = await window.anvil.settings.set(patch)
     set({ settings })
   },
 
+  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setNewTaskOpen: (open) => set({ newTaskOpen: open }),
   setSettingsOpen: (open) => set({ settingsOpen: open })
 }))

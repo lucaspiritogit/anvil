@@ -5,20 +5,38 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import * as schema from './db/schema'
-import type { Project, Run, RunComment, RunEvent, Settings } from '../shared/types'
+import { DEFAULT_KEYBINDINGS, normalizeKeybindings } from '../shared/keybindings'
+import type { Project, Run, RunComment, RunEvent, Settings, IssueTracker } from '../shared/types'
 
 const DEFAULT_SETTINGS: Settings = {
   defaultAgentId: 'opencode',
   defaultModel: 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
   rebaseMode: 'manual',
-  confirmRebase: true
+  confirmRebase: true,
+  keybindings: DEFAULT_KEYBINDINGS
 }
 
 /** The settings table stores text, so non-string values are encoded here. */
-const SETTING_KEYS = ['defaultAgentId', 'defaultModel', 'rebaseMode', 'confirmRebase'] as const
+const SETTING_KEYS = [
+  'defaultAgentId',
+  'defaultModel',
+  'rebaseMode',
+  'confirmRebase',
+  'keybindings'
+] as const
 
 function encodeSetting(key: keyof Settings, value: Settings[keyof Settings]): string {
-  return key === 'confirmRebase' ? String(value === true) : String(value)
+  if (key === 'confirmRebase') return String(value === true)
+  if (key === 'keybindings') return JSON.stringify(value)
+  return String(value)
+}
+
+function decodeKeybindings(value: string): Settings['keybindings'] {
+  try {
+    return normalizeKeybindings(JSON.parse(value))
+  } catch {
+    return DEFAULT_KEYBINDINGS
+  }
 }
 
 const { projects, runComments, runEvents, runs, settings } = schema
@@ -153,6 +171,12 @@ export class Store {
 
     this.seedSettings()
     this.markInterruptedRunsFailed()
+    for (const row of this.db.select().from(schema.taskIssueTrackers).all()) {
+      if (row.state.phase === 'planning' || row.state.phase === 'working') {
+        this.saveIssueTracker({ ...row.state, phase: 'blocked', error: 'Interrupted by app restart.',
+          items: row.state.items.map((item) => item.status === 'working' ? { ...item, status: 'blocked' } : item) })
+      }
+    }
   }
 
   private seedSettings(): void {
@@ -188,6 +212,7 @@ export class Store {
       .reduce<Settings>(
         (current, row) => {
           if (row.key === 'confirmRebase') current.confirmRebase = row.value === 'true'
+          else if (row.key === 'keybindings') current.keybindings = decodeKeybindings(row.value)
           else if (row.key === 'rebaseMode') {
             current.rebaseMode = row.value === 'agent' ? 'agent' : 'manual'
           } else if (row.key === 'defaultAgentId' || row.key === 'defaultModel') {
@@ -261,7 +286,7 @@ export class Store {
 
   getRun(id: string): Run | undefined {
     const row = this.db.select().from(runs).where(eq(runs.id, id)).get()
-    return row ? toRun(row) : undefined
+    return row ? { ...toRun(row), } : undefined
   }
 
   /** Every note on a run, drafts and sent alike, oldest first. */
@@ -321,5 +346,15 @@ export class Store {
 
   close(): void {
     this.sqlite.close()
+  }
+
+  getIssueTracker(runId: string): IssueTracker | undefined {
+    return this.db.select().from(schema.taskIssueTrackers).where(eq(schema.taskIssueTrackers.runId, runId)).get()?.state
+  }
+
+  saveIssueTracker(tracker: IssueTracker): IssueTracker {
+    this.db.insert(schema.taskIssueTrackers).values({ runId: tracker.runId, state: tracker })
+      .onConflictDoUpdate({ target: schema.taskIssueTrackers.runId, set: { state: tracker } }).run()
+    return tracker
   }
 }

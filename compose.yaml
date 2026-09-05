@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: anvil_memory
+      POSTGRES_USER: anvil
+      POSTGRES_PASSWORD: anvil
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anvil -d anvil_memory"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    command: ["pull", "mxbai-embed-large"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - ollama_data:/root/.ollama
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: npm run memory:migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ANVIL_MEMORY_DATABASE_URL: postgresql://anvil:anvil@postgres:5432/anvil_memory
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      ollama-pull:
+        condition: service_completed_successfully
+    environment:
+      ANVIL_MEMORY_BACKEND: postgres
+      ANVIL_MEMORY_DATABASE_URL: postgresql://anvil:anvil@postgres:5432/anvil_memory
+      ANVIL_OLLAMA_BASE_URL: http://ollama:11434/v1
+      ANVIL_MEMORY_EMBEDDING_MODEL: mxbai-embed-large
+    ports:
+      - "5173:5173"
+    volumes:
+      - sqlite_data:/home/node/.anvil-composer
+      - ./:/workspace
+
+volumes:
+  postgres_data:
+  ollama_data:
+  sqlite_data:

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
   AgentDefinition,
+  ProviderModelList,
   RebaseStep,
   Project,
   ProjectGitStatus,
@@ -18,12 +19,16 @@ function subscribe<T>(channel: string, handler: (payload: T) => void): () => voi
 }
 
 const api = {
+  /** Drives the platform-dependent half of the keyboard shortcuts. */
+  platform: process.platform,
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
     set: (patch: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke('settings:set', patch)
   },
   agents: {
-    list: (): Promise<AgentDefinition[]> => ipcRenderer.invoke('agents:list')
+    list: (): Promise<AgentDefinition[]> => ipcRenderer.invoke('agents:list'),
+    models: (agentId: string): Promise<ProviderModelList> =>
+      ipcRenderer.invoke('agents:models', agentId)
   },
   projects: {
     list: (): Promise<Project[]> => ipcRenderer.invoke('projects:list'),

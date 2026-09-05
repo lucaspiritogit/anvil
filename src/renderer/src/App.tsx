@@ -4,7 +4,11 @@ import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
 import { NewTaskModal } from './components/NewTaskModal'
 import { SettingsModal } from './components/SettingsModal'
+import { matchesAccelerator } from './keys'
+import { cn } from './ui'
 import { useStore } from './state/store'
+import { DEFAULT_KEYBINDINGS, SHORTCUTS } from '@shared/keybindings'
+import type { ShortcutId } from '@shared/keybindings'
 
 export function App(): JSX.Element {
   const ready = useStore((s) => s.ready)
@@ -13,10 +17,33 @@ export function App(): JSX.Element {
   const applyRunUpdate = useStore((s) => s.applyRunUpdate)
   const newTaskOpen = useStore((s) => s.newTaskOpen)
   const settingsOpen = useStore((s) => s.settingsOpen)
+  const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
+  const toggleSidebar = useStore((s) => s.toggleSidebar)
+  const keybindings = useStore((s) => s.settings?.keybindings) ?? DEFAULT_KEYBINDINGS
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // One listener drives every shortcut, so a new binding is an entry here plus
+  // one in SHORTCUTS. The settings capture field stops propagation while it is
+  // recording, which is what keeps a chord from firing as it is being bound.
+  useEffect(() => {
+    const actions: Record<ShortcutId, () => void> = { toggleSidebar }
+    const onKey = (event: KeyboardEvent): void => {
+      // Auto-repeat fires while a chord is held down; a shortcut is an action
+      // per press, so only the first event of a hold counts.
+      if (event.repeat) return
+      for (const shortcut of SHORTCUTS) {
+        if (!matchesAccelerator(event, keybindings[shortcut.id])) continue
+        event.preventDefault()
+        actions[shortcut.id]()
+        return
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [keybindings, toggleSidebar])
 
   useEffect(() => {
     const offEvent = window.anvil.runs.onEvent(applyEvent)
@@ -28,11 +55,18 @@ export function App(): JSX.Element {
   }, [applyEvent, applyRunUpdate])
 
   if (!ready) {
-    return <div className="boot">Loading…</div>
+    return <div className="grid place-items-center h-full text-dim">Loading…</div>
   }
 
+  // Collapsing closes the grid column while the sidebar slides out behind it,
+  // so the workspace grows in step with the panel leaving.
   return (
-    <div className="app">
+    <div
+      className={cn(
+        'grid h-full transition-[grid-template-columns] duration-[180ms] ease-[ease] motion-reduce:transition-none',
+        sidebarCollapsed ? 'grid-cols-[0_1fr]' : 'grid-cols-[232px_1fr]'
+      )}
+    >
       <Sidebar />
       <Workspace />
       {newTaskOpen && <NewTaskModal />}

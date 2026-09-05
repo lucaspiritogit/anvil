@@ -162,39 +162,6 @@ function parseOpenCode(event: JsonObject): ParsedAgentLine {
   }
 }
 
-function parseClaude(event: JsonObject): ParsedAgentLine {
-  if (event.type === 'assistant') {
-    const message = object(event.message)
-    return { parts: contentParts(message?.content, 'message') }
-  }
-  // Tool results come back as a synthetic user turn.
-  if (event.type === 'user') {
-    const message = object(event.message)
-    return { parts: contentParts(message?.content, 'tool_result') }
-  }
-  if (event.type !== 'result') return NOTHING
-
-  const usage = object(event.usage)
-  const inputTokens = number(usage?.input_tokens)
-  const outputTokens = number(usage?.output_tokens)
-  const cachedTokens =
-    number(usage?.cache_creation_input_tokens) + number(usage?.cache_read_input_tokens)
-  return {
-    parts:
-      event.is_error === true
-        ? part(string(event.result) ?? 'Claude Code reported an error', 'error', 'stderr')
-        : [],
-    usageMode: 'set',
-    usage: {
-      inputTokens,
-      outputTokens,
-      cachedTokens,
-      totalTokens: inputTokens + outputTokens + cachedTokens,
-      costUsd: typeof event.total_cost_usd === 'number' ? event.total_cost_usd : null
-    }
-  }
-}
-
 function parseCodex(event: JsonObject): ParsedAgentLine {
   if (event.type === 'item.completed') {
     const item = object(event.item)
@@ -282,7 +249,7 @@ const SESSION_KEYS = ['sessionID', 'session_id', 'sessionId']
 
 /**
  * Pulls the agent's session id out of an event, wherever the protocol puts it.
- * Agents spell and nest it differently (opencode `part.sessionID`, Claude Code
+ * Agents spell and nest it differently (opencode `part.sessionID`, Codex
  * `session_id` at the top level), so this walks a couple of levels rather than
  * encoding one shape per protocol.
  */
@@ -317,11 +284,9 @@ export function parseAgentLine(
   const parsed =
     protocol === 'opencode-json'
       ? parseOpenCode(event)
-      : protocol === 'claude-json'
-        ? parseClaude(event)
-        : protocol === 'codex-json'
-          ? parseCodex(event)
-          : parsePi(event)
+      : protocol === 'codex-json'
+        ? parseCodex(event)
+        : parsePi(event)
 
   const sessionId = findSessionId(event)
   return sessionId ? { ...parsed, sessionId } : parsed
