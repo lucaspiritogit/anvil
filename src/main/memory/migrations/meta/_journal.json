@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1788553689585,
-      "tag": "0000_enable_vector",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1788553690089,
-      "tag": "0001_brainy_phil_sheldon",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1788554516003,
-      "tag": "0002_clear_openai_embeddings",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1788554548253,
-      "tag": "0003_curious_spot",
+      "when": 1788622041443,
+      "tag": "0000_initial",
       "breakpoints": true
     }
   ]

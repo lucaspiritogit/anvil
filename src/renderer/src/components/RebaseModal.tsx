@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../state/store'
 import { btn, cn, field, modal } from '../ui'
-import type { RebaseAction, RebaseStep, RunCommit } from '@shared/types'
+import type { RebaseAction, RebaseStep, TaskCommit } from '@shared/types'
 
 const ACTIONS: { value: RebaseAction; label: string; hint: string }[] = [
   { value: 'pick', label: 'pick', hint: 'Keep as its own commit' },
@@ -24,11 +24,11 @@ const CONTROL = 'px-2 py-[5px] text-xs'
  * `git rebase -i` writes its todo list, so "squash" folding upward reads the
  * same as it does in git.
  */
-export function RebaseModal({ runId, commits }: { runId: string; commits: RunCommit[] }): JSX.Element {
+export function RebaseModal({ taskId, commits }: { taskId: string; commits: TaskCommit[] }): JSX.Element {
   const openRebase = useStore((s) => s.openRebase)
-  const rebaseRun = useStore((s) => s.rebaseRun)
-  const rebasing = useStore((s) => s.rebasing === runId)
-  const run = useStore((s) => s.runs.find((item) => item.id === runId))
+  const rebaseTask = useStore((s) => s.rebaseTask)
+  const rebasing = useStore((s) => s.rebasing === taskId)
+  const task = useStore((s) => s.tasks.find((item) => item.id === taskId))
   const error = useStore((s) => s.commentError)
 
   // `getDiff` returns newest first; a rebase todo list reads oldest first.
@@ -66,7 +66,7 @@ export function RebaseModal({ runId, commits }: { runId: string; commits: RunCom
         className={cn(modal.panel, modal.width.wide)}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className={modal.title}>Rebase {run?.branchName}</h2>
+        <h2 className={modal.title}>Rebase {task?.branchName}</h2>
         <p className={modal.copy}>
           Oldest first, as in <code className="font-mono text-fg">git rebase -i</code>. A{' '}
           <code className="font-mono text-fg">squash</code> folds into the nearest{' '}
@@ -129,7 +129,7 @@ export function RebaseModal({ runId, commits }: { runId: string; commits: RunCom
             <button
               className={btn.primary}
               disabled={!canApply}
-              onClick={() => void rebaseRun(runId, steps)}
+              onClick={() => void rebaseTask(taskId, steps)}
             >
               {rebasing ? 'Rebasing…' : 'Rebase'}
             </button>

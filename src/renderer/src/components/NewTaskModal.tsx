@@ -10,7 +10,7 @@ export function NewTaskModal(): JSX.Element {
   const modelsByAgent = useStore((s) => s.modelsByAgent)
   const loadingModelsAgentId = useStore((s) => s.loadingModelsAgentId)
   const loadAgentModels = useStore((s) => s.loadAgentModels)
-  const startRun = useStore((s) => s.startRun)
+  const startTask = useStore((s) => s.startTask)
   const setNewTaskOpen = useStore((s) => s.setNewTaskOpen)
 
   const [agentId, setAgentId] = useState(settings?.defaultAgentId ?? 'opencode')
@@ -41,7 +41,7 @@ export function NewTaskModal(): JSX.Element {
     if (!prompt.trim() || busy) return
     setBusy(true)
     try {
-      await startRun({ agentId, prompt: prompt.trim(), model: model.trim() || undefined })
+      await startTask({ agentId, prompt: prompt.trim(), model: model.trim() || undefined })
     } finally {
       setBusy(false)
     }

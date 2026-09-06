@@ -4,15 +4,15 @@ import { randomUUID } from 'node:crypto'
 import { Store } from '../src/main/store'
 import { registerIpc } from '../src/main/ipc'
 import { completionEvidence, nextIssue, parsePlan } from '../src/main/issue-tracker'
-import { handlers, testHome, AgentRunner, GitDeliveryManager } from './issue-tracker-doubles'
+import { handlers, testHome, AgentProcessManager, GitDeliveryManager } from './issue-tracker-doubles'
 
 async function main(): Promise<void> {
   const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
   const database = join(testHome, '.anvil-composer/anvil.db')
   const store = new Store(database, options)
   store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
-  const { runner: realRunner } = registerIpc(() => null)
-  const runner = realRunner as unknown as AgentRunner
+  const { agentProcesses: realAgentProcesses } = registerIpc(() => null)
+  const agentProcesses = realAgentProcesses as unknown as AgentProcessManager
   const call = (name: string, input: unknown): any => handlers.get(name)!(null, input)
   const tick = async (): Promise<void> => { for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve)) }
   const issue = { key: 'first', title: 'Small change', description: 'One behavior', labels: ['backend'], priority: 'medium', dependencies: [], status: 'queued', checklist: ['Change behavior', 'Verify result'], validation: 'Run focused test' }
@@ -23,113 +23,136 @@ async function main(): Promise<void> {
   }
   assert.throws(() => parsePlan('<anvil-board>{}</anvil-board>'))
   assert.throws(() => parsePlan(wrap({ items: [issue] }) + wrap({ items: [issue] })))
-  const prioritized = { runId: 'test', limit: 50 as const, phase: 'working' as const, error: null, eventOffset: 0,
+  const prioritized = { taskId: 'test', limit: 50 as const, phase: 'working' as const, error: null, eventOffset: 0,
     items: parsePlan(wrap({ items: [issue, { ...issue, key: 'second', priority: 'high' }, { ...issue, key: 'third', priority: 'urgent', dependencies: ['first'] }] })) }
   assert.equal(nextIssue(prioritized)?.id, prioritized.items[1].id)
   prioritized.items[1].status = 'complete'
   assert.equal(nextIssue(prioritized)?.id, prioritized.items[0].id, 'Dependencies take precedence over priority')
 
-  const run = await call('runs:start', { projectId: 'project', agentId: 'codex', prompt: 'Build a feature' })
+  const task = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Build a feature' })
   await tick()
-  assert.match(runner.starts[0].prompt, /Do not change files/)
+  assert.match(agentProcesses.starts[0].prompt, /Do not change files/)
   assert.equal(handlers.has('board:review'), false)
   assert.equal(handlers.has('board:get'), false)
-  runner.result(run.id, { items: [issue, { ...issue, key: 'second', priority: 'urgent', dependencies: ['first'] }] })
+  agentProcesses.result(task.id, { items: [issue, { ...issue, key: 'second', priority: 'urgent', dependencies: ['first'] }] })
   await tick()
-  const [first, second] = store.getIssueTracker(run.id)!.items
+  const [first, second] = store.getIssueTracker(task.id)!.items
   assert.match(first.id, /^[0-9a-f]{16}$/)
   assert.deepEqual(second.dependencies, [first.id])
   assert.deepEqual(first.labels, ['backend'])
   assert.equal(first.status, 'working')
   assert.equal(second.status, 'queued')
   assert.throws(() => completionEvidence(wrap({ id: second.id, status: 'complete', checklist: [true, true], evidence: 'passed' }), first))
-  assert.throws(() => call('runs:approve', run.id), /not finished/)
-  await assert.rejects(call('comments:send', run.id), /not finished/)
-  runner.emit('usage', { runId: run.id, inputTokens: 5, outputTokens: 2, cachedTokens: 0, totalTokens: 7, costUsd: null })
-  runner.result(run.id, { id: first.id, status: 'complete', checklist: [true, true], evidence: 'Focused tests passed' })
+  assert.throws(() => call('tasks:approve', task.id), /not finished/)
+  await assert.rejects(call('comments:send', task.id), /not finished/)
+  agentProcesses.emit('usage', { taskId: task.id, inputTokens: 5, outputTokens: 2, cachedTokens: 0, totalTokens: 7, costUsd: null })
+  agentProcesses.result(task.id, { id: first.id, status: 'complete', checklist: [true, true], evidence: 'Focused tests passed' })
   await tick()
-  assert.equal(runner.starts.length, 3, 'Next issue starts without user approval')
-  assert.equal(store.getRun(run.id)?.status, 'running')
-  assert.equal(store.getRun(run.id)?.deliveryStatus, 'working')
+  assert.equal(agentProcesses.starts.length, 3, 'Next issue starts without user approval')
+  assert.equal(store.getTask(task.id)?.status, 'running')
+  assert.equal(store.getTask(task.id)?.deliveryStatus, 'working')
   assert.equal(GitDeliveryManager.head, 0, 'Git delivery waits until all issues finish')
-  assert.equal(store.getIssueTracker(run.id)?.items[0].status, 'complete')
-  assert.equal(store.getIssueTracker(run.id)?.items[1].status, 'working')
-  runner.emit('usage', { runId: run.id, inputTokens: 3, outputTokens: 1, cachedTokens: 0, totalTokens: 4, costUsd: null })
-  runner.result(run.id, { id: second.id, status: 'complete', checklist: [true, true], evidence: 'Second change tested' })
+  assert.equal(store.getIssueTracker(task.id)?.items[0].status, 'complete')
+  assert.equal(store.getIssueTracker(task.id)?.items[1].status, 'working')
+  agentProcesses.emit('usage', { taskId: task.id, inputTokens: 3, outputTokens: 1, cachedTokens: 0, totalTokens: 4, costUsd: null })
+  agentProcesses.result(task.id, { id: second.id, status: 'complete', checklist: [true, true], evidence: 'Second change tested' })
   await tick()
-  assert.equal(store.getIssueTracker(run.id)?.phase, 'complete')
-  assert.equal(store.getRun(run.id)?.deliveryStatus, 'reviewable')
-  assert.equal(store.getRun(run.id)?.totalTokens, 11)
-  assert.equal((await call('runs:diff', run.id)).patch, 'base..commit-1')
-  call('runs:approve', run.id)
-  assert.equal(store.getRun(run.id)?.deliveryStatus, 'approved')
+  assert.equal(store.getIssueTracker(task.id)?.phase, 'complete')
+  assert.equal(store.getTask(task.id)?.deliveryStatus, 'reviewable')
+  assert.equal(store.getTask(task.id)?.totalTokens, 11)
+  assert.equal((await call('tasks:diff', task.id)).patch, 'base..commit-1')
+  call('tasks:approve', task.id)
+  assert.equal(store.getTask(task.id)?.deliveryStatus, 'approved')
 
-  const failed = await call('runs:start', { projectId: 'project', agentId: 'codex', prompt: 'Validation failure' })
+  const failed = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Validation failure' })
   await tick()
-  runner.result(failed.id, { items: [issue, { ...issue, key: 'second' }] })
+  agentProcesses.result(failed.id, { items: [issue, { ...issue, key: 'second' }] })
   await tick()
-  const before = runner.starts.length
+  const before = agentProcesses.starts.length
   const current = store.getIssueTracker(failed.id)!.items[0]
-  runner.result(failed.id, { id: current.id, status: 'complete', checklist: [true, false], evidence: 'Failed' })
+  agentProcesses.result(failed.id, { id: current.id, status: 'complete', checklist: [true, false], evidence: 'Failed' })
   await tick()
-  assert.equal(runner.starts.length, before)
+  assert.equal(agentProcesses.starts.length, before)
   assert.equal(store.getIssueTracker(failed.id)?.phase, 'blocked')
   assert.equal(store.getIssueTracker(failed.id)?.items[0].status, 'blocked')
-  assert.equal(store.getRun(failed.id)?.status, 'failed')
+  assert.equal(store.getTask(failed.id)?.status, 'failed')
 
-  const interrupted = await call('runs:start', { projectId: 'project', agentId: 'codex', prompt: 'Interrupted task' })
+  const interrupted = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Interrupted task' })
   await tick()
-  runner.cancel(interrupted.id)
+  agentProcesses.cancel(interrupted.id)
   await tick()
-  assert.equal(store.getRun(interrupted.id)?.status, 'cancelled')
+  assert.equal(store.getTask(interrupted.id)?.status, 'cancelled')
   assert.equal(store.getIssueTracker(interrupted.id)?.phase, 'blocked')
-  const between = await call('runs:start', { projectId: 'project', agentId: 'codex', prompt: 'Cancel between issues' })
+  const between = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Cancel between issues' })
   await tick()
-  runner.result(between.id, { items: [issue, { ...issue, key: 'second' }] })
+  agentProcesses.result(between.id, { items: [issue, { ...issue, key: 'second' }] })
   await tick()
   const firstBetween = store.getIssueTracker(between.id)!.items[0]
-  const startsBeforeCancel = runner.starts.length
-  runner.result(between.id, { id: firstBetween.id, status: 'complete', checklist: [true, true], evidence: 'Passed' })
-  assert.equal(call('runs:cancel', between.id), true)
+  const startsBeforeCancel = agentProcesses.starts.length
+  agentProcesses.result(between.id, { id: firstBetween.id, status: 'complete', checklist: [true, true], evidence: 'Passed' })
+  assert.equal(call('tasks:cancel', between.id), true)
   await tick()
-  assert.equal(runner.starts.length, startsBeforeCancel)
-  assert.equal(store.getRun(between.id)?.status, 'cancelled')
+  assert.equal(agentProcesses.starts.length, startsBeforeCancel)
+  assert.equal(store.getTask(between.id)?.status, 'cancelled')
 
   GitDeliveryManager.failFinalize = true
-  const deliveryFailure = await call('runs:start', { projectId: 'project', agentId: 'codex', prompt: 'Delivery failure' })
+  const deliveryFailure = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Delivery failure' })
   await tick()
-  runner.result(deliveryFailure.id, { items: [issue] })
+  agentProcesses.result(deliveryFailure.id, { items: [issue] })
   await tick()
-  runner.result(deliveryFailure.id, { id: store.getIssueTracker(deliveryFailure.id)!.items[0].id, status: 'complete', checklist: [true, true], evidence: 'Passed' })
+  agentProcesses.result(deliveryFailure.id, { id: store.getIssueTracker(deliveryFailure.id)!.items[0].id, status: 'complete', checklist: [true, true], evidence: 'Passed' })
   await tick()
-  assert.equal(store.getRun(deliveryFailure.id)?.deliveryStatus, 'failed')
-  assert.throws(() => call('runs:approve', deliveryFailure.id), /not awaiting review/)
+  assert.equal(store.getTask(deliveryFailure.id)?.deliveryStatus, 'failed')
+  assert.throws(() => call('tasks:approve', deliveryFailure.id), /not awaiting review/)
   GitDeliveryManager.failFinalize = false
   GitDeliveryManager.repository = false
-  const noGit = await call('runs:start', { projectId: 'project', agentId: 'codex', prompt: 'No Git' })
+  const noGit = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'No Git' })
   await tick()
-  runner.result(noGit.id, { items: [issue] })
+  agentProcesses.result(noGit.id, { items: [issue] })
   await tick()
   const noGitIssue = store.getIssueTracker(noGit.id)!.items[0]
-  runner.result(noGit.id, { id: noGitIssue.id, status: 'complete', checklist: [true, true], evidence: 'Manual check passed' })
+  agentProcesses.result(noGit.id, { id: noGitIssue.id, status: 'complete', checklist: [true, true], evidence: 'Manual check passed' })
   await tick()
-  assert.equal(store.getRun(noGit.id)?.status, 'succeeded')
-  assert.equal(store.getRun(noGit.id)?.deliveryStatus, 'unavailable')
+  assert.equal(store.getTask(noGit.id)?.status, 'succeeded')
+  assert.equal(store.getTask(noGit.id)?.deliveryStatus, 'unavailable')
 
-  const restartRun = await call('runs:start', { projectId: 'project', agentId: 'codex', prompt: 'Restart during an issue' })
+  for (const agentId of ['opencode', 'codex']) {
+    const serverTask = await call('tasks:start', { projectId: 'project', agentId, prompt: 'Server task result' })
+    await tick()
+    const serverResult = (payload: unknown): void => {
+      agentProcesses.active.delete(serverTask.id)
+      // Both server adapters return the assembled turn, separate from persisted lines.
+      agentProcesses.emit('exit', {
+        taskId: serverTask.id, code: 0, cancelled: false,
+        result: { taskId: serverTask.id, status: 'succeeded', output: wrap(payload), changedFiles: [] }
+      })
+    }
+    serverResult({ items: [issue] })
+    await tick()
+    const serverIssue = store.getIssueTracker(serverTask.id)!.items[0]
+    assert.equal(serverIssue.status, 'working')
+    assert.equal(agentProcesses.starts.at(-1).issueId, serverIssue.id)
+    serverResult({ id: serverIssue.id, status: 'complete', checklist: [true, true], evidence: 'Server validation passed' })
+    await tick()
+    assert.equal(store.getIssueTracker(serverTask.id)?.phase, 'complete')
+    assert.equal(store.getIssueTracker(serverTask.id)?.items[0].evidence, 'Server validation passed')
+    assert.equal(store.getTask(serverTask.id)?.status, 'succeeded')
+  }
+
+  const restartTask = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Restart during an issue' })
   await tick()
-  runner.result(restartRun.id, { items: [issue] })
+  agentProcesses.result(restartTask.id, { items: [issue] })
   await tick()
   const restarted = new Store(database, options)
-  assert.equal(restarted.getIssueTracker(restartRun.id)?.phase, 'blocked')
-  assert.equal(restarted.getIssueTracker(restartRun.id)?.items[0].status, 'blocked')
-  assert.deepEqual(restarted.getIssueTracker(run.id), store.getIssueTracker(run.id))
-  assert.ok(restarted.getIssueTracker(run.id)?.items.every((item) => item.completedAt))
-  const persisted = restarted.getIssueTracker(run.id)!
-  persisted.runId = randomUUID()
+  assert.equal(restarted.getIssueTracker(restartTask.id)?.phase, 'blocked')
+  assert.equal(restarted.getIssueTracker(restartTask.id)?.items[0].status, 'blocked')
+  assert.deepEqual(restarted.getIssueTracker(task.id), store.getIssueTracker(task.id))
+  assert.ok(restarted.getIssueTracker(task.id)?.items.every((item) => item.completedAt))
+  const persisted = restarted.getIssueTracker(task.id)!
+  persisted.taskId = randomUUID()
   assert.throws(() => restarted.saveIssueTracker(persisted), /FOREIGN KEY/)
   restarted.removeProject('project')
-  assert.equal(restarted.getIssueTracker(run.id), undefined)
+  assert.equal(restarted.getIssueTracker(task.id), undefined)
   restarted.close()
   store.close()
   console.log('Issue tracker tests passed: metadata, dependency scheduling, sequential execution, final review, failure boundaries, and SQLite persistence.')

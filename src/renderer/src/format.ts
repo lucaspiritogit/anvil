@@ -1,13 +1,13 @@
-import type { Run } from '@shared/types'
+import type { Task } from '@shared/types'
 
 /**
- * Run metrics are rendered in the sidebar, the task list and the run header,
+ * Task metrics are rendered in the sidebar, the task list and the task header,
  * so the formatting lives here rather than drifting between the three.
  */
 
 /** Wall time so far: `now` keeps a running task ticking. */
-export function formatDuration(run: Run, now: number): string {
-  const seconds = Math.max(0, Math.floor(((run.endedAt ?? now) - run.startedAt) / 1000))
+export function formatDuration(task: Task, now: number): string {
+  const seconds = Math.max(0, Math.floor(((task.endedAt ?? now) - task.startedAt) / 1000))
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`
@@ -25,10 +25,10 @@ export function formatCost(costUsd: number | null): string {
 }
 
 /** Input/output/cached split, for the tooltip behind a token total. */
-export function tokenBreakdown(run: Run): string {
+export function tokenBreakdown(task: Task): string {
   return [
-    `${run.inputTokens.toLocaleString()} input`,
-    `${run.outputTokens.toLocaleString()} output`,
-    `${run.cachedTokens.toLocaleString()} cached`
+    `${task.inputTokens.toLocaleString()} input`,
+    `${task.outputTokens.toLocaleString()} output`,
+    `${task.cachedTokens.toLocaleString()} cached`
   ].join(', ')
 }

@@ -4,7 +4,7 @@ An agentic development platform. No chats, clear tasks.
 
 Anvil is a desktop app for putting coding agents to work on a project folder.
 You write a task, dispatch it, and review a diff. There is no chat window and no
-persona to negotiate with — an agent here is an instrument you point at a
+persona to negotiate with. An agent here is an instrument you point at a
 problem, the same as a compiler or a test runner. The terminal is still one tab
 away when you want to do the work yourself.
 
@@ -12,17 +12,17 @@ away when you want to do the work yourself.
 
 **An agent is a tool.** Agents keep being dressed up as teammates: chat threads,
 personalities, a conversation you steer turn by turn. That framing quietly moves
-agency from the developer to the agent, and it changes what you end up with — a
-transcript to read instead of a diff to review.
+agency from the developer to the agent, and it changes what you end up with. You
+get a transcript to read instead of a diff to review.
 
 Anvil takes the other position. Agency stays with you. You decide what the work
-is; the agent executes it the way any other tool in your toolchain does. You
+is. The agent executes it the way any other tool in your toolchain does. You
 invoke it, it runs, you inspect the result. If the result is wrong you sharpen
 the task and run it again, the same way you would re-run a failing build. The
 agent is never in charge, and it is never asked to be.
 
 **Clear tasks beat conversation.** A chat lets an ambiguous request survive,
-because you can always clarify in the next message. A task cannot: it has to be
+because you can always clarify in the next message. A task cannot. It has to be
 stated well enough to run unattended. That constraint is the feature. Writing
 the task *is* the engineering, and it stays with the developer.
 
@@ -31,25 +31,72 @@ task. It uses Git normally and writes its own commit messages. Anvil asks it to
 plan small issues and validate each one. It works through them sequentially,
 then presents the whole task result and local diff for your review.
 
-**Nothing is hidden.** The run log shows the agent's own output — its thinking,
-its tool calls, its errors — and every Git command Anvil runs on your behalf.
+**Nothing is hidden.** The task log shows the agent's own output, its thinking,
+its tool calls, its errors, and every Git command Anvil runs on your behalf.
 Anvil steps in for exactly one thing: not losing work. If an agent finishes
 without committing, Anvil commits the remainder so the branch survives, and says
 so plainly in the log.
 
-## Scope
+## Architecture
 
-Anvil is a local development tool, not infrastructure. It runs agent CLIs as
-child processes against checkouts on your own machine — no cluster, no control
-plane, no fleet to operate. Fleet-scale agent orchestration is a real and
-different problem; this is not that. Anvil is for one developer and the projects
-on their disk.
+Anvil is an Electron app. The main process owns the real work. The renderer is a
+React UI that talks to it through a typed preload bridge.
+
+```
+┌─────────────┐  IPC  ┌──────────────┐  contextBridge  ┌────────────┐
+│  main       │◄─────►│  preload     │◄───────────────►│  renderer  │
+│  Node/Electron      │  typed API   │                 │  React UI  │
+└─────────────┘       └──────────────┘                 └────────────┘
+```
+
+**Main process** (`src/main/`) runs agents, Git worktrees, SQLite storage, the
+issue tracker, project memory, and PTY terminals. `ipc.ts` creates shared
+dependencies and registers the handlers in `ipc/`. `tasks/` owns issue execution,
+completion, and agent event persistence. Shared types live in `src/shared/`.
+
+**Preload** (`src/preload/`) exposes a narrow `window.api` surface. The renderer
+never gets Node or raw IPC channels.
+
+**Renderer** (`src/renderer/`) is React plus Zustand. Sidebar, project overview,
+task view, diff review, settings, and the terminal pane all call into that API.
+
+A typical task flows like this:
+
+1. You describe work and pick an agent. Main creates a task in SQLite.
+2. For Git projects, `GitDeliveryManager` creates an isolated worktree and branch.
+3. `AgentProcessManager` routes OpenCode through ACP, Codex through its app-server
+   adapter, and Pi through its CLI runner. All produce task events for persistence.
+4. The agent plans up to 50 internal issues. Anvil runs them one at a time by
+   priority and dependencies, with no Board UI and no per-issue approval.
+5. When everything finishes, Anvil finalizes Git delivery and shows one
+   cumulative local diff for review. Approve, comment, rebase, or settle from
+   there.
+
+**Storage.** App state lives in `~/.anvil-composer/anvil.db` via Drizzle on
+better-sqlite3: projects, tasks, events, comments, settings, and issue trackers.
+Completed-task memory is separate. PGlite with pgvector is the desktop default.
+PostgreSQL is available for self-hosted setups. Ollama generates embeddings
+locally. Schema sources are `src/main/db/schema.ts` and
+`src/main/memory/schema.ts`. Generate migrations with `npm run db:generate` and
+`npm run memory:generate`. Do not hand-edit generated migrations.
+
+```
+src/main/                 agents, Git, SQLite, IPC, memory, terminals
+src/main/db/              SQLite schema and migrations
+src/main/ipc/             handlers for projects, tasks, review, rebase, and terminals
+src/main/tasks/           issue execution, task completion, and agent events
+src/main/memory/          PGlite / PostgreSQL project memory
+src/preload/              typed desktop API
+src/shared/               types and keybindings
+src/renderer/             React UI
+tests/                    issue tracker and e2e suites
+```
 
 ## Requirements
 
 - Node 20+
-- At least one agent CLI on your PATH (`opencode` is the default), already
-  authenticated with its own provider credentials
+- At least one agent CLI on your PATH. `opencode` is the default. Authenticate
+  it with its own provider credentials beforehand.
 
 ## Development
 
@@ -58,29 +105,22 @@ npm install
 npm run dev
 ```
 
-After changing `src/main/db/schema.ts`, run `npm run db:generate` to write the
-matching migration and commit it alongside the schema change.
+If your shell exports `ELECTRON_RUN_AS_NODE=1`, unset it first or Electron boots
+as plain Node and never opens a window.
 
-If your shell exports `ELECTRON_RUN_AS_NODE=1`, unset it first or Electron will
-boot as plain Node and fail to open a window.
+After changing the SQLite schema, run `npm run db:generate` and commit the
+schema and generated migrations together. The app applies pending migrations
+on startup. To apply them without opening Anvil, quit the app and run
+`npm run db:migrate`. This runs Drizzle Kit under Electron's Node because
+`better-sqlite3` is compiled for Electron. The launcher sets
+`ELECTRON_RUN_AS_NODE=1`; it does not patch the database driver.
 
-### Project memory
+`npm run db:drop` deletes `~/.anvil-composer/anvil.db` and its WAL sidecar files.
+`npm run db:reset` drops the database and reapplies migrations. Both commands
+delete all SQLite app data. Quit Anvil first. Reset creates the schema only;
+the app seeds default settings on its next startup. Project memory is untouched.
 
-SQLite stores app settings, projects, runs, issue trackers, comments, and logs. Project memory
-uses the `ProjectMemory` interface with two adapters:
-
-- PGlite is the desktop default. It runs PostgreSQL and pgvector inside Anvil and
-  persists under `~/.anvil-composer/memory/pglite`.
-- PostgreSQL supports self-hosted installations and a future managed backend.
-  Select it with `ANVIL_MEMORY_BACKEND=postgres` and
-  `ANVIL_MEMORY_DATABASE_URL`.
-
-Both adapters store memory derived from successful tasks. Each record contains
-the task, agent result, commit subjects, and a bounded patch excerpt. New tasks
-receive up to three related memories with a cosine similarity above 0.5.
-
-Ollama generates embeddings locally. For desktop development, start Ollama and
-run the app on the host:
+For project memory with local embeddings:
 
 ```
 cp .env.example .env
@@ -90,86 +130,38 @@ set -a; . ./.env; set +a
 npm run dev
 ```
 
-Run `docker compose up app` to test the self-hosted PostgreSQL adapter. Compose
-applies its Drizzle migrations, starts Ollama, downloads `mxbai-embed-large`,
-and runs Electron under Xvfb. The container has no interactive desktop window.
-
-`src/main/memory/schema.ts` declares the schema shared by PGlite and PostgreSQL.
-After changing it, run `npm run memory:generate` and commit the generated
-migration. The vector column has 1024 dimensions, matching
-`mxbai-embed-large`.
-
-Quit Anvil before inspecting its PGlite database, then run:
-
-```
-npm run memory:inspect
-npm run memory:inspect -- --project <project-id> --limit 50
-npm run memory:inspect -- --json
-```
-
-The inspector follows `ANVIL_MEMORY_BACKEND`. Set the PostgreSQL environment
-variables first when inspecting the self-hosted backend.
-
-## Build an executable
+`docker compose up app` exercises the PostgreSQL memory adapter under Xvfb.
+Set `ANVIL_MEMORY_BACKEND=postgres` and `ANVIL_MEMORY_DATABASE_URL` for that
+path. PostgreSQL needs pgvector enabled before migrations; Compose installs
+it when initializing a database. Quit Anvil before `npm run memory:inspect`.
 
 ```
 npm run pack    # unpacked app in release/win-unpacked
 npm run dist    # NSIS installer in release/
+npm run test:issue-tracker
+npm run test:e2e
 ```
 
 ## Usage
 
 1. Add a project folder from the sidebar.
-2. The project overview shows current work, tasks ready for review, and monthly
-   usage against the limits set for that project.
-3. Hit **Start new task**, pick an agent, describe the work, and dispatch.
-   The agent organizes the task into up to 50 internal issues.
-4. Open **Output** to follow execution. Issues advance automatically after
-   validation, with no per-issue review or approval.
-5. When the task finishes, open **Changes** to review the cumulative local diff,
-   leave comments, or approve the task.
-6. Open the Terminal tab when you need to work in the project directly.
+2. Start a new task, pick an agent, describe the work, and dispatch.
+3. Follow execution in Output. Issues advance automatically after validation.
+4. When the task finishes, open Changes to review the cumulative diff, leave
+   comments, or approve.
+5. Use the Terminal tab when you want to work in the project yourself.
 
-Anvil does not manage provider credentials. Each agent uses whatever auth it is
-already configured with (for example `opencode auth login`), so a harness that
-works in your terminal works here unchanged.
+Anvil does not manage provider credentials. Each agent uses whatever auth it
+already has, so a harness that works in your terminal works here unchanged.
 
-### Agent issue tracker
-
-The issue tracker is internal to agents. There is no Board UI or per-issue
-approval. SQLite stores its state in `task_issue_trackers`, including stable
-issue hashes, descriptions, checklists, validation evidence, labels, priorities,
-dependency hashes, and status. No issue files are written to the repository.
-
-The agent chooses up to 50 atomic issues. Planning uses unique temporary keys
-for dependencies; Anvil resolves them to hashes and rejects missing references,
-self-dependencies, and cycles. Priorities are `urgent`, `high`, `medium`, and
-`low`. Status progresses from `queued` to `working` to `complete`; failed or
-interrupted work becomes `blocked`.
-
-Anvil runs one issue at a time. All dependencies must be complete before an
-issue can start. Ready issues are selected by priority, then plan order. Agents
-are instructed not to delegate. Validation evidence is agent-reported, not an
-independent sandbox or verification service.
-
-Agent final messages use one `<anvil-issue-tracker>` JSON block. Planning returns
-`items` with `key`, `title`, `description`, `labels`, `priority`,
-`dependencies`, `status: "queued"`, `checklist`, and `validation`.
-Completion returns the current `id`, `status: "complete"`, a true value for
-each checklist entry, and nonempty `evidence`.
-
-Issues share one task worktree. Only after all issues complete does Anvil
-finalize Git delivery and offer the cumulative diff for user review. Invalid
-results or failed processes stop execution. Restarting preserves issue state
-and blocks interrupted work without automatically resuming it.
-
-Run `npm run test:issue-tracker` for backend scheduling, metadata validation,
-persistence, failure handling, and real Git delivery tests.
+Successful tasks move to Settled four hours after approval, or after completion
+when there were no code changes. Running, failed, cancelled, and unreviewed
+tasks stay active. Right-click a task to delete it. Deletion removes SQLite
+state and cancels the agent. Project files and Git branches stay put.
 
 ## Adding an agent
 
-Agents are just processes that write to stdout. Add one entry to
-`src/main/agents/registry.ts`:
+For a CLI agent, add an entry to `src/main/agents/registry.ts`:
 
 ```ts
 {
@@ -185,94 +177,113 @@ Agents are just processes that write to stdout. Add one entry to
 `{{prompt}}` and `{{model}}` are substituted per run. A `{{model}}` token and
 the flag before it are dropped when no model is set.
 
-Only `opencode` is verified end to end. The `claude`, `codex`, and `pi` entries
-use their documented non-interactive invocations; if one is wrong, it is a
-one-line fix in the registry.
+Pi keeps its non-interactive CLI invocation.
+
+### Task adapter interface
+
+`src/main/agents/agent-executor.ts` defines `AgentExecutor` and the shared task types.
+ACP and Codex app-server adapters both implement:
+
+```ts
+execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult>
+```
+
+- `TaskInput` carries the task and optional issue ID, prompt, absolute working
+  directory, model, optional session to resume, and cancellation signal.
+- `TaskEvent` carries normalized output, session IDs, or usage. Output reuses
+  Anvil's persisted event format; the adapter does not access SQLite or IPC.
+- `TaskResult` contains the terminal status, this turn's assistant text, session,
+  optional usage, agent-reported changed files, and any error. The issue tracker
+  validates its existing JSON block from that text. Git still computes the final
+  task diff, including changes made through shell commands that a server may not report.
+
+### OpenCode ACP
+
+OpenCode runs as `opencode acp`, an ACP server subprocess speaking newline-delimited
+JSON-RPC over stdin and stdout. Anvil starts one server per execution and closes it
+after the prompt completes. OpenCode persists sessions so review follow-ups can
+load their earlier context. Authenticate with OpenCode before running tasks.
+
+`AgentClientProtocol` in `agent-client-protocol.ts` extends `AgentExecutor` for
+ACP adapters and re-exports the shared task types for existing callers.
+
+`OpenCodeAcpClient` initializes ACP, creates or loads a session, selects the model
+through `session/set_config_option`, and sends `session/prompt`. It suppresses
+replayed history, buffers streamed text into output lines, and normalizes tool
+updates. Cancellation sends `session/cancel`, then terminates an unresponsive
+server. Only `end_turn` is successful; refusal and limit stops fail the execution.
+
+Usage is optional. Context occupancy is not counted as token consumption.
+OpenCode reports cumulative session cost, so resumed turns leave cost unknown
+rather than charging earlier work again. No filesystem or terminal capabilities
+are advertised; OpenCode executes its own tools.
+
+Run the protocol fixture tests with `npm run test:issue-tracker -- opencode-acp`.
+These require no provider credentials or model calls.
+
+### Codex app-server
+
+`CodexAppServerClient` runs `codex app-server --listen stdio://` once per execution.
+It uses Codex's own JSONL protocol, not ACP. `codex-app-server-protocol.ts` defines
+Anvil's typed request subset, checked against `codex-cli 0.153.3` schema output and
+[OpenAI's app-server documentation](https://learn.chatgpt.com/docs/app-server).
+
+The adapter sends `initialize`, `initialized`, `thread/start` or `thread/resume`,
+then `turn/start`. Acknowledging `turn/start` does not finish the task: the adapter
+waits for `turn/completed`. Anvil persists the thread ID as its session resume
+handle, since Codex's separate `thread.sessionId` can be shared across forks.
+
+Events are scoped to the current thread and turn. Final item snapshots reconcile
+streamed deltas without duplicating output. The assembled assistant text feeds
+issue-tracker validation. File-change items report paths; Git remains responsible
+for the final task diff. Cancellation uses `turn/interrupt`, then kills the server
+and its tools if they do not stop.
+
+Tasks use `approvalPolicy: never` and the `workspaceWrite` sandbox. Unexpected
+approval requests are declined without granting persistent permissions or sandbox
+escapes. This can block network access or protected Git writes. Anvil does not
+answer user questions or MCP elicitation prompts on the user's behalf.
+Authenticate separately with `codex login`; no credential-management or experimental
+protocol capabilities are enabled by this adapter.
+
+Token usage is thread-cumulative. New threads report execution totals. Resumed
+threads subtract a pre-turn usage baseline when Codex supplies one; otherwise usage
+stays unknown to avoid charging old turns again. `last` is one model request, not
+an entire turn, and is not used as a turn total. Codex does not supply dollar costs
+here. Model selection uses app-server, but the picker still uses a static list;
+`model/list` discovery is not yet wired in.
+
+Run `npm run test:issue-tracker -- codex-app-server` for credential-free protocol
+fixture tests. OpenAI currently labels app-server experimental; this integration
+uses its stable protocol subset over local stdio, not the remote transports.
 
 ## Notes
 
-- Agents run with stdin closed so they cannot block on an interactive prompt.
-  `opencode` is dispatched with `--auto`; without it a headless run waits
-  forever on the first permission request.
-- On Windows, npm installs CLIs as `.cmd` shims. Anvil reads the shim and spawns
-  the real executable directly, so prompts containing quotes, `&`, or `%` are
-  passed through untouched instead of being mangled by a shell.
-- Projects, settings, runs, comments, and run output are stored in
-  `~/.anvil-composer/anvil.db`, through [Drizzle](https://orm.drizzle.team/)
-  on `better-sqlite3`. Completed-task memory uses embedded PGlite by default or
-  PostgreSQL when `ANVIL_MEMORY_BACKEND=postgres`. Ollama generates embeddings
-  locally through `ANVIL_OLLAMA_BASE_URL`.
-  `src/main/db/schema.ts` is the single declaration of the SQLite
-  schema; `npm run db:generate` diffs it and writes the next numbered migration
-  into `src/main/db/migrations`, and the app applies whatever is outstanding
-  when it opens the database. Never edit or rename a generated migration — the
-  journal records what has already been applied. `npm run db:drop` deletes the
-  database and `npm run db:reset` recreates it from the migrations.
-- A task in a Git repository gets an isolated worktree and a branch from the
-  repository's current checkout, named `<task>-<id>` as a starting point. If the
-  repository has no commits yet, Anvil creates the initial commit first (from
-  the current non-ignored files, or an empty commit when the folder is empty).
-- Agents are asked to use Git themselves. Every task in a repository is prefixed
-  with a short instruction: commit your own changes with a clear message, prefix
-  the subject with `fix:`, `feat:`, `chore:`, or `docs:` where the category is
-  clear, rename the branch when a clearer name fits, and do not push. The commit
-  message and the final branch name are the agent's own — Anvil never generates
-  a message from the task title or rewrites what the agent wrote, and it records
-  whichever branch the worktree ends on. Commits use your configured Git
-  identity, not a bot identity.
-- If an agent finishes with uncommitted changes anyway, Anvil records a
-  `did_not_commit` event, shows the `git add` and `git commit` it runs, and
-  commits the remainder under the task title before removing the worktree. This
-  is a safety net, not the intended path.
-- A project without a Git repository still works. The overview shows a notice
-  with a button to run `git init`, and until then agents run directly in the
-  project folder with branches, worktrees, and diffs skipped.
-- **Approve** in the review bar accepts the work: the task moves out of **Ready
-  for review** into **Completed** and stops offering Send, Squash and new
-  comments. The diff stays readable. Nothing is pushed or merged — approval is
-  a state, not yet an action.
-- **Rebase** above the commit list rewrites the task's commits, in one of two
-  modes set in Settings.
-  - *Manual* (the default) opens a small interactive rebase: each commit gets
-    `pick`, `squash` or `drop`, and a `pick`'s message is editable. Anvil
-    performs the rebase itself by resetting to the branch point and replaying
-    the kept commits, so the result is exactly the plan and no agent is
-    involved. If anything fails the branch is restored to where it was, and a
-    plan built from a stale commit list is refused rather than applied.
-  - *Agent* hands the branch to the agent that wrote the code and accepts its
-    result, confirming first unless you tick "don't ask again".
-  Neither mode touches anything at or before the branch point. Neither checks
-  for a remote: rebasing rewrites the branch, so it is on you to know whether
-  anyone else has it.
-- Review notes are line comments on a task's diff, the way a pull request works.
-  They are held as drafts — visible in the diff, removable — until **Send**.
-  Sending re-opens a worktree on the task's branch, resumes the agent's original
-  session where the CLI supports it (`opencode -s`, `claude --resume`) so the
-  context of the work is not lost, and runs it again against the notes. When
-  the CLI cannot resume, the follow-up runs as a fresh session in the same
-  worktree. The task keeps its original base commit, so the diff you review
-  afterwards covers the whole task, first pass and follow-ups together.
-- Agent success and code readiness are separate. Exit code `0` means the task
-  succeeded. Code is ready for review only when that successful branch has a
-  non-empty diff from its starting commit.
-- Local diffs are rendered with [`@pierre/diffs`](https://diffs.com/). The
-  **Work is done on push** project setting is persisted, but remote push and
-  GitHub pull-request creation are intentionally not implemented yet.
-- Each task records elapsed time and any token usage and cost reported by its
-  agent CLI.
-- Running agents are killed when the app quits; a run cannot survive a restart.
-
-## Layout
-
-```
-src/main/db/schema.ts         Drizzle table definitions (the schema)
-src/main/db/migrations/       generated migrations, applied at startup
-src/main/agents/registry.ts   agent definitions
-src/main/agents/resolve.ts    PATH + Windows shim resolution
-src/main/agents/runner.ts     spawn, stream stdout/stderr, cancel
-src/main/git-delivery.ts      task worktrees, branches, commits, local diffs
-src/main/terminal.ts          PTY sessions
-src/main/store.ts             SQLite-backed projects, runs, events, settings
-src/main/ipc.ts               IPC surface
-src/renderer/                 React UI
-```
+- CLI agents run with stdin closed. OpenCode uses stdin for ACP. Anvil approves
+  its `allow_once` permission option automatically, matching the non-interactive
+  task policy. Requests without that option are cancelled; persistent permission
+  grants are never selected.
+- On Windows, Anvil unwraps npm `.cmd` shims and spawns the real executable so
+  prompts with quotes or shell metacharacters pass through intact.
+- A Git task gets an isolated worktree and a branch named `<task>-<id>`. Agents
+  commit with your Git identity, using `fix:`, `feat:`, `chore:`, or `docs:`
+  prefixes when the category is clear. Anvil never invents the commit message or
+  rewrites what the agent wrote. If the agent leaves uncommitted changes, Anvil
+  commits the remainder under the task title as a safety net and logs it.
+- Projects without Git still run. Agents work in the project folder until you
+  initialize a repository. Branches, worktrees, and diffs are skipped until then.
+- Approve marks the task completed. It does not push or merge.
+- Rebase has two modes in Settings. Manual lets you pick, squash, or drop
+  commits and Anvil replays the plan itself. Agent hands the branch back to the
+  agent that wrote the code. Neither mode touches anything at or before the
+  branch point.
+- Review comments are line notes on the task diff. Sending them re-opens the
+  worktree and resumes the agent session when the CLI supports it, otherwise
+  starts a fresh session in the same worktree. The diff always covers the whole
+  task from the original base commit.
+- CLI exit code 0, ACP `end_turn`, or Codex turn status `completed` means execution
+  succeeded. Code is ready for review only when the branch has a non-empty diff
+  from its starting commit.
+- Local diffs use [`@pierre/diffs`](https://diffs.com/). Remote push and GitHub
+  PR creation are not implemented yet.
+- Running agents are killed when the app quits.

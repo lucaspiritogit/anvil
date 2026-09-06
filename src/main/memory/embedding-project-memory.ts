@@ -3,7 +3,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { embed, type EmbeddingModel } from 'ai'
 import type { ProjectMemoryMetadata } from './schema'
 import type {
-  CompletedRunMemory,
+  CompletedTaskMemory,
   ProjectMemory,
   ProjectMemoryMatch
 } from './project-memory'
@@ -22,7 +22,7 @@ export interface EmbeddingOptions {
 
 export interface IndexedProjectMemory {
   projectId: string
-  sourceRunId: string
+  sourceTaskId: string
   content: string
   contentHash: string
   metadata: ProjectMemoryMetadata
@@ -53,22 +53,22 @@ export abstract class EmbeddingProjectMemory implements ProjectMemory {
     limit: number
   ): Promise<ProjectMemoryMatch[]>
 
-  async rememberCompletedRun(input: CompletedRunMemory): Promise<void> {
+  async rememberCompletedTask(input: CompletedTaskMemory): Promise<void> {
     const content = memoryDocument(input)
     const embedding = await this.embed(content)
     const metadata: ProjectMemoryMetadata = {
-      title: input.run.title,
-      status: input.run.status,
-      deliveryStatus: input.run.deliveryStatus,
-      branchName: input.run.branchName ?? null,
-      headCommit: input.run.headCommit ?? null,
-      filesChanged: input.run.filesChanged,
-      additions: input.run.additions,
-      deletions: input.run.deletions
+      title: input.task.title,
+      status: input.task.status,
+      deliveryStatus: input.task.deliveryStatus,
+      branchName: input.task.branchName ?? null,
+      headCommit: input.task.headCommit ?? null,
+      filesChanged: input.task.filesChanged,
+      additions: input.task.additions,
+      deletions: input.task.deletions
     }
     await this.upsert({
-      projectId: input.run.projectId,
-      sourceRunId: input.run.id,
+      projectId: input.task.projectId,
+      sourceTaskId: input.task.id,
       content,
       contentHash: createHash('sha256').update(content).digest('hex'),
       metadata,
@@ -95,7 +95,7 @@ export abstract class EmbeddingProjectMemory implements ProjectMemory {
   }
 }
 
-function memoryDocument({ run, diff, events }: CompletedRunMemory): string {
+function memoryDocument({ task, diff, events }: CompletedTaskMemory): string {
   const agentSummary = events
     .filter((event) => event.category === 'message' && event.text.trim())
     .map((event) => event.text.trim())
@@ -105,8 +105,8 @@ function memoryDocument({ run, diff, events }: CompletedRunMemory): string {
   const patch = diff?.patch.slice(0, MAX_PATCH_CHARACTERS)
 
   return [
-    `Task: ${run.prompt.trim()}`,
-    `Outcome: ${run.status}; delivery ${run.deliveryStatus}; ${run.filesChanged} files changed, +${run.additions}/-${run.deletions}.`,
+    `Task: ${task.prompt.trim()}`,
+    `Outcome: ${task.status}; delivery ${task.deliveryStatus}; ${task.filesChanged} files changed, +${task.additions}/-${task.deletions}.`,
     commits ? `Commits:\n${commits}` : undefined,
     agentSummary ? `Agent result:\n${agentSummary}` : undefined,
     patch ? `Code changes:\n${patch}` : undefined

@@ -5,9 +5,9 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
-    // AI SDK packages are ESM-only. Bundle them into Electron's CommonJS main
+    // AI and ACP SDK packages are ESM-only. Bundle them into Electron's CommonJS main
     // output instead of emitting runtime require() calls that Electron rejects.
-    plugins: [externalizeDepsPlugin({ exclude: ['@ai-sdk/openai-compatible', 'ai'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['@ai-sdk/openai-compatible', 'ai', '@agentclientprotocol/sdk'] })],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') }

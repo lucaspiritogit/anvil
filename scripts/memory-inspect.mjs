@@ -61,7 +61,7 @@ function inspectionQuery(options) {
       SELECT
         id,
         project_id,
-        source_run_id,
+        source_task_id,
         kind,
         content,
         metadata,
@@ -115,7 +115,7 @@ function printRows(rows, source, asJson) {
   for (const row of rows) {
     const title = row.metadata?.title ?? '(untitled)'
     console.log(`\n[${row.updated_at}] ${title}`)
-    console.log(`id=${row.id} project=${row.project_id} run=${row.source_run_id}`)
+    console.log(`id=${row.id} project=${row.project_id} task=${row.source_task_id}`)
     console.log(`kind=${row.kind} embedding=${row.embedding_dimensions} dimensions`)
     console.log(row.content)
   }

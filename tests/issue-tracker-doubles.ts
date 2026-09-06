@@ -7,7 +7,10 @@ import { join } from 'node:path'
 export const testHome = realpathSync(mkdtempSync(join(tmpdir(), 'anvil-issue-tracker-test-')))
 export const handlers = new Map<string, (...args: any[]) => any>()
 export const app = { getPath: () => testHome, getAppPath: () => process.cwd() }
-export const ipcMain = { handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler), on: () => {} }
+export const ipcMain = {
+  handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler),
+  on: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler)
+}
 export const dialog = {}
 export const shell = {}
 export class BrowserWindow {}
@@ -15,23 +18,23 @@ export const createProjectMemory = () => undefined
 export const listModels = () => []
 export class TerminalManager { dispose(): void {} }
 
-export class AgentRunner extends EventEmitter {
+export class AgentProcessManager extends EventEmitter {
   starts: any[] = []
   active = new Set<string>()
   isRunning(id: string): boolean { return this.active.has(id) }
   start(options: any): void {
-    if (this.active.has(options.runId)) throw new Error('Concurrent agent started')
-    this.active.add(options.runId)
+    if (this.active.has(options.taskId)) throw new Error('Concurrent agent started')
+    this.active.add(options.taskId)
     this.starts.push(options)
   }
-  result(runId: string, payload: unknown, code = 0): void {
-    this.emit('event', { id: randomUUID(), runId, ts: Date.now(), stream: 'stdout', kind: 'output', category: 'message', text: `<anvil-issue-tracker>${JSON.stringify(payload)}</anvil-issue-tracker>` })
-    this.active.delete(runId)
-    this.emit('exit', { runId, code, cancelled: false })
+  result(taskId: string, payload: unknown, code = 0): void {
+    this.emit('event', { id: randomUUID(), taskId, ts: Date.now(), stream: 'stdout', kind: 'output', category: 'message', text: `<anvil-issue-tracker>${JSON.stringify(payload)}</anvil-issue-tracker>` })
+    this.active.delete(taskId)
+    this.emit('exit', { taskId, code, cancelled: false })
   }
-  cancel(runId: string): boolean {
-    this.active.delete(runId)
-    this.emit('exit', { runId, code: null, cancelled: true })
+  cancel(taskId: string): boolean {
+    this.active.delete(taskId)
+    this.emit('exit', { taskId, code: null, cancelled: true })
     return true
   }
 }

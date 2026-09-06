@@ -9,6 +9,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/00-vector.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U anvil -d anvil_memory"]
       interval: 2s

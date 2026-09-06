@@ -3,7 +3,7 @@ import { promisify } from 'node:util'
 import { resolveCommand } from './resolve'
 import type { AgentDefinition, ModelSource, ProviderModelList } from '../../shared/types'
 
-const run = promisify(execFile)
+const task = promisify(execFile)
 
 /** A provider CLI that has not answered by now is not going to. */
 const TIMEOUT_MS = 20_000
@@ -31,7 +31,7 @@ async function fromCommand(source: Extract<ModelSource, { kind: 'command' }>): P
   const resolved = resolveCommand(source.command)
   if (!resolved) throw new Error(`"${source.command}" is not installed or not on PATH`)
 
-  const { stdout } = await run(resolved.command, [...resolved.prefixArgs, ...source.args], {
+  const { stdout } = await task(resolved.command, [...resolved.prefixArgs, ...source.args], {
     timeout: TIMEOUT_MS,
     maxBuffer: MAX_OUTPUT_BYTES,
     shell: resolved.viaShell,

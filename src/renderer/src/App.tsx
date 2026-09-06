@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
 import { NewTaskModal } from './components/NewTaskModal'
 import { SettingsModal } from './components/SettingsModal'
+import { TaskContextMenu } from './components/TaskContextMenu'
 import { matchesAccelerator } from './keys'
 import { cn } from './ui'
 import { useStore } from './state/store'
@@ -14,9 +15,10 @@ export function App(): JSX.Element {
   const ready = useStore((s) => s.ready)
   const load = useStore((s) => s.load)
   const applyEvent = useStore((s) => s.applyEvent)
-  const applyRunUpdate = useStore((s) => s.applyRunUpdate)
+  const applyTaskUpdate = useStore((s) => s.applyTaskUpdate)
   const newTaskOpen = useStore((s) => s.newTaskOpen)
   const settingsOpen = useStore((s) => s.settingsOpen)
+  const taskMenu = useStore((s) => s.taskMenu)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const keybindings = useStore((s) => s.settings?.keybindings) ?? DEFAULT_KEYBINDINGS
@@ -46,13 +48,13 @@ export function App(): JSX.Element {
   }, [keybindings, toggleSidebar])
 
   useEffect(() => {
-    const offEvent = window.anvil.runs.onEvent(applyEvent)
-    const offUpdate = window.anvil.runs.onUpdated(applyRunUpdate)
+    const offEvent = window.anvil.tasks.onEvent(applyEvent)
+    const offUpdate = window.anvil.tasks.onUpdated(applyTaskUpdate)
     return () => {
       offEvent()
       offUpdate()
     }
-  }, [applyEvent, applyRunUpdate])
+  }, [applyEvent, applyTaskUpdate])
 
   if (!ready) {
     return <div className="grid place-items-center h-full text-dim">Loading…</div>
@@ -63,14 +65,15 @@ export function App(): JSX.Element {
   return (
     <div
       className={cn(
-        'grid h-full transition-[grid-template-columns] duration-[180ms] ease-[ease] motion-reduce:transition-none',
-        sidebarCollapsed ? 'grid-cols-[0_1fr]' : 'grid-cols-[232px_1fr]'
+        'grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden transition-[grid-template-columns] duration-[180ms] ease-[ease] motion-reduce:transition-none',
+        sidebarCollapsed ? 'grid-cols-[0_1fr]' : 'grid-cols-[304px_1fr]'
       )}
     >
       <Sidebar />
       <Workspace />
       {newTaskOpen && <NewTaskModal />}
       {settingsOpen && <SettingsModal />}
+      {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
     </div>
   )
 }

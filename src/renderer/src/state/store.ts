@@ -5,21 +5,21 @@ import type {
   RebaseStep,
   Project,
   ProjectGitStatus,
-  Run,
-  RunComment,
-  RunDiff,
-  RunEvent,
+  Task,
+  TaskComment,
+  TaskDiff,
+  TaskEvent,
   Settings
 } from '@shared/types'
 
 const MAX_LINES_IN_MEMORY = 4000
 
-export type CenterView = { kind: 'home' } | { kind: 'terminal' } | { kind: 'run'; runId: string }
+export type CenterView = { kind: 'home' } | { kind: 'terminal' } | { kind: 'task'; taskId: string }
 
 interface AnvilState {
   ready: boolean
   projects: Project[]
-  runs: Run[]
+  tasks: Task[]
   agents: AgentDefinition[]
   /** Model catalogues, one per agent, fetched the first time they are needed. */
   modelsByAgent: Record<string, ProviderModelList>
@@ -28,12 +28,12 @@ interface AnvilState {
 
   activeProjectId: string | null
   view: CenterView
-  eventsByRun: Record<string, RunEvent[]>
-  diffsByRun: Record<string, RunDiff>
-  diffErrorsByRun: Record<string, string>
+  eventsByTask: Record<string, TaskEvent[]>
+  diffsByTask: Record<string, TaskDiff>
+  diffErrorsByTask: Record<string, string>
   gitStatusByProject: Record<string, ProjectGitStatus>
-  commentsByRun: Record<string, RunComment[]>
-  rebaseRunId: string | null
+  commentsByTask: Record<string, TaskComment[]>
+  rebaseTaskId: string | null
   rebasing: string | null
   sendingComments: string | null
   commentError: string | null
@@ -43,6 +43,10 @@ interface AnvilState {
   newTaskOpen: boolean
   settingsOpen: boolean
   sidebarCollapsed: boolean
+  taskMenu: { taskId: string; x: number; y: number } | null
+  setTaskMenu: (menu: AnvilState['taskMenu']) => void
+  deleteTask: (taskId: string) => Promise<void>
+  settleTask: (taskId: string) => Promise<void>
 
   load: () => Promise<void>
   addProject: () => Promise<void>
@@ -55,32 +59,32 @@ interface AnvilState {
   loadGitStatus: (id: string) => Promise<void>
   initGitRepo: (id: string) => Promise<void>
 
-  approveRun: (runId: string) => Promise<void>
-  openRebase: (runId: string | null) => void
-  rebaseRun: (runId: string, steps: RebaseStep[]) => Promise<void>
-  rebaseWithAgent: (runId: string) => Promise<void>
+  approveTask: (taskId: string) => Promise<void>
+  openRebase: (taskId: string | null) => void
+  rebaseTask: (taskId: string, steps: RebaseStep[]) => Promise<void>
+  rebaseWithAgent: (taskId: string) => Promise<void>
 
-  loadComments: (runId: string) => Promise<void>
+  loadComments: (taskId: string) => Promise<void>
   addComment: (input: {
-    runId: string
+    taskId: string
     file: string
-    side: RunComment['side']
+    side: TaskComment['side']
     lineNumber: number
     body: string
   }) => Promise<void>
-  removeComment: (runId: string, id: string) => Promise<void>
-  sendComments: (runId: string) => Promise<void>
+  removeComment: (taskId: string, id: string) => Promise<void>
+  sendComments: (taskId: string) => Promise<void>
 
   loadAgentModels: (agentId: string) => Promise<void>
-  startRun: (input: { agentId: string; prompt: string; model?: string }) => Promise<void>
-  cancelRun: (runId: string) => Promise<void>
-  openRun: (runId: string) => Promise<void>
-  loadRunDiff: (runId: string) => Promise<void>
+  startTask: (input: { agentId: string; prompt: string; model?: string }) => Promise<void>
+  cancelTask: (taskId: string) => Promise<void>
+  openTask: (taskId: string) => Promise<void>
+  loadTaskDiff: (taskId: string) => Promise<void>
   showHome: () => void
   showTerminal: () => void
 
-  applyEvent: (event: RunEvent) => void
-  applyRunUpdate: (run: Run) => void
+  applyEvent: (event: TaskEvent) => void
+  applyTaskUpdate: (task: Task) => void
 
   saveSettings: (patch: Partial<Settings>) => Promise<void>
   toggleSidebar: () => void
@@ -91,7 +95,7 @@ interface AnvilState {
 export const useStore = create<AnvilState>((set, get) => ({
   ready: false,
   projects: [],
-  runs: [],
+  tasks: [],
   agents: [],
   modelsByAgent: {},
   loadingModelsAgentId: null,
@@ -99,14 +103,14 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   activeProjectId: null,
   view: { kind: 'home' },
-  eventsByRun: {},
-  diffsByRun: {},
-  diffErrorsByRun: {},
+  eventsByTask: {},
+  diffsByTask: {},
+  diffErrorsByTask: {},
   gitStatusByProject: {},
   gitInitPending: null,
   gitInitError: null,
-  commentsByRun: {},
-  rebaseRunId: null,
+  commentsByTask: {},
+  rebaseTaskId: null,
   rebasing: null,
   sendingComments: null,
   commentError: null,
@@ -114,17 +118,19 @@ export const useStore = create<AnvilState>((set, get) => ({
   newTaskOpen: false,
   settingsOpen: false,
   sidebarCollapsed: false,
+  taskMenu: null,
+  setTaskMenu: (taskMenu) => set({ taskMenu }),
 
   load: async () => {
-    const [projects, runs, agents, settings] = await Promise.all([
+    const [projects, tasks, agents, settings] = await Promise.all([
       window.anvil.projects.list(),
-      window.anvil.runs.list(),
+      window.anvil.tasks.list(),
       window.anvil.agents.list(),
       window.anvil.settings.get()
     ])
     set({
       projects,
-      runs,
+      tasks,
       agents,
       settings,
       activeProjectId: get().activeProjectId ?? projects[0]?.id ?? null,
@@ -149,7 +155,7 @@ export const useStore = create<AnvilState>((set, get) => ({
       return {
         projects,
         gitStatusByProject,
-        runs: s.runs.filter((r) => r.projectId !== id),
+        tasks: s.tasks.filter((r) => r.projectId !== id),
         activeProjectId: s.activeProjectId === id ? (projects[0]?.id ?? null) : s.activeProjectId,
         view: { kind: 'home' } as CenterView
       }
@@ -201,52 +207,83 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  startRun: async ({ agentId, prompt, model }) => {
+  startTask: async ({ agentId, prompt, model }) => {
     const projectId = get().activeProjectId
     if (!projectId) return
-    const run = await window.anvil.runs.start({ projectId, agentId, prompt, model })
+    const task = await window.anvil.tasks.start({ projectId, agentId, prompt, model })
     set((s) => ({
-      runs: [run, ...s.runs],
-      eventsByRun: { ...s.eventsByRun, [run.id]: [] },
-      view: { kind: 'run', runId: run.id },
+      tasks: [task, ...s.tasks],
+      eventsByTask: { ...s.eventsByTask, [task.id]: [] },
+      view: { kind: 'task', taskId: task.id },
       newTaskOpen: false
     }))
   },
 
-  cancelRun: async (runId) => {
-    await window.anvil.runs.cancel(runId)
+  cancelTask: async (taskId) => {
+    await window.anvil.tasks.cancel(taskId)
   },
 
-  openRun: async (runId) => {
-    set({ view: { kind: 'run', runId } })
-    if (get().eventsByRun[runId]) return
-    const events = await window.anvil.runs.events(runId)
-    set((s) => ({ eventsByRun: { ...s.eventsByRun, [runId]: events } }))
+  settleTask: async (taskId) => {
+    const task = await window.anvil.tasks.settle(taskId)
+    get().applyTaskUpdate(task)
   },
 
-  loadRunDiff: async (runId) => {
-    if (get().diffsByRun[runId]) return
+  deleteTask: async (taskId) => {
+    await window.anvil.tasks.delete(taskId)
+    set((state) => {
+      const withoutTask = <Value,>(cache: Record<string, Value>): Record<string, Value> =>
+        Object.fromEntries(Object.entries(cache).filter(([id]) => id !== taskId))
+      return {
+        tasks: state.tasks.filter((task) => task.id !== taskId),
+        eventsByTask: withoutTask(state.eventsByTask),
+        diffsByTask: withoutTask(state.diffsByTask),
+        diffErrorsByTask: withoutTask(state.diffErrorsByTask),
+        commentsByTask: withoutTask(state.commentsByTask),
+        view: state.view.kind === 'task' && state.view.taskId === taskId
+          ? { kind: 'home' as const } : state.view,
+        taskMenu: state.taskMenu?.taskId === taskId ? null : state.taskMenu,
+        rebaseTaskId: state.rebaseTaskId === taskId ? null : state.rebaseTaskId,
+        rebasing: state.rebasing === taskId ? null : state.rebasing,
+        sendingComments: state.sendingComments === taskId ? null : state.sendingComments
+      }
+    })
+  },
+
+  openTask: async (taskId) => {
+    const task = get().tasks.find((item) => item.id === taskId)
+    if (!task) return
+    set({ activeProjectId: task.projectId, view: { kind: 'task', taskId } })
+    if (get().eventsByTask[taskId]) return
+    const events = await window.anvil.tasks.events(taskId)
+    if (!get().tasks.some((task) => task.id === taskId)) return
+    set((s) => ({ eventsByTask: { ...s.eventsByTask, [taskId]: events } }))
+  },
+
+  loadTaskDiff: async (taskId) => {
+    if (get().diffsByTask[taskId]) return
     try {
-      const diff = await window.anvil.runs.diff(runId)
+      const diff = await window.anvil.tasks.diff(taskId)
+      if (!get().tasks.some((task) => task.id === taskId)) return
       set((s) => ({
-        diffsByRun: { ...s.diffsByRun, [runId]: diff },
-        diffErrorsByRun: { ...s.diffErrorsByRun, [runId]: '' }
+        diffsByTask: { ...s.diffsByTask, [taskId]: diff },
+        diffErrorsByTask: { ...s.diffErrorsByTask, [taskId]: '' }
       }))
     } catch (error) {
+      if (!get().tasks.some((task) => task.id === taskId)) return
       set((s) => ({
-        diffErrorsByRun: {
-          ...s.diffErrorsByRun,
-          [runId]: error instanceof Error ? error.message : String(error)
+        diffErrorsByTask: {
+          ...s.diffErrorsByTask,
+          [taskId]: error instanceof Error ? error.message : String(error)
         }
       }))
     }
   },
 
-  approveRun: async (runId) => {
+  approveTask: async (taskId) => {
     try {
-      const run = await window.anvil.runs.approve(runId)
+      const task = await window.anvil.tasks.approve(taskId)
       set((s) => ({
-        runs: s.runs.map((item) => (item.id === run.id ? run : item)),
+        tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
         commentError: null
       }))
     } catch (error) {
@@ -254,22 +291,22 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  openRebase: (runId) => set({ rebaseRunId: runId, commentError: null }),
+  openRebase: (taskId) => set({ rebaseTaskId: taskId, commentError: null }),
 
   /** Applies a plan directly; the diff is reloaded because the commits moved. */
-  rebaseRun: async (runId, steps) => {
-    set({ rebasing: runId, commentError: null })
+  rebaseTask: async (taskId, steps) => {
+    set({ rebasing: taskId, commentError: null })
     try {
-      const run = await window.anvil.runs.rebase({ runId, steps })
+      const task = await window.anvil.tasks.rebase({ taskId, steps })
       set((s) => ({
-        runs: s.runs.map((item) => (item.id === run.id ? run : item)),
-        diffsByRun: Object.fromEntries(
-          Object.entries(s.diffsByRun).filter(([key]) => key !== runId)
+        tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+        diffsByTask: Object.fromEntries(
+          Object.entries(s.diffsByTask).filter(([key]) => key !== taskId)
         ),
         rebasing: null,
-        rebaseRunId: null
+        rebaseTaskId: null
       }))
-      await get().loadRunDiff(runId)
+      await get().loadTaskDiff(taskId)
     } catch (error) {
       set({
         rebasing: null,
@@ -278,15 +315,15 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  rebaseWithAgent: async (runId) => {
-    set({ rebasing: runId, rebaseRunId: null, commentError: null })
+  rebaseWithAgent: async (taskId) => {
+    set({ rebasing: taskId, rebaseTaskId: null, commentError: null })
     try {
-      const run = await window.anvil.runs.rebaseWithAgent(runId)
+      const task = await window.anvil.tasks.rebaseWithAgent(taskId)
       set((s) => ({
-        runs: s.runs.map((item) => (item.id === run.id ? run : item)),
+        tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
         // The commit list is about to change, so the cached diff is stale.
-        diffsByRun: Object.fromEntries(
-          Object.entries(s.diffsByRun).filter(([key]) => key !== runId)
+        diffsByTask: Object.fromEntries(
+          Object.entries(s.diffsByTask).filter(([key]) => key !== taskId)
         ),
         rebasing: null
       }))
@@ -298,16 +335,18 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  loadComments: async (runId) => {
-    const comments = await window.anvil.comments.list(runId)
-    set((s) => ({ commentsByRun: { ...s.commentsByRun, [runId]: comments } }))
+  loadComments: async (taskId) => {
+    const comments = await window.anvil.comments.list(taskId)
+    if (!get().tasks.some((task) => task.id === taskId)) return
+    set((s) => ({ commentsByTask: { ...s.commentsByTask, [taskId]: comments } }))
   },
 
   addComment: async (input) => {
     try {
       const comments = await window.anvil.comments.add(input)
+      if (!get().tasks.some((task) => task.id === input.taskId)) return
       set((s) => ({
-        commentsByRun: { ...s.commentsByRun, [input.runId]: comments },
+        commentsByTask: { ...s.commentsByTask, [input.taskId]: comments },
         commentError: null
       }))
     } catch (error) {
@@ -315,22 +354,24 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  removeComment: async (runId, id) => {
-    const comments = await window.anvil.comments.remove({ runId, id })
-    set((s) => ({ commentsByRun: { ...s.commentsByRun, [runId]: comments } }))
+  removeComment: async (taskId, id) => {
+    const comments = await window.anvil.comments.remove({ taskId, id })
+    if (!get().tasks.some((task) => task.id === taskId)) return
+    set((s) => ({ commentsByTask: { ...s.commentsByTask, [taskId]: comments } }))
   },
 
-  sendComments: async (runId) => {
-    set({ sendingComments: runId, commentError: null })
+  sendComments: async (taskId) => {
+    set({ sendingComments: taskId, commentError: null })
     try {
-      const { run, comments } = await window.anvil.comments.send(runId)
+      const { task, comments } = await window.anvil.comments.send(taskId)
+      if (!get().tasks.some((item) => item.id === taskId)) return
       set((s) => ({
-        runs: s.runs.map((item) => (item.id === run.id ? run : item)),
-        commentsByRun: { ...s.commentsByRun, [runId]: comments },
+        tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+        commentsByTask: { ...s.commentsByTask, [taskId]: comments },
         // The task is running again, so its log is what matters now.
-        eventsByRun: { ...s.eventsByRun, [runId]: s.eventsByRun[runId] ?? [] },
-        diffsByRun: Object.fromEntries(
-          Object.entries(s.diffsByRun).filter(([key]) => key !== runId)
+        eventsByTask: { ...s.eventsByTask, [taskId]: s.eventsByTask[taskId] ?? [] },
+        diffsByTask: Object.fromEntries(
+          Object.entries(s.diffsByTask).filter(([key]) => key !== taskId)
         ),
         sendingComments: null
       }))
@@ -347,21 +388,21 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   applyEvent: (event) =>
     set((s) => {
-      const existing = s.eventsByRun[event.runId]
+      const existing = s.eventsByTask[event.taskId]
       if (!existing) return s
       const next = [...existing, event]
       return {
-        eventsByRun: {
-          ...s.eventsByRun,
-          [event.runId]: next.length > MAX_LINES_IN_MEMORY ? next.slice(-MAX_LINES_IN_MEMORY) : next
+        eventsByTask: {
+          ...s.eventsByTask,
+          [event.taskId]: next.length > MAX_LINES_IN_MEMORY ? next.slice(-MAX_LINES_IN_MEMORY) : next
         }
       }
     }),
 
-  applyRunUpdate: (run) =>
+  applyTaskUpdate: (task) =>
     set((s) => ({
-      runs: s.runs.map((r) => (r.id === run.id ? run : r)),
-      diffsByRun: Object.fromEntries(Object.entries(s.diffsByRun).filter(([id]) => id !== run.id))
+      tasks: s.tasks.map((r) => (r.id === task.id ? task : r)),
+      diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== task.id))
     })),
 
   saveSettings: async (patch) => {

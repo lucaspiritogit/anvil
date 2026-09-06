@@ -1,22 +1,22 @@
 import type {
   AgentDefinition,
-  RunEventCategory,
-  RunUsage,
+  TaskEventCategory,
+  TaskUsage,
   StreamName
 } from '../../shared/types'
 
 type JsonObject = Record<string, unknown>
 
-/** One rendered line of agent output, already classified for the run log. */
+/** One rendered line of agent output, already classified for the task log. */
 export interface ParsedAgentPart {
   text: string
-  category: RunEventCategory
+  category: TaskEventCategory
   stream: StreamName
 }
 
 export interface ParsedAgentLine {
   parts: ParsedAgentPart[]
-  usage?: Partial<RunUsage>
+  usage?: Partial<TaskUsage>
   usageMode?: 'add' | 'set'
   /** Agent session this line belongs to, when the protocol reports one. */
   sessionId?: string
@@ -40,7 +40,7 @@ function string(value: unknown): string | undefined {
 
 function part(
   text: string | undefined,
-  category: RunEventCategory,
+  category: TaskEventCategory,
   stream: StreamName = 'stdout'
 ): ParsedAgentPart[] {
   return text ? [{ text, category, stream }] : []
@@ -48,7 +48,7 @@ function part(
 
 function line(
   text: string | undefined,
-  category: RunEventCategory,
+  category: TaskEventCategory,
   stream: StreamName = 'stdout'
 ): ParsedAgentLine {
   return { parts: part(text, category, stream) }
@@ -86,7 +86,7 @@ function blockText(block: JsonObject): string | undefined {
  * plain text blocks, which is `message` for an assistant turn and
  * `tool_result` for a tool-result turn.
  */
-function contentParts(value: unknown, fallback: RunEventCategory): ParsedAgentPart[] {
+function contentParts(value: unknown, fallback: TaskEventCategory): ParsedAgentPart[] {
   if (typeof value === 'string') return part(string(value), fallback)
   if (!Array.isArray(value)) return []
 

@@ -6,8 +6,8 @@ import { promisify } from 'node:util'
 import type {
   ProjectGitStatus,
   RebaseStep,
-  RunCommit,
-  RunDiff
+  TaskCommit,
+  TaskDiff
 } from '../shared/types'
 
 const execFileAsync = promisify(execFile)
@@ -29,7 +29,7 @@ export interface PreparedWorktree {
 
 export interface RebasedBranch {
   headCommit: string
-  commits: RunCommit[]
+  commits: TaskCommit[]
   filesChanged: number
   additions: number
   deletions: number
@@ -131,7 +131,7 @@ export class GitDeliveryManager {
   /**
    * Resolves whether a project folder is inside a Git work tree. Never throws:
    * a folder without Git, or a machine without the `git` binary, has to keep
-   * working with the Git flow skipped rather than failing the run.
+   * working with the Git flow skipped rather than failing the task.
    */
   async status(projectPath: string): Promise<ProjectGitStatus> {
     const pathExists = existsSync(projectPath)
@@ -158,7 +158,7 @@ export class GitDeliveryManager {
     return this.status(projectPath)
   }
 
-  async prepare(projectPath: string, runId: string, title: string): Promise<PreparedWorktree> {
+  async prepare(projectPath: string, taskId: string, title: string): Promise<PreparedWorktree> {
     const repoRoot = (await git(projectPath, ['rev-parse', '--show-toplevel'])).stdout.trim()
     return this.withRepoLock(repoRoot, async () => {
       const head = await git(repoRoot, ['rev-parse', '--verify', 'HEAD'], [0, 128])
@@ -186,14 +186,14 @@ export class GitDeliveryManager {
       const branchResult = await git(repoRoot, ['branch', '--show-current'])
       const baseBranch = branchResult.stdout.trim() || baseCommit.slice(0, 12)
       // A starting point only — the agent is free to rename it.
-      const branchName = `${slug(title)}-${runId.slice(0, 8)}`
+      const branchName = `${slug(title)}-${taskId.slice(0, 8)}`
       const projectRelativePath = relative(resolve(repoRoot), resolve(projectPath))
       if (projectRelativePath.startsWith('..')) {
         throw new Error('Project path is outside its Git repository')
       }
 
       await mkdir(this.worktreesRoot, { recursive: true })
-      const worktreePath = join(this.worktreesRoot, runId)
+      const worktreePath = join(this.worktreesRoot, taskId)
       await git(repoRoot, ['worktree', 'add', '-b', branchName, worktreePath, baseCommit])
 
       return {
@@ -230,10 +230,10 @@ export class GitDeliveryManager {
    * can act on review notes. `finalize` removes the worktree when a task ends,
    * but the branch survives — this checks it out again at the same path.
    */
-  async reopen(projectPath: string, runId: string, branchName: string): Promise<PreparedWorktree> {
+  async reopen(projectPath: string, taskId: string, branchName: string): Promise<PreparedWorktree> {
     const repoRoot = (await git(projectPath, ['rev-parse', '--show-toplevel'])).stdout.trim()
     return this.withRepoLock(repoRoot, async () => {
-      const worktreePath = join(this.worktreesRoot, runId)
+      const worktreePath = join(this.worktreesRoot, taskId)
       await mkdir(this.worktreesRoot, { recursive: true })
       // A worktree left behind by a failed cleanup would block `worktree add`.
       await git(repoRoot, ['worktree', 'prune'], [0, 1, 128])
@@ -265,7 +265,7 @@ export class GitDeliveryManager {
    */
   async rebase(
     projectPath: string,
-    runId: string,
+    taskId: string,
     branchName: string,
     baseCommit: string,
     steps: RebaseStep[]
@@ -273,7 +273,7 @@ export class GitDeliveryManager {
     const groups = planGroups(steps)
     if (!groups.length) throw new Error('A rebase has to keep at least one commit')
 
-    const prepared = await this.reopen(projectPath, runId, branchName)
+    const prepared = await this.reopen(projectPath, taskId, branchName)
     const worktree = prepared.worktreePath
     const originalTip = (await git(worktree, ['rev-parse', 'HEAD'])).stdout.trim()
 
@@ -359,12 +359,12 @@ export class GitDeliveryManager {
     }
   }
 
-  async getDiff(repoPath: string, baseCommit: string, headCommit: string): Promise<RunDiff> {
+  async getDiff(repoPath: string, baseCommit: string, headCommit: string): Promise<TaskDiff> {
     const [patch, log] = await Promise.all([
       git(repoPath, ['diff', '--find-renames', '--no-color', baseCommit, headCommit, '--']),
       git(repoPath, ['log', '--format=%H%x09%s', `${baseCommit}..${headCommit}`])
     ])
-    const commits: RunCommit[] = log.stdout
+    const commits: TaskCommit[] = log.stdout
       .split(/\r?\n/)
       .filter(Boolean)
       .map((line) => {

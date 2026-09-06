@@ -29,6 +29,8 @@ export class PgliteProjectMemory extends EmbeddingProjectMemory {
   private async initialize(dataDirectory: string, migrationsFolder: string): Promise<void> {
     await mkdir(dataDirectory, { recursive: true })
     this.client = await PGlite.create(dataDirectory, { extensions: { vector } })
+    // pgvector is a database prerequisite, not part of Drizzle's table models.
+    await this.client.exec('CREATE EXTENSION IF NOT EXISTS vector')
     this.database = drizzle(this.client, { schema })
     await migrate(this.database, { migrationsFolder })
   }
@@ -43,7 +45,7 @@ export class PgliteProjectMemory extends EmbeddingProjectMemory {
       .insert(projectMemories)
       .values({ id: randomUUID(), kind: 'task_result', ...memory })
       .onConflictDoUpdate({
-        target: [projectMemories.projectId, projectMemories.sourceRunId],
+        target: [projectMemories.projectId, projectMemories.sourceTaskId],
         set: {
           content: memory.content,
           contentHash: memory.contentHash,

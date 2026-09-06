@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import type { Run, RunDiff, RunEvent } from '../../shared/types'
+import type { Task, TaskDiff, TaskEvent } from '../../shared/types'
 import { PgliteProjectMemory } from './pglite-project-memory'
 import { PostgresProjectMemory } from './postgres-project-memory'
 
@@ -8,16 +8,16 @@ export interface ProjectMemoryMatch {
   similarity: number
 }
 
-export interface CompletedRunMemory {
-  run: Run
-  diff?: RunDiff
-  events: RunEvent[]
+export interface CompletedTaskMemory {
+  task: Task
+  diff?: TaskDiff
+  events: TaskEvent[]
 }
 
 /** The storage and retrieval behavior available to task orchestration. */
 export interface ProjectMemory {
   connect(): Promise<void>
-  rememberCompletedRun(input: CompletedRunMemory): Promise<void>
+  rememberCompletedTask(input: CompletedTaskMemory): Promise<void>
   recall(projectId: string, query: string, limit?: number): Promise<ProjectMemoryMatch[]>
   forgetProject(projectId: string): Promise<void>
   close(): Promise<void>

@@ -3,8 +3,9 @@ import { IS_MAC } from '../keys'
 import { useStore } from '../state/store'
 import { btn, cn } from '../ui'
 import { TerminalPane } from './TerminalPane'
-import { RunView } from './RunView'
+import { TaskView } from './TaskView'
 import { ProjectOverview } from './ProjectOverview'
+import { openTaskContextMenu } from './TaskContextMenu'
 
 const TAB = 'max-w-[260px] px-3 py-1.5 rounded-md overflow-hidden text-ellipsis whitespace-nowrap'
 
@@ -12,10 +13,10 @@ export function Workspace(): JSX.Element {
   const projects = useStore((s) => s.projects)
   const activeProjectId = useStore((s) => s.activeProjectId)
   const view = useStore((s) => s.view)
-  const runs = useStore((s) => s.runs)
+  const tasks = useStore((s) => s.tasks)
   const showTerminal = useStore((s) => s.showTerminal)
   const showHome = useStore((s) => s.showHome)
-  const openRun = useStore((s) => s.openRun)
+  const openTask = useStore((s) => s.openTask)
   const setNewTaskOpen = useStore((s) => s.setNewTaskOpen)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const addProject = useStore((s) => s.addProject)
@@ -39,11 +40,11 @@ export function Workspace(): JSX.Element {
     )
   }
 
-  const activeRun = view.kind === 'run' ? runs.find((r) => r.id === view.runId) : undefined
-  const projectRuns = runs.filter((run) => run.projectId === project.id)
+  const activeTask = view.kind === 'task' ? tasks.find((r) => r.id === view.taskId) : undefined
+  const projectTasks = tasks.filter((task) => task.projectId === project.id)
 
   return (
-    <main className="flex flex-col min-w-0 h-full">
+    <main className="flex flex-col min-w-0 min-h-0 h-full overflow-hidden">
       {/*
        * On macOS the traffic lights normally sit over the sidebar's brand row.
        * With the sidebar collapsed they land here instead, so the gutter moves
@@ -51,7 +52,7 @@ export function Workspace(): JSX.Element {
        */}
       <header
         className={cn(
-          'flex gap-4 items-center justify-between pr-3.5 py-2 border-b border-line',
+          'flex shrink-0 gap-4 items-center justify-between pr-3.5 py-2 border-b border-line',
           IS_MAC && 'drag-region transition-[padding-left] duration-[180ms] ease-[ease] motion-reduce:transition-none',
           IS_MAC && sidebarCollapsed ? 'pl-[78px]' : 'pl-3.5'
         )}
@@ -77,7 +78,14 @@ export function Workspace(): JSX.Element {
           >
             Terminal
           </button>
-          {activeRun && <button className={cn(TAB, 'no-drag text-fg bg-hover')}>{activeRun.title}</button>}
+          {activeTask && (
+            <button
+              className={cn(TAB, 'no-drag text-fg bg-hover')}
+              onContextMenu={(event) => openTaskContextMenu(event, activeTask.id)}
+            >
+              {activeTask.title}
+            </button>
+          )}
         </div>
 
         <div className="flex gap-3 items-center min-w-0">
@@ -93,20 +101,20 @@ export function Workspace(): JSX.Element {
         </div>
       </header>
 
-      <section className="relative flex-1 min-h-0">
+      <section className="relative flex-1 min-w-0 min-h-0 overflow-hidden">
         <div className={view.kind === 'terminal' ? 'h-full' : 'hidden'}>
           <TerminalPane projectId={project.id} cwd={project.path} />
         </div>
         {view.kind === 'home' && (
           <ProjectOverview
             project={project}
-            runs={projectRuns}
-            onOpenRun={(runId) => void openRun(runId)}
+            tasks={projectTasks}
+            onOpenTask={(taskId) => void openTask(taskId)}
             onStartTask={() => setNewTaskOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
           />
         )}
-        {activeRun && <RunView run={activeRun} />}
+        {activeTask && <TaskView task={activeTask} />}
       </section>
     </main>
   )

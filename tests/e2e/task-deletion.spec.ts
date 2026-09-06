@@ -1,0 +1,55 @@
+import { expect, test } from '@playwright/test'
+
+const fixture = '/tests/e2e/fixture/'
+
+test('right-click deletion requires confirmation and removes the selected task', async ({ page }) => {
+  await page.goto(fixture)
+  const task = page.getByRole('complementary').getByRole('button', { name: 'Open task: Polish task cards', exact: true })
+  await task.click()
+  await task.click({ button: 'right' })
+  const deletion = page.getByRole('menuitem', { name: 'Delete', exact: true })
+  await expect(deletion).toBeFocused()
+  await expect(deletion).toHaveClass(/text-danger/)
+  await deletion.click()
+  const dialog = page.getByRole('dialog', { name: 'Delete task?' })
+  await expect(dialog).toContainText('all its issues, output, and review comments')
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(task).toBeVisible()
+  await expect(task).toBeFocused()
+
+  await task.click({ button: 'right' })
+  await deletion.click()
+  await dialog.getByRole('button', { name: 'Delete task', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(task).toHaveCount(0)
+  await expect(page.getByText('Project overview', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open task: Build streaming support', exact: true })).toBeVisible()
+})
+
+test('failed deletion keeps the task and shows the error', async ({ page }) => {
+  await page.goto(`${fixture}?deleteFailure=1`)
+  const task = page.getByRole('button', { name: 'Open task: Polish task cards', exact: true })
+  await task.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete task', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Deletion failed for testing')
+  await expect(task).toHaveCount(1)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+})
+
+test('settled tasks can be deleted, and Escape dismisses their context menu', async ({ page }) => {
+  await page.goto(fixture)
+  const settled = page.getByRole('region', { name: 'Settled tasks' })
+  await settled.getByRole('button', { name: /^Settled/ }).click()
+  const task = settled.getByRole('button', { name: 'Open task: Clean up old logs', exact: true })
+  await task.click({ button: 'right' })
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await task.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete task', exact: true }).click()
+  await expect(task).toHaveCount(0)
+  await expect(settled.getByText('No settled tasks.')).toBeVisible()
+})

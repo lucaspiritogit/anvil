@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict'
+import { once } from 'node:events'
+import { AgentProcessManager, type ExitInfo } from '../src/main/agents/process-manager'
+import type { AgentDefinition, TaskEvent } from '../src/shared/types'
+
+async function main(): Promise<void> {
+  const agentProcesses = new AgentProcessManager()
+  const events: TaskEvent[] = []
+  agentProcesses.on('event', (event: TaskEvent) => events.push(event))
+  const agent: AgentDefinition = {
+    id: 'test', label: 'Test agent', description: 'Local output fixture',
+    command: process.execPath,
+    args: ['-e', `
+      process.stdout.write('first')
+      setTimeout(() => {
+        process.stdout.write(' line\\n\\x1b[32msecond line\\x1b[0m\\ntrailing output')
+        process.stderr.write('error line\\ntrailing error')
+      }, 10)
+    `]
+  }
+  const timeout = setTimeout(() => agentProcesses.cancelAll(), 10_000)
+  try {
+    const exited = once(agentProcesses, 'exit')
+    agentProcesses.start({ taskId: 'output', agent, prompt: 'Capture output', cwd: process.cwd() })
+    assert.equal(agentProcesses.isRunning('output'), true)
+    const [exit] = await exited as [ExitInfo]
+    assert.deepEqual(exit, { taskId: 'output', code: 0, cancelled: false })
+    assert.equal(agentProcesses.isRunning('output'), false)
+    assert.ok(events.every((event) => event.taskId === 'output' && !('runId' in event)))
+    assert.deepEqual(events.filter((event) => event.stream === 'stdout').map((event) => event.text), [
+      'first line', 'second line', 'trailing output'
+    ])
+    assert.deepEqual(events.filter((event) => event.stream === 'stderr').map((event) => event.text), [
+      'error line', 'trailing error'
+    ])
+    assert.ok(events.filter((event) => event.stream === 'stdout').every((event) => event.category === 'message'))
+    assert.ok(events.filter((event) => event.stream === 'stderr').every((event) => event.category === 'error'))
+
+    const cancelled = once(agentProcesses, 'exit')
+    agentProcesses.start({
+      taskId: 'cancelled', agent: { ...agent, args: ['-e', 'setInterval(() => {}, 1000)'] },
+      prompt: 'Wait for cancellation', cwd: process.cwd()
+    })
+    assert.equal(agentProcesses.cancel('cancelled'), true)
+    const [cancelledExit] = await cancelled as [ExitInfo]
+    assert.equal(cancelledExit.taskId, 'cancelled')
+    assert.equal(cancelledExit.cancelled, true)
+    assert.equal(agentProcesses.isRunning('cancelled'), false)
+    assert.ok(events.some((event) => event.taskId === 'cancelled' && event.text === 'Task cancelled.'))
+
+    const missing = once(agentProcesses, 'exit')
+    agentProcesses.start({
+      taskId: 'missing', agent: { ...agent, command: '/anvil-test-missing-agent' },
+      prompt: 'Missing command', cwd: process.cwd()
+    })
+    const [missingExit] = await missing as [ExitInfo]
+    assert.equal(missingExit.taskId, 'missing')
+    assert.equal(missingExit.code, null)
+    assert.match(missingExit.error!, /not installed or not on PATH/)
+    console.log('Agent process manager tests passed: task events, stream buffering, ANSI removal, cancellation, and spawn failure.')
+  } finally {
+    clearTimeout(timeout)
+    agentProcesses.cancelAll()
+  }
+}
+
+main().catch((error) => { console.error(error); process.exitCode = 1 })

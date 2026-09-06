@@ -13,11 +13,10 @@
     "esModuleInterop": true,
     "isolatedModules": true,
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"],
-      "@renderer/*": ["src/renderer/src/*"],
-      "@public/*": ["public/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@renderer/*": ["./src/renderer/src/*"],
+      "@public/*": ["./public/*"]
     }
   }
 }

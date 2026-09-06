@@ -5,10 +5,10 @@ import type {
   RebaseStep,
   Project,
   ProjectGitStatus,
-  Run,
-  RunComment,
-  RunDiff,
-  RunEvent,
+  Task,
+  TaskComment,
+  TaskDiff,
+  TaskEvent,
   Settings
 } from '../shared/types'
 
@@ -45,39 +45,41 @@ const api = {
       ipcRenderer.invoke('projects:git-status', id),
     gitInit: (id: string): Promise<ProjectGitStatus> => ipcRenderer.invoke('projects:git-init', id)
   },
-  runs: {
-    list: (): Promise<Run[]> => ipcRenderer.invoke('runs:list'),
-    events: (runId: string): Promise<RunEvent[]> => ipcRenderer.invoke('runs:events', runId),
-    diff: (runId: string): Promise<RunDiff> => ipcRenderer.invoke('runs:diff', runId),
+  tasks: {
+    list: (): Promise<Task[]> => ipcRenderer.invoke('tasks:list'),
+    events: (taskId: string): Promise<TaskEvent[]> => ipcRenderer.invoke('tasks:events', taskId),
+    diff: (taskId: string): Promise<TaskDiff> => ipcRenderer.invoke('tasks:diff', taskId),
     start: (input: {
       projectId: string
       agentId: string
       prompt: string
       model?: string
-    }): Promise<Run> => ipcRenderer.invoke('runs:start', input),
-    cancel: (runId: string): Promise<boolean> => ipcRenderer.invoke('runs:cancel', runId),
-    rebase: (input: { runId: string; steps: RebaseStep[] }): Promise<Run> =>
-      ipcRenderer.invoke('runs:rebase', input),
-    rebaseWithAgent: (runId: string): Promise<Run> =>
-      ipcRenderer.invoke('runs:rebase-agent', runId),
-    approve: (runId: string): Promise<Run> => ipcRenderer.invoke('runs:approve', runId),
-    onEvent: (handler: (event: RunEvent) => void): (() => void) =>
-      subscribe<RunEvent>('run:event', handler),
-    onUpdated: (handler: (run: Run) => void): (() => void) => subscribe<Run>('run:updated', handler)
+    }): Promise<Task> => ipcRenderer.invoke('tasks:start', input),
+    cancel: (taskId: string): Promise<boolean> => ipcRenderer.invoke('tasks:cancel', taskId),
+    delete: (taskId: string): Promise<void> => ipcRenderer.invoke('tasks:delete', taskId),
+    settle: (taskId: string): Promise<Task> => ipcRenderer.invoke('tasks:settle', taskId),
+    rebase: (input: { taskId: string; steps: RebaseStep[] }): Promise<Task> =>
+      ipcRenderer.invoke('tasks:rebase', input),
+    rebaseWithAgent: (taskId: string): Promise<Task> =>
+      ipcRenderer.invoke('tasks:rebase-agent', taskId),
+    approve: (taskId: string): Promise<Task> => ipcRenderer.invoke('tasks:approve', taskId),
+    onEvent: (handler: (event: TaskEvent) => void): (() => void) =>
+      subscribe<TaskEvent>('task:event', handler),
+    onUpdated: (handler: (task: Task) => void): (() => void) => subscribe<Task>('task:updated', handler)
   },
   comments: {
-    list: (runId: string): Promise<RunComment[]> => ipcRenderer.invoke('comments:list', runId),
+    list: (taskId: string): Promise<TaskComment[]> => ipcRenderer.invoke('comments:list', taskId),
     add: (input: {
-      runId: string
+      taskId: string
       file: string
-      side: RunComment['side']
+      side: TaskComment['side']
       lineNumber: number
       body: string
-    }): Promise<RunComment[]> => ipcRenderer.invoke('comments:add', input),
-    remove: (input: { runId: string; id: string }): Promise<RunComment[]> =>
+    }): Promise<TaskComment[]> => ipcRenderer.invoke('comments:add', input),
+    remove: (input: { taskId: string; id: string }): Promise<TaskComment[]> =>
       ipcRenderer.invoke('comments:remove', input),
-    send: (runId: string): Promise<{ run: Run; comments: RunComment[] }> =>
-      ipcRenderer.invoke('comments:send', runId)
+    send: (taskId: string): Promise<{ task: Task; comments: TaskComment[] }> =>
+      ipcRenderer.invoke('comments:send', taskId)
   },
   terminal: {
     ensure: (input: { id: string; cwd: string; cols: number; rows: number }): Promise<boolean> =>

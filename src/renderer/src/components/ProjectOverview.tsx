@@ -2,13 +2,14 @@ import type { JSX } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { formatCost, formatDuration, formatTokens } from '../format'
 import { useStore } from '../state/store'
+import { openTaskContextMenu } from './TaskContextMenu'
 import { btn, card, cn, deliveryTone, dot, statusTone } from '../ui'
-import type { Project, Run } from '@shared/types'
+import type { Project, Task } from '@shared/types'
 
 interface Props {
   project: Project
-  runs: Run[]
-  onOpenRun: (runId: string) => void
+  tasks: Task[]
+  onOpenTask: (taskId: string) => void
   onStartTask: () => void
   onOpenSettings: () => void
 }
@@ -61,49 +62,50 @@ function UsageMeter({
   )
 }
 
-function TaskCard({ run, now, onOpen }: { run: Run; now: number; onOpen: () => void }): JSX.Element {
+function TaskCard({ task, now, onOpen }: { task: Task; now: number; onOpen: () => void }): JSX.Element {
   const executionLabel =
-    run.status === 'running'
+    task.status === 'running'
       ? 'Working'
-      : run.status === 'succeeded'
+      : task.status === 'succeeded'
         ? 'Succeeded'
-        : run.status === 'failed'
+        : task.status === 'failed'
           ? 'Failed'
           : 'Cancelled'
   const codeLabel =
-    run.deliveryStatus === 'approved'
+    task.deliveryStatus === 'approved'
       ? 'Approved'
-      : run.deliveryStatus === 'reviewable'
+      : task.deliveryStatus === 'reviewable'
         ? 'Reviewable'
-        : run.deliveryStatus === 'did_not_commit'
+        : task.deliveryStatus === 'did_not_commit'
           ? 'Finisher committing'
-          : run.deliveryStatus === 'no_changes'
+          : task.deliveryStatus === 'no_changes'
             ? 'No changes'
-            : run.deliveryStatus === 'unavailable'
+            : task.deliveryStatus === 'unavailable'
               ? 'Not tracked by Git'
-              : run.deliveryStatus === 'finalizing'
+              : task.deliveryStatus === 'finalizing'
                 ? 'Saving branch'
-                : run.deliveryStatus === 'failed'
+                : task.deliveryStatus === 'failed'
                   ? 'Delivery failed'
-                  : run.deliveryStatus === 'agent_failed'
+                  : task.deliveryStatus === 'agent_failed'
                     ? 'Not reviewable'
                     : null
   return (
     <button
       className="flex gap-2.5 items-center w-full p-2.5 text-left bg-canvas border border-line rounded-md hover:bg-hover"
       onClick={onOpen}
+      onContextMenu={(event) => openTaskContextMenu(event, task.id)}
     >
-      <span className={dot(run.status)} />
+      <span className={dot(task.status)} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs">{run.title}</span>
+        <span className="block truncate text-xs">{task.title}</span>
         <span className="block truncate mt-[3px] text-[10px] text-dim">
-          {run.agentLabel} · {formatTokens(run.totalTokens)} tokens · {formatDuration(run, now)}
+          {task.agentLabel} · {formatTokens(task.totalTokens)} tokens · {formatDuration(task, now)}
         </span>
       </span>
       <span className="flex flex-none flex-col gap-1.5 items-end">
-        <span className={cn('text-[10px]', statusTone(run.status))}>{executionLabel}</span>
+        <span className={cn('text-[10px]', statusTone(task.status))}>{executionLabel}</span>
         {codeLabel && (
-          <span className={cn('text-[10px]', deliveryTone(run.deliveryStatus))}>{codeLabel}</span>
+          <span className={cn('text-[10px]', deliveryTone(task.deliveryStatus))}>{codeLabel}</span>
         )}
       </span>
     </button>
@@ -159,18 +161,18 @@ function GitAlert({ project }: { project: Project }): JSX.Element | null {
 
 export function ProjectOverview({
   project,
-  runs,
-  onOpenRun,
+  tasks,
+  onOpenTask,
   onStartTask,
   onOpenSettings
 }: Props): JSX.Element {
   const [now, setNow] = useState(Date.now())
-  const running = runs.filter((run) => run.status === 'running')
-  const reviewable = runs.filter(
-    (run) => run.deliveryStatus === 'reviewable'
+  const running = tasks.filter((task) => task.status === 'running')
+  const reviewable = tasks.filter(
+    (task) => task.deliveryStatus === 'reviewable'
   )
-  const completed = runs.filter(
-    (run) => run.status !== 'running' && run.deliveryStatus !== 'reviewable'
+  const completed = tasks.filter(
+    (task) => task.status !== 'running' && task.deliveryStatus !== 'reviewable'
   )
 
   useEffect(() => {
@@ -182,13 +184,13 @@ export function ProjectOverview({
   const monthUsage = useMemo(() => {
     const date = new Date()
     const monthStart = new Date(date.getFullYear(), date.getMonth(), 1).getTime()
-    const current = runs.filter((run) => run.startedAt >= monthStart)
+    const current = tasks.filter((task) => task.startedAt >= monthStart)
     return {
-      tokens: current.reduce((total, run) => total + run.totalTokens, 0),
-      cost: current.reduce((total, run) => total + (run.costUsd ?? 0), 0),
-      unreportedCosts: current.filter((run) => run.costUsd === null).length
+      tokens: current.reduce((total, task) => total + task.totalTokens, 0),
+      cost: current.reduce((total, task) => total + (task.costUsd ?? 0), 0),
+      unreportedCosts: current.filter((task) => task.costUsd === null).length
     }
-  }, [runs])
+  }, [tasks])
 
   return (
     <div className="h-full p-8 overflow-y-auto max-[980px]:p-[22px]">
@@ -249,8 +251,8 @@ export function ProjectOverview({
           </div>
           <div className={TASK_LIST}>
             {!running.length && <p className={LIST_EMPTY}>No agents are working right now.</p>}
-            {running.map((run) => (
-              <TaskCard key={run.id} run={run} now={now} onOpen={() => onOpenRun(run.id)} />
+            {running.map((task) => (
+              <TaskCard key={task.id} task={task} now={now} onOpen={() => onOpenTask(task.id)} />
             ))}
           </div>
         </section>
@@ -264,8 +266,8 @@ export function ProjectOverview({
           </div>
           <div className={TASK_LIST}>
             {!reviewable.length && <p className={LIST_EMPTY}>No code is waiting for review.</p>}
-            {reviewable.map((run) => (
-              <TaskCard key={run.id} run={run} now={now} onOpen={() => onOpenRun(run.id)} />
+            {reviewable.map((task) => (
+              <TaskCard key={task.id} task={task} now={now} onOpen={() => onOpenTask(task.id)} />
             ))}
           </div>
         </section>
@@ -280,8 +282,8 @@ export function ProjectOverview({
         </div>
         <div className={TASK_LIST}>
           {!completed.length && <p className={LIST_EMPTY}>No other completed tasks.</p>}
-          {completed.map((run) => (
-            <TaskCard key={run.id} run={run} now={now} onOpen={() => onOpenRun(run.id)} />
+          {completed.map((task) => (
+            <TaskCard key={task.id} task={task} now={now} onOpen={() => onOpenTask(task.id)} />
           ))}
         </div>
       </section>

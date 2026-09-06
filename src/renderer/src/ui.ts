@@ -1,4 +1,4 @@
-import type { DeliveryStatus, RunStatus } from '@shared/types'
+import type { DeliveryStatus, TaskStatus } from '@shared/types'
 
 /** Joins class names, dropping the falsy branches of a conditional. */
 export function cn(...parts: (string | false | null | undefined)[]): string {
@@ -10,14 +10,14 @@ export function cn(...parts: (string | false | null | undefined)[]): string {
  * never be interpolated into one. These maps are the lookup that replaces the
  * `dot-${status}` style of class the stylesheet used to rely on.
  */
-const STATUS_TONE: Record<RunStatus, string> = {
+const STATUS_TONE: Record<TaskStatus, string> = {
   running: 'text-accent',
   succeeded: 'text-ok',
   failed: 'text-danger',
   cancelled: 'text-warn'
 }
 
-const DOT_TONE: Record<RunStatus, string> = {
+const DOT_TONE: Record<TaskStatus, string> = {
   running: 'bg-accent animate-blink',
   succeeded: 'bg-ok',
   failed: 'bg-danger',
@@ -33,17 +33,17 @@ const DELIVERY_TONE: Partial<Record<DeliveryStatus, string>> = {
   agent_failed: 'text-danger'
 }
 
-/** The run-status dot: colour plus, while running, the slow blink. */
-export function dot(status: RunStatus, extra?: string): string {
+/** The task-status dot: colour plus, while running, the slow blink. */
+export function dot(status: TaskStatus, extra?: string): string {
   return cn('flex-none size-[7px] rounded-full', DOT_TONE[status], extra)
 }
 
-/** Text colour for a run's execution state. */
-export function statusTone(status: RunStatus): string {
+/** Text colour for a task's execution state. */
+export function statusTone(status: TaskStatus): string {
   return STATUS_TONE[status]
 }
 
-/** Text colour for a run's code-delivery state; the quiet ones stay dim. */
+/** Text colour for a task's code-delivery state; the quiet ones stay dim. */
 export function deliveryTone(status: DeliveryStatus): string {
   return DELIVERY_TONE[status] ?? 'text-dim'
 }

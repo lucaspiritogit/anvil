@@ -8,11 +8,11 @@ import { btn, cn, modal } from '../ui'
  * control, so it asks once — until the developer says not to, which is stored
  * in settings rather than for the session only.
  */
-export function AgentRebaseModal({ runId }: { runId: string }): JSX.Element {
+export function AgentRebaseModal({ taskId }: { taskId: string }): JSX.Element {
   const openRebase = useStore((s) => s.openRebase)
   const rebaseWithAgent = useStore((s) => s.rebaseWithAgent)
   const saveSettings = useStore((s) => s.saveSettings)
-  const run = useStore((s) => s.runs.find((item) => item.id === runId))
+  const task = useStore((s) => s.tasks.find((item) => item.id === taskId))
 
   const [dontAskAgain, setDontAskAgain] = useState(false)
 
@@ -26,7 +26,7 @@ export function AgentRebaseModal({ runId }: { runId: string }): JSX.Element {
 
   const confirm = async (): Promise<void> => {
     if (dontAskAgain) await saveSettings({ confirmRebase: false })
-    await rebaseWithAgent(runId)
+    await rebaseWithAgent(taskId)
   }
 
   return (
@@ -37,8 +37,8 @@ export function AgentRebaseModal({ runId }: { runId: string }): JSX.Element {
       >
         <h2 className={modal.title}>Are you sure?</h2>
         <p className={modal.copy}>
-          {run?.agentLabel ?? 'The agent'} will rebase{' '}
-          <code className="font-mono text-fg">{run?.branchName}</code> into a single commit and
+          {task?.agentLabel ?? 'The agent'} will rebase{' '}
+          <code className="font-mono text-fg">{task?.branchName}</code> into a single commit and
           write its message. Every change is kept; only the commit history of this task changes.
         </p>
 

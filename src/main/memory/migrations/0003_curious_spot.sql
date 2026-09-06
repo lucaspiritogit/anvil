@@ -1,1 +1,0 @@
-ALTER TABLE "project_memories" ALTER COLUMN "embedding" SET DATA TYPE vector(1024);

@@ -5,17 +5,26 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import electron from 'electron'
 
+const availableSuites = ['issue-tracker', 'issue-tracker-git', 'task-deletion', 'task-settlement', 'db-cli', 'ipc-handlers', 'agent-process-manager', 'opencode-acp', 'codex-app-server']
+const requestedSuites = process.argv.slice(2)
+const suites = requestedSuites.length ? requestedSuites : availableSuites
+for (const suite of suites) {
+  if (!availableSuites.includes(suite)) throw new Error(`Unknown test suite: ${suite}`)
+}
+
 const directory = await mkdtemp(join(tmpdir(), 'anvil-issue-tracker-suite-'))
 try {
-  for (const suite of ['issue-tracker', 'issue-tracker-git']) {
+  for (const suite of suites) {
   const outfile = join(directory, 'issue-tracker-test.cjs')
   await build({
     entryPoints: [`tests/${suite}.test.ts`], outfile, bundle: true, platform: 'node', format: 'cjs',
     packages: 'external', plugins: [{
       name: 'issue-tracker-test-doubles',
       setup(build) {
-        build.onResolve({ filter: /^(electron|\.\/agents\/(runner|models)|\.\/git-delivery|\.\/terminal|\.\/memory\/project-memory)$/ }, (args) => {
-          if (suite === 'issue-tracker-git' && args.path === './git-delivery') return undefined
+        // The ACP SDK is ESM-only; Electron 33's Node runtime needs it bundled.
+        build.onResolve({ filter: /^@agentclientprotocol\/sdk$/ }, () => ({ path: resolve('node_modules/@agentclientprotocol/sdk/dist/acp.js') }))
+        build.onResolve({ filter: /^(electron|\.{1,2}\/agents\/(process-manager|models)|\.{1,2}\/git-delivery|\.{1,2}\/terminal|\.{1,2}\/memory\/project-memory)$/ }, (args) => {
+          if (suite === 'issue-tracker-git' && resolve(args.resolveDir, args.path) === resolve('src/main/git-delivery')) return undefined
           return { path: resolve('tests/issue-tracker-doubles.ts') }
         })
       }

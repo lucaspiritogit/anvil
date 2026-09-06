@@ -27,7 +27,7 @@ export const projectMemories = pgTable(
   {
     id: uuid('id').primaryKey(),
     projectId: text('project_id').notNull(),
-    sourceRunId: text('source_run_id').notNull(),
+    sourceTaskId: text('source_task_id').notNull(),
     kind: text('kind').$type<'task_result'>().notNull(),
     content: text('content').notNull(),
     contentHash: text('content_hash').notNull(),
@@ -37,7 +37,7 @@ export const projectMemories = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
   },
   (table) => [
-    uniqueIndex('project_memories_project_run_idx').on(table.projectId, table.sourceRunId),
+    uniqueIndex('project_memories_project_task_idx').on(table.projectId, table.sourceTaskId),
     index('project_memories_project_idx').on(table.projectId, table.updatedAt.desc()),
     index('project_memories_embedding_hnsw_idx').using(
       'hnsw',

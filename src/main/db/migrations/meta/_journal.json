@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1788533436388,
-      "tag": "0000_init",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1788535856633,
-      "tag": "0001_add_approved_delivery_status",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1788561006537,
-      "tag": "0002_burly_red_ghost",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1788563471324,
-      "tag": "0003_fixed_bloodstorm",
+      "when": 1788622040946,
+      "tag": "0000_initial",
       "breakpoints": true
     }
   ]

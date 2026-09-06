@@ -6,10 +6,15 @@
  * generated files are applied at app start and must not be edited by hand or
  * renamed — the journal records what has already been applied.
  */
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { Config } from 'drizzle-kit'
 
 export default {
   schema: './src/main/db/schema.ts',
   out: './src/main/db/migrations',
-  dialect: 'sqlite'
+  dialect: 'sqlite',
+  dbCredentials: {
+    url: join(homedir(), '.anvil-composer', 'anvil.db')
+  }
 } satisfies Config

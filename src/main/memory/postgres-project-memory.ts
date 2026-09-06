@@ -44,7 +44,7 @@ export class PostgresProjectMemory extends EmbeddingProjectMemory {
       .insert(projectMemories)
       .values({ id: randomUUID(), kind: 'task_result', ...memory })
       .onConflictDoUpdate({
-        target: [projectMemories.projectId, projectMemories.sourceRunId],
+        target: [projectMemories.projectId, projectMemories.sourceTaskId],
         set: {
           content: memory.content,
           contentHash: memory.contentHash,

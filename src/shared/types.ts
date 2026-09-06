@@ -14,7 +14,7 @@ export interface Issue {
   completedAt?: number
 }
 export interface IssueTracker {
-  runId: string
+  taskId: string
   limit: 50
   phase: 'planning' | 'working' | 'complete' | 'blocked'
   items: Issue[]
@@ -22,7 +22,7 @@ export interface IssueTracker {
   eventOffset: number
 }
 
-export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type TaskStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type DeliveryStatus =
   | 'preparing'
   | 'working'
@@ -93,18 +93,20 @@ export interface AgentDefinition {
   defaultModel?: string
   /** How to enumerate this agent's models. Omitted when the CLI takes none. */
   models?: ModelSource
+  /** Omitted for legacy CLI execution. OpenCode uses ACP; Codex uses its own server protocol. */
+  executionProtocol?: 'acp' | 'codex-app-server'
   outputProtocol?: 'opencode-json' | 'codex-json' | 'pi-json'
 }
 
 export type StreamName = 'stdout' | 'stderr' | 'system'
-export type RunEventKind = 'output' | 'did_not_commit' | 'delivery'
+export type TaskEventKind = 'output' | 'did_not_commit' | 'delivery'
 
 /**
- * How a line is shown in the run output. Agent work is split into the kinds of
+ * How a line is shown in the task output. Agent work is split into the kinds of
  * work the agent did; `system` is Anvil talking about itself (Git, spawning,
  * exit codes); `error` is everything the task wrote to stderr.
  */
-export type RunEventCategory =
+export type TaskEventCategory =
   | 'message'
   | 'thinking'
   | 'tool_use'
@@ -112,7 +114,7 @@ export type RunEventCategory =
   | 'system'
   | 'error'
 
-export const RUN_EVENT_CATEGORIES: RunEventCategory[] = [
+export const TASK_EVENT_CATEGORIES: TaskEventCategory[] = [
   'message',
   'thinking',
   'tool_use',
@@ -121,17 +123,17 @@ export const RUN_EVENT_CATEGORIES: RunEventCategory[] = [
   'error'
 ]
 
-export interface RunEvent {
+export interface TaskEvent {
   id: string
-  runId: string
+  taskId: string
   ts: number
   stream: StreamName
-  kind: RunEventKind
-  category: RunEventCategory
+  kind: TaskEventKind
+  category: TaskEventCategory
   text: string
 }
 
-export interface Run {
+export interface Task {
   id: string
   projectId: string
   agentId: string
@@ -140,9 +142,11 @@ export interface Run {
   prompt: string
   title: string
   cwd: string
-  status: RunStatus
+  status: TaskStatus
   startedAt: number
   endedAt?: number
+  reviewedAt?: number
+  settledAt?: number
   exitCode?: number | null
   error?: string
   inputTokens: number
@@ -165,9 +169,9 @@ export interface Run {
 }
 
 /** A review note the developer left on a line of a task's diff. */
-export interface RunComment {
+export interface TaskComment {
   id: string
-  runId: string
+  taskId: string
   /** Path of the file in the diff, as the patch names it. */
   file: string
   /** Which side of the diff the line belongs to. */
@@ -179,18 +183,18 @@ export interface RunComment {
   sentAt: number | null
 }
 
-export interface RunCommit {
+export interface TaskCommit {
   sha: string
   subject: string
 }
 
-export interface RunDiff {
+export interface TaskDiff {
   patch: string
-  commits: RunCommit[]
+  commits: TaskCommit[]
 }
 
-export type RunUsage = Pick<
-  Run,
+export type TaskUsage = Pick<
+  Task,
   'inputTokens' | 'outputTokens' | 'cachedTokens' | 'totalTokens' | 'costUsd'
 >
 

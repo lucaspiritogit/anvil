@@ -15,8 +15,7 @@ export const GIT_SYSTEM_PROMPT = [
 ].join('\n')
 
 /**
- * Codex cannot print its own catalogue, so the list ships with Anvil and is
- * updated by hand when OpenAI ships a new generation.
+ * Static picker defaults until model discovery uses app-server's model/list.
  */
 const CODEX_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']
 
@@ -24,33 +23,22 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
   {
     id: 'opencode',
     label: 'opencode',
-    description: 'Default. Non-interactive run, auto-approves tool use.',
+    description: 'Default. ACP server over stdio, auto-approves tool use for each call.',
     command: 'opencode',
-    args: ['run', '--format', 'json', '--auto', '-m', '{{model}}', '{{prompt}}'],
-    resumeArgs: [
-      'run',
-      '--format',
-      'json',
-      '--auto',
-      '-m',
-      '{{model}}',
-      '-s',
-      '{{session}}',
-      '{{prompt}}'
-    ],
+    args: ['acp'],
+    executionProtocol: 'acp',
     defaultModel: 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
-    models: { kind: 'command', command: 'opencode', args: ['models'] },
-    outputProtocol: 'opencode-json'
+    models: { kind: 'command', command: 'opencode', args: ['models'] }
   },
   {
     id: 'codex',
     label: 'Codex',
-    description: 'Non-interactive exec mode.',
+    description: 'App-server over stdio, non-interactive workspace-write sandbox.',
     command: 'codex',
-    args: ['exec', '--json', '-m', '{{model}}', '{{prompt}}'],
+    args: ['app-server', '--listen', 'stdio://'],
+    executionProtocol: 'codex-app-server',
     defaultModel: CODEX_MODELS[0],
-    models: { kind: 'static', models: CODEX_MODELS },
-    outputProtocol: 'codex-json'
+    models: { kind: 'static', models: CODEX_MODELS }
   },
   {
     id: 'pi',

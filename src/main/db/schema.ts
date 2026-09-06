@@ -12,10 +12,10 @@ import { check, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqli
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
 import type {
   DeliveryStatus,
-  RunComment,
-  RunEventCategory,
-  RunEventKind,
-  RunStatus,
+  TaskComment,
+  TaskEventCategory,
+  TaskEventKind,
+  TaskStatus,
   StreamName
 } from '../../shared/types'
 import type { IssueTracker } from '../../shared/types'
@@ -30,7 +30,7 @@ function oneOf(column: SQLiteColumn, values: readonly string[]): SQL {
   return sql`${column} IN (${sql.raw(literals)})`
 }
 
-const RUN_STATUSES: RunStatus[] = ['running', 'succeeded', 'failed', 'cancelled']
+const TASK_STATUSES: TaskStatus[] = ['running', 'succeeded', 'failed', 'cancelled']
 const DELIVERY_STATUSES: DeliveryStatus[] = [
   'preparing',
   'working',
@@ -44,8 +44,8 @@ const DELIVERY_STATUSES: DeliveryStatus[] = [
   'unavailable'
 ]
 const STREAMS: StreamName[] = ['stdout', 'stderr', 'system']
-const EVENT_KINDS: RunEventKind[] = ['output', 'did_not_commit', 'delivery']
-const EVENT_CATEGORIES: RunEventCategory[] = [
+const EVENT_KINDS: TaskEventKind[] = ['output', 'did_not_commit', 'delivery']
+const EVENT_CATEGORIES: TaskEventCategory[] = [
   'message',
   'thinking',
   'tool_use',
@@ -53,7 +53,7 @@ const EVENT_CATEGORIES: RunEventCategory[] = [
   'system',
   'error'
 ]
-const COMMENT_SIDES: RunComment['side'][] = ['additions', 'deletions']
+const COMMENT_SIDES: TaskComment['side'][] = ['additions', 'deletions']
 
 export const projects = sqliteTable(
   'projects',
@@ -75,8 +75,8 @@ export const projects = sqliteTable(
   ]
 )
 
-export const runs = sqliteTable(
-  'runs',
+export const tasks = sqliteTable(
+  'tasks',
   {
     id: text('id').primaryKey(),
     projectId: text('project_id')
@@ -88,9 +88,11 @@ export const runs = sqliteTable(
     prompt: text('prompt').notNull(),
     title: text('title').notNull(),
     cwd: text('cwd').notNull(),
-    status: text('status').$type<RunStatus>().notNull(),
+    status: text('status').$type<TaskStatus>().notNull(),
     startedAt: integer('started_at').notNull(),
     endedAt: integer('ended_at'),
+    reviewedAt: integer('reviewed_at'),
+    settledAt: integer('settled_at'),
     exitCode: integer('exit_code'),
     error: text('error'),
     inputTokens: integer('input_tokens').notNull().default(0),
@@ -118,53 +120,53 @@ export const runs = sqliteTable(
     // expression as a quoted identifier when it rebuilds the table, producing a
     // migration that cannot run. SQLite reads an index in either direction, so
     // this still serves `ORDER BY started_at DESC`.
-    index('runs_project_started_idx').on(table.projectId, table.startedAt),
-    check('runs_status_valid', oneOf(table.status, RUN_STATUSES)),
-    check('runs_delivery_status_valid', oneOf(table.deliveryStatus, DELIVERY_STATUSES))
+    index('tasks_project_started_idx').on(table.projectId, table.startedAt),
+    check('tasks_status_valid', oneOf(table.status, TASK_STATUSES)),
+    check('tasks_delivery_status_valid', oneOf(table.deliveryStatus, DELIVERY_STATUSES))
   ]
 )
 
-export const runComments = sqliteTable(
-  'run_comments',
+export const taskComments = sqliteTable(
+  'task_comments',
   {
     id: text('id').primaryKey(),
-    runId: text('run_id')
+    taskId: text('task_id')
       .notNull()
-      .references(() => runs.id, { onDelete: 'cascade' }),
+      .references(() => tasks.id, { onDelete: 'cascade' }),
     file: text('file').notNull(),
-    side: text('side').$type<RunComment['side']>().notNull(),
+    side: text('side').$type<TaskComment['side']>().notNull(),
     lineNumber: integer('line_number').notNull(),
     body: text('body').notNull(),
     createdAt: integer('created_at').notNull(),
     sentAt: integer('sent_at')
   },
   (table) => [
-    index('run_comments_run_idx').on(table.runId, table.createdAt),
-    check('run_comments_side_valid', oneOf(table.side, COMMENT_SIDES))
+    index('task_comments_task_idx').on(table.taskId, table.createdAt),
+    check('task_comments_side_valid', oneOf(table.side, COMMENT_SIDES))
   ]
 )
 
-export const runEvents = sqliteTable(
-  'run_events',
+export const taskEvents = sqliteTable(
+  'task_events',
   {
     // Insertion order is how the log is read back, so the ordering key is the
     // primary key rather than the event's own id.
     sequence: integer('sequence').primaryKey({ autoIncrement: true }),
     id: text('id').notNull().unique(),
-    runId: text('run_id')
+    taskId: text('task_id')
       .notNull()
-      .references(() => runs.id, { onDelete: 'cascade' }),
+      .references(() => tasks.id, { onDelete: 'cascade' }),
     ts: integer('ts').notNull(),
     stream: text('stream').$type<StreamName>().notNull(),
-    kind: text('kind').$type<RunEventKind>().notNull().default('output'),
-    category: text('category').$type<RunEventCategory>().notNull().default('message'),
+    kind: text('kind').$type<TaskEventKind>().notNull().default('output'),
+    category: text('category').$type<TaskEventCategory>().notNull().default('message'),
     text: text('text').notNull()
   },
   (table) => [
-    index('run_events_run_sequence_idx').on(table.runId, table.sequence),
-    check('run_events_stream_valid', oneOf(table.stream, STREAMS)),
-    check('run_events_kind_valid', oneOf(table.kind, EVENT_KINDS)),
-    check('run_events_category_valid', oneOf(table.category, EVENT_CATEGORIES))
+    index('task_events_task_sequence_idx').on(table.taskId, table.sequence),
+    check('task_events_stream_valid', oneOf(table.stream, STREAMS)),
+    check('task_events_kind_valid', oneOf(table.kind, EVENT_KINDS)),
+    check('task_events_category_valid', oneOf(table.category, EVENT_CATEGORIES))
   ]
 )
 
@@ -174,6 +176,6 @@ export const settings = sqliteTable('settings', {
 })
 
 export const taskIssueTrackers = sqliteTable('task_issue_trackers', {
-  runId: text('run_id').primaryKey().references(() => runs.id, { onDelete: 'cascade' }),
+  taskId: text('task_id').primaryKey().references(() => tasks.id, { onDelete: 'cascade' }),
   state: text('state', { mode: 'json' }).$type<IssueTracker>().notNull()
 })
