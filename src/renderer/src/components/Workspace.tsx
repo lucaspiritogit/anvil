@@ -16,9 +16,6 @@ export function Workspace(): JSX.Element {
   const tasks = useStore((s) => s.tasks)
   const showTerminal = useStore((s) => s.showTerminal)
   const showHome = useStore((s) => s.showHome)
-  const openTask = useStore((s) => s.openTask)
-  const setNewTaskOpen = useStore((s) => s.setNewTaskOpen)
-  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const addProject = useStore((s) => s.addProject)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
 
@@ -95,9 +92,6 @@ export function Workspace(): JSX.Element {
           >
             {project.path}
           </span>
-          <button className={cn(btn.primary, 'no-drag')} onClick={() => setNewTaskOpen(true)}>
-            Start new task
-          </button>
         </div>
       </header>
 
@@ -109,9 +103,6 @@ export function Workspace(): JSX.Element {
           <ProjectOverview
             project={project}
             tasks={projectTasks}
-            onOpenTask={(taskId) => void openTask(taskId)}
-            onStartTask={() => setNewTaskOpen(true)}
-            onOpenSettings={() => setSettingsOpen(true)}
           />
         )}
         {activeTask && <TaskView task={activeTask} />}

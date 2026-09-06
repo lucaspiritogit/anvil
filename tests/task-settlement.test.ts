@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { Store } from '../src/main/store'
+import { initializeTracker } from 'valence'
 import { registerIpc } from '../src/main/ipc'
 import type { Task } from '../src/shared/types'
 import { handlers, testHome } from './issue-tracker-doubles'
@@ -10,6 +11,7 @@ async function main(): Promise<void> {
   const database = join(testHome, '.anvil-composer/anvil.db')
   const store = new Store(database, options)
   registerIpc(() => null)
+  initializeTracker(testHome).close()
   store.addProject({
     id: 'project', name: 'Test', path: testHome, createdAt: 0,
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
@@ -27,7 +29,8 @@ async function main(): Promise<void> {
       filesChanged: 1, additions: 1, deletions: 0, ...patch
     }
     store.addTask(task)
-    store.saveIssueTracker({ taskId: id, limit: 50, phase: 'complete', items: [], eventOffset: 0, error: null })
+    store.appendEvent({ id: `${id}-output`, taskId: id, ts: now, stream: 'stdout', kind: 'output', category: 'message', text: 'Task completed' })
+    store.saveTaskExecution({ taskId: id, projectPath: testHome, phase: 'complete', issueIds: [], currentIssueId: null, eventOffset: 0, error: null })
     return task
   }
   try {
@@ -40,7 +43,7 @@ async function main(): Promise<void> {
     now += 1
     call('tasks:list')
     assert.equal(store.getTask('reviewed')?.settledAt, now, 'Settles at the four-hour boundary')
-    assert.ok(store.getIssueTracker('reviewed'), 'Settling retains the issue tracker')
+    assert.ok(store.getTaskExecution('reviewed'), 'Settling retains execution metadata')
     assert.ok(store.readEvents('reviewed').length, 'Settling retains output')
 
     addTask('manual', { deliveryStatus: 'approved', reviewedAt: now })

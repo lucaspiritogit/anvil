@@ -1,23 +1,14 @@
 import type { Keybindings } from './keybindings'
 
-export interface Issue {
-  id: string
-  title: string
-  description: string
-  checklist: string[]
-  validation: string
-  labels: string[]
-  priority: 'urgent' | 'high' | 'medium' | 'low'
-  dependencies: string[]
-  status: 'queued' | 'working' | 'blocked' | 'complete'
-  evidence?: string
-  completedAt?: number
-}
-export interface IssueTracker {
+export type { Issue } from 'valence'
+
+/** Anvil execution metadata only. Issue records belong to Valence. */
+export interface TaskExecutionState {
   taskId: string
-  limit: 50
+  projectPath: string
   phase: 'planning' | 'working' | 'complete' | 'blocked'
-  items: Issue[]
+  issueIds: string[]
+  currentIssueId: string | null
   error: string | null
   eventOffset: number
 }
@@ -124,12 +115,14 @@ export const TASK_EVENT_CATEGORIES: TaskEventCategory[] = [
 ]
 
 export interface TaskEvent {
+  /** Stable for tool snapshots: a repeated ID replaces the previous event in place. */
   id: string
   taskId: string
   ts: number
   stream: StreamName
   kind: TaskEventKind
   category: TaskEventCategory
+  /** tool_use: first line is the name, remaining lines describe what was executed. */
   text: string
 }
 

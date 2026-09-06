@@ -2,20 +2,24 @@ import { randomUUID } from 'node:crypto'
 import type { SessionUpdate, ToolCall, ToolCallUpdate, Usage } from '@agentclientprotocol/sdk'
 import type { TaskEventCategory, TaskUsage } from '../../shared/types'
 import type { TaskEvent, TaskInput } from './agent-client-protocol'
+import { ToolOutput, toolInputDescription } from './tool-output'
 
 const ANSI = /\u001b\[[0-9;?]*[ -\/]*[@-~]/g
 
-/** Converts ACP chunks and tool patches to Anvil's append-only, line-based output. */
+/** Converts ACP message chunks and tool snapshots to Anvil output events. */
 export class AcpOutput {
   output = ''
   usage: TaskUsage | undefined
   readonly changedFiles = new Set<string>()
   private buffers = new Map<TaskEventCategory, string>()
   private tools = new Map<string, ToolCallUpdate>()
+  private readonly toolOutput: ToolOutput
   private messageId: string | undefined
   private costUsd: number | null = null
 
-  constructor(private readonly input: TaskInput, private readonly onEvent: (event: TaskEvent) => void) {}
+  constructor(private readonly input: TaskInput, private readonly onEvent: (event: TaskEvent) => void) {
+    this.toolOutput = new ToolOutput(input, onEvent)
+  }
 
   line(text: string, category: TaskEventCategory, stream: 'stdout' | 'stderr' | 'system' = 'stdout'): void {
     this.onEvent({
@@ -77,28 +81,31 @@ export class AcpOutput {
 
   private tool(update: ToolCall | ToolCallUpdate): void {
     const previous = this.tools.get(update.toolCallId)
-    const current = { ...previous, ...update }
+    const current: ToolCallUpdate = {
+      ...previous,
+      ...Object.fromEntries(Object.entries(update).filter(([, value]) => value !== undefined)),
+      toolCallId: update.toolCallId
+    }
+    // ACP defines a null programmatic name as unchanged, not cleared.
+    current.name = update.name ?? previous?.name
     this.tools.set(update.toolCallId, current)
-    if (!previous || (update.title && update.title !== previous.title)) {
-      this.line(current.title ?? update.toolCallId, 'tool_use')
+    const name = current.name ?? current.title ?? current.kind ?? update.toolCallId
+    const description = toolInputDescription(current.rawInput) ||
+      (current.locations ?? []).map((location) => location.path).join('\n') ||
+      (current.title !== name ? current.title ?? '' : '')
+    this.toolOutput.use(update.toolCallId, name, description)
+    const textContent = (current.content ?? []).flatMap((content) =>
+      content.type === 'content' && content.content.type === 'text' ? [content.content.text] : []
+    )
+    const terminal = current.status === 'completed' || current.status === 'failed'
+    if (textContent.length || current.rawOutput != null || terminal) {
+      const text = textContent.length ? textContent.join('\n')
+        : current.rawOutput != null ? (typeof current.rawOutput === 'string' ? current.rawOutput : JSON.stringify(current.rawOutput))
+        : `${name}: ${current.status}`
+      this.toolOutput.result(update.toolCallId, text, current.status === 'failed')
     }
-    if (update.rawInput != null && JSON.stringify(update.rawInput) !== JSON.stringify(previous?.rawInput)) {
-      this.line(JSON.stringify(update.rawInput), 'tool_use')
-    }
-    if (current.status !== 'completed' && current.status !== 'failed') return
-    if (previous?.status === current.status && update.content === undefined && update.rawOutput === undefined) return
-    const category = current.status === 'failed' ? 'error' : 'tool_result'
-    this.line(`${current.title ?? update.toolCallId}: ${current.status}`, category)
     for (const content of current.content ?? []) {
-      if (content.type === 'content' && content.content.type === 'text') {
-        for (const line of content.content.text.split('\n')) this.line(line, category)
-      }
       if (content.type === 'diff' && current.status === 'completed') this.changedFiles.add(content.path)
-    }
-    const hasTextContent = current.content?.some((content) => content.type === 'content' && content.content.type === 'text')
-    if (!hasTextContent && current.rawOutput != null) {
-      const text = typeof current.rawOutput === 'string' ? current.rawOutput : JSON.stringify(current.rawOutput)
-      for (const line of text.split('\n')) this.line(line, category)
     }
     if (current.status === 'completed' && ['edit', 'delete', 'move'].includes(current.kind ?? '')) {
       for (const location of current.locations ?? []) this.changedFiles.add(location.path)

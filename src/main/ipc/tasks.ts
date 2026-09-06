@@ -1,21 +1,21 @@
 import { ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { getAgent } from '../agents/registry'
-import { issueTrackerPrompt } from '../issue-tracker'
+import { planningPrompt } from '../agents/task-results'
 import type { TaskMemory } from '../memory/task-memory'
 import type { TaskContext } from '../tasks/context'
 import type { TaskEvents } from '../tasks/events'
-import type { IssueExecution } from '../tasks/issue-execution'
+import type { TaskExecution } from '../tasks/task-execution'
 import { titleFor } from '../tasks/task-title'
 import type { Task, TaskDiff } from '../../shared/types'
 
-interface TaskHandlerDependencies extends TaskContext, TaskEvents, IssueExecution {
+interface TaskHandlerDependencies extends TaskContext, TaskEvents, TaskExecution {
   promptWithProjectMemory: TaskMemory['promptWithProjectMemory']
 }
 
 export function registerTaskHandlers({
   store, agentProcesses, gitDelivery, send, recordSystemEvent, forgetUsage,
-  publishIssueTracker, finishIssueTracker, requireFinishedTracker, promptWithProjectMemory
+  initializeTask, stopTask, finishTaskTurn, requireFinishedTask, promptWithProjectMemory
 }: TaskHandlerDependencies): void {
   const settleDueTasks = (): void => {
     for (const task of store.settleDueTasks()) send('task:updated', task)
@@ -28,15 +28,17 @@ export function registerTaskHandlers({
     return store.getTasks()
   })
   ipcMain.handle('tasks:settle', (_event, taskId: string): Task => {
-    requireFinishedTracker(taskId)
+    requireFinishedTask(taskId)
     const task = store.settleTask(taskId)
     send('task:updated', task)
     return task
   })
   ipcMain.handle('tasks:delete', (_event, taskId: string): void => {
     if (typeof taskId !== 'string' || !taskId.trim()) throw new Error('A task ID is required')
-    // Remove first so cancellation and late async callbacks cannot persist more output/issues.
-    store.removeTask(taskId)
+    // Release only this process's claim; the independent Valence records survive deletion.
+    stopTask(taskId, 'Anvil task deleted.')
+    // Remove before cancellation so late callbacks cannot restore Anvil metadata.
+    store.deleteTaskCascade(taskId)
     forgetUsage(taskId)
     if (agentProcesses.isRunning(taskId)) agentProcesses.cancel(taskId)
   })
@@ -83,33 +85,39 @@ export function registerTaskHandlers({
         deletions: 0
       }
       store.addTask(task)
-      const tracker = publishIssueTracker({ taskId: task.id, limit: 50, phase: 'planning', items: [], error: null, eventOffset: 0 })
-      const prompt = issueTrackerPrompt(tracker, await promptWithProjectMemory(project.id, input.prompt))
-
-      // Without Git there is no worktree or diff. Run directly in the project folder.
-      const git = await gitDelivery.status(project.path)
-      if (!store.getTask(task.id)) throw new Error('Task was deleted')
-      if (!git.isRepository) {
-        const unmanagedTask = store.updateTask(task.id, {
-          cwd: project.path,
-          deliveryStatus: 'unavailable'
-        })!
-        setImmediate(() => {
-          if (store.getTask(task.id)?.status !== 'running') return
-          agentProcesses.start({
-            taskId: task.id,
-            agent,
-            prompt,
-            model,
-            cwd: project.path
-          })
-        })
-        return unmanagedTask
+      const requireRunningTask = (): void => {
+        const current = store.getTask(task.id)
+        if (!current) throw new Error('Task was deleted')
+        if (current.status !== 'running') throw new Error('Task stopped during preparation')
       }
-
       try {
+        initializeTask(task.id, project.path)
+        const prompt = planningPrompt(await promptWithProjectMemory(project.id, input.prompt))
+        requireRunningTask()
+
+        // Without Git there is no worktree or diff. Run directly in the project folder.
+        const git = await gitDelivery.status(project.path)
+        requireRunningTask()
+        if (!git.isRepository) {
+          const unmanagedTask = store.updateTask(task.id, {
+            cwd: project.path,
+            deliveryStatus: 'unavailable'
+          })!
+          setImmediate(() => {
+            if (store.getTask(task.id)?.status !== 'running') return
+            agentProcesses.start({
+              taskId: task.id,
+              agent,
+              prompt,
+              model,
+              cwd: project.path
+            })
+          })
+          return unmanagedTask
+        }
+
         const prepared = await gitDelivery.prepare(project.path, task.id, task.title)
-        if (!store.getTask(task.id)) throw new Error('Task was deleted')
+        requireRunningTask()
         const preparedTask = store.updateTask(task.id, {
           cwd: prepared.cwd,
           deliveryStatus: 'working',
@@ -133,7 +141,9 @@ export function registerTaskHandlers({
         })
         return preparedTask
       } catch (error) {
-        if (!store.getTask(task.id)) throw new Error('Task was deleted')
+        const current = store.getTask(task.id)
+        if (!current) throw new Error('Task was deleted')
+        if (current.status !== 'running') return current
         const message = error instanceof Error ? error.message : String(error)
         const failed = store.updateTask(task.id, {
           status: 'failed',
@@ -143,8 +153,8 @@ export function registerTaskHandlers({
           deliveryStatus: 'failed',
           deliveryError: message
         })!
-        recordSystemEvent(task.id, `Could not prepare Git workspace: ${message}`, 'delivery', 'error')
-        publishIssueTracker({ ...tracker, phase: 'blocked', error: message })
+        recordSystemEvent(task.id, `Could not start task: ${message}`, 'delivery', 'error')
+        stopTask(task.id, message)
         return failed
       }
     }
@@ -153,9 +163,9 @@ export function registerTaskHandlers({
   ipcMain.handle('tasks:cancel', (_event, taskId: string) => {
     if (agentProcesses.isRunning(taskId)) return agentProcesses.cancel(taskId)
     // Cancellation must also cover the gap between sequential agent processes.
-    const tracker = store.getIssueTracker(taskId)
-    if (!tracker || tracker.phase === 'complete' || store.getTask(taskId)?.status !== 'running') return false
-    void finishIssueTracker({ taskId, code: null, cancelled: true })
+    const state = store.getTaskExecution(taskId)
+    if (!state || state.phase === 'complete' || store.getTask(taskId)?.status !== 'running') return false
+    void finishTaskTurn({ taskId, code: null, cancelled: true })
     return true
   })
 }

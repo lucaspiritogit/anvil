@@ -1,6 +1,6 @@
 import type { TaskEvent as OutputTaskEvent, TaskStatus, TaskUsage } from '../../shared/types'
 
-/** One agent turn. Prompts include Anvil's task and issue-tracker instructions. */
+/** One Anvil agent turn. Issue persistence and validation belong to Valence. */
 export interface TaskInput {
   taskId: string
   issueId?: string

@@ -220,10 +220,23 @@ const TEXT_TONE: Record<TaskEventCategory, string> = {
 function LogRow({ event }: { event: TaskEvent }): JSX.Element {
   const [expanded, setExpanded] = useState(false)
   const uncommitted = event.kind === 'did_not_commit'
+  const [toolName, ...toolDescription] = event.category === 'tool_use' ? event.text.split('\n') : []
+  const tool = toolName ? { name: toolName, description: toolDescription.join('\n') } : undefined
+  const toolResult = event.category === 'tool_result' || event.id.startsWith('tool-result:')
   return (
     <div
+      data-output-category={event.category}
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
       className="grid grid-cols-[104px_minmax(0,1fr)] gap-4 py-[5px] cursor-pointer border-b border-line/55 hover:bg-hover/45"
       onClick={() => setExpanded((value) => !value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          setExpanded((value) => !value)
+        }
+      }}
     >
       <span
         className={cn(
@@ -233,15 +246,21 @@ function LogRow({ event }: { event: TaskEvent }): JSX.Element {
       >
         {CATEGORY_LABEL[event.category]}
       </span>
-      {/* Clicking a row lifts the 3-line clamp so long tool output stays reachable. */}
-      <span
-        className={cn(
-          'min-w-0 whitespace-pre-wrap break-words',
-          expanded ? 'line-clamp-none' : 'line-clamp-3',
-          uncommitted ? 'text-warn' : TEXT_TONE[event.category]
-        )}
-      >
-        {event.text || ' '}
+      <span className="min-w-0">
+        {tool ? <>
+          <span className="block break-words">{tool.name}</span>
+          {tool.description && <span className={cn('whitespace-pre-wrap break-words text-dim', expanded ? 'block' : 'line-clamp-2')}>
+            {tool.description}
+          </span>}
+        </> : <span
+          className={cn(
+            'min-w-0 whitespace-pre-wrap break-words',
+            expanded ? 'block' : toolResult ? 'line-clamp-1' : 'line-clamp-3',
+            uncommitted ? 'text-warn' : TEXT_TONE[event.category]
+          )}
+        >
+          {event.text || ' '}
+        </span>}
       </span>
     </div>
   )

@@ -1,25 +1,20 @@
 import type { JSX } from 'react'
-import { useEffect, useMemo, useState } from 'react'
-import { formatCost, formatDuration, formatTokens } from '../format'
+import { useEffect, useMemo } from 'react'
+import { formatCost, formatTokens } from '../format'
 import { useStore } from '../state/store'
-import { openTaskContextMenu } from './TaskContextMenu'
-import { btn, card, cn, deliveryTone, dot, statusTone } from '../ui'
+import { TaskComposer } from './TaskComposer'
+import { card, cn } from '../ui'
 import type { Project, Task } from '@shared/types'
 
 interface Props {
   project: Project
   tasks: Task[]
-  onOpenTask: (taskId: string) => void
-  onStartTask: () => void
-  onOpenSettings: () => void
 }
 
-const SPREAD = 'max-w-[1100px] mx-auto'
+const SPREAD = 'w-full max-w-[880px] mx-auto'
 const SECTION_HEAD = 'flex gap-4 items-center justify-between mb-4'
 const SECTION_TITLE = 'mb-1 text-sm font-semibold'
 const SECTION_NOTE = 'text-xs text-dim'
-const TASK_LIST = 'flex flex-col gap-1.5'
-const LIST_EMPTY = 'px-2.5 py-[22px] text-xs text-dim text-center'
 
 function UsageMeter({
   label,
@@ -59,56 +54,6 @@ function UsageMeter({
       </div>
       {!limit && <span className="block mt-1.5 text-[10px] text-dim">No monthly limit set</span>}
     </div>
-  )
-}
-
-function TaskCard({ task, now, onOpen }: { task: Task; now: number; onOpen: () => void }): JSX.Element {
-  const executionLabel =
-    task.status === 'running'
-      ? 'Working'
-      : task.status === 'succeeded'
-        ? 'Succeeded'
-        : task.status === 'failed'
-          ? 'Failed'
-          : 'Cancelled'
-  const codeLabel =
-    task.deliveryStatus === 'approved'
-      ? 'Approved'
-      : task.deliveryStatus === 'reviewable'
-        ? 'Reviewable'
-        : task.deliveryStatus === 'did_not_commit'
-          ? 'Finisher committing'
-          : task.deliveryStatus === 'no_changes'
-            ? 'No changes'
-            : task.deliveryStatus === 'unavailable'
-              ? 'Not tracked by Git'
-              : task.deliveryStatus === 'finalizing'
-                ? 'Saving branch'
-                : task.deliveryStatus === 'failed'
-                  ? 'Delivery failed'
-                  : task.deliveryStatus === 'agent_failed'
-                    ? 'Not reviewable'
-                    : null
-  return (
-    <button
-      className="flex gap-2.5 items-center w-full p-2.5 text-left bg-canvas border border-line rounded-md hover:bg-hover"
-      onClick={onOpen}
-      onContextMenu={(event) => openTaskContextMenu(event, task.id)}
-    >
-      <span className={dot(task.status)} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs">{task.title}</span>
-        <span className="block truncate mt-[3px] text-[10px] text-dim">
-          {task.agentLabel} · {formatTokens(task.totalTokens)} tokens · {formatDuration(task, now)}
-        </span>
-      </span>
-      <span className="flex flex-none flex-col gap-1.5 items-end">
-        <span className={cn('text-[10px]', statusTone(task.status))}>{executionLabel}</span>
-        {codeLabel && (
-          <span className={cn('text-[10px]', deliveryTone(task.deliveryStatus))}>{codeLabel}</span>
-        )}
-      </span>
-    </button>
   )
 }
 
@@ -159,28 +104,7 @@ function GitAlert({ project }: { project: Project }): JSX.Element | null {
   )
 }
 
-export function ProjectOverview({
-  project,
-  tasks,
-  onOpenTask,
-  onStartTask,
-  onOpenSettings
-}: Props): JSX.Element {
-  const [now, setNow] = useState(Date.now())
-  const running = tasks.filter((task) => task.status === 'running')
-  const reviewable = tasks.filter(
-    (task) => task.deliveryStatus === 'reviewable'
-  )
-  const completed = tasks.filter(
-    (task) => task.status !== 'running' && task.deliveryStatus !== 'reviewable'
-  )
-
-  useEffect(() => {
-    if (!running.length) return
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [running.length])
-
+export function ProjectOverview({ project, tasks }: Props): JSX.Element {
   const monthUsage = useMemo(() => {
     const date = new Date()
     const monthStart = new Date(date.getFullYear(), date.getMonth(), 1).getTime()
@@ -193,100 +117,54 @@ export function ProjectOverview({
   }, [tasks])
 
   return (
-    <div className="h-full p-8 overflow-y-auto max-[980px]:p-[22px]">
-      <div className={cn(SPREAD, 'flex gap-6 items-start justify-between mb-6')}>
-        <div>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto px-8 pt-8 pb-6 max-[980px]:px-[22px]">
+        <div className={cn(SPREAD, 'mb-6')}>
           <span className="text-[11px] font-semibold text-accent uppercase tracking-[0.08em]">
             Project overview
           </span>
-          <h1 className="mt-[5px] mb-1.5 text-[26px] font-semibold">{project.name}</h1>
+          <h1 className="mt-2 mb-2 text-[30px] font-semibold tracking-tight">{project.name}</h1>
+          <p className="text-sm text-dim">What would you like to work on?</p>
         </div>
-      </div>
 
-      <GitAlert project={project} />
+        <GitAlert project={project} />
 
-      <section className={cn(card, SPREAD)}>
-        <div className={SECTION_HEAD}>
-          <div>
-            <h2 className={SECTION_TITLE}>Usage this month</h2>
-            <p className={SECTION_NOTE}>Reported by the agent services used for this project.</p>
-          </div>
-          <button className={btn.text} onClick={onOpenSettings}>
-            Edit limits
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-6 max-[980px]:grid-cols-1">
-          <UsageMeter
-            label="Tokens"
-            value={monthUsage.tokens}
-            limit={project.monthlyTokenLimit}
-            formattedValue={formatTokens(monthUsage.tokens)}
-            formattedLimit={formatTokens(project.monthlyTokenLimit ?? 0)}
-          />
-          <UsageMeter
-            label="Cost"
-            value={monthUsage.cost}
-            limit={project.monthlyCostLimitUsd}
-            formattedValue={formatCost(monthUsage.cost)}
-            formattedLimit={formatCost(project.monthlyCostLimitUsd ?? 0)}
-          />
-        </div>
-        {monthUsage.unreportedCosts > 0 && (
-          <p className="mt-3 text-[11px] text-dim">
-            {monthUsage.unreportedCosts} task{monthUsage.unreportedCosts === 1 ? '' : 's'} did not
-            report a dollar cost.
-          </p>
-        )}
-      </section>
-
-      <div
-        className={cn(SPREAD, 'grid grid-cols-2 gap-4 mt-4 max-[980px]:grid-cols-1')}
-      >
-        <section className={cn(card, 'min-w-0')}>
+        <section className={cn(card, SPREAD)}>
           <div className={SECTION_HEAD}>
             <div>
-              <h2 className={SECTION_TITLE}>Running</h2>
-              <p className={SECTION_NOTE}>{running.length} active</p>
+              <h2 className={SECTION_TITLE}>Usage this month</h2>
+              <p className={SECTION_NOTE}>Reported by the agent services used for this project.</p>
             </div>
           </div>
-          <div className={TASK_LIST}>
-            {!running.length && <p className={LIST_EMPTY}>No agents are working right now.</p>}
-            {running.map((task) => (
-              <TaskCard key={task.id} task={task} now={now} onOpen={() => onOpenTask(task.id)} />
-            ))}
+          <div className="grid grid-cols-2 gap-6 max-[760px]:grid-cols-1">
+            <UsageMeter
+              label="Tokens"
+              value={monthUsage.tokens}
+              limit={project.monthlyTokenLimit}
+              formattedValue={formatTokens(monthUsage.tokens)}
+              formattedLimit={formatTokens(project.monthlyTokenLimit ?? 0)}
+            />
+            <UsageMeter
+              label="Cost"
+              value={monthUsage.cost}
+              limit={project.monthlyCostLimitUsd}
+              formattedValue={formatCost(monthUsage.cost)}
+              formattedLimit={formatCost(project.monthlyCostLimitUsd ?? 0)}
+            />
           </div>
-        </section>
-
-        <section className={cn(card, 'min-w-0')}>
-          <div className={SECTION_HEAD}>
-            <div>
-              <h2 className={SECTION_TITLE}>Ready for review</h2>
-              <p className={SECTION_NOTE}>{reviewable.length} awaiting your approval</p>
-            </div>
-          </div>
-          <div className={TASK_LIST}>
-            {!reviewable.length && <p className={LIST_EMPTY}>No code is waiting for review.</p>}
-            {reviewable.map((task) => (
-              <TaskCard key={task.id} task={task} now={now} onOpen={() => onOpenTask(task.id)} />
-            ))}
-          </div>
+          {monthUsage.unreportedCosts > 0 && (
+            <p className="mt-3 text-[11px] text-dim">
+              {monthUsage.unreportedCosts} task{monthUsage.unreportedCosts === 1 ? '' : 's'} did not
+              report a dollar cost.
+            </p>
+          )}
         </section>
       </div>
-
-      <section className={cn(card, SPREAD, 'mt-4')}>
-        <div className={SECTION_HEAD}>
-          <div>
-            <h2 className={SECTION_TITLE}>Completed</h2>
-            <p className={SECTION_NOTE}>Successful no-change tasks, failures, and cancellations</p>
-          </div>
+      <div className="shrink-0 px-8 pt-3 pb-6 max-[980px]:px-[22px]">
+        <div className={SPREAD}>
+          <TaskComposer key={project.id} project={project} />
         </div>
-        <div className={TASK_LIST}>
-          {!completed.length && <p className={LIST_EMPTY}>No other completed tasks.</p>}
-          {completed.map((task) => (
-            <TaskCard key={task.id} task={task} now={now} onOpen={() => onOpenTask(task.id)} />
-          ))}
-        </div>
-      </section>
+      </div>
     </div>
   )
 }

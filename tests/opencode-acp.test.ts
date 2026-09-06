@@ -6,7 +6,6 @@ import { once } from 'node:events'
 import { OpenCodeAcpClient } from '../src/main/agents/opencode-acp'
 import { AgentProcessManager, type ExitInfo } from '../src/main/agents/process-manager'
 import { getAgent } from '../src/main/agents/registry'
-import { completionEvidence } from '../src/main/issue-tracker'
 import type { TaskEvent, TaskInput } from '../src/main/agents/agent-client-protocol'
 
 async function main(): Promise<void> {
@@ -36,7 +35,7 @@ async function main(): Promise<void> {
     assert.equal(result.sessionId, 'session-test')
     assert.deepEqual(result.changedFiles, ['/changed.ts'])
     assert.deepEqual(result.usage, { inputTokens: 20, outputTokens: 10, cachedTokens: 5, totalTokens: 35, costUsd: 0.25 })
-    const expected = 'Done ✓\n<anvil-issue-tracker>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</anvil-issue-tracker>'
+    const expected = 'Done ✓\n<task-result>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</task-result>'
     assert.equal(result.output, expected)
     const outputEvents = events.filter((event) => event.type === 'output').map((event) => event.event)
     assert.deepEqual(outputEvents.filter((event) => event.category === 'message').map((event) => event.text), expected.split('\n'))
@@ -45,7 +44,6 @@ async function main(): Promise<void> {
     assert.ok(outputEvents.some((event) => event.category === 'error' && event.text === 'Failed edit: failed'))
     assert.ok(outputEvents.some((event) => event.stream === 'stderr' && event.text === 'trailing diagnostic'))
     assert.ok(outputEvents.every((event) => event.id && event.ts && event.taskId === input.taskId))
-    assert.equal(completionEvidence(result.output, { id: 'issue-test', checklist: ['Run tests'] } as Parameters<typeof completionEvidence>[1]), 'Tests passed')
     assert.equal(events.filter((event) => event.type === 'session').length, 1)
     assert.equal(events.filter((event) => event.type === 'usage').length, 1)
     const initialRequests = await requests()

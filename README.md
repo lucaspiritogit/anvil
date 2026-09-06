@@ -50,7 +50,7 @@ React UI that talks to it through a typed preload bridge.
 ```
 
 **Main process** (`src/main/`) runs agents, Git worktrees, SQLite storage, the
-issue tracker, project memory, and PTY terminals. `ipc.ts` creates shared
+Valence client, project memory, and PTY terminals. `ipc.ts` creates shared
 dependencies and registers the handlers in `ipc/`. `tasks/` owns issue execution,
 completion, and agent event persistence. Shared types live in `src/shared/`.
 
@@ -66,14 +66,17 @@ A typical task flows like this:
 2. For Git projects, `GitDeliveryManager` creates an isolated worktree and branch.
 3. `AgentProcessManager` routes OpenCode through ACP, Codex through its app-server
    adapter, and Pi through its CLI runner. All produce task events for persistence.
-4. The agent plans up to 50 internal issues. Anvil runs them one at a time by
-   priority and dependencies, with no Board UI and no per-issue approval.
+4. The agent plans up to 50 issues. Anvil stores them in Valence and claims only
+   that task's issue IDs. Valence enforces dependencies and priority; Anvil runs
+   one issue turn at a time, with no Board UI or per-issue approval.
 5. When everything finishes, Anvil finalizes Git delivery and shows one
    cumulative local diff for review. Approve, comment, rebase, or settle from
    there.
 
 **Storage.** App state lives in `~/.anvil-composer/anvil.db` via Drizzle on
-better-sqlite3: projects, tasks, events, comments, settings, and issue trackers.
+better-sqlite3: projects, tasks, events, comments, settings, and execution metadata.
+Issue records belong to Valence's separate project database. Anvil stores their
+IDs and its current turn, not copies of their status, dependencies, or evidence.
 Completed-task memory is separate. PGlite with pgvector is the desktop default.
 PostgreSQL is available for self-hosted setups. Ollama generates embeddings
 locally. Schema sources are `src/main/db/schema.ts` and
@@ -94,7 +97,7 @@ tests/                    issue tracker and e2e suites
 
 ## Requirements
 
-- Node 20+
+- Node 20.19+
 - At least one agent CLI on your PATH. `opencode` is the default. Authenticate
   it with its own provider credentials beforehand.
 
@@ -157,7 +160,70 @@ already has, so a harness that works in your terminal works here unchanged.
 Successful tasks move to Settled four hours after approval, or after completion
 when there were no code changes. Running, failed, cancelled, and unreviewed
 tasks stay active. Right-click a task to delete it. Deletion removes SQLite
-state and cancels the agent. Project files and Git branches stay put.
+state and cancels the agent. Valence issues, project files, and Git branches stay
+put. Removing a project also stops its Anvil agents without deleting Valence data.
+
+## Valence integration
+
+Valence is an independent product. Anvil imports its public library through
+`src/main/tasks/task-issues.ts`; it does not access Valence's schema or SQL.
+Valence owns issue validation, graph creation, atomic claims, completion, and
+persistence. Anvil owns the 50-issue limit, agent prompts and execution, worktrees,
+and final review. Other clients do not inherit those Anvil policies.
+
+Starting a new task initializes local storage at `<project>/.valence/sqlite.db`
+only if no tracker exists. To keep data outside the repository, initialize the
+project with a separately installed `vl init --config` first. Anvil discovers
+that storage automatically. It always uses the project directory for Valence,
+not a temporary task worktree. Existing storage is opened without applying
+Valence migrations; run `vl init` explicitly when an upgrade is authorized.
+Keep `.valence/` out of Git when using local storage.
+
+Other Node clients and a global `vl` installation can read the same issues and
+complete external dependencies. Run `vl` from the project root. Anvil's agent
+turns report plans and completion through `<task-result>` JSON; Anvil applies
+those results through Valence. Agents do not need to run a bundled CLI. Do not
+use Anvil's Electron-rebuilt `node_modules/.bin/vl` under ordinary Node; install
+`vl` separately so it has its own Node-compatible SQLite addon.
+
+Anvil claims with an explicit set of task issue IDs, never with an unrestricted
+project claim. It blocks only claims owned by its current process when a turn
+fails or is cancelled. On restart it marks Anvil tasks interrupted but leaves
+Valence issues untouched. Inspect partial work and confirm that the old worker
+has stopped before manually requeueing an issue. If another client claims task
+work or dependencies leave nothing ready, Anvil stops with an error rather than
+stealing work or bypassing dependencies. Interrupted tasks do not auto-resume.
+
+The old tracker implementation, JSON table, and scheduling/validation helpers
+have been removed. The initial Anvil migration is regenerated for a fresh database;
+there is no compatibility layer or data conversion. Before using this version,
+quit Anvil and run `npm run db:reset` to discard its old app database. This deletes
+Anvil projects, tasks, output, comments, and settings. It does not delete the
+independent Valence databases or project memory.
+
+### Dependency and packaging
+
+Until Valence has a published release, Anvil pins the npm artifact at
+`vendor/valence-0.1.0.tgz`. It is a package copy, not a sibling-directory symlink.
+To update it from a Valence checkout, run its tests, then:
+
+```sh
+cd /path/to/valence
+npm pack --pack-destination /path/to/anvil/vendor
+cd /path/to/anvil
+npm install ./vendor/valence-0.1.0.tgz
+```
+
+Commit the artifact, `package.json`, and lockfile together. The normal Anvil
+postinstall rebuilds `better-sqlite3` for Electron. Valence remains external to
+the main bundle, and its `drizzle/` files ship with the package. Native SQLite
+binaries are unpacked from ASAR.
+
+`npm run test:issue-tracker` exercises the public Anvil task lifecycle with real
+Valence databases. The `valence-clients` suite installs a separate temporary Node
+client from the artifact to test CLI/Electron interoperability, config discovery,
+external dependencies, restart safety, and deletion. It requires npm registry
+access or cached dependencies. Tests migrate only disposable databases.
 
 ## Adding an agent
 
@@ -193,8 +259,8 @@ execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResu
 - `TaskEvent` carries normalized output, session IDs, or usage. Output reuses
   Anvil's persisted event format; the adapter does not access SQLite or IPC.
 - `TaskResult` contains the terminal status, this turn's assistant text, session,
-  optional usage, agent-reported changed files, and any error. The issue tracker
-  validates its existing JSON block from that text. Git still computes the final
+  optional usage, agent-reported changed files, and any error. Anvil reads the
+  `<task-result>` block and submits issue data to Valence for validation. Git computes the final
   task diff, including changes made through shell commands that a server may not report.
 
 ### OpenCode ACP
@@ -234,15 +300,16 @@ waits for `turn/completed`. Anvil persists the thread ID as its session resume
 handle, since Codex's separate `thread.sessionId` can be shared across forks.
 
 Events are scoped to the current thread and turn. Final item snapshots reconcile
-streamed deltas without duplicating output. The assembled assistant text feeds
-issue-tracker validation. File-change items report paths; Git remains responsible
+streamed deltas without duplicating output. Anvil reads task results from the
+assembled assistant text and submits them to Valence. File-change items report paths; Git remains responsible
 for the final task diff. Cancellation uses `turn/interrupt`, then kills the server
 and its tools if they do not stop.
 
-Tasks use `approvalPolicy: never` and the `workspaceWrite` sandbox. Unexpected
-approval requests are declined without granting persistent permissions or sandbox
-escapes. This can block network access or protected Git writes. Anvil does not
-answer user questions or MCP elicitation prompts on the user's behalf.
+New and resumed Codex threads use `approvalPolicy: never` and
+`sandbox: workspace-write`. Unexpected approval requests are declined without
+granting persistent permissions or sandbox escapes. This can block network access
+or protected Git writes. Anvil does not answer user questions or MCP elicitation
+prompts on the user's behalf.
 Authenticate separately with `codex login`; no credential-management or experimental
 protocol capabilities are enabled by this adapter.
 

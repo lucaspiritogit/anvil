@@ -21,6 +21,7 @@ export function App(): JSX.Element {
   const taskMenu = useStore((s) => s.taskMenu)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
+  const focusTaskComposer = useStore((s) => s.focusTaskComposer)
   const keybindings = useStore((s) => s.settings?.keybindings) ?? DEFAULT_KEYBINDINGS
 
   useEffect(() => {
@@ -31,7 +32,7 @@ export function App(): JSX.Element {
   // one in SHORTCUTS. The settings capture field stops propagation while it is
   // recording, which is what keeps a chord from firing as it is being bound.
   useEffect(() => {
-    const actions: Record<ShortcutId, () => void> = { toggleSidebar }
+    const actions: Record<ShortcutId, () => void> = { toggleSidebar, focusTaskComposer }
     const onKey = (event: KeyboardEvent): void => {
       // Auto-repeat fires while a chord is held down; a shortcut is an action
       // per press, so only the first event of a hold counts.
@@ -45,7 +46,7 @@ export function App(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keybindings, toggleSidebar])
+  }, [keybindings, toggleSidebar, focusTaskComposer])
 
   useEffect(() => {
     const offEvent = window.anvil.tasks.onEvent(applyEvent)

@@ -39,6 +39,7 @@
     "drizzle-orm": "^0.45.2",
     "node-pty": "^1.0.0",
     "pg": "^8.23.0",
+    "valence": "file:vendor/valence-0.1.0.tgz",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

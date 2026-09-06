@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "bcec4e69-da10-457f-8133-804d22516ae6",
+  "id": "7e709157-e23d-4c90-80ad-9895b34d6d93",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "projects": {
@@ -318,8 +318,8 @@
         }
       }
     },
-    "task_issue_trackers": {
-      "name": "task_issue_trackers",
+    "task_executions": {
+      "name": "task_executions",
       "columns": {
         "task_id": {
           "name": "task_id",
@@ -338,9 +338,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "task_issue_trackers_task_id_tasks_id_fk": {
-          "name": "task_issue_trackers_task_id_tasks_id_fk",
-          "tableFrom": "task_issue_trackers",
+        "task_executions_task_id_tasks_id_fk": {
+          "name": "task_executions_task_id_tasks_id_fk",
+          "tableFrom": "task_executions",
           "tableTo": "tasks",
           "columnsFrom": [
             "task_id"

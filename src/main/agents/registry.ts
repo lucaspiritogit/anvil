@@ -17,7 +17,7 @@ export const GIT_SYSTEM_PROMPT = [
 /**
  * Static picker defaults until model discovery uses app-server's model/list.
  */
-const CODEX_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']
+const CODEX_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-6-astra']
 
 export const BUILTIN_AGENTS: AgentDefinition[] = [
   {

@@ -1,5 +1,7 @@
 import type { JSX, MouseEvent } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { Alert02Icon } from '@hugeicons/core-free-icons'
 import { useStore } from '../state/store'
 import { btn, cn, modal } from '../ui'
 
@@ -87,7 +89,7 @@ export function TaskContextMenu(): JSX.Element | null {
       <dialog
         ref={dialogRef}
         aria-labelledby="delete-task-title"
-        aria-describedby="delete-task-description"
+        aria-describedby="delete-task-description delete-task-warning"
         className={cn(modal.panel, modal.width.narrow, 'm-auto text-fg backdrop:bg-black/55')}
         onCancel={(event) => {
           event.preventDefault()
@@ -96,13 +98,17 @@ export function TaskContextMenu(): JSX.Element | null {
       >
         <h2 id="delete-task-title" className={modal.title}>Delete task?</h2>
         <p id="delete-task-description" className={cn(modal.copy, 'break-words')}>
-          Permanently delete &quot;{task.title}&quot;, all its issues, output, and review comments
-          from the database? This cannot be undone.
+          Permanently delete &quot;{task.title}&quot;, its output and review comments
+          from Anvil? This cannot be undone.
         </p>
         {task.status === 'running' && (
           <p className={modal.copy}>The running agent will be stopped.</p>
         )}
         <p className={modal.copy}>Project files and Git branches will not be deleted.</p>
+        <p id="delete-task-warning" className="mb-3.5 flex items-start gap-2 text-xs text-danger">
+          <HugeiconsIcon icon={Alert02Icon} size={16} className="shrink-0" aria-hidden="true" />
+          <span>This permanently removes the task and its related records from database storage.</span>
+        </p>
         {error && <p role="alert" className="text-xs text-danger">{error}</p>}
         <div className={cn(modal.actions, 'justify-end')}>
           <button autoFocus className={btn.ghost} disabled={deleting} onClick={() => setTaskMenu(null)}>

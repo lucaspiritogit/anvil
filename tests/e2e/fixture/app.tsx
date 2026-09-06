@@ -37,20 +37,48 @@ const update = (task: Task): Task => {
   updates.forEach((listener) => listener(task))
   return task
 }
-const events = (taskId: string): TaskEvent[] => taskId !== 'output' ? [] : Array.from({ length: 300 }, (_, index) => ({
-  id: String(index), taskId, ts: index, stream: 'stdout', kind: 'output', category: 'message',
-  text: `Output ${index}: ${'long-token'.repeat(80)}`
-}))
+const events = (taskId: string): TaskEvent[] => {
+  if (taskId !== 'output') return []
+  if (query.has('tools')) return [
+    { id: 'tool-use:first', taskId, ts: 0, stream: 'stdout', kind: 'output', category: 'tool_use', text: 'Shell\npwd && rg --files' },
+    { id: 'tool-result:first', taskId, ts: 1, stream: 'stdout', kind: 'output', category: 'tool_result', text: '/tmp/project\nfirst.ts\nsecond.ts' }
+  ]
+  return Array.from({ length: 300 }, (_, index) => ({
+    id: String(index), taskId, ts: index, stream: 'stdout', kind: 'output', category: 'message',
+    text: `Output ${index}: ${'long-token'.repeat(80)}`
+  }))
+}
 
 window.anvil = {
-  platform: 'linux',
+  platform: query.get('platform') ?? 'linux',
   projects: { list: async () => projects, gitStatus: async () => ({ isRepository: true }) },
-  agents: { list: async () => [], models: async () => ({ agentId: 'codex', models: [] }) },
+  agents: {
+    list: async () => [
+      { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5' },
+      { id: 'opencode', label: 'OpenCode', description: 'OpenCode agent', command: 'opencode', args: [], defaultModel: 'provider/model' }
+    ],
+    models: async (agentId: string) => ({ agentId, models: agentId === 'codex' ? ['gpt-5', 'gpt-5-mini'] : ['provider/model'] })
+  },
   settings: { get: async () => ({ defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, keybindings: DEFAULT_KEYBINDINGS }) },
   tasks: {
     list: async () => tasks,
+    start: async (input: { projectId: string; agentId: string; prompt: string; model?: string }) => {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      if (query.has('startFailure')) throw new Error('Task could not be started')
+      const task: Task = {
+        ...base, ...input, id: `started-${tasks.length}`, title: input.prompt,
+        status: 'running', deliveryStatus: 'working', endedAt: undefined, reviewedAt: undefined,
+        cwd: projects.find((project) => project.id === input.projectId)!.path
+      }
+      tasks = [task, ...tasks]
+      return task
+    },
     events: async (taskId: string) => events(taskId),
-    onEvent: subscribe,
+    onEvent: (listener: (event: TaskEvent) => void) => {
+      const receive = (event: Event) => listener((event as CustomEvent<TaskEvent>).detail)
+      window.addEventListener('fixture:output', receive)
+      return () => window.removeEventListener('fixture:output', receive)
+    },
     onUpdated: (listener: (task: Task) => void) => { updates.add(listener); return () => updates.delete(listener) },
     delete: async (taskId: string) => {
       if (query.has('deleteFailure')) throw new Error('Deletion failed for testing')

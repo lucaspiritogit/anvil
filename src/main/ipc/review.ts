@@ -3,20 +3,20 @@ import { randomUUID } from 'node:crypto'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { reviewPrompt } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
-import type { IssueExecution } from '../tasks/issue-execution'
+import type { TaskExecution } from '../tasks/task-execution'
 import type { TaskComment } from '../../shared/types'
 
 interface ReviewHandlerDependencies extends TaskContext {
   recordSystemEvent: RecordSystemEvent
-  requireFinishedTracker: IssueExecution['requireFinishedTracker']
+  requireFinishedTask: TaskExecution['requireFinishedTask']
 }
 
 export function registerReviewHandlers({
-  store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTracker
+  store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTask
 }: ReviewHandlerDependencies): void {
   // Approval takes a reviewed task out of the review queue.
   ipcMain.handle('tasks:approve', (_event, taskId: string) => {
-    requireFinishedTracker(taskId)
+    requireFinishedTask(taskId)
     const task = store.getTask(taskId)
     if (!task) throw new Error('Task not found')
     if (task.deliveryStatus !== 'reviewable') throw new Error('This task is not awaiting review')
@@ -54,7 +54,7 @@ export function registerReviewHandlers({
 
   // Resume the original agent session on the task branch with pending review notes.
   ipcMain.handle('comments:send', async (_event, taskId: string) => {
-    requireFinishedTracker(taskId)
+    requireFinishedTask(taskId)
     const task = store.getTask(taskId)
     if (!task) throw new Error('Task not found')
     if (agentProcesses.isRunning(taskId)) throw new Error('This task is already running')

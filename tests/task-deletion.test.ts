@@ -21,7 +21,7 @@ async function main(): Promise<void> {
   }
   const issue = {
     key: 'first', title: 'Change', description: 'One behavior', labels: [], priority: 'medium',
-    dependencies: [], status: 'queued', checklist: ['Verify'], validation: 'Run test'
+    dependencies: [], checklist: ['Verify'], validation: 'Run test'
   }
   const start = async (): Promise<Task> => {
     const task = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Delete test' })
@@ -33,7 +33,7 @@ async function main(): Promise<void> {
     agentProcesses.result(task.id, { items: [issue] })
     await tick()
     agentProcesses.result(task.id, {
-      id: store.getIssueTracker(task.id)!.items[0].id,
+      id: store.getTaskExecution(task.id)!.currentIssueId,
       status: 'complete', checklist: [true], evidence: 'Test passed'
     })
     await tick()
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   }
   const assertDeleted = (taskId: string): void => {
     assert.equal(store.getTask(taskId), undefined)
-    assert.equal(store.getIssueTracker(taskId), undefined)
+    assert.equal(store.getTaskExecution(taskId), undefined)
     assert.deepEqual(store.readEvents(taskId), [])
     assert.deepEqual(store.getComments(taskId), [])
     assert.ok(!store.getTasks().some((task) => task.id === taskId))
@@ -55,12 +55,12 @@ async function main(): Promise<void> {
   }
   store.addComment(comment)
   assert.ok(store.readEvents(finished.id).length)
-  assert.ok(store.getIssueTracker(finished.id)!.items.length)
+  assert.ok(store.getTaskExecution(finished.id)!.issueIds.length)
   assert.equal(store.getComments(finished.id).length, 1)
   call('tasks:delete', finished.id)
   assertDeleted(finished.id)
   assert.ok(store.getTask(kept.id))
-  assert.ok(store.getIssueTracker(kept.id))
+  assert.ok(store.getTaskExecution(kept.id))
   assert.ok(store.readEvents(kept.id).length)
   assert.equal(store.getProjects().length, 1)
   call('tasks:delete', finished.id) // Retrying a deletion is harmless.
@@ -99,7 +99,7 @@ async function main(): Promise<void> {
     throw new Error('Late delivery error')
   }
   agentProcesses.result(finalizing.id, {
-    id: store.getIssueTracker(finalizing.id)!.items[0].id,
+    id: store.getTaskExecution(finalizing.id)!.currentIssueId,
     status: 'complete', checklist: [true], evidence: 'Passed'
   })
   call('tasks:delete', finalizing.id)
@@ -127,7 +127,7 @@ async function main(): Promise<void> {
 
   const restarted = new Store(database, options)
   assert.equal(restarted.getTask(finished.id), undefined)
-  assert.equal(restarted.getIssueTracker(finished.id), undefined)
+  assert.equal(restarted.getTaskExecution(finished.id), undefined)
   assert.deepEqual(restarted.getComments(finished.id), [])
   assert.deepEqual(restarted.readEvents(finished.id), [])
   assert.ok(restarted.getTask(kept.id))

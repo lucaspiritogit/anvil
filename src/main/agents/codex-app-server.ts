@@ -103,7 +103,7 @@ export class CodexAppServerClient implements AgentExecutor {
       if (input.signal?.aborted) cancel()
       await connection.request('initialize', { clientInfo: { name: 'anvil', title: 'Anvil', version: '0.1.0' } })
       connection.initialized()
-      const options = { cwd: input.cwd, model: input.model, approvalPolicy: 'never' as const, sandbox: 'workspaceWrite' as const }
+      const options = { cwd: input.cwd, model: input.model, approvalPolicy: 'never' as const, sandbox: 'workspace-write' as const }
       const response = input.resumeSessionId
         ? await connection.request('thread/resume', { ...options, threadId: input.resumeSessionId })
         : await connection.request('thread/start', options)

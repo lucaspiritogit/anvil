@@ -28,7 +28,7 @@ export class AgentProcessManager extends EventEmitter {
     this.starts.push(options)
   }
   result(taskId: string, payload: unknown, code = 0): void {
-    this.emit('event', { id: randomUUID(), taskId, ts: Date.now(), stream: 'stdout', kind: 'output', category: 'message', text: `<anvil-issue-tracker>${JSON.stringify(payload)}</anvil-issue-tracker>` })
+    this.emit('event', { id: randomUUID(), taskId, ts: Date.now(), stream: 'stdout', kind: 'output', category: 'message', text: `<task-result>${JSON.stringify(payload)}</task-result>` })
     this.active.delete(taskId)
     this.emit('exit', { taskId, code, cancelled: false })
   }

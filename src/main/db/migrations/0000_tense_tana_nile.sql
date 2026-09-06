@@ -48,7 +48,7 @@ CREATE TABLE `task_events` (
 --> statement-breakpoint
 CREATE UNIQUE INDEX `task_events_id_unique` ON `task_events` (`id`);--> statement-breakpoint
 CREATE INDEX `task_events_task_sequence_idx` ON `task_events` (`task_id`,`sequence`);--> statement-breakpoint
-CREATE TABLE `task_issue_trackers` (
+CREATE TABLE `task_executions` (
 	`task_id` text PRIMARY KEY NOT NULL,
 	`state` text NOT NULL,
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE cascade

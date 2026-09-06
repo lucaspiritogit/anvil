@@ -6,7 +6,6 @@ import { once } from 'node:events'
 import { CodexAppServerClient } from '../src/main/agents/codex-app-server'
 import { AgentProcessManager, type ExitInfo } from '../src/main/agents/process-manager'
 import { getAgent } from '../src/main/agents/registry'
-import { completionEvidence } from '../src/main/issue-tracker'
 import type { TaskEvent, TaskInput } from '../src/main/agents/agent-executor'
 
 async function main(): Promise<void> {
@@ -25,7 +24,7 @@ async function main(): Promise<void> {
   const record = (event: TaskEvent): void => { events.push(event) }
   const requests = async (): Promise<any[]> => (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
   const outputEvents = () => events.filter((event) => event.type === 'output').map((event) => event.event)
-  const expected = 'Done ✓\n<anvil-issue-tracker>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</anvil-issue-tracker>'
+  const expected = 'Done ✓\n<task-result>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</task-result>'
   const timeout = setTimeout(() => {
     console.error('Codex app-server tests timed out')
     process.exit(1)
@@ -40,17 +39,16 @@ async function main(): Promise<void> {
     assert.deepEqual(result.usage, { inputTokens: 40, outputTokens: 20, cachedTokens: 20, totalTokens: 60, costUsd: null })
     assert.deepEqual(outputEvents().filter((event) => event.category === 'message').map((event) => event.text), expected.split('\n'))
     assert.deepEqual(outputEvents().filter((event) => event.category === 'thinking').map((event) => event.text), ['Thinking'])
-    assert.equal(outputEvents().filter((event) => event.text === 'Tests passed').length, 1)
+    assert.equal(outputEvents().filter((event) => event.text === 'Tests passed\n').length, 1)
     assert.ok(outputEvents().some((event) => event.stream === 'stderr' && event.text === 'trailing diagnostic'))
     assert.ok(outputEvents().every((event) => event.id && event.ts && event.taskId === input.taskId))
-    assert.equal(completionEvidence(result.output, { id: 'issue-test', checklist: ['Run tests'] } as Parameters<typeof completionEvidence>[1]), 'Tests passed')
     assert.equal(events.filter((event) => event.type === 'session').length, 1)
     const initial = await requests()
     assert.deepEqual(initial.map((request) => request.method), ['initialize', 'initialized', 'thread/start', 'turn/start'])
     assert.ok(initial.every((request) => !('jsonrpc' in request)))
     assert.deepEqual(initial[0].params, { clientInfo: { name: 'anvil', title: 'Anvil', version: '0.1.0' } })
     assert.equal(initial[2].params.approvalPolicy, 'never')
-    assert.equal(initial[2].params.sandbox, 'workspaceWrite')
+    assert.equal(initial[2].params.sandbox, 'workspace-write')
     assert.equal(initial[2].params.cwd, directory)
     assert.equal(initial[2].params.model, 'test-model')
 
@@ -59,7 +57,10 @@ async function main(): Promise<void> {
     assert.equal(resumed.output, expected)
     assert.deepEqual(resumed.usage, result.usage, 'Subtract a pre-turn baseline, not last or the full thread history')
     assert.ok(!outputEvents().some((event) => /old history|old issue/.test(event.text)))
-    assert.equal((await requests()).find((request) => request.method === 'thread/resume').params.threadId, 'thread-test')
+    const resumeRequest = (await requests()).find((request) => request.method === 'thread/resume')
+    assert.equal(resumeRequest.params.threadId, 'thread-test')
+    assert.equal(resumeRequest.params.sandbox, 'workspace-write')
+    assert.equal(resumeRequest.params.approvalPolicy, 'never')
     const unknownUsage = await client('no-baseline').execute({ ...input, resumeSessionId: 'thread-test' }, () => {})
     assert.equal(unknownUsage.usage, undefined, 'Never charge resumed history when Codex supplies no baseline')
 

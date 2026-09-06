@@ -2,6 +2,9 @@ import type { JSX } from 'react'
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { DEFAULT_KEYBINDINGS, SHORTCUTS } from '@shared/keybindings'
+import { matchesAccelerator } from '../keys'
+import { useStore } from '../state/store'
 
 interface Props {
   projectId: string
@@ -30,6 +33,11 @@ export function TerminalPane({ projectId, cwd }: Props): JSX.Element {
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(host)
+    // Let app shortcuts bubble to App without also sending control bytes to the shell.
+    term.attachCustomKeyEventHandler((event) => {
+      const keybindings = useStore.getState().settings?.keybindings ?? DEFAULT_KEYBINDINGS
+      return !SHORTCUTS.some((shortcut) => matchesAccelerator(event, keybindings[shortcut.id]))
+    })
 
     const safeFit = (): void => {
       if (host.clientWidth === 0 || host.clientHeight === 0) return

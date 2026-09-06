@@ -2,20 +2,20 @@ import { ipcMain } from 'electron'
 import { getAgent } from '../agents/registry'
 import { agentRebasePrompt } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
-import type { IssueExecution } from '../tasks/issue-execution'
+import type { TaskExecution } from '../tasks/task-execution'
 import type { RebaseStep } from '../../shared/types'
 
 interface RebaseHandlerDependencies extends TaskContext {
   recordSystemEvent: RecordSystemEvent
-  requireFinishedTracker: IssueExecution['requireFinishedTracker']
+  requireFinishedTask: TaskExecution['requireFinishedTask']
 }
 
 export function registerRebaseHandlers({
-  store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTracker
+  store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTask
 }: RebaseHandlerDependencies): void {
   // Manual rebase does not start an agent or change the task to running.
   ipcMain.handle('tasks:rebase', async (_event, input: { taskId: string; steps: RebaseStep[] }) => {
-    requireFinishedTracker(input.taskId)
+    requireFinishedTask(input.taskId)
     const task = store.getTask(input.taskId)
     if (!task) throw new Error('Task not found')
     if (agentProcesses.isRunning(input.taskId)) throw new Error('This task is already running')
@@ -54,7 +54,7 @@ export function registerRebaseHandlers({
   })
 
   ipcMain.handle('tasks:rebase-agent', async (_event, taskId: string) => {
-    requireFinishedTracker(taskId)
+    requireFinishedTask(taskId)
     const task = store.getTask(taskId)
     if (!task) throw new Error('Task not found')
     if (agentProcesses.isRunning(taskId)) throw new Error('This task is already running')

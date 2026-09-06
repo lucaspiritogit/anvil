@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { taskState } from './task-state'
 import type { AgentProcessManager as RealAgentProcessManager } from '../src/main/agents/process-manager'
 import { agentRebasePrompt, reviewPrompt } from '../src/main/agents/task-prompts'
 import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/main/git-delivery'
@@ -14,54 +16,24 @@ import { registerTerminalHandlers } from '../src/main/ipc/terminals'
 import { createTaskMemory } from '../src/main/memory/task-memory'
 import { createTaskCompletion } from '../src/main/tasks/completion'
 import { registerTaskEvents } from '../src/main/tasks/events'
-import { registerIssueExecution } from '../src/main/tasks/issue-execution'
+import { registerTaskExecution } from '../src/main/tasks/task-execution'
 import { titleFor } from '../src/main/tasks/task-title'
-import type { Store } from '../src/main/store'
+import { Store } from '../src/main/store'
 import type { TerminalManager } from '../src/main/terminal'
-import type { IssueTracker, Project, RebaseStep, Task, TaskComment, TaskEvent } from '../src/shared/types'
+import type { Project, RebaseStep, Task, TaskComment, TaskEvent } from '../src/shared/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome } from './issue-tracker-doubles'
 
 async function main(): Promise<void> {
-  // In-memory persistence keeps this suite independent of database migrations.
-  const tasks = new Map<string, Task>()
-  const trackers = new Map<string, IssueTracker>()
-  const comments = new Map<string, TaskComment>()
+  const store = new Store(join(testHome, 'ipc.db'), { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') })
+  const tasks = { get: (id: string) => store.getTask(id), has: (id: string) => !!store.getTask(id) }
+  const trackers = { get: (id: string) => taskState(store, id) }
   const events: TaskEvent[] = []
   const notifications: { channel: string; payload: unknown }[] = []
   const project: Project = {
     id: 'project', name: 'Project', path: testHome, createdAt: 0,
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
   }
-  const persistence = {
-    getProjects: () => [project],
-    getTasks: () => [...tasks.values()],
-    getTask: (id: string) => tasks.get(id),
-    addTask: (task: Task) => { tasks.set(task.id, task); return task },
-    updateTask(id: string, patch: Partial<Task>) {
-      const current = tasks.get(id)
-      if (!current) return undefined
-      const updated = { ...current, ...patch }
-      tasks.set(id, updated)
-      return updated
-    },
-    removeTask(id: string) { tasks.delete(id); trackers.delete(id) },
-    getIssueTracker: (id: string) => trackers.get(id),
-    saveIssueTracker(tracker: IssueTracker) { trackers.set(tracker.taskId, tracker); return tracker },
-    appendEvent(event: TaskEvent) { events.push(event) },
-    readEvents: (id: string) => events.filter((event) => event.taskId === id),
-    settleDueTasks: () => [],
-    getComments: (id: string) => [...comments.values()].filter((comment) => comment.taskId === id),
-    addComment(comment: TaskComment) { comments.set(comment.id, comment); return comment },
-    removeComment(id: string) { comments.delete(id) },
-    markCommentsSent(id: string, sentAt: number): TaskComment[] {
-      const pending = [...comments.values()].filter((comment) => comment.taskId === id && comment.sentAt === null)
-      return pending.map((comment) => {
-        const sent = { ...comment, sentAt }
-        comments.set(sent.id, sent)
-        return sent
-      })
-    }
-  } satisfies Partial<Store>
+  store.addProject(project)
   const agentProcesses = new AgentProcessManager()
   const gitDelivery = new GitDeliveryManager()
   const rebaseCalls: unknown[][] = []
@@ -72,16 +44,19 @@ async function main(): Promise<void> {
     }
   })
   const context = {
-    store: persistence as unknown as Store,
+    store,
     agentProcesses: agentProcesses as unknown as RealAgentProcessManager,
     gitDelivery: delivery as unknown as RealGitDeliveryManager,
-    send: (channel: string, payload: unknown) => { notifications.push({ channel, payload }) }
+    send: (channel: string, payload: unknown) => {
+      notifications.push({ channel, payload })
+      if (channel === 'task:event') events.push(payload as TaskEvent)
+    }
   }
   const taskEvents = registerTaskEvents(context)
   const memory = createTaskMemory(context)
   const completion = createTaskCompletion(context, taskEvents.recordSystemEvent, memory)
-  const execution = registerIssueExecution(context, completion)
-  const reviewContext = { ...context, recordSystemEvent: taskEvents.recordSystemEvent, requireFinishedTracker: execution.requireFinishedTracker }
+  const execution = registerTaskExecution(context, completion)
+  const reviewContext = { ...context, recordSystemEvent: taskEvents.recordSystemEvent, requireFinishedTask: execution.requireFinishedTask }
   const terminalCalls: unknown[][] = []
   const terminals = {
     create: (...args: unknown[]) => terminalCalls.push(['create', ...args]),
@@ -95,7 +70,7 @@ async function main(): Promise<void> {
   registerTerminalHandlers(terminals)
   registerSettingsHandlers(context.store)
   registerAgentHandlers()
-  registerProjectHandlers({ ...context, terminals, getWindow: () => null })
+  registerProjectHandlers({ ...context, stopTask: execution.stopTask, terminals, getWindow: () => null })
   assert.deepEqual([...handlers.keys()].sort(), [
     'agents:list', 'agents:models', 'comments:add', 'comments:list', 'comments:remove', 'comments:send',
     'projects:add', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:update',
@@ -130,7 +105,7 @@ async function main(): Promise<void> {
   assert.match(agentProcesses.starts[0].prompt, /Do not change files/)
   assert.throws(() => call('tasks:approve', task.id), /not finished/)
   await assert.rejects(call('tasks:rebase-agent', task.id), /not finished/)
-  const issue = { key: 'first', title: 'Change', description: 'One change', labels: [], priority: 'medium', dependencies: [], status: 'queued', checklist: ['Test'], validation: 'Run test' }
+  const issue = { key: 'first', title: 'Change', description: 'One change', labels: [], priority: 'medium', dependencies: [], checklist: ['Test'], validation: 'Run test' }
   agentProcesses.result(task.id, { items: [issue, { ...issue, key: 'second', dependencies: ['first'] }] })
   await tick()
   assert.equal(agentProcesses.starts.length, 2)
@@ -218,6 +193,15 @@ async function main(): Promise<void> {
   assert.equal(agentProcesses.starts.length, startsBeforeCancel)
   assert.equal(tasks.get(cancelled.id)?.status, 'cancelled')
   assert.equal(trackers.get(cancelled.id)?.phase, 'blocked')
+  const pendingStart = call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Cancel preparation' })
+  const preparing = store.getTasks().find((entry) => entry.title === 'Cancel preparation')!
+  assert.equal(call('tasks:cancel', preparing.id), true)
+  await pendingStart
+  await tick()
+  assert.equal(store.getTask(preparing.id)?.status, 'cancelled')
+  assert.equal(store.getTask(preparing.id)?.worktreePath, undefined, 'Cancelled preparation must not create a worktree')
+  assert.equal(agentProcesses.isRunning(preparing.id), false)
+  store.close()
   console.log('IPC handler tests passed: channel registration, execution, usage, review, rebase, deletion guards, malformed plans, cancellation, prompts, and terminals.')
 }
 

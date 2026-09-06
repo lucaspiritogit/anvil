@@ -5,7 +5,7 @@
  * what makes one stored binding correct for both.
  */
 
-export type ShortcutId = 'toggleSidebar'
+export type ShortcutId = 'toggleSidebar' | 'focusTaskComposer'
 
 export interface ShortcutDefinition {
   id: ShortcutId
@@ -20,6 +20,12 @@ export const SHORTCUTS: ShortcutDefinition[] = [
     label: 'Toggle sidebar',
     hint: 'Slides the project sidebar out of the way and back.',
     defaultAccelerator: 'Mod+B'
+  },
+  {
+    id: 'focusTaskComposer',
+    label: 'Focus task composer',
+    hint: 'Opens the project overview and focuses the new task prompt.',
+    defaultAccelerator: 'Mod+N'
   }
 ]
 

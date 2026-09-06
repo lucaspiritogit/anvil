@@ -16,7 +16,7 @@ const usage = (total) => notify('thread/tokenUsage/updated', { tokenUsage: {
   last: { inputTokens: 2, cachedInputTokens: 1, outputTokens: 1, totalTokens: 3 }, modelContextWindow: 100000
 } })
 const delta = (text, extra = {}) => notify('item/agentMessage/delta', { itemId: 'message', delta: text, ...extra })
-const resultText = 'Done ✓\n<anvil-issue-tracker>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</anvil-issue-tracker>'
+const resultText = 'Done ✓\n<task-result>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</task-result>'
 
 if (scenario === 'cancel-hang') process.on('SIGTERM', () => {})
 
@@ -90,7 +90,13 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (!initialized) process.exit(23)
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
     if (realpathSync(message.params.cwd) !== process.cwd() || realpathSync(process.env.PWD) !== process.cwd()) process.exit(24)
-    if (message.params.model !== 'test-model' || message.params.approvalPolicy !== 'never' || message.params.sandbox !== 'workspaceWrite') process.exit(25)
+    if (!['read-only', 'workspace-write', 'danger-full-access'].includes(message.params.sandbox)) {
+      return send({ id: message.id, error: {
+        code: -32600,
+        message: "Invalid request: unknown variant `" + message.params.sandbox + "`, expected one of `read-only`, `workspace-write`, `danger-full-access`"
+      } })
+    }
+    if (message.params.model !== 'test-model' || message.params.approvalPolicy !== 'never' || message.params.sandbox !== 'workspace-write') process.exit(25)
     if (scenario === 'bad-thread') return respond(message.id, { thread: { id: null } })
     resumed = message.method === 'thread/resume'
     if (resumed) {

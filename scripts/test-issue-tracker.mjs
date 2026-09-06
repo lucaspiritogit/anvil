@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import electron from 'electron'
 
-const availableSuites = ['issue-tracker', 'issue-tracker-git', 'task-deletion', 'task-settlement', 'db-cli', 'ipc-handlers', 'agent-process-manager', 'opencode-acp', 'codex-app-server']
+const availableSuites = ['valence-integration', 'valence-clients', 'issue-tracker', 'issue-tracker-git', 'task-deletion', 'task-settlement', 'db-cli', 'ipc-handlers', 'agent-process-manager', 'opencode-acp', 'codex-app-server', 'agent-output']
 const requestedSuites = process.argv.slice(2)
 const suites = requestedSuites.length ? requestedSuites : availableSuites
 for (const suite of suites) {
@@ -31,7 +31,7 @@ try {
     }]
   })
   const result = spawnSync(electron, [outfile], {
-    stdio: 'inherit', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: resolve('node_modules') }
+    stdio: 'inherit', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: resolve('node_modules'), ANVIL_TEST_NODE: process.execPath }
   })
   if (result.error) throw result.error
   process.exitCode = result.status ?? 1

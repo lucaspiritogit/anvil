@@ -7,6 +7,7 @@ export default defineConfig({
   main: {
     // AI and ACP SDK packages are ESM-only. Bundle them into Electron's CommonJS main
     // output instead of emitting runtime require() calls that Electron rejects.
+    // Valence stays external so its migrations resolve relative to its installed package.
     plugins: [externalizeDepsPlugin({ exclude: ['@ai-sdk/openai-compatible', 'ai', '@agentclientprotocol/sdk'] })],
     build: {
       rollupOptions: {

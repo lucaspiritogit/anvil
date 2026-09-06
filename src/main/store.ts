@@ -7,7 +7,7 @@ import { dirname } from 'node:path'
 import * as schema from './db/schema'
 import { canSettleTask, settlementDeadline } from '../shared/task-settlement'
 import { DEFAULT_KEYBINDINGS, normalizeKeybindings } from '../shared/keybindings'
-import type { Project, Task, TaskComment, TaskEvent, Settings, IssueTracker } from '../shared/types'
+import type { Project, Task, TaskComment, TaskEvent, Settings, TaskExecutionState } from '../shared/types'
 
 const DEFAULT_SETTINGS: Settings = {
   defaultAgentId: 'opencode',
@@ -170,10 +170,10 @@ export class Store {
 
     this.seedSettings()
     this.markInterruptedTasksFailed()
-    for (const row of this.db.select().from(schema.taskIssueTrackers).all()) {
+    // Restart stops Anvil execution, not other clients sharing Valence storage.
+    for (const row of this.db.select().from(schema.taskExecutions).all()) {
       if (row.state.phase === 'planning' || row.state.phase === 'working') {
-        this.saveIssueTracker({ ...row.state, phase: 'blocked', error: 'Interrupted by app restart.',
-          items: row.state.items.map((item) => item.status === 'working' ? { ...item, status: 'blocked' } : item) })
+        this.saveTaskExecution({ ...row.state, phase: 'blocked', error: 'Interrupted by app restart. Inspect Valence work before requeueing.' })
       }
     }
   }
@@ -275,9 +275,9 @@ export class Store {
     return task
   }
 
-  /** SQLite cascades deletion to the issue tracker, output, and review comments. */
-  removeTask(id: string): void {
-    this.db.delete(tasks).where(eq(tasks.id, id)).run()
+  /** Foreign keys cascade to execution metadata, output, and comments, not Valence issues. */
+  deleteTaskCascade(taskId: string): void {
+    this.db.delete(tasks).where(eq(tasks.id, taskId)).run()
   }
 
   updateTask(id: string, patch: Partial<Task>): Task | undefined {
@@ -354,7 +354,11 @@ export class Store {
   }
 
   appendEvent(event: TaskEvent): void {
-    this.db.insert(taskEvents).values(event).run()
+    // Tool snapshots replace their prior row without changing insertion order.
+    this.db.insert(taskEvents).values(event).onConflictDoUpdate({
+      target: taskEvents.id,
+      set: { text: event.text, category: event.category, stream: event.stream }
+    }).run()
   }
 
   readEvents(taskId: string): TaskEvent[] {
@@ -371,13 +375,14 @@ export class Store {
     this.sqlite.close()
   }
 
-  getIssueTracker(taskId: string): IssueTracker | undefined {
-    return this.db.select().from(schema.taskIssueTrackers).where(eq(schema.taskIssueTrackers.taskId, taskId)).get()?.state
+  getTaskExecution(taskId: string): TaskExecutionState | undefined {
+    return this.db.select().from(schema.taskExecutions).where(eq(schema.taskExecutions.taskId, taskId)).get()?.state
   }
 
-  saveIssueTracker(tracker: IssueTracker): IssueTracker {
-    this.db.insert(schema.taskIssueTrackers).values({ taskId: tracker.taskId, state: tracker })
-      .onConflictDoUpdate({ target: schema.taskIssueTrackers.taskId, set: { state: tracker } }).run()
-    return tracker
+  saveTaskExecution(state: TaskExecutionState): TaskExecutionState {
+    this.db.insert(schema.taskExecutions).values({ taskId: state.taskId, state })
+      .onConflictDoUpdate({ target: schema.taskExecutions.taskId, set: { state } }).run()
+    return state
   }
+
 }

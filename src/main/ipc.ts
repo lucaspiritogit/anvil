@@ -14,7 +14,7 @@ import { createTaskMemory } from './memory/task-memory'
 import { createTaskCompletion } from './tasks/completion'
 import type { SendToRenderer } from './tasks/context'
 import { registerTaskEvents } from './tasks/events'
-import { registerIssueExecution } from './tasks/issue-execution'
+import { registerTaskExecution } from './tasks/task-execution'
 import { Store } from './store'
 import { TerminalManager } from './terminal'
 
@@ -54,11 +54,11 @@ export function registerIpc(getWindow: () => BrowserWindow | null): {
   const taskEvents = registerTaskEvents(context)
   const taskMemory = createTaskMemory(context, projectMemory)
   const finishTask = createTaskCompletion(context, taskEvents.recordSystemEvent, taskMemory)
-  const execution = registerIssueExecution(context, finishTask)
+  const execution = registerTaskExecution(context, finishTask)
 
   registerSettingsHandlers(store)
   registerAgentHandlers()
-  registerProjectHandlers({ store, gitDelivery, terminals, projectMemory, getWindow })
+  registerProjectHandlers({ store, gitDelivery, agentProcesses, stopTask: execution.stopTask, terminals, projectMemory, getWindow })
   registerTaskHandlers({
     ...context,
     ...taskEvents,
@@ -68,7 +68,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): {
   const reviewContext = {
     ...context,
     recordSystemEvent: taskEvents.recordSystemEvent,
-    requireFinishedTracker: execution.requireFinishedTracker
+    requireFinishedTask: execution.requireFinishedTask
   }
   registerReviewHandlers(reviewContext)
   registerRebaseHandlers(reviewContext)

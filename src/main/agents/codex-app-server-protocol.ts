@@ -12,7 +12,7 @@ export interface CodexThreadOptions {
   cwd: string
   model?: string
   approvalPolicy: 'never'
-  sandbox: 'workspaceWrite'
+  sandbox: 'workspace-write'
 }
 
 export interface CodexTurn {

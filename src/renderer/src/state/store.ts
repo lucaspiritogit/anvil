@@ -41,6 +41,7 @@ interface AnvilState {
   gitInitError: string | null
 
   newTaskOpen: boolean
+  taskComposerFocusRequest: number
   settingsOpen: boolean
   sidebarCollapsed: boolean
   taskMenu: { taskId: string; x: number; y: number } | null
@@ -82,6 +83,7 @@ interface AnvilState {
   loadTaskDiff: (taskId: string) => Promise<void>
   showHome: () => void
   showTerminal: () => void
+  focusTaskComposer: () => void
 
   applyEvent: (event: TaskEvent) => void
   applyTaskUpdate: (task: Task) => void
@@ -116,6 +118,7 @@ export const useStore = create<AnvilState>((set, get) => ({
   commentError: null,
 
   newTaskOpen: false,
+  taskComposerFocusRequest: 0,
   settingsOpen: false,
   sidebarCollapsed: false,
   taskMenu: null,
@@ -385,12 +388,20 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   showHome: () => set({ view: { kind: 'home' } }),
   showTerminal: () => set({ view: { kind: 'terminal' } }),
+  focusTaskComposer: () => set((state) => {
+    if (!state.activeProjectId || state.newTaskOpen || state.settingsOpen || state.taskMenu || state.rebaseTaskId) return state
+    return {
+      view: { kind: 'home' },
+      taskComposerFocusRequest: state.taskComposerFocusRequest + 1
+    }
+  }),
 
   applyEvent: (event) =>
     set((s) => {
       const existing = s.eventsByTask[event.taskId]
       if (!existing) return s
-      const next = [...existing, event]
+      const eventIndex = existing.findIndex((entry) => entry.id === event.id)
+      const next = eventIndex === -1 ? [...existing, event] : existing.map((entry, index) => index === eventIndex ? event : entry)
       return {
         eventsByTask: {
           ...s.eventsByTask,

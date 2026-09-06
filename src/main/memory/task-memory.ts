@@ -34,8 +34,8 @@ export function createTaskMemory(
 
   const rememberCompletedTask = async (task: Task, projectPath: string): Promise<void> => {
     if (!projectMemory || task.status !== 'succeeded') return
-    const tracker = store.getIssueTracker(task.id)
-    if (tracker && tracker.phase !== 'complete') return
+    const execution = store.getTaskExecution(task.id)
+    if (execution && execution.phase !== 'complete') return
     try {
       const diff =
         task.baseCommit && task.headCommit

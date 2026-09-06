@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { TaskEventCategory, TaskUsage } from '../../shared/types'
 import type { TaskEvent, TaskInput } from './agent-executor'
 import { codexId, codexObject, codexString, type CodexObject } from './codex-app-server-protocol'
+import { ToolOutput, toolInputDescription } from './tool-output'
 
 const ANSI = /\u001b\[[0-9;?]*[ -\/]*[@-~]/g
 const ZERO_USAGE: TaskUsage = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null }
@@ -26,11 +27,12 @@ export class CodexAppServerOutput {
   private baseline: TaskUsage | undefined
   private messages = new Map<string, string>()
   private completed = new Set<string>()
-  private started = new Set<string>()
+  private readonly tools: ToolOutput
   private streams = new Map<string, { text: string; buffer: string; category: TaskEventCategory }>()
 
   constructor(private readonly input: TaskInput, private readonly onEvent: (event: TaskEvent) => void) {
     this.baseline = input.resumeSessionId ? undefined : ZERO_USAGE
+    this.tools = new ToolOutput(input, onEvent)
   }
 
   get output(): string { return [...this.messages.values()].filter(Boolean).join('\n') }
@@ -100,11 +102,15 @@ export class CodexAppServerOutput {
       this.item(codexObject(params.item), method === 'item/completed')
       return
     }
+    if (method === 'item/commandExecution/outputDelta' || method === 'item/fileChange/outputDelta') {
+      const id = codexId(params.itemId)
+      if (!this.completed.has(id)) this.tools.append(id, codexString(params.delta))
+      return
+    }
     const categories: Record<string, TaskEventCategory> = {
       'item/agentMessage/delta': 'message',
       'item/reasoning/summaryTextDelta': 'thinking',
       'item/reasoning/textDelta': 'thinking',
-      'item/commandExecution/outputDelta': 'tool_result',
       'item/plan/delta': 'system'
     }
     const category = categories[method]
@@ -146,17 +152,25 @@ export class CodexAppServerOutput {
     } else if (type === 'plan' && complete) {
       this.snapshot(`${id}:text`, codexString(item.text), 'system')
     } else if (!['userMessage', 'reasoning', 'plan'].includes(type)) {
-      if (!this.started.has(id)) {
-        this.flush()
-        const title = typeof item.command === 'string' ? item.command : typeof item.tool === 'string' ? item.tool : type
-        this.line(title, 'tool_use')
-        this.started.add(id)
-      }
+      this.flush()
+      const name = type === 'commandExecution' ? 'Shell'
+        : typeof item.tool === 'string' ? (typeof item.server === 'string' ? `${item.server}/${item.tool}` : item.tool)
+        : type === 'fileChange' ? 'Edit files' : type === 'webSearch' ? 'Web search' : type
+      const description = typeof item.command === 'string' ? item.command
+        : typeof item.query === 'string' ? item.query
+        : type === 'fileChange' && Array.isArray(item.changes)
+          ? item.changes.map((change) => codexString(codexObject(change).path)).join('\n')
+          : toolInputDescription(item.arguments)
+      this.tools.use(id, name, description)
       if (complete) {
-        const failed = item.status === 'failed' || item.status === 'declined' || item.success === false
-        const category = failed ? 'error' : 'tool_result'
-        if (typeof item.aggregatedOutput === 'string') this.snapshot(`${id}:text`, item.aggregatedOutput, category)
-        this.line(`${type}: ${item.status ?? 'completed'}`, category)
+        const failed = item.status === 'failed' || item.status === 'declined' || item.success === false ||
+          (typeof item.exitCode === 'number' && item.exitCode !== 0) || item.error != null
+        const result = [
+          typeof item.aggregatedOutput === 'string' ? item.aggregatedOutput : undefined,
+          item.result != null ? (typeof item.result === 'string' ? item.result : JSON.stringify(item.result)) : undefined,
+          item.error != null ? (typeof item.error === 'string' ? item.error : JSON.stringify(item.error)) : undefined
+        ].filter((text): text is string => text !== undefined)
+        this.tools.finish(id, result.length ? result.join('\n') : undefined, `${name}: ${item.status ?? 'completed'}`, failed)
         if (type === 'fileChange' && item.status === 'completed') {
           if (!Array.isArray(item.changes)) throw new Error('Invalid Codex file changes')
           for (const value of item.changes) {
@@ -166,8 +180,6 @@ export class CodexAppServerOutput {
             if (typeof kind.move_path === 'string') this.changedFiles.add(kind.move_path)
           }
         }
-        if (item.error != null) this.line(JSON.stringify(item.error), 'error')
-        if (item.result != null) this.line(JSON.stringify(item.result), category)
       }
     }
     if (complete) this.completed.add(id)

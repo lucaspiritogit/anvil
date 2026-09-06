@@ -3,17 +3,19 @@ import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { ProjectMemory } from '../memory/project-memory'
 import type { TaskContext } from '../tasks/context'
+import type { TaskExecution } from '../tasks/task-execution'
 import type { TerminalManager } from '../terminal'
 import type { Project } from '../../shared/types'
 
-interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDelivery'> {
+interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDelivery' | 'agentProcesses'> {
+  stopTask: TaskExecution['stopTask']
   terminals: TerminalManager
   projectMemory?: ProjectMemory
   getWindow(): BrowserWindow | null
 }
 
 export function registerProjectHandlers({
-  store, gitDelivery, terminals, projectMemory, getWindow
+  store, gitDelivery, agentProcesses, stopTask, terminals, projectMemory, getWindow
 }: ProjectHandlerDependencies): void {
   ipcMain.handle('projects:list', () => store.getProjects())
 
@@ -41,7 +43,12 @@ export function registerProjectHandlers({
 
   ipcMain.handle('projects:remove', async (_event, id: string) => {
     terminals.dispose(id)
+    const projectTasks = store.getTasks().filter((task) => task.projectId === id)
+    for (const task of projectTasks) stopTask(task.id, 'Anvil project removed.')
     store.removeProject(id)
+    for (const task of projectTasks) {
+      if (agentProcesses.isRunning(task.id)) agentProcesses.cancel(task.id)
+    }
     if (projectMemory) {
       try {
         await projectMemory.forgetProject(id)

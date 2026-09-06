@@ -24,7 +24,7 @@ function finish() {
   update({ sessionUpdate: 'tool_call', toolCallId: 'test', title: 'Run tests', kind: 'execute', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'Tests passed' } }] })
   update({ sessionUpdate: 'plan', entries: [{ content: 'Implement issue', priority: 'high', status: 'completed' }] })
   update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Wrong session' } }, 'other-session')
-  const output = 'Done ✓\n<anvil-issue-tracker>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</anvil-issue-tracker>'
+  const output = 'Done ✓\n<task-result>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</task-result>'
   // Model deltas can split anywhere, including inside JSON strings and tag names.
   for (const character of output) text(character)
   update({ sessionUpdate: 'usage_update', used: 9999, size: 100000, cost: { amount: 0.25, currency: 'USD' } })
@@ -50,7 +50,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   } else if (message.method === 'session/new' || message.method === 'session/load') {
     if (!initialized || realpathSync(message.params.cwd) !== process.cwd() || realpathSync(process.env.PWD) !== process.cwd()) process.exit(9)
     if (message.method === 'session/load') {
-      text('<anvil-issue-tracker>{"old":"history"}</anvil-issue-tracker>')
+      text('<task-result>{"old":"history"}</task-result>')
       update({ sessionUpdate: 'tool_call', toolCallId: 'old', title: 'Old edit', kind: 'edit', status: 'completed', locations: [{ path: '/old.ts' }] })
     }
     respond(message.id, { sessionId, configOptions: [] })

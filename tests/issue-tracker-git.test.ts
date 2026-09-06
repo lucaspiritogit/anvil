@@ -4,6 +4,7 @@ import { writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Store } from '../src/main/store'
 import { registerIpc } from '../src/main/ipc'
+import { taskState } from './task-state'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
 
 async function main(): Promise<void> {
@@ -30,10 +31,10 @@ async function main(): Promise<void> {
   const task = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Two independent files' })
   assert.equal(task.status, 'running', task.error)
   await waitFor(() => agentProcesses.starts.length === 1)
-  const item = { key: 'first', labels: ['files'], priority: 'medium', dependencies: [], status: 'queued', title: 'Add one file', description: 'One file per review', checklist: ['File exists'], validation: 'Read the file' }
+  const item = { key: 'first', labels: ['files'], priority: 'medium', dependencies: [], title: 'Add one file', description: 'One file per review', checklist: ['File exists'], validation: 'Read the file' }
   agentProcesses.result(task.id, { items: [item, { ...item, key: 'second', dependencies: ['first'] }] })
   await waitFor(() => agentProcesses.starts.length === 2)
-  let board = seed.getIssueTracker(task.id)!
+  let board = taskState(seed, task.id)!
   const firstCwd = agentProcesses.starts[1].cwd
   assert.notEqual(firstCwd, testHome)
   writeFileSync(join(firstCwd, 'first.txt'), 'first change\n')
@@ -47,7 +48,7 @@ async function main(): Promise<void> {
   assert.ok(existsSync(join(secondCwd, 'first.txt')), 'Next issue continues in the same worktree')
   writeFileSync(join(secondCwd, 'second.txt'), 'second change\n')
   // Exercise Anvil's fallback commit for an agent that leaves a dirty worktree.
-  board = seed.getIssueTracker(task.id)!
+  board = taskState(seed, task.id)!
   agentProcesses.result(task.id, { id: board.items[1].id, status: 'complete', checklist: [true], evidence: 'Read second.txt and verified its content' })
   await waitFor(() => seed.getTask(task.id)?.deliveryStatus === 'reviewable')
   assert.equal(existsSync(secondCwd), false, 'Final worktree is cleaned up')
@@ -55,9 +56,20 @@ async function main(): Promise<void> {
   assert.match(wholeDiff.patch, /first.txt/)
   assert.match(wholeDiff.patch, /second.txt/)
   await call('tasks:approve', task.id)
-  assert.equal(seed.getIssueTracker(task.id)!.phase, 'complete')
+  assert.equal(seed.getTaskExecution(task.id)!.phase, 'complete')
   assert.equal(git(testHome, 'branch', '--show-current'), 'main')
   assert.equal(existsSync(join(testHome, 'first.txt')), false)
+  const startsBeforeGreeting = agentProcesses.starts.length
+  const greeting = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'hello' })
+  await waitFor(() => agentProcesses.starts.length === startsBeforeGreeting + 1)
+  const greetingWorktree = agentProcesses.starts.at(-1).cwd
+  agentProcesses.result(greeting.id, { items: [], noChanges: true })
+  await waitFor(() => seed.getTask(greeting.id)?.deliveryStatus === 'no_changes')
+  assert.equal(seed.getTask(greeting.id)?.status, 'succeeded')
+  assert.equal(seed.getTaskExecution(greeting.id)?.phase, 'complete')
+  assert.equal(agentProcesses.starts.length, startsBeforeGreeting + 1)
+  assert.equal(existsSync(greetingWorktree), false, 'No-work tasks still clean up their worktree')
+  assert.equal(seed.getTask(greeting.id)?.headCommit, seed.getTask(greeting.id)?.baseCommit)
   seed.close()
   console.log('Issue tracker Git integration passed: sequential work in one worktree, cumulative diff, cleanup, and final task approval.')
 }
