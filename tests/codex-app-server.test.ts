@@ -67,8 +67,8 @@ async function main(): Promise<void> {
     assert.equal(result.output, expected)
     assert.deepEqual(result.changedFiles, ['/changed.ts', '/renamed.ts'])
     assert.deepEqual(result.usage, { inputTokens: 40, outputTokens: 20, cachedTokens: 20, totalTokens: 60, costUsd: null })
-    assert.deepEqual(outputEvents().filter((event) => event.category === 'message').map((event) => event.text), expected.split('\n'))
-    assert.deepEqual(outputEvents().filter((event) => event.category === 'thinking').map((event) => event.text), ['Thinking'])
+    assert.deepEqual(outputEvents().filter((event) => event.category === 'message').map((event) => event.text), [expected])
+    assert.deepEqual(outputEvents().filter((event) => event.category === 'thinking').map((event) => event.text), ['Thinking\n'])
     assert.equal(outputEvents().filter((event) => event.text === 'Tests passed\n').length, 1)
     assert.ok(outputEvents().some((event) => event.stream === 'stderr' && event.text === 'trailing diagnostic'))
     assert.ok(outputEvents().every((event) => event.id && event.ts && event.taskId === input.taskId))
@@ -175,7 +175,7 @@ async function main(): Promise<void> {
       let ready!: () => void
       const started = new Promise<void>((resolve) => { ready = resolve })
       const execution = executor.execute(input, (event) => {
-        if (event.type === 'output' && event.event.text === 'Waiting for steering') ready()
+        if (event.type === 'output' && event.event.text === 'Waiting for steering\n') ready()
       })
       await started
       const steering = { taskId: input.taskId, sessionId: 'thread-test', message: 'Adjust validation' }
@@ -197,7 +197,7 @@ async function main(): Promise<void> {
     const steeringManager = new AgentProcessManager(undefined, client('steer'))
     let managerReady!: () => void
     const managerStarted = new Promise<void>((resolve) => { managerReady = resolve })
-    steeringManager.on('event', (event) => { if (event.text === 'Waiting for steering') managerReady() })
+    steeringManager.on('event', (event) => { if (event.text === 'Waiting for steering\n') managerReady() })
     const steeringExit = once(steeringManager, 'exit')
     steeringManager.start({ ...input, agent: getAgent('codex')! })
     await managerStarted
@@ -208,7 +208,7 @@ async function main(): Promise<void> {
     for (const scenario of ['cancel', 'cancel-hang', 'cancel-before-ack']) {
       const controller = new AbortController()
       const cancelled = await client(scenario).execute({ ...input, signal: controller.signal }, (event) => {
-        if (event.type === 'output' && ['Waiting', 'Abort before acknowledgement'].includes(event.event.text)) controller.abort()
+        if (event.type === 'output' && ['Waiting\n', 'Abort before acknowledgement'].includes(event.event.text)) controller.abort()
       })
       assert.equal(cancelled.status, 'cancelled', scenario)
     }

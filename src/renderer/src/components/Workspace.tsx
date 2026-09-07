@@ -105,7 +105,7 @@ export function Workspace(): JSX.Element {
             tasks={projectTasks}
           />
         )}
-        {activeTask && <TaskView task={activeTask} />}
+        {activeTask && <TaskView key={activeTask.id} task={activeTask} />}
       </section>
     </main>
   )

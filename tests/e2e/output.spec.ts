@@ -29,6 +29,20 @@ for (const viewport of [{ width: 1100, height: 700 }, { width: 900, height: 500 
   })
 }
 
+test('output is a compact event stream with event types on the left', async ({ page }, testInfo) => {
+  await page.goto('/tests/e2e/fixture/?scenario=output&tools=1')
+  await expect(page.getByText('Agent conversation', { exact: true })).toHaveCount(0)
+  const output = page.getByRole('log', { name: 'Task output' })
+  const tool = output.locator('[data-output-category="tool_use"]')
+  const typeBounds = (await tool.getByText('tool_use', { exact: true }).boundingBox())!
+  const resultBounds = (await tool.getByText('Shell', { exact: true }).boundingBox())!
+  expect(typeBounds.x + typeBounds.width).toBeLessThanOrEqual(resultBounds.x)
+  expect(Math.abs(typeBounds.y - resultBounds.y)).toBeLessThan(3)
+  await expect(output.locator('time')).toHaveCount(0)
+  await expect(page.getByRole('form', { name: 'Steer task' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('event-stream.png') })
+})
+
 test('tool calls show a name and gray input, with one expandable result per call', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&tools=1')
   const output = page.getByRole('log', { name: 'Task output' })

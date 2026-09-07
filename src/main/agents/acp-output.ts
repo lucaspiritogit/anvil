@@ -16,6 +16,7 @@ export class AcpOutput {
   private readonly toolOutput: ToolOutput
   private readonly textOutput: StreamingTextOutput
   private messageIds = new Map<'message' | 'thinking', string>()
+  private activeCategory?: 'message' | 'thinking'
   private costUsd: number | null = null
 
   constructor(private readonly input: TaskInput, private readonly onEvent: (event: TaskEvent) => void) {
@@ -35,6 +36,7 @@ export class AcpOutput {
 
   flush(): void {
     this.textOutput.flush()
+    this.activeCategory = undefined
   }
 
   update(update: SessionUpdate): void {
@@ -44,10 +46,12 @@ export class AcpOutput {
         if (update.content.type !== 'text') return
         const category = update.sessionUpdate === 'agent_message_chunk' ? 'message' : 'thinking'
         const previousMessageId = this.messageIds.get(category)
-        if (update.messageId && previousMessageId && update.messageId !== previousMessageId) {
-          this.flush()
-          if (category === 'message' && !this.output.endsWith('\n')) this.output += '\n'
-        }
+        const messageChanged = update.messageId && previousMessageId && update.messageId !== previousMessageId
+        // ACP chunks can omit messageId. A thought/message transition still
+        // closes the previous stream so delayed snapshots cannot reorder it.
+        if (messageChanged || (this.activeCategory && this.activeCategory !== category)) this.flush()
+        if (messageChanged && category === 'message' && !this.output.endsWith('\n')) this.output += '\n'
+        this.activeCategory = category
         if (update.messageId) this.messageIds.set(category, update.messageId)
         if (category === 'message') this.output += update.content.text
         this.textOutput.append(category, update.content.text, category)

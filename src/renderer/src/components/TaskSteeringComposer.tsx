@@ -3,7 +3,7 @@ import type { Task } from '@shared/types'
 import { useStore } from '../state/store'
 import { btn, cn, field } from '../ui'
 
-export function TaskSteeringComposer({ task }: { task: Task }): JSX.Element {
+export function TaskSteeringComposer({ task, hidden = false }: { task: Task; hidden?: boolean }): JSX.Element {
   const supported = useStore((state) => state.agents.find((agent) => agent.id === task.agentId)?.supportsSteering)
   const steerTask = useStore((state) => state.steerTask)
   const [message, setMessage] = useState('')
@@ -31,10 +31,11 @@ export function TaskSteeringComposer({ task }: { task: Task }): JSX.Element {
   return (
     <form
       aria-label="Steer task"
-      className="shrink-0 px-4 py-2.5 border-t border-line bg-raised"
+      hidden={hidden}
+      className="shrink-0 px-5 py-2.5 border-t border-line bg-raised"
       onSubmit={(event) => { event.preventDefault(); void send() }}
     >
-      <div className="flex gap-2 items-end">
+      <div className="flex items-end gap-2">
         <textarea
           aria-label="Message to agent"
           className={cn(field.control, 'min-w-0 px-2.5 py-2 resize-none text-[13px] overflow-y-auto disabled:opacity-50')}

@@ -90,7 +90,7 @@ async function main(): Promise<void> {
       const controller = new AbortController()
       const [cancelled, peer] = await Promise.all([
         shared.client.execute(input('cancel-me', { signal: controller.signal }), (event) => {
-          if (event.type === 'output' && event.event.text === 'Waiting') controller.abort()
+          if (event.type === 'output' && event.event.text === 'Waiting\n') controller.abort()
         }),
         shared.client.execute(input('peer'), record)
       ])
@@ -121,7 +121,7 @@ async function main(): Promise<void> {
       assert.equal((await recovering.entries()).filter((entry) => entry.event === 'spawn').length, 2)
       const hungAbort = new AbortController()
       const hung = await recovering.client.execute(input('hang', { signal: hungAbort.signal }), (event) => {
-        if (event.type === 'output' && event.event.text === 'Waiting') hungAbort.abort()
+        if (event.type === 'output' && event.event.text === 'Waiting\n') hungAbort.abort()
       })
       assert.equal(hung.status, 'cancelled')
       assert.equal((await recovering.client.execute(input('after-hang'), record)).output, 'after-hang')
@@ -132,7 +132,7 @@ async function main(): Promise<void> {
       const busy = create()
       const manager = protocol === 'acp' ? new AgentProcessManager(busy.client) : new AgentProcessManager(undefined, busy.client)
       const exited = once(manager, 'exit')
-      const waiting = new Promise<void>((resolve) => manager.on('event', (event) => { if (event.text === 'Waiting') resolve() }))
+      const waiting = new Promise<void>((resolve) => manager.on('event', (event) => { if (event.text === 'Waiting\n') resolve() }))
       manager.start({ ...input('hang'), agent: getAgent(protocol === 'acp' ? 'opencode' : 'codex')! })
       await waiting
       const shutdown = manager.close()

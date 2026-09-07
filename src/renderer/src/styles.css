@@ -29,6 +29,16 @@
 
   /* Softer than Tailwind's own pulse, for the "agent is working" dot. */
   --animate-blink: blink 1.4s ease-in-out infinite;
+  --animate-breathe: breathe 2.4s ease-in-out infinite;
+
+  @keyframes breathe {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
 
   @keyframes blink {
     50% {

@@ -1,6 +1,6 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Project, Task, TaskEvent } from '../../../src/shared/types'
+import type { Project, Task, TaskComment, TaskDiff, TaskEvent } from '../../../src/shared/types'
 import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import { useStore } from '../../../src/renderer/src/state/store'
@@ -24,9 +24,9 @@ const base: Task = {
 }
 let tasks: Task[] = [
   { ...base, id: 'running', title: 'Build streaming support', prompt: 'Build streaming support', status: 'running', deliveryStatus: 'working', endedAt: undefined, reviewedAt: undefined },
-  { ...base, id: 'review', title: 'Review sidebar changes', prompt: 'Review sidebar changes', deliveryStatus: 'reviewable', reviewedAt: undefined },
+  { ...base, id: 'review', title: 'Review sidebar changes', prompt: 'Keep the task list readable and preserve the existing keyboard shortcuts.', deliveryStatus: 'reviewable', reviewedAt: undefined, filesChanged: 2, additions: 3, deletions: 1, baseBranch: 'main', model: 'gpt-5' },
   base,
-  { ...base, id: 'output', title: 'Layout test task', prompt: query.has('longPrompt') ? 'A long task description\n'.repeat(100) : 'Layout test task', projectId: projects[1].id, deliveryStatus: 'no_changes', reviewedAt: undefined },
+  { ...base, id: 'output', title: 'Layout test task', prompt: query.has('longPrompt') ? 'A long task description\n'.repeat(100) : 'Layout test task', projectId: projects[1].id, deliveryStatus: 'no_changes', reviewedAt: undefined, filesChanged: 0, additions: 0, deletions: 0 },
   { ...base, id: 'failed', title: 'Retry provider setup', prompt: 'Retry provider setup', projectId: projects[1].id, status: 'failed', deliveryStatus: 'agent_failed', reviewedAt: undefined },
   { ...base, id: 'settled', title: 'Clean up old logs', prompt: 'Clean up old logs', settledAt: now - 60000 }
 ]
@@ -55,8 +55,35 @@ const update = (task: Task): Task => {
   return task
 }
 window.addEventListener('fixture:task-updated', (event) => update((event as CustomEvent<Task>).detail))
+const reviewDiff: TaskDiff = {
+  commits: [{ sha: '1234567890abcdef', subject: 'Update sidebar spacing' }, { sha: 'abcdef1234567890', subject: 'Document review behavior' }],
+  patch: `diff --git a/src/sidebar.ts b/src/sidebar.ts
+index 1111111..2222222 100644
+--- a/src/sidebar.ts
++++ b/src/sidebar.ts
+@@ -1,3 +1,4 @@
+ export const sidebar = {
+-  spacing: 8
++  spacing: 12,
++  showBranch: true
+ }
+diff --git a/README.md b/README.md
+index 3333333..4444444 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,2 @@
+ # Anvil
++Review the final task diff before approving.
+`
+}
+let comments: TaskComment[] = []
+let diffRequests = 0
 const events = (taskId: string): TaskEvent[] => {
-  if (taskId !== 'output') return []
+  if (taskId === 'review') return [
+    { id: 'review-user', taskId, ts: now - 2000, stream: 'system', kind: 'output', category: 'system', text: 'You:\nKeep existing keyboard shortcuts working.' },
+    { id: 'review-agent', taskId, ts: now - 1000, stream: 'stdout', kind: 'output', category: 'message', text: 'The sidebar spacing is updated. Keyboard shortcuts are unchanged and the changes are ready for review.' }
+  ]
+  if (taskId !== 'output' || query.has('emptyOutput')) return []
   if (query.has('tools')) return [
     { id: 'tool-use:first', taskId, ts: 0, stream: 'stdout', kind: 'output', category: 'tool_use', text: 'Shell\npwd && rg --files' },
     { id: 'tool-result:first', taskId, ts: 1, stream: 'stdout', kind: 'output', category: 'tool_result', text: '/tmp/project\nfirst.ts\nsecond.ts' }
@@ -112,6 +139,12 @@ window.anvil = {
       update({ ...task, status: 'running', deliveryStatus: 'working', endedAt: undefined })
     },
     events: async (taskId: string) => events(taskId),
+    diff: async () => {
+      diffRequests += 1
+      if (query.has('diffFailure') && diffRequests === 1) throw new Error('Could not load the task diff')
+      return query.has('emptyDiff') ? { patch: '', commits: [] } : reviewDiff
+    },
+    approve: async (taskId: string) => update({ ...tasks.find((task) => task.id === taskId)!, deliveryStatus: 'approved' }),
     onEvent: (listener: (event: TaskEvent) => void) => {
       const receive = (event: Event) => listener((event as CustomEvent<TaskEvent>).detail)
       window.addEventListener('fixture:output', receive)
@@ -129,12 +162,24 @@ window.anvil = {
       return update({ ...task, settledAt: Date.now() })
     }
   },
-  comments: { list: async () => [] },
+  comments: {
+    list: async (taskId: string) => comments.filter((comment) => comment.taskId === taskId),
+    add: async (input: Pick<TaskComment, 'taskId' | 'file' | 'side' | 'lineNumber' | 'body'>) => {
+      comments = [...comments, { ...input, id: `comment-${comments.length}`, createdAt: now, sentAt: null }]
+      return comments.filter((comment) => comment.taskId === input.taskId)
+    },
+    remove: async (input: { taskId: string; id: string }) => {
+      comments = comments.filter((comment) => comment.id !== input.id)
+      return comments.filter((comment) => comment.taskId === input.taskId)
+    }
+  },
   terminal: { ensure: noop, resize: noop, onData: subscribe, onExit: subscribe }
 } as unknown as typeof window.anvil
 
 if (query.get('scenario') === 'output') {
   useStore.setState({ activeProjectId: projects[1].id, view: { kind: 'task', taskId: 'output' } })
+} else if (query.get('scenario') === 'review') {
+  useStore.setState({ activeProjectId: projects[0].id, view: { kind: 'task', taskId: 'review' } })
 }
 const { App } = await import('../../../src/renderer/src/App')
 createRoot(document.getElementById('root')!).render(<App />)

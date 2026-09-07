@@ -77,9 +77,9 @@ try {
   const partialIds = rows().slice(-2).map(row => row.id)
   message.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: ' completed\n' } })
   thought.item({ id: 'thought', type: 'reasoning', content: ['Partial thinking completed'] }, true)
-  assert.deepEqual(rows().slice(-2).map(row => row.id), partialIds)
-  assert.deepEqual(rows().slice(-2).map(row => row.text), ['Partial message completed', 'Partial thinking completed'])
   message.flush()
+  assert.deepEqual(rows().slice(-2).map(row => row.id), partialIds)
+  assert.deepEqual(rows().slice(-2).map(row => row.text), ['Partial message completed\n', 'Partial thinking completed'])
   thought.flush()
 } finally {
   mock.timers.reset()

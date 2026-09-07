@@ -44,8 +44,8 @@ async function main(): Promise<void> {
     const expected = 'Done ✓\nCompleted issue-test through vl. Tests passed.'
     assert.equal(result.output, expected)
     const outputEvents = events.filter((event) => event.type === 'output').map((event) => event.event)
-    assert.deepEqual(outputEvents.filter((event) => event.category === 'message').map((event) => event.text), expected.split('\n'))
-    assert.ok(outputEvents.some((event) => event.category === 'thinking' && event.text === 'Thinking'))
+    assert.deepEqual(outputEvents.filter((event) => event.category === 'message').map((event) => event.text), [expected])
+    assert.ok(outputEvents.some((event) => event.category === 'thinking' && event.text === 'Thinking\n'))
     assert.ok(outputEvents.some((event) => event.category === 'tool_result' && event.text === 'Tests passed'))
     assert.ok(outputEvents.some((event) => event.category === 'error' && event.text === 'Failed edit: failed'))
     assert.ok(outputEvents.some((event) => event.stream === 'stderr' && event.text === 'trailing diagnostic'))
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
       const cancellationEvents: TaskEvent[] = []
       const cancelled = await client(scenario).execute({ ...input, signal: controller.signal }, (event) => {
         cancellationEvents.push(event)
-        if (event.type === 'output' && event.event.text === 'Waiting') controller.abort()
+        if (event.type === 'output' && event.event.text === (scenario === 'cancel-partial' ? 'Waiting' : 'Waiting\n')) controller.abort()
       })
       assert.equal(cancelled.status, 'cancelled', scenario)
       assert.equal(cancelled.output, scenario === 'cancel-partial' ? 'Waiting' : 'Waiting\n')

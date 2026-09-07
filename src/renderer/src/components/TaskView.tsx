@@ -5,8 +5,10 @@ import { useStore } from '../state/store'
 import { btn, cn, deliveryTone, dot, field, statusTone } from '../ui'
 import { AgentIcon } from './AgentIcon'
 import { AgentRebaseModal } from './AgentRebaseModal'
+import { CopyableText } from './CopyableText'
 import { RebaseModal } from './RebaseModal'
 import { TaskSteeringComposer } from './TaskSteeringComposer'
+import { TaskActivity } from './TaskActivity'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
 import type {
   DeliveryStatus,
@@ -62,67 +64,117 @@ const PatchFiles = lazy(async () => {
         () => parsePatchFiles(patch).flatMap((parsed) => parsed.files),
         [patch]
       )
-      if (files.length === 0) return <p className={PLACEHOLDER}>No file changes in this range.</p>
+      const [selectedPath, setSelectedPath] = useState<string | null>(null)
+      const [viewed, setViewed] = useState<Set<string>>(() => new Set())
+      const selectedIndex = Math.max(0, files.findIndex((file) => file.name === selectedPath))
+      const selectedFile = files[selectedIndex]
+      const viewedCount = files.filter((file) => viewed.has(file.name)).length
+
+      const selectFile = (path: string): void => {
+        setSelectedPath(path)
+        onSelectLine(null)
+      }
+
+      const annotations: DiffLineAnnotation<NoteMetadata>[] = [
+        ...comments
+          .filter((comment) => comment.file === selectedFile?.name)
+          .map((comment) => ({
+            side: comment.side,
+            lineNumber: comment.lineNumber,
+            metadata: { comment }
+          })),
+        ...(draft && draft.file === selectedFile?.name
+          ? [{ side: draft.side, lineNumber: draft.lineNumber, metadata: { draft } }]
+          : [])
+      ]
+
+      if (!selectedFile) return <p className="p-5 text-sm text-dim">No file changes in this range.</p>
       return (
-        <>
-          {files.map((file, index) => {
-            const name = file.name ?? `file-${index}`
-            // Saved notes plus the line currently being written on, so the
-            // composer renders in place like any other annotation.
-            const annotations: DiffLineAnnotation<NoteMetadata>[] = [
-              ...comments
-                .filter((comment) => comment.file === name)
-                .map((comment) => ({
-                  side: comment.side,
-                  lineNumber: comment.lineNumber,
-                  metadata: { comment }
-                })),
-              ...(draft && draft.file === name
-                ? [{ side: draft.side, lineNumber: draft.lineNumber, metadata: { draft } }]
-                : [])
-            ]
-            return (
-              <FileDiff
-                key={`${name}-${index}`}
-                fileDiff={file}
-                disableWorkerPool
-                lineAnnotations={annotations}
-                selectedLines={
-                  draft && draft.file === name
-                    ? { start: draft.lineNumber, end: draft.lineNumber, side: draft.side }
-                    : null
-                }
-                renderAnnotation={({ metadata }) =>
-                  metadata.comment ? (
-                    <CommentNote
-                      comment={metadata.comment}
-                      onRemove={() => onRemove(metadata.comment.id)}
-                    />
-                  ) : (
-                    <CommentComposer
-                      onCancel={() => onSelectLine(null)}
-                      onSubmit={(body) => onSubmit(metadata.draft, body)}
-                    />
-                  )
-                }
-                options={{
-                  themeType: 'dark',
-                  diffStyle: 'unified',
-                  overflow: 'scroll',
-                  enableLineSelection: true,
-                  onLineSelectionEnd(range) {
-                    if (range === null) return
-                    onSelectLine({
-                      file: name,
-                      side: range.side === 'deletions' ? 'deletions' : 'additions',
-                      lineNumber: range.end
+        <div className="flex flex-1 flex-col min-h-0 min-w-0">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-line">
+            <label className="flex min-w-0 flex-1 items-center gap-2 text-xs text-dim">
+              Files · {selectedIndex + 1} of {files.length}
+              <select
+                aria-label="Changed file"
+                className={cn(field.control, 'min-w-0 max-w-sm flex-1 px-2 py-1.5 text-xs')}
+                value={selectedFile.name}
+                onChange={(event) => selectFile(event.target.value)}
+              >
+                {files.map((file) => (
+                  <option key={file.name} value={file.name}>
+                    {viewed.has(file.name) ? '✓ ' : ''}{file.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-[11px] text-dim">Unified diff · Wrapped lines</span>
+          </div>
+          <div key={selectedFile.name} className="flex-1 min-h-0 overflow-auto overscroll-contain">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              <span className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]">{selectedFile.name}</span>
+              <label className="flex items-center gap-2 text-xs text-dim">
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={viewed.has(selectedFile.name)}
+                  onChange={(event) => {
+                    const checked = event.target.checked
+                    setViewed((previous) => {
+                      const next = new Set(previous)
+                      if (checked) next.add(selectedFile.name)
+                      else next.delete(selectedFile.name)
+                      return next
                     })
-                  }
-                }}
-              />
-            )
-          })}
-        </>
+                  }}
+                />
+                Viewed
+              </label>
+            </div>
+            <FileDiff
+              fileDiff={selectedFile}
+              disableWorkerPool
+              lineAnnotations={annotations}
+              selectedLines={
+                draft && draft.file === selectedFile.name
+                  ? { start: draft.lineNumber, end: draft.lineNumber, side: draft.side }
+                  : null
+              }
+              renderAnnotation={({ metadata }) =>
+                metadata.comment ? (
+                  <CommentNote comment={metadata.comment} onRemove={() => onRemove(metadata.comment.id)} />
+                ) : (
+                  <CommentComposer onCancel={() => onSelectLine(null)} onSubmit={(body) => onSubmit(metadata.draft, body)} />
+                )
+              }
+              options={{
+                themeType: 'dark',
+                diffStyle: 'unified',
+                overflow: 'wrap',
+                disableFileHeader: true,
+                enableLineSelection: true,
+                onLineSelectionEnd(range) {
+                  if (range === null) return
+                  onSelectLine({
+                    file: selectedFile.name,
+                    side: range.side === 'deletions' ? 'deletions' : 'additions',
+                    lineNumber: range.end
+                  })
+                }
+              }}
+            />
+          </div>
+          <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-line text-xs">
+            <span className="text-dim">{viewedCount} of {files.length} files viewed</span>
+            <div className="flex gap-2">
+              <button className={cn(btn.ghost, 'disabled:opacity-40')} disabled={selectedIndex === 0} onClick={() => selectFile(files[selectedIndex - 1].name)}>
+                ← Previous
+              </button>
+              <button className={cn(btn.ghost, 'disabled:opacity-40')} disabled={selectedIndex === files.length - 1} onClick={() => selectFile(files[selectedIndex + 1].name)}>
+                Next file →
+              </button>
+            </div>
+          </footer>
+        </div>
       )
     }
   }
@@ -230,7 +282,7 @@ function LogRow({ event }: { event: TaskEvent }): JSX.Element {
       role="button"
       tabIndex={0}
       aria-expanded={expanded}
-      className="grid grid-cols-[104px_minmax(0,1fr)] gap-4 py-[5px] cursor-pointer border-b border-line/55 hover:bg-hover/45"
+      className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-4 py-1.5 cursor-pointer border-b border-line/55 last:border-b-0 hover:bg-hover/45"
       onClick={() => setExpanded((value) => !value)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -239,12 +291,7 @@ function LogRow({ event }: { event: TaskEvent }): JSX.Element {
         }
       }}
     >
-      <span
-        className={cn(
-          'overflow-hidden text-ellipsis whitespace-nowrap select-none',
-          uncommitted ? 'text-warn' : KIND_TONE[event.category]
-        )}
-      >
+      <span className={cn('text-[11px] select-none', uncommitted ? 'text-warn' : KIND_TONE[event.category])}>
         {CATEGORY_LABEL[event.category]}
       </span>
       <span className="min-w-0">
@@ -287,29 +334,15 @@ const DELIVERY_LABEL: Record<DeliveryStatus, string> = {
   unavailable: 'Not tracked by Git'
 }
 
-/** One cell of the header's metric strip: a labelled reading of the task. */
-function StatBlock({
-  label,
-  value,
-  detail,
-  tone
-}: {
+function StatBlock({ label, value, detail }: {
   label: string
-  /** A node, not a string, so a stat can split itself into parts. */
   value: ReactNode
   detail?: string
-  tone: TaskStatus
 }): JSX.Element {
   return (
-    <div
-      className="flex flex-col gap-[3px] px-3.5 py-2 border-l border-line first:border-l-0"
-      title={detail}
-    >
-      <span className="flex gap-[7px] items-center text-xs text-fg">
-        <span className={dot(tone)} />
-        {label}
-      </span>
-      <span className="pl-3.5 font-mono text-[13px] text-dim">{value}</span>
+    <div className="flex flex-wrap items-baseline gap-x-2 text-xs" title={detail}>
+      <span className="text-dim">{label}</span>
+      <span className="font-medium tabular-nums">{value}</span>
     </div>
   )
 }
@@ -341,7 +374,9 @@ export function TaskView({ task }: Props): JSX.Element {
   const outputRef = useRef<HTMLDivElement>(null)
   const [now, setNow] = useState(Date.now())
   const [follow, setFollow] = useState(true)
-  const [panel, setPanel] = useState<'output' | 'changes'>('output')
+  const reviewable = task.deliveryStatus === 'reviewable' || approved
+  const [focused, setFocused] = useState(false)
+  const [activePanel, setActivePanel] = useState<'output' | 'changes'>('output')
 
   useEffect(() => {
     if (!events) void openTask(task.id)
@@ -356,13 +391,11 @@ export function TaskView({ task }: Props): JSX.Element {
   useEffect(() => {
     const output = outputRef.current
     if (follow && output) output.scrollTop = output.scrollHeight
-  }, [events, follow, panel])
+  }, [events, follow, focused, activePanel, task.status, task.deliveryStatus])
 
   useEffect(() => {
-    if (panel === 'changes' && (task.deliveryStatus === 'reviewable' || approved) && !diff) {
-      void loadTaskDiff(task.id)
-    }
-  }, [approved, diff, loadTaskDiff, panel, task.deliveryStatus, task.id])
+    if (reviewable && !diff) void loadTaskDiff(task.id)
+  }, [diff, loadTaskDiff, reviewable, task.id])
 
   useEffect(() => {
     if (!comments) void loadComments(task.id)
@@ -377,229 +410,172 @@ export function TaskView({ task }: Props): JSX.Element {
   }
 
   return (
-    <div className="relative flex flex-col h-full min-w-0 min-h-0 overflow-hidden">
+    <div className="@container relative flex flex-col h-full min-w-0 min-h-0 overflow-hidden">
       {rebaseTaskId === task.id &&
         (settings?.rebaseMode === 'agent' ? (
           <AgentRebaseModal taskId={task.id} />
         ) : (
           diff && <RebaseModal taskId={task.id} commits={diff.commits} />
         ))}
-      <header className="flex shrink-0 flex-col gap-2 max-h-[45%] px-4 pt-3 pb-2 overflow-hidden break-words">
-        <div className="flex shrink-0 gap-3 items-start justify-between">
-          <h1 className="text-[17px] font-semibold leading-[1.35] text-fg">{task.title}</h1>
-          {task.status === 'running' && (
-            <button className={btn.danger} onClick={() => void cancelTask(task.id)}>
-              Stop
-            </button>
-          )}
-        </div>
-
-        <div className="flex shrink-0 gap-2.5 items-center">
-          <AgentIcon agentId={task.agentId} label={task.agentLabel} size={26} />
-          <div className="flex flex-col gap-px min-w-0">
-            <span className="text-[13px] font-semibold text-fg">{task.agentLabel}</span>
-            {task.model && (
-              <span className="overflow-hidden font-mono text-xs text-dim text-ellipsis whitespace-nowrap">
-                {task.model}
-              </span>
+      <header className="shrink-0 max-h-[35%] overflow-y-auto px-6 py-4 @max-[760px]:px-4 [@media(max-height:600px)]:py-2">
+        <div className="flex flex-wrap gap-2 items-center justify-between text-xs">
+          <span className="text-dim">Tasks / Agent run</span>
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className={dot(task.status)} />
+            <span className={statusTone(task.status)}>{STATUS_LABEL[task.status]}</span>
+            <span className="text-dim">·</span>
+            <span className={deliveryTone(task.deliveryStatus)}>{DELIVERY_LABEL[task.deliveryStatus]}</span>
+            {task.status === 'running' && (
+              <button className={cn(btn.danger, 'ml-2')} onClick={() => void cancelTask(task.id)}>Stop</button>
             )}
           </div>
-          <div className="flex gap-3 items-center ml-auto pl-3 text-xs">
-            <span className={statusTone(task.status)}>{STATUS_LABEL[task.status]}</span>
-            <span className={deliveryTone(task.deliveryStatus)}>
-              {DELIVERY_LABEL[task.deliveryStatus] ?? task.deliveryStatus}
+        </div>
+        <h1 className="my-2.5 text-[22px] font-medium leading-snug [overflow-wrap:anywhere] @max-[760px]:text-xl [@media(max-height:600px)]:my-1">{task.title}</h1>
+        <div className="flex flex-wrap gap-x-4 gap-y-2 items-center text-xs text-dim">
+          <span className="flex items-center gap-2">
+            <AgentIcon agentId={task.agentId} label={task.agentLabel} size={18} />
+            {task.agentLabel}
+          </span>
+          {task.model && <span className="[overflow-wrap:anywhere]">{task.model}</span>}
+          {task.branchName && (
+            <span className="flex min-w-0 items-center gap-2">
+              {task.baseBranch && <span className="truncate" title={task.baseBranch}>{task.baseBranch} ←</span>}
+              <CopyableText label="branch name" value={task.branchName} />
             </span>
-          </div>
+          )}
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0">Task ID</span>
+            <CopyableText label="task ID" value={task.id} />
+          </span>
         </div>
-
-        <div aria-label="Task statistics" role="group" className="grid shrink-0 auto-cols-[minmax(0,1fr)] grid-flow-col overflow-hidden bg-raised border border-line rounded-card">
-          <StatBlock label="Elapsed" value={formatDuration(task, now)} tone={task.status} />
-          <StatBlock
-            label="Tokens"
-            value={
-              <span className="flex flex-col gap-1">
-                <span className="flex flex-wrap gap-x-2.5">
-                  <span>
-                    {formatTokens(task.inputTokens)}
-                    <span className="ml-1 text-dim/60">in</span>
-                  </span>
-                  <span>
-                    {formatTokens(task.outputTokens)}
-                    <span className="ml-1 text-dim/60">out</span>
-                  </span>
-                </span>
-                {task.cachedTokens > 0 && (
-                  <span className="text-xs text-dim/70">
-                    {formatTokens(task.cachedTokens)} cached input
-                  </span>
-                )}
-              </span>
-            }
-            detail={tokenBreakdown(task)}
-            tone={task.status}
-          />
-          <StatBlock label="Cost" value={formatCost(task.costUsd)} tone={task.status} />
-        </div>
-
-        {task.prompt.trim() !== task.title && (
-          <div role="region" aria-label="Task prompt" tabIndex={0} className="min-h-0 max-h-28 overflow-y-auto overscroll-contain pr-2 text-[13px] text-dim whitespace-pre-wrap [overflow-wrap:anywhere]">
-            {task.prompt}
-          </div>
-        )}
       </header>
 
-      {task.error && <div className="px-4 py-2.5 text-danger bg-danger/8">{task.error}</div>}
-
-      <div className="flex shrink-0 gap-1 px-4 pt-2 border-b border-line">
-        <button
-          className={cn(
-            'px-2.5 pt-[7px] pb-[9px] border-b-2',
-            panel === 'output' ? 'text-fg border-b-accent' : 'text-dim border-b-transparent'
-          )}
-          onClick={() => setPanel('output')}
-        >
-          Output
-        </button>
-        {(task.deliveryStatus === 'reviewable' || approved) && (
-          <button
-            className={cn(
-              'px-2.5 pt-[7px] pb-[9px] border-b-2',
-              panel === 'changes' ? 'text-fg border-b-accent' : 'text-dim border-b-transparent'
-            )}
-            onClick={() => setPanel('changes')}
-          >
-            Changes {task.filesChanged > 0 ? `(${task.filesChanged})` : ''}
-          </button>
-        )}
+      <div aria-label="Task statistics" role="group" className="flex shrink-0 flex-wrap items-center gap-x-7 gap-y-2 px-6 py-3 bg-raised border-y border-line @max-[760px]:px-4 [@media(max-height:600px)]:py-2">
+        <StatBlock label="Elapsed" value={formatDuration(task, now)} />
+        <StatBlock label="Tokens" detail={tokenBreakdown(task)} value={
+          <span className="flex flex-wrap gap-x-2">
+            <span>{formatTokens(task.inputTokens)} <span className="text-dim">in</span></span>
+            <span className="text-dim">/</span>
+            <span>{formatTokens(task.outputTokens)} <span className="text-dim">out</span></span>
+          </span>
+        } />
+        <StatBlock label="Cached" value={formatTokens(task.cachedTokens)} detail={`${formatTokens(task.cachedTokens)} cached input`} />
+        <StatBlock label="Cost" value={formatCost(task.costUsd)} />
       </div>
 
-      {panel === 'output' ? (
-        <div className="relative flex-1 min-w-0 min-h-0">
-        <div
-          ref={outputRef}
-          role="log"
-          aria-label="Task output"
-          className="h-full min-w-0 px-4 py-3 overflow-y-auto overscroll-contain font-mono text-[12.5px] leading-[1.55]"
-          onScroll={onScroll}
-        >
-          {!events && <p className={PLACEHOLDER}>Loading output…</p>}
-          {events?.length === 0 && <p className={PLACEHOLDER}>Waiting for output…</p>}
-          {events?.map((event) => (
-            <LogRow key={event.id} event={event} />
-          ))}
-        </div>
-        {!follow && (
-          <button
-            className="absolute right-[22px] bottom-[18px] px-3 py-1.5 text-xs bg-hover border border-line rounded-full"
-            onClick={() => setFollow(true)}
-          >
-            Jump to latest
-          </button>
-        )}
-        </div>
-      ) : (
-        <div className="flex-1 min-h-0 px-4 pt-3.5 pb-6 overflow-auto [&_[data-diffs]]:border [&_[data-diffs]]:border-line [&_[data-diffs]]:rounded-md">
-          {/*
-           * Pinned to the top of the scrolling review pane. Negative margins pull
-           * it over the pane's own padding so diff content passes underneath, and
-           * it outranks the diff renderer's own sticky headers.
-           */}
-          <div className="sticky top-0 z-[5] -mx-4 -mt-3.5 mb-3.5 px-4 py-3 bg-canvas border-b border-line">
-            <div className="flex items-center justify-between text-xs text-dim">
-              <div className="flex gap-2 items-baseline">
-                <strong className="font-mono text-fg">{task.branchName}</strong>
-                <span>from {task.baseBranch}</span>
-              </div>
-              <span>
-                {task.filesChanged} files · <b className="text-ok">+{task.additions}</b> ·{' '}
-                <b className="text-danger">-{task.deletions}</b>
-              </span>
-            </div>
-            <div className="flex gap-3 items-center justify-end mt-2.5">
-              <span className="text-xs text-dim">
-                {approved
-                  ? 'Approved'
-                  : pending.length
-                    ? `${pending.length} comment${pending.length === 1 ? '' : 's'} pending`
-                    : 'Select a line to comment'}
-              </span>
-              <button
-                className={btn.primary}
-                disabled={approved || !pending.length || sending}
-                onClick={() => void sendComments(task.id)}
-              >
-                {sending ? 'Sending…' : 'Send'}
-              </button>
-              <button
-                className="px-3.5 py-[7px] rounded-md font-medium whitespace-nowrap bg-ok text-canvas disabled:bg-transparent disabled:text-ok disabled:border disabled:border-ok/40 disabled:cursor-default"
-                disabled={approved}
-                title={approved ? 'Already approved' : 'Accept this work and close the review'}
-                onClick={() => void approveTask(task.id)}
-              >
-                {approved ? 'Approved' : 'Approve'}
-              </button>
-            </div>
-            {commentError && <div className="mt-2 text-xs text-danger">{commentError}</div>}
-          </div>
-          {!diff && !diffError && <p className={PLACEHOLDER}>Loading code changes…</p>}
-          {diffError && <div className="px-4 py-2.5 text-danger bg-danger/8">{diffError}</div>}
-          {diff && (
-            <>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-dim">
-                  {diff.commits.length} commit{diff.commits.length === 1 ? '' : 's'}
-                </span>
-                <button
-                  className={btn.ghost}
-                  disabled={approved || diff.commits.length < 2 || rebasing}
-                  title={
-                    diff.commits.length < 2
-                      ? 'Nothing to rebase: this branch has a single commit'
-                      : settings?.rebaseMode === 'agent'
-                        ? 'Let the agent rewrite these commits'
-                        : 'Choose what happens to each commit'
-                  }
-                  onClick={() => {
-                    // Agent mode hands the branch straight over; manual mode
-                    // opens the editor, which is its own confirmation.
-                    if (settings?.rebaseMode !== 'agent') openRebase(task.id)
-                    else if (settings.confirmRebase === false) void rebaseWithAgent(task.id)
-                    else openRebase(task.id)
-                  }}
-                >
-                  {rebasing ? 'Rebasing…' : 'Rebase'}
-                </button>
-              </div>
-              <div className="mb-3 overflow-hidden border border-line rounded-md">
-                {diff.commits.map((commit) => (
-                  <div
-                    key={commit.sha}
-                    className="flex gap-2.5 px-2.5 py-[7px] text-[11px] border-b border-line last:border-b-0"
-                  >
-                    <code className="text-accent">{commit.sha.slice(0, 8)}</code>
-                    <span>{commit.subject}</span>
-                  </div>
-                ))}
-              </div>
-              <Suspense fallback={<p className={PLACEHOLDER}>Loading diff renderer…</p>}>
-                <PatchFiles
-                  patch={diff.patch}
-                  comments={comments ?? []}
-                  draft={draft}
-                  onSelectLine={approved ? () => {} : setDraft}
-                  onSubmit={(target, body) => {
-                    void addComment({ taskId: task.id, ...target, body })
-                    setDraft(null)
-                  }}
-                  onRemove={(id) => void removeComment(task.id, id)}
-                />
-              </Suspense>
-            </>
-          )}
-        </div>
-      )}
+      {(task.error || task.deliveryError) && <div role="alert" className="shrink-0 max-h-20 overflow-auto px-6 py-2.5 text-danger bg-danger/8">{task.error || task.deliveryError}</div>}
 
-      {panel === 'output' && <TaskSteeringComposer key={task.id} task={task} />}
+      <div className="flex shrink-0 gap-4 px-5 border-b border-line" role="tablist" aria-label="Task panels">
+        {(['output', 'changes'] as const).map((panel) => (
+          <button
+            key={panel}
+            role="tab"
+            aria-selected={activePanel === panel}
+            className={cn('py-2 text-xs border-b-2', activePanel === panel ? 'text-accent border-accent' : 'text-dim border-transparent')}
+            onClick={() => { setActivePanel(panel); setFocused(false) }}
+          >
+            {panel === 'output' ? 'Output' : `Changes · ${task.filesChanged}`}
+          </button>
+        ))}
+      </div>
+
+      <div className={cn('grid flex-1 min-h-0 min-w-0 @max-[760px]:flex', activePanel === 'output' || focused ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_320px]')}>
+        <section aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-line">
+            <div className="flex gap-3 items-center text-sm">
+              <h2 className="font-medium text-accent">Changes <span className="ml-1 text-dim">{task.filesChanged}</span></h2>
+              <span className="text-xs"><span className="text-ok">+{task.additions}</span> <span className="text-danger">−{task.deletions}</span></span>
+            </div>
+            <button className={cn(btn.ghost, 'text-xs @max-[760px]:hidden')} aria-pressed={focused} onClick={() => setFocused((value) => !value)}>
+              {focused ? 'Show output' : 'Focus diff'}
+            </button>
+          </div>
+          {reviewable ? <>
+            <div className="shrink-0 max-h-[40%] overflow-auto px-5 py-3 border-b border-line">
+              <div className="flex flex-wrap gap-2 items-center justify-between text-xs">
+                <span className="text-dim">{approved ? 'Approved' : pending.length ? `${pending.length} comments pending` : 'Select a line to comment'}</span>
+                <div className="flex gap-2">
+                  <button className={btn.ghost} disabled={approved || !pending.length || sending} onClick={() => void sendComments(task.id)}>
+                    {sending ? 'Sending…' : 'Send comments'}
+                  </button>
+                  <button className={cn(btn.primary, 'bg-ok disabled:opacity-45')} disabled={approved || !diff || rebasing} onClick={() => void approveTask(task.id)}>
+                    {approved ? 'Approved' : 'Approve'}
+                  </button>
+                </div>
+              </div>
+              {commentError && <p role="alert" className="mt-2 text-xs text-danger">{commentError}</p>}
+              {diff && <details className="mt-2 text-xs">
+                <summary className="cursor-pointer text-dim">{diff.commits.length} commit{diff.commits.length === 1 ? '' : 's'}</summary>
+                <div className="flex justify-end my-2">
+                  <button
+                    className={btn.ghost}
+                    disabled={approved || diff.commits.length < 2 || rebasing}
+                    title={diff.commits.length < 2 ? 'Nothing to rebase: this branch has a single commit' : 'Rewrite these commits'}
+                    onClick={() => {
+                      if (settings?.rebaseMode !== 'agent') openRebase(task.id)
+                      else if (settings.confirmRebase === false) void rebaseWithAgent(task.id)
+                      else openRebase(task.id)
+                    }}
+                  >
+                    {rebasing ? 'Rebasing…' : 'Rebase'}
+                  </button>
+                </div>
+                {diff.commits.map((commit) => <div key={commit.sha} className="flex gap-2 py-1.5 border-t border-line">
+                  <code className="text-accent">{commit.sha.slice(0, 8)}</code>
+                  <span className="min-w-0 break-words">{commit.subject}</span>
+                </div>)}
+              </details>}
+            </div>
+            {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
+            {diffError && <div role="alert" className="p-5 text-sm text-danger">
+              <p>{diffError}</p>
+              <button className={cn(btn.ghost, 'mt-3')} onClick={() => void loadTaskDiff(task.id)}>Retry</button>
+            </div>}
+            {diff && <Suspense fallback={<p className="p-5 text-sm text-dim">Loading diff renderer…</p>}>
+              <PatchFiles
+                key={diff.patch}
+                patch={diff.patch}
+                comments={comments ?? []}
+                draft={draft}
+                onSelectLine={approved ? () => {} : setDraft}
+                onSubmit={(target, body) => {
+                  void addComment({ taskId: task.id, ...target, body })
+                  setDraft(null)
+                }}
+                onRemove={(id) => void removeComment(task.id, id)}
+              />
+            </Suspense>}
+          </> : <div className="grid flex-1 place-content-center gap-2 p-6 text-center text-sm text-dim">
+            <p>{task.status === 'running' ? 'The agent is working on this task.' : DELIVERY_LABEL[task.deliveryStatus]}</p>
+            <p className="text-xs">{task.status === 'running' ? 'The final task diff will appear here when it is ready for review.' : 'There is no final diff available for review.'}</p>
+          </div>}
+        </section>
+
+        <aside aria-label="Prompt and output" className={cn('flex flex-col flex-1 min-h-0 min-w-0 bg-raised', activePanel === 'changes' && 'border-l border-line @max-[760px]:hidden', activePanel === 'changes' && focused && 'hidden')}>
+          <div className="shrink-0 px-5 pt-4 pb-3 border-b border-line [@media(max-height:600px)]:py-2">
+            <h2 className="mb-2 text-xs font-medium [@media(max-height:600px)]:mb-1">Original prompt</h2>
+            <div role="region" aria-label="Task prompt" tabIndex={0} className="max-h-24 overflow-y-auto overscroll-contain text-[13px] leading-relaxed text-dim whitespace-pre-wrap [overflow-wrap:anywhere] @max-[760px]:max-h-12 [@media(max-height:600px)]:max-h-6">
+              {task.prompt}
+            </div>
+          </div>
+          <div className="grid shrink-0 grid-cols-[96px_minmax(0,1fr)] gap-4 px-5 py-2 border-b border-line text-[11px] text-dim">
+            <span>Event type</span>
+            <span>Result · {events?.length ?? 0} events</span>
+          </div>
+          <div className="relative flex-1 min-h-0 min-w-0">
+            <div ref={outputRef} role="log" aria-label="Task output" className="h-full min-w-0 px-5 pb-3 overflow-y-auto overscroll-contain font-mono text-[12.5px] leading-[1.55]" onScroll={onScroll}>
+              {!events && <p className={PLACEHOLDER}>Loading output…</p>}
+              {events?.length === 0 && task.status !== 'running' && <p className={PLACEHOLDER}>No output recorded.</p>}
+              {events?.map((event) => <LogRow key={event.id} event={event} />)}
+              <TaskActivity task={task} event={events?.at(-1)} />
+            </div>
+            {!follow && <button className="absolute right-5 bottom-3 px-3 py-1.5 text-xs bg-hover border border-line rounded-full" onClick={() => setFollow(true)}>
+              Jump to latest
+            </button>}
+          </div>
+          <TaskSteeringComposer key={task.id} task={task} hidden={activePanel !== 'output'} />
+        </aside>
+      </div>
     </div>
   )
 }
