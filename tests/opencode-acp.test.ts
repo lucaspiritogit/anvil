@@ -103,12 +103,18 @@ async function main(): Promise<void> {
       assert.deepEqual(effortRequests.map((request) => request.params.value), [selection.options.reasoningEffort])
     }
 
-    for (const reasoningEffort of ['max', 'medium']) {
+    for (const { reasoningEffort, resumeSessionId } of [
+      { reasoningEffort: 'max', resumeSessionId: undefined },
+      { reasoningEffort: 'high', resumeSessionId: 'session-test' },
+      { reasoningEffort: 'medium', resumeSessionId: undefined },
+      { reasoningEffort: undefined, resumeSessionId: undefined },
+      { reasoningEffort: undefined, resumeSessionId: 'session-test' }
+    ]) {
       const requestCount = (await requests()).length
-      const nativeEffort = await client('native-effort').execute({ ...input, reasoningEffort }, () => {})
-      assert.equal(nativeEffort.status, reasoningEffort === 'max' ? 'succeeded' : 'failed', nativeEffort.error)
+      const nativeEffort = await client('native-effort').execute({ ...input, reasoningEffort, resumeSessionId }, () => {})
+      assert.equal(nativeEffort.status, reasoningEffort === 'medium' ? 'failed' : 'succeeded', nativeEffort.error)
       const effortRequests = (await requests()).slice(requestCount).filter((request) => ['effort', 'native-reasoning'].includes(request.params?.configId))
-      assert.deepEqual(effortRequests.map((request) => request.params.value), reasoningEffort === 'max' ? ['max'] : [],
+      assert.deepEqual(effortRequests.map((request) => request.params.value), reasoningEffort && reasoningEffort !== 'medium' ? [reasoningEffort] : [],
         'Native model efforts must also be checked against the current ACP config')
     }
 

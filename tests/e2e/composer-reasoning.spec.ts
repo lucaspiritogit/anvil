@@ -38,6 +38,8 @@ test('model selection refreshes available efforts and remembers a valid choice p
   await expect(page.getByRole('main').getByRole('heading', { name: 'Use the selected effort', exact: true })).toBeVisible()
   const started = await page.evaluate(async () => (await window.anvil.tasks.list()).find((task) => task.id.startsWith('started-')))
   expect(started).toMatchObject({ model: 'openrouter/deepseek/deepseek-v4', reasoningEffort: 'max' })
+  expect(started).not.toHaveProperty('thinkingLevel')
+  expect(started).not.toHaveProperty('modelEffort')
 })
 
 test('stale saved effort is replaced and persisted when metadata loads', async ({ page }) => {
@@ -107,7 +109,9 @@ test('the same model ID keeps separate agent choices and forwards the Codex opti
     window.anvil.agents.models = async (agentId) => ({
       agentId, models: ['shared-model'], reasoningByModel: {
         'shared-model': {
-          options: [{ id: 'native-max', label: 'Maximum reasoning' }, { id: 'fast', label: 'Fast reasoning' }],
+          options: agentId === 'codex'
+            ? [{ id: 'native-max', label: 'Maximum reasoning' }, { id: 'low', label: 'Low' }]
+            : [{ id: 'fast', label: 'Fast reasoning' }, { id: 'max', label: 'Maximum' }],
           default: agentId === 'codex' ? 'native-max' : 'fast'
         }
       }
@@ -127,12 +131,18 @@ test('the same model ID keeps separate agent choices and forwards the Codex opti
   await agent.selectOption('opencode')
   await selectModel()
   await expect(effort).toHaveValue('fast')
+  await effort.selectOption('max')
   await agent.selectOption('codex')
   await expect(effort).toHaveValue('native-max')
   await composer.getByRole('textbox').fill('Use Codex native reasoning')
   await composer.getByRole('button', { name: 'Send', exact: true }).click()
   await expect.poll(() => page.evaluate(async () => (await window.anvil.tasks.list()).find((task) => task.id.startsWith('started-'))))
     .toMatchObject({ agentId: 'codex', model: 'shared-model', reasoningEffort: 'native-max' })
+  const started = await page.evaluate(async () => (await window.anvil.tasks.list()).find((task) => task.id.startsWith('started-')))
+  expect(started).not.toHaveProperty('thinkingLevel')
+  expect(started).not.toHaveProperty('modelEffort')
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('anvil-composer-preferences-v2')!).state.reasoningByAgentModel))
+    .toEqual({ '["codex","shared-model"]': 'native-max', '["opencode","shared-model"]': 'max' })
 })
 
 test('failed discovery disables reasoning and omits a saved choice', async ({ page }) => {
@@ -155,3 +165,30 @@ test('failed discovery disables reasoning and omits a saved choice', async ({ pa
   const started = await page.evaluate(async () => (await window.anvil.tasks.list()).find((task) => task.id.startsWith('started-')))
   expect(started).not.toHaveProperty('reasoningEffort')
 })
+
+for (const agentId of ['codex', 'opencode']) {
+  test(`${agentId} submits the discovered effort immediately after delayed discovery`, async ({ page }) => {
+    await page.addInitScript((agentId) => localStorage.setItem('anvil-composer-preferences-v2', JSON.stringify({ state: {
+      agentId: '', modelsByAgent: { [agentId]: 'shared-model' },
+      reasoningByAgentModel: { [JSON.stringify([agentId, 'shared-model'])]: 'removed' }
+    }, version: 0 })), agentId)
+    await page.goto(fixture)
+    await page.evaluate((agentId) => {
+      window.anvil.agents.models = async (requestedAgent) => {
+        await new Promise<void>((resolve) => window.addEventListener('fixture:models-ready', () => resolve(), { once: true }))
+        return { agentId: requestedAgent, models: ['shared-model'], reasoningByModel: {
+          'shared-model': { options: [{ id: agentId === 'codex' ? 'native-max' : 'max', label: 'Maximum' }] }
+        } }
+      }
+    }, agentId)
+    const composer = page.getByRole('form', { name: 'Start a task' })
+    await composer.getByRole('combobox', { name: 'Agent', exact: true }).selectOption(agentId)
+    await composer.getByRole('textbox').fill('Submit immediately')
+    const send = composer.getByRole('button', { name: 'Send', exact: true })
+    await expect(send).toBeDisabled()
+    await page.evaluate(() => window.dispatchEvent(new Event('fixture:models-ready')))
+    await send.click()
+    await expect.poll(() => page.evaluate(async () => (await window.anvil.tasks.list()).find((task) => task.id.startsWith('started-'))))
+      .toMatchObject({ agentId, model: 'shared-model', reasoningEffort: agentId === 'codex' ? 'native-max' : 'max' })
+  })
+}

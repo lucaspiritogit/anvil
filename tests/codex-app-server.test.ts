@@ -95,16 +95,22 @@ async function main(): Promise<void> {
       excludeTmpdirEnvVar: false, excludeSlashTmp: false
     }, 'Headless validation needs network access for dependencies and local test servers')
 
-    for (const resumeSessionId of [undefined, 'thread-test']) {
+    for (const { resumeSessionId, reasoningEffort } of [
+      { resumeSessionId: undefined, reasoningEffort: 'native-max' },
+      { resumeSessionId: 'thread-test', reasoningEffort: 'low' },
+      { resumeSessionId: undefined, reasoningEffort: undefined },
+      { resumeSessionId: 'thread-test', reasoningEffort: undefined }
+    ]) {
       await writeFile(transcript, '')
-      const configured = await client('success').execute({ ...input, model: 'reasoner', reasoningEffort: 'native-max', resumeSessionId }, () => {})
+      const configured = await client('success').execute({ ...input, model: 'reasoner', reasoningEffort, resumeSessionId }, () => {})
       assert.equal(configured.status, 'succeeded', configured.error)
       const calls = await requests()
       const thread = calls.find((entry) => entry.method === (resumeSessionId ? 'thread/resume' : 'thread/start'))
-      assert.equal(thread.params.config.model_reasoning_effort, 'native-max')
+      assert.equal(thread.params.config.model_reasoning_effort, reasoningEffort)
+      assert.equal('model_reasoning_effort' in thread.params.config, reasoningEffort !== undefined)
       assert.equal(thread.params.threadId, resumeSessionId)
       assert.equal('reasoningEffort' in thread.params, false, 'Only protocol settings go on the wire')
-      assert.equal(calls.some((entry) => entry.method === 'model/list'), true)
+      assert.equal(calls.some((entry) => entry.method === 'model/list'), reasoningEffort !== undefined)
     }
     for (const model of ['reasoner', 'plain', undefined]) {
       await writeFile(transcript, '')
