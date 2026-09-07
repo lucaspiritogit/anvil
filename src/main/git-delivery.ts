@@ -37,13 +37,11 @@ export interface RebasedBranch {
 }
 
 export interface FinalizeOptions {
-  /** Called with each git command the finisher runs, as it runs. */
   onFinisherCommand?: (command: string) => void
 }
 
 export interface FinalizedWorktree {
   headCommit: string
-  /** The branch the worktree ended on, when the agent renamed or switched it. */
   branchName?: string
   hasChanges: boolean
   finisherCommitted: boolean
@@ -72,7 +70,6 @@ async function git(cwd: string, args: string[], acceptedCodes: number[] = [0], e
   }
 }
 
-/** Renders a git invocation the way a user would type it in the worktree. */
 function formatGitCommand(args: string[]): string {
   const rendered = args.map((arg) => (/[\s"]/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')
   return `$ git ${rendered}`

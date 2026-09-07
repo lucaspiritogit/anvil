@@ -4,13 +4,31 @@ import { ClaudeIcon, GoogleGeminiIcon, GridViewIcon } from '@hugeicons/core-free
 import openaiMark from '@public/providers/openai.svg'
 import openrouterMark from '@public/providers/openrouter.svg'
 import opencodeMark from '@public/agents/opencode.svg'
+import deepseekMark from '@public/providers/deepseek.svg'
+import kimiMark from '@public/providers/kimi.svg'
+import grokMark from '@public/providers/grok.svg'
+
+const COLOR_MARKS: Record<string, string> = {
+  'OpenCode Go': opencodeMark,
+  'OpenCode Zen': opencodeMark,
+  DeepSeek: deepseekMark,
+  'Moonshot AI': kimiMark
+}
+
+const MONOCHROME_MARKS: Record<string, string> = {
+  OpenAI: openaiMark,
+  OpenRouter: openrouterMark,
+  Codex: openaiMark,
+  xAI: grokMark
+}
 
 export function ProviderIcon({ company, size = 18 }: { company: string; size?: number }): JSX.Element {
-  if (company === 'OpenCode Go' || company === 'OpenCode Zen') {
-    return <img src={opencodeMark} alt="" aria-hidden="true" width={size} height={size} className="shrink-0 rounded-sm" />
+  const colorArtwork = COLOR_MARKS[company]
+  if (colorArtwork) {
+    return <img src={colorArtwork} alt="" aria-hidden="true" width={size} height={size} className="shrink-0 rounded-sm" />
   }
-  if (company === 'OpenAI' || company === 'OpenRouter' || company === 'Codex') {
-    const artwork = company === 'OpenRouter' ? openrouterMark : openaiMark
+  const artwork = MONOCHROME_MARKS[company]
+  if (artwork) {
     return (
       <span
         aria-hidden="true"
