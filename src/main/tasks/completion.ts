@@ -8,7 +8,7 @@ export function createTaskCompletion(
   { rememberCompletedTask }: Pick<TaskMemory, 'rememberCompletedTask'>
 ): (info: ExitInfo) => Promise<void> {
   return async (info) => {
-    const status = info.cancelled ? 'cancelled' : info.code === 0 ? 'succeeded' : 'failed'
+    const status = info.cancelled ? 'cancelled' : info.code === 0 ? 'succeeded' : 'pending'
     // Tasks without Git have no worktree to finalize and keep 'unavailable'.
     const existing = store.getTask(info.taskId)
     const managed = Boolean(existing?.worktreePath && existing.baseCommit)
@@ -20,8 +20,8 @@ export function createTaskCompletion(
       ...(managed ? { deliveryStatus: 'finalizing' as const } : {})
     })
     if (task) send('task:updated', task)
-    if (task && status === 'failed') {
-      recordSystemEvent(task.id, `Task failed: ${info.error ?? 'Agent failed.'}`, 'delivery', 'error')
+    if (task && status === 'pending') {
+      recordSystemEvent(task.id, `Task paused: ${info.error ?? 'Agent failed.'}`, 'delivery', 'error')
     }
     const project = store.getProjects().find((item) => item.id === task?.projectId)
     if (!project || !task) return

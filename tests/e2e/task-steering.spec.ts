@@ -92,3 +92,18 @@ for (const viewport of [{ width: 900, height: 500 }, { width: 1100, height: 700 
     await page.screenshot({ path: testInfo.outputPath('task-layout.png') })
   })
 }
+
+test('pending task shows its status and accepts a recovery prompt', async ({ page }, testInfo) => {
+  await page.goto('/tests/e2e/fixture/?scenario=output&steering=1&pending=1')
+  await expect(page.getByText('Pending', { exact: true }).first()).toBeVisible()
+  const input = page.getByRole('textbox', { name: 'Message to agent' })
+  await expect(input).toBeEnabled()
+  await expect(input).toHaveAttribute('placeholder', 'Help this task continue...')
+  await captureSteering(page)
+  await input.fill('Fix the already running error')
+  await page.screenshot({ path: testInfo.outputPath('pending-task.png') })
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(input).toHaveValue('')
+  expect(await page.evaluate(() => (window as unknown as { steeringRequests: unknown[] }).steeringRequests))
+    .toEqual([{ taskId: 'output', message: 'Fix the already running error' }])
+})

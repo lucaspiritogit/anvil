@@ -43,6 +43,7 @@ if (query.has('taskUsage')) {
 if (query.has('steering')) {
   tasks = tasks.map((task) => task.id === 'output' ? {
     ...task, sessionId: query.has('noSession') ? undefined : 'latest-session', model: 'task-model',
+    ...(query.has('pending') ? { status: 'pending', deliveryStatus: 'agent_failed' } : {}),
     ...(query.has('running') ? { status: 'running', deliveryStatus: 'working', endedAt: undefined } : {}),
     ...(query.has('unsupported') ? { agentId: 'opencode', agentLabel: 'OpenCode' } : {})
   } : task)

@@ -116,6 +116,19 @@ async function main(): Promise<void> {
     assert.equal(store.getTask(task.id)?.totalTokens, 20)
     assert.equal(store.getTask(task.id)?.baseCommit, finished.baseCommit)
 
+    // Reproduce a task left mid-finalization when Anvil closes itself.
+    store.addTask({ ...finished, id: 'interrupted', status: 'cancelled', deliveryStatus: 'finalizing', error: 'Task cancelled.' })
+    store.saveTaskExecution({ ...store.getTaskExecution(task.id)!, taskId: 'interrupted', phase: 'blocked' })
+    const recovered = new Store(databasePath, options)
+    assert.equal(recovered.getTask('interrupted')?.status, 'pending')
+    assert.equal(recovered.getTask('interrupted')?.deliveryStatus, 'agent_failed')
+    recovered.close()
+    gitDelivery.reopen = originalReopen
+    await steer('interrupted', 'Fix the already running error')
+    assert.equal(agentProcesses.starts.at(-1).resumeSessionId, finished.sessionId)
+    agentProcesses.finishTurn('interrupted')
+    await tick()
+
     const state = store.getTaskExecution(task.id)!
     store.addTask({ ...finished, id: 'deleted' })
     store.saveTaskExecution({ ...state, taskId: 'deleted' })

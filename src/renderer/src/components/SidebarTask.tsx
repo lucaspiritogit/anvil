@@ -12,6 +12,7 @@ import { cn } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
 
 const TASK_INDICATORS = {
+  pending: { icon: Notification03Icon, label: 'Pending', tone: 'text-warn', highlight: '' },
   running: { icon: Loading03Icon, label: 'Working', tone: 'text-accent', highlight: '' },
   approved: { icon: Tick02Icon, label: 'Approved', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
   reviewable: { icon: Notification03Icon, label: 'Ready for review', tone: 'text-orange-400', highlight: 'bg-orange-400/8 hover:bg-orange-400/12 ring-orange-400/30' },
@@ -19,6 +20,7 @@ const TASK_INDICATORS = {
 }
 
 function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
+  if (task.status === 'pending') return TASK_INDICATORS.pending
   if (task.status === 'running') return TASK_INDICATORS.running
   if (task.status === 'failed' || task.deliveryStatus === 'failed' || task.deliveryStatus === 'agent_failed') {
     return TASK_INDICATORS.failed
@@ -106,7 +108,7 @@ export function SidebarTask({ task, project, now, active, compact = false }: {
                 <span className="truncate">{project?.name ?? 'Project'}</span>
               </span>
               <span className={cn('shrink-0 text-[11px]', indicator?.tone, eligible && 'group-hover:invisible group-focus-within:invisible')}>
-                {indicator?.label ?? (task.status === 'cancelled' ? 'Cancelled' : relativeAge(task.endedAt ?? task.startedAt, now))}
+                {indicator?.label ?? (task.status === 'pending' ? 'Pending' : task.status === 'cancelled' ? 'Cancelled' : relativeAge(task.endedAt ?? task.startedAt, now))}
               </span>
             </span>
             <span className={cn('block truncate text-[13px] font-medium', active || task.status === 'running' ? 'text-fg' : 'text-fg/80')}>

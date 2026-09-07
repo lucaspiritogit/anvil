@@ -44,7 +44,7 @@ export function TaskSteeringComposer({ task, hidden = false }: { task: Task; hid
           disabled={sending || unavailable}
           placeholder={task.status === 'running'
             ? !supported ? 'This agent can receive a follow-up after it stops...' : !task.sessionId ? 'Waiting for an agent session...' : 'Steer this task...'
-            : task.status === 'failed' || task.status === 'cancelled' ? 'Help this task continue...' : 'Continue this task...'}
+            : task.status === 'pending' || task.status === 'failed' || task.status === 'cancelled' ? 'Help this task continue...' : 'Continue this task...'}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) {

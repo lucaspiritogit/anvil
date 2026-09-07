@@ -254,7 +254,7 @@ async function main(): Promise<void> {
   await tick()
   agentProcesses.finishTurn(invalid.id, 'Planning failed.', 1)
   await tick()
-  assert.equal(tasks.get(invalid.id)?.status, 'failed')
+  assert.equal(tasks.get(invalid.id)?.status, 'pending')
   assert.equal(trackers.get(invalid.id)?.phase, 'blocked')
 
   const cancelled: Task = await call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Cancel between issues' })

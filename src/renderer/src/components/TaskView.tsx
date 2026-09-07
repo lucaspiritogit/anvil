@@ -318,6 +318,7 @@ function LogRow({ event }: { event: TaskEvent }): JSX.Element {
 }
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
+  pending: 'Pending',
   running: 'Running',
   succeeded: 'Succeeded',
   failed: 'Failed',

@@ -151,7 +151,7 @@ export function registerTaskHandlers({
         if (current.status !== 'running') return current
         const message = error instanceof Error ? error.message : String(error)
         const failed = store.updateTask(task.id, {
-          status: 'failed',
+          status: 'pending',
           endedAt: Date.now(),
           exitCode: null,
           error: message,
@@ -166,10 +166,14 @@ export function registerTaskHandlers({
   )
 
   ipcMain.handle('tasks:cancel', (_event, taskId: string) => {
-    if (agentProcesses.isRunning(taskId)) return agentProcesses.cancel(taskId)
+    if (agentProcesses.isRunning(taskId)) {
+      recordSystemEvent(taskId, 'Stop requested by user.')
+      return agentProcesses.cancel(taskId)
+    }
     // Cancellation must also cover the gap between sequential agent processes.
     const state = store.getTaskExecution(taskId)
     if (!state || state.phase === 'complete' || store.getTask(taskId)?.status !== 'running') return false
+    recordSystemEvent(taskId, 'Stop requested by user.')
     void finishTaskTurn({ taskId, code: null, cancelled: true })
     return true
   })

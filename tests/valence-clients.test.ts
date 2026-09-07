@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   // Model a terminated application, not a cancellation that releases its claims.
   agentProcesses.active.clear()
   registerIpc(() => null)
-  assert.equal(store.getTask(interrupted.id)?.status, 'failed')
+  assert.equal(store.getTask(interrupted.id)?.status, 'pending')
   assert.equal(store.getTaskExecution(interrupted.id)?.phase, 'blocked')
   assert.deepEqual(cli('list'), beforeRestart, 'Restart must not mutate any Valence issues')
   cli('requeue', interruptedId)
