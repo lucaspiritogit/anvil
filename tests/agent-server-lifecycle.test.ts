@@ -139,7 +139,7 @@ async function main(): Promise<void> {
       assert.equal(manager.close(), shutdown)
       assert.throws(() => manager.start({ ...input('rejected'), agent: getAgent('codex')! }), /shutting down/)
       await shutdown
-      assert.equal(((await exited) as [ExitInfo])[0].cancelled, true)
+      assert.equal(((await exited) as [ExitInfo])[0].cancelled, false, 'App shutdown must leave the task resumable')
       assert.equal(manager.isRunning('hang'), false)
       await assertExited((await busy.entries())[0].pid)
 

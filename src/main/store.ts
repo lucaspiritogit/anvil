@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { mkdirSync } from 'node:fs'
@@ -164,12 +164,18 @@ export class Store {
     this.sqlite = new Database(databaseFile)
     this.sqlite.pragma('journal_mode = WAL')
     this.sqlite.pragma('synchronous = NORMAL')
-    this.sqlite.pragma('foreign_keys = ON')
     this.db = drizzle(this.sqlite, { schema })
-    migrate(this.db, { migrationsFolder: options.migrationsFolder })
+    // SQLite table rebuilds must disable foreign keys outside the migration
+    // transaction, or dropping tasks cascades into its events and execution state.
+    this.sqlite.pragma('foreign_keys = OFF')
+    try {
+      migrate(this.db, { migrationsFolder: options.migrationsFolder })
+    } finally {
+      this.sqlite.pragma('foreign_keys = ON')
+    }
 
     this.seedSettings()
-    this.markInterruptedTasksFailed()
+    this.recoverInterruptedTasks()
     // Restart stops Anvil execution, not other clients sharing Valence storage.
     for (const row of this.db.select().from(schema.taskExecutions).all()) {
       if (row.state.phase === 'planning' || row.state.phase === 'working' || row.state.phase === 'recovering') {
@@ -189,18 +195,21 @@ export class Store {
   }
 
   /** A task cannot outlive the app, so anything still 'running' died with it. */
-  private markInterruptedTasksFailed(): void {
-    this.db
-      .update(tasks)
-      .set({
-        status: 'failed',
-        deliveryStatus: 'agent_failed',
-        error: 'Interrupted by app restart',
+  private recoverInterruptedTasks(): void {
+    for (const task of this.getTasks()) {
+      const unfinishedDelivery = ['preparing', 'working', 'finalizing', 'did_not_commit'].includes(task.deliveryStatus)
+      if (task.status !== 'running' && !unfinishedDelivery) continue
+      // Old versions used cancellation for shutdown too. An unfinished delivery
+      // without an explicit Stop event is recoverable after restart.
+      const stoppedByUser = task.status === 'cancelled' && this.readEvents(task.id).some((event) => event.text === 'Stop requested by user.')
+      this.updateTask(task.id, {
+        status: stoppedByUser ? 'cancelled' : 'pending',
+        deliveryStatus: task.deliveryStatus === 'unavailable' ? 'unavailable' : 'agent_failed',
+        error: stoppedByUser ? task.error : 'Interrupted by app restart',
         deliveryError: 'The agent was interrupted before Git delivery completed.',
-        endedAt: sql`COALESCE(${tasks.endedAt}, ${Date.now()})`
+        endedAt: task.endedAt ?? Date.now()
       })
-      .where(eq(tasks.status, 'running'))
-      .run()
+    }
   }
 
   getSettings(): Settings {

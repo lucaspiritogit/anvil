@@ -48,6 +48,23 @@ async function main(): Promise<void> {
     assert.equal(agentProcesses.isRunning('cancelled'), false)
     assert.ok(events.some((event) => event.taskId === 'cancelled' && event.text === 'Task cancelled.'))
 
+    for (const mode of ['unexpected', 'stop', 'shutdown'] as const) {
+      const server = new AgentProcessManager({
+        execute: async (input) => {
+          if (mode !== 'unexpected') await new Promise<void>((resolve) => input.signal!.addEventListener('abort', () => resolve(), { once: true }))
+          return { taskId: input.taskId, status: 'cancelled', output: '', changedFiles: [] }
+        }
+      })
+      const exited = once(server, 'exit')
+      server.start({ taskId: mode, agent: { ...agent, executionProtocol: 'acp' }, prompt: 'Wait', cwd: process.cwd() })
+      if (mode === 'stop') server.cancel(mode)
+      if (mode === 'shutdown') await server.close()
+      const [result] = await exited as [ExitInfo]
+      assert.equal(result.cancelled, mode === 'stop', 'Only an explicit Stop marks a server task cancelled')
+      assert.notEqual(result.code, 0)
+      await server.close()
+    }
+
     const missing = once(agentProcesses, 'exit')
     agentProcesses.start({
       taskId: 'missing', agent: { ...agent, command: '/anvil-test-missing-agent' },
@@ -67,7 +84,7 @@ async function main(): Promise<void> {
     })
     await readyToClose
     await agentProcesses.close()
-    assert.equal(((await shutdownExit) as [ExitInfo])[0].cancelled, true)
+    assert.equal(((await shutdownExit) as [ExitInfo])[0].cancelled, false, 'App shutdown is an interruption, not a user cancellation')
     assert.equal(agentProcesses.isRunning('shutdown'), false)
     assert.throws(() => agentProcesses.start({ taskId: 'late', agent, prompt: 'Too late', cwd: process.cwd() }), /shutting down/)
     console.log('Agent process manager tests passed: task events, stream buffering, ANSI removal, cancellation, spawn failure, and awaited shutdown.')

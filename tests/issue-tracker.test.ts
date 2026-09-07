@@ -98,7 +98,7 @@ async function main(): Promise<void> {
   const oversizedId = await start('Too many issues')
   agentProcesses.plan(oversizedId, Array.from({ length: 51 }, (_, index) => ({ ...issue, key: String(index) })))
   await tick()
-  assert.equal(store.getTask(oversizedId)?.status, 'failed')
+  assert.equal(store.getTask(oversizedId)?.status, 'pending')
   assert.match(store.getTask(oversizedId)!.error!, /at most 50/)
   assert.deepEqual(store.getTaskExecution(oversizedId)!.issueIds, [])
   assert.ok(tracker.list().filter((entry) => entry.labels.includes(taskIssueLabel(oversizedId))).every((entry) => entry.status === 'queued'))
@@ -115,14 +115,14 @@ async function main(): Promise<void> {
     if (!exitCode) tracker.block(partial.id)
     agentProcesses.finishTurn(partialId, 'Could not finish planning.', exitCode)
     await tick()
-    assert.equal(store.getTask(partialId)?.status, 'failed')
+    assert.equal(store.getTask(partialId)?.status, 'pending')
     assert.deepEqual(store.getTaskExecution(partialId)!.issueIds, [])
     assert.equal(tracker.get(partial.id).status, exitCode ? 'queued' : 'blocked', 'Do not claim or mutate partial plans')
   }
   const failedEmptyId = await start('Failed empty planning')
   agentProcesses.finishTurn(failedEmptyId, 'Planning failed.', 1)
   await tick()
-  assert.equal(store.getTask(failedEmptyId)?.status, 'failed', 'Failed empty planning is not no-work success')
+  assert.equal(store.getTask(failedEmptyId)?.status, 'pending', 'Failed empty planning is not no-work success')
 
   for (const completion of [
     { checklist: [true, false], evidence: 'Failed' },
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
     await tick()
     assert.equal(agentProcesses.starts.length, before)
     assert.equal(tracker.get(currentId).status, 'blocked')
-    assert.equal(store.getTask(failedId)?.status, 'failed', 'Text cannot substitute for persisted completion')
+    assert.equal(store.getTask(failedId)?.status, 'pending', 'Text cannot substitute for persisted completion')
   }
 
   const wrongIssueTaskId = await start('Wrong issue completion')
@@ -150,7 +150,7 @@ async function main(): Promise<void> {
   tracker.complete(otherId, { checklist: [true, true], evidence: 'Completed the wrong issue' })
   agentProcesses.finishTurn(wrongIssueTaskId, 'Done.')
   await tick()
-  assert.equal(store.getTask(wrongIssueTaskId)?.status, 'failed')
+  assert.equal(store.getTask(wrongIssueTaskId)?.status, 'pending')
   assert.equal(tracker.get(assignedId).status, 'blocked', 'Only assigned issue completion can advance a turn')
   assert.equal(tracker.get(otherId).status, 'complete', 'Do not undo other persisted work')
 

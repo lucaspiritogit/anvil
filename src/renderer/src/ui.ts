@@ -11,6 +11,7 @@ export function cn(...parts: (string | false | null | undefined)[]): string {
  * `dot-${status}` style of class the stylesheet used to rely on.
  */
 const STATUS_TONE: Record<TaskStatus, string> = {
+  pending: 'text-warn',
   running: 'text-accent',
   succeeded: 'text-ok',
   failed: 'text-danger',
@@ -18,6 +19,7 @@ const STATUS_TONE: Record<TaskStatus, string> = {
 }
 
 const DOT_TONE: Record<TaskStatus, string> = {
+  pending: 'bg-warn',
   running: 'bg-accent animate-blink',
   succeeded: 'bg-ok',
   failed: 'bg-danger',

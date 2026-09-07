@@ -14,7 +14,7 @@ export interface TaskExecutionState {
   reasoningEffort?: string
 }
 
-export type TaskStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type TaskStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
 export type DeliveryStatus =
   | 'preparing'

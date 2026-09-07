@@ -193,14 +193,14 @@ export class AgentProcessManager extends EventEmitter {
       this.emit('exit', {
         taskId: opts.taskId,
         code: result.status === 'succeeded' ? 0 : result.status === 'cancelled' ? null : 1,
-        cancelled: result.status === 'cancelled', error: result.error, result
+        cancelled: this.cancelled.delete(opts.taskId), error: result.error, result
       } satisfies ExitInfo)
     }, (failure: unknown) => {
       this.steeringExecutors.delete(opts.taskId)
       this.serverExecutions.delete(opts.taskId)
       const error = failure instanceof Error ? failure.message : String(failure)
       this.emitSystem(opts.taskId, error, true)
-      this.emit('exit', { taskId: opts.taskId, code: null, cancelled: controller.signal.aborted, error } satisfies ExitInfo)
+      this.emit('exit', { taskId: opts.taskId, code: null, cancelled: this.cancelled.delete(opts.taskId), error } satisfies ExitInfo)
     })
     this.completions.add(completion)
     void completion.finally(() => this.completions.delete(completion))
@@ -371,6 +371,7 @@ export class AgentProcessManager extends EventEmitter {
   cancel(taskId: string): boolean {
     const execution = this.serverExecutions.get(taskId)
     if (execution) {
+      this.cancelled.add(taskId)
       execution.abort()
       return true
     }
@@ -391,11 +392,10 @@ export class AgentProcessManager extends EventEmitter {
     if (this.shutdown) return this.shutdown
     this.shutdown = Promise.resolve().then(async () => {
       const processes = [...this.procs.entries()].map(([taskId, child]) => {
-        this.cancelled.add(taskId)
         const closed = new Promise<void>((resolve) => child.once('close', () => resolve()))
         return closeAgentServer(child, closed)
       })
-      this.cancelAll()
+      for (const execution of this.serverExecutions.values()) execution.abort()
       await Promise.all([
         ...processes, ...this.completions,
         this.openCodeClient.close?.(), this.codexClient.close?.()

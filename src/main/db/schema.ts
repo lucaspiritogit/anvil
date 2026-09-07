@@ -30,7 +30,7 @@ function oneOf(column: SQLiteColumn, values: readonly string[]): SQL {
   return sql`${column} IN (${sql.raw(literals)})`
 }
 
-const TASK_STATUSES: TaskStatus[] = ['running', 'succeeded', 'failed', 'cancelled']
+const TASK_STATUSES: TaskStatus[] = ['pending', 'running', 'succeeded', 'failed', 'cancelled']
 const DELIVERY_STATUSES: DeliveryStatus[] = [
   'preparing',
   'working',
