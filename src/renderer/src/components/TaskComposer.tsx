@@ -26,7 +26,6 @@ export function TaskComposer(): JSX.Element {
   const agent = agents.find((candidate) => candidate.id === preferences.agentId)
   const agentId = agent?.id ?? ''
   const model = preferences.modelsByAgent[agentId] ?? ''
-  // Presentation only until reasoning settings are supported by the providers.
   const thinkingLevel = preferences.thinkingLevel
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
@@ -117,11 +116,10 @@ export function TaskComposer(): JSX.Element {
               </select>
               <HugeiconsIcon icon={ArrowDown01Icon} size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
             </label>
-            <label className="relative flex items-center rounded-lg" title="Thinking level, UI preview only">
+            <label className="relative flex items-center rounded-lg" title="Thinking level">
               <HugeiconsIcon icon={AiBrain01Icon} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
               <select
                 aria-label="Thinking level"
-                aria-describedby="thinking-level-preview"
                 className={cn(compactSelect, 'pl-8')}
                 value={thinkingLevel}
                 onChange={(event) => preferences.setThinkingLevel(event.target.value as ThinkingLevel)}
@@ -131,7 +129,6 @@ export function TaskComposer(): JSX.Element {
               <HugeiconsIcon icon={ArrowDown01Icon} size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
             </label>
           </ComposerOverflowOptions>
-          <span id="thinking-level-preview" className="sr-only">UI preview only. Thinking level is not sent to the agent yet.</span>
           <div className="ml-auto flex shrink-0 items-center gap-3 pl-2">
             <span className="hidden whitespace-nowrap text-[11px] text-dim @min-[640px]/composer:inline">{IS_MAC ? '⌘ Enter' : 'Ctrl+Enter'}</span>
             <button
