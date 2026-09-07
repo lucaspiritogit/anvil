@@ -5,6 +5,12 @@ import { CodexAppServerOutput } from './codex-app-server-output'
 import { codexTurn, type CodexObject, type CodexTurn } from './codex-app-server-protocol'
 import { LazyAgentServer } from './lazy-agent-server'
 import { codexSandboxPolicy } from './codex-sandbox'
+import type { ThinkingLevel } from '../../shared/types'
+
+/** Canonical levels to the reasoning efforts Codex understands. */
+const CODEX_EFFORTS: Record<ThinkingLevel, 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'> = {
+  off: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh'
+}
 
 interface CodexExecution extends ConnectionHandlers {
   server(): CodexAppServerConnection | undefined
@@ -155,6 +161,7 @@ export class CodexAppServerClient implements AgentExecutor {
         // Anvil supplies project-scoped memory. Personal Codex memories and
         // plugin suggestions add unrelated context to every model request.
         config: {
+          ...(input.thinkingLevel ? { model_reasoning_effort: CODEX_EFFORTS[input.thinkingLevel] } : {}),
           'memories.use_memories': false,
           'memories.generate_memories': false,
           'features.recommended_plugins': false,

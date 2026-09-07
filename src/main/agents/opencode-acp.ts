@@ -111,6 +111,11 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       if (input.model) {
         await request(connection.rpc.setSessionConfigOption({ sessionId, configId: 'model', value: input.model }))
       }
+      if (input.thinkingLevel) {
+        // Older OpenCode builds may not expose this config; the prompt still runs at its default.
+        await request(connection.rpc.setSessionConfigOption({ sessionId, configId: 'thinkingLevel', value: input.thinkingLevel })
+          .catch(() => undefined))
+      }
       clearTimeout(startupTimer)
       input.signal?.throwIfAborted()
       acceptingUpdates = true

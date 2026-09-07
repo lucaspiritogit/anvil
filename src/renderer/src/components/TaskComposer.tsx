@@ -5,6 +5,7 @@ import { ArrowDown01Icon, ArrowUp01Icon, AiBrain01Icon } from '@hugeicons/core-f
 import { IS_MAC } from '../keys'
 import { useStore } from '../state/store'
 import { THINKING_LEVELS, useComposerPreferences, type ThinkingLevel } from '../state/composer-preferences'
+import { thinkingLevelFromLabel } from '@shared/types'
 import { cn } from '../ui'
 import { AgentIcon } from './AgentIcon'
 import { ComposerModelPicker } from './ComposerModelPicker'
@@ -47,7 +48,12 @@ export function TaskComposer(): JSX.Element {
     setBusy(true)
     setError(null)
     try {
-      await startTask({ agentId, prompt: prompt.trim(), model: model.trim() || undefined })
+      await startTask({
+        agentId,
+        prompt: prompt.trim(),
+        model: model.trim() || undefined,
+        thinkingLevel: thinkingLevelFromLabel(thinkingLevel)
+      })
       setPrompt('')
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))

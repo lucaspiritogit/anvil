@@ -9,7 +9,8 @@ import type {
   TaskComment,
   TaskDiff,
   TaskEvent,
-  Settings
+  Settings,
+  ThinkingLevel
 } from '@shared/types'
 
 const MAX_LINES_IN_MEMORY = 4000
@@ -77,7 +78,7 @@ interface AnvilState {
   sendComments: (taskId: string) => Promise<void>
 
   loadAgentModels: (agentId: string) => Promise<void>
-  startTask: (input: { agentId: string; prompt: string; model?: string }) => Promise<void>
+  startTask: (input: { agentId: string; prompt: string; model?: string; thinkingLevel?: ThinkingLevel }) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string) => Promise<void>
   loadTaskDiff: (taskId: string) => Promise<void>
@@ -210,10 +211,10 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  startTask: async ({ agentId, prompt, model }) => {
+  startTask: async ({ agentId, prompt, model, thinkingLevel }) => {
     const projectId = get().activeProjectId
     if (!projectId) return
-    const task = await window.anvil.tasks.start({ projectId, agentId, prompt, model })
+    const task = await window.anvil.tasks.start({ projectId, agentId, prompt, model, thinkingLevel })
     set((s) => ({
       tasks: [task, ...s.tasks],
       eventsByTask: { ...s.eventsByTask, [task.id]: [] },

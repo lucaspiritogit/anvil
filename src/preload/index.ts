@@ -9,6 +9,7 @@ import type {
   TaskComment,
   TaskDiff,
   TaskEvent,
+  ThinkingLevel,
   Settings
 } from '../shared/types'
 
@@ -54,6 +55,7 @@ const api = {
       agentId: string
       prompt: string
       model?: string
+      thinkingLevel?: ThinkingLevel
     }): Promise<Task> => ipcRenderer.invoke('tasks:start', input),
     cancel: (taskId: string): Promise<boolean> => ipcRenderer.invoke('tasks:cancel', taskId),
     delete: (taskId: string): Promise<void> => ipcRenderer.invoke('tasks:delete', taskId),

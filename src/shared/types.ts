@@ -13,6 +13,19 @@ export interface TaskExecutionState {
 }
 
 export type TaskStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+/** Canonical reasoning-effort levels sent to agent processes. */
+export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh'
+
+/** Renderer-facing labels for the composer thinking selector, index-aligned with levels. */
+export const THINKING_LEVEL_LABELS: readonly string[] = ['Off', 'Low', 'Medium', 'High', 'Extra high']
+export const THINKING_LEVEL_VALUES: readonly ThinkingLevel[] = ['off', 'low', 'medium', 'high', 'xhigh']
+
+/** Maps a renderer label ('Off'...'Extra high') to a canonical level; unknown labels fall back to 'medium'. */
+export function thinkingLevelFromLabel(label: string): ThinkingLevel {
+  const index = THINKING_LEVEL_LABELS.indexOf(label)
+  return index >= 0 ? THINKING_LEVEL_VALUES[index]! : 'medium'
+}
 export type DeliveryStatus =
   | 'preparing'
   | 'working'

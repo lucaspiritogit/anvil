@@ -7,7 +7,7 @@ import type { TaskContext } from '../tasks/context'
 import type { TaskEvents } from '../tasks/events'
 import type { TaskExecution } from '../tasks/task-execution'
 import { titleFor } from '../tasks/task-title'
-import type { Task, TaskDiff } from '../../shared/types'
+import type { Task, TaskDiff, ThinkingLevel } from '../../shared/types'
 
 interface TaskHandlerDependencies extends TaskContext, TaskEvents, TaskExecution {
   promptWithProjectMemory: TaskMemory['promptWithProjectMemory']
@@ -53,7 +53,7 @@ export function registerTaskHandlers({
 
   ipcMain.handle(
     'tasks:start',
-    async (_event, input: { projectId: string; agentId: string; prompt: string; model?: string }) => {
+    async (_event, input: { projectId: string; agentId: string; prompt: string; model?: string; thinkingLevel?: ThinkingLevel }) => {
       const project = store.getProjects().find((project) => project.id === input.projectId)
       if (!project) throw new Error('Project not found')
 
@@ -110,6 +110,7 @@ export function registerTaskHandlers({
               agent,
               prompt,
               model,
+              thinkingLevel: input.thinkingLevel,
               cwd: project.path,
               projectPath: project.path
             })
@@ -138,6 +139,7 @@ export function registerTaskHandlers({
             agent,
             prompt,
             model,
+            thinkingLevel: input.thinkingLevel,
             cwd: prepared.cwd,
             projectPath: project.path
           })

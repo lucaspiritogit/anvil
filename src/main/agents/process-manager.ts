@@ -12,7 +12,8 @@ import type {
   TaskEvent,
   TaskEventCategory,
   TaskUsage,
-  StreamName
+  StreamName,
+  ThinkingLevel
 } from '../../shared/types'
 
 const ANSI = /\u001b\[[0-9;?]*[ -\/]*[@-~]/g
@@ -23,6 +24,7 @@ export interface StartOptions {
   agent: AgentDefinition
   prompt: string
   model?: string
+  thinkingLevel?: ThinkingLevel
   cwd: string
   projectPath?: string
   /** Resume this agent session instead of starting a fresh one. */
