@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
@@ -35,6 +35,31 @@ async function main(): Promise<void> {
     process.exit(1)
   }, 30_000)
   try {
+    const discoveryClient = client('models')
+    assert.deepEqual(await discoveryClient.listModels(directory), {
+      models: ['reasoner', 'plain'],
+      reasoningByModel: {
+        reasoner: { options: [{ id: 'native-max', label: 'Maximum reasoning' }, { id: 'low', label: 'Fast reasoning' }], default: 'native-max' },
+        plain: { options: [], default: 'none' }
+      }
+    })
+    const discoveredRequests = await requests()
+    assert.deepEqual(discoveredRequests.filter((entry) => entry.method === 'model/list').map((entry) => entry.params), [{}, { cursor: 'page-2' }])
+    assert.equal(discoveredRequests.some((entry) => entry.method === 'thread/start'), false)
+    const sharedExecution = await discoveryClient.execute(input, () => {})
+    assert.equal(sharedExecution.status, 'succeeded')
+    assert.equal((await requests()).filter((entry) => entry.method === 'initialize').length, 1, 'Discovery and execution reuse the server')
+    await discoveryClient.close()
+    assert.deepEqual(await client('models-empty').listModels(directory), { models: [], reasoningByModel: {} })
+    await assert.rejects(client('models-error').listModels(directory), /Discovery unavailable/)
+    await assert.rejects(client('models-malformed').listModels(directory), /string|reasoning/)
+    await assert.rejects(client('models-cycle').listModels(directory), /pagination cursor/)
+    const hangingDiscovery = client('models-hang')
+    const pendingDiscovery = hangingDiscovery.listModels(directory)
+    const rejectedDiscovery = assert.rejects(pendingDiscovery, /closed|shutting down/)
+    await hangingDiscovery.close()
+    await rejectedDiscovery
+    await writeFile(transcript, '')
     const result = await client('success').execute(input, record)
     assert.equal(result.status, 'succeeded', result.error)
     assert.equal(result.sessionId, 'thread-test')
@@ -68,6 +93,36 @@ async function main(): Promise<void> {
     assert.deepEqual(initial[3].params.sandboxPolicy, {
       type: 'dangerFullAccess'
     }, 'Browser validation must run without the Codex OS sandbox')
+
+    for (const { resumeSessionId, reasoningEffort } of [
+      { resumeSessionId: undefined, reasoningEffort: 'native-max' },
+      { resumeSessionId: 'thread-test', reasoningEffort: 'low' },
+      { resumeSessionId: undefined, reasoningEffort: undefined },
+      { resumeSessionId: 'thread-test', reasoningEffort: undefined }
+    ]) {
+      await writeFile(transcript, '')
+      const configured = await client('success').execute({ ...input, model: 'reasoner', reasoningEffort, resumeSessionId }, () => {})
+      assert.equal(configured.status, 'succeeded', configured.error)
+      const calls = await requests()
+      const thread = calls.find((entry) => entry.method === (resumeSessionId ? 'thread/resume' : 'thread/start'))
+      assert.equal(thread.params.config.model_reasoning_effort, reasoningEffort)
+      assert.equal('model_reasoning_effort' in thread.params.config, reasoningEffort !== undefined)
+      assert.equal(thread.params.threadId, resumeSessionId)
+      assert.equal('reasoningEffort' in thread.params, false, 'Only protocol settings go on the wire')
+      assert.equal(calls.some((entry) => entry.method === 'model/list'), reasoningEffort !== undefined)
+    }
+    for (const model of ['reasoner', 'plain', undefined]) {
+      await writeFile(transcript, '')
+      const invalid = await client('success').execute({ ...input, model, reasoningEffort: 'removed-option', resumeSessionId: 'thread-test' }, () => {})
+      assert.equal(invalid.status, 'failed')
+      assert.match(invalid.error!, /does not advertise reasoning effort removed-option/)
+      assert.equal((await requests()).some((entry) => entry.method.startsWith('thread/') || entry.method === 'turn/start'), false)
+    }
+    await writeFile(transcript, '')
+    const rejected = await client('rejected-effort').execute({ ...input, model: 'reasoner', reasoningEffort: 'native-max' }, () => {})
+    assert.equal(rejected.status, 'failed')
+    assert.match(rejected.error!, /Codex rejected thread options with reasoning effort native-max.*Effort rejected/)
+    assert.equal((await requests()).some((entry) => entry.method === 'turn/start'), false)
 
     events.length = 0
     const resumed = await client('success').execute({ ...input, resumeSessionId: 'thread-test' }, record)

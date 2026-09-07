@@ -2,13 +2,13 @@ import { expect, test } from '@playwright/test'
 
 const fixture = '/tests/e2e/fixture/'
 
-test('fresh composer asks for a provider and model and defaults thinking to Medium', async ({ page }, testInfo) => {
+test('fresh composer asks for a provider and model and leaves reasoning unset', async ({ page }, testInfo) => {
   await page.goto(fixture)
   const composer = page.getByRole('form', { name: 'Start a task' })
   const provider = composer.getByRole('combobox', { name: 'Agent', exact: true })
   await expect(provider).toHaveValue('')
   await expect(provider.locator('option:checked')).toHaveText('Choose a provider')
-  await expect(composer.getByRole('combobox', { name: 'Thinking level' })).toHaveValue('Medium')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('')
   const model = composer.getByRole('button', { name: 'Choose a Model', exact: true })
   await expect(model).toBeDisabled()
   await composer.getByRole('textbox').fill('Use my selected model')
@@ -32,7 +32,7 @@ test('the last configuration survives provider switches, task submission, projec
   await provider.selectOption('codex')
   await composer.getByRole('button', { name: 'Choose a Model', exact: true }).click()
   await page.getByRole('dialog', { name: 'Choose model' }).getByRole('button', { name: 'GPT 5 Mini', exact: true }).click()
-  await composer.getByRole('combobox', { name: 'Thinking level' }).selectOption('Extra high')
+  await composer.getByRole('combobox', { name: 'Reasoning effort' }).selectOption('native-max')
   await provider.selectOption('opencode')
   await composer.getByRole('button', { name: 'Choose a Model', exact: true }).click()
   await page.getByRole('dialog', { name: 'Choose model' }).getByRole('button', { name: 'model', exact: true }).click()
@@ -46,27 +46,27 @@ test('the last configuration survives provider switches, task submission, projec
   await expect(composer.getByRole('button', { name: 'Model: GPT 5 Mini', exact: true })).toBeVisible()
   await page.getByRole('navigation', { name: 'Filter tasks by project' }).getByRole('button', { name: 'Workbench', exact: true }).click()
   await expect(provider).toHaveValue('codex')
-  await expect(composer.getByRole('combobox', { name: 'Thinking level' })).toHaveValue('Extra high')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('native-max')
   await page.reload()
   await expect(provider).toHaveValue('codex')
   await expect(composer.getByRole('button', { name: 'Model: GPT 5 Mini', exact: true })).toBeVisible()
-  await expect(composer.getByRole('combobox', { name: 'Thinking level' })).toHaveValue('Extra high')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('native-max')
   await provider.selectOption('opencode')
   await expect(composer.getByRole('button', { name: 'Model: model', exact: true })).toBeVisible()
 })
 
 for (const saved of [
   'not valid JSON',
-  JSON.stringify({ state: { agentId: 42, modelsByAgent: null, thinkingLevel: 'Invalid' }, version: 0 }),
-  JSON.stringify({ state: { agentId: 'removed-provider', modelsByAgent: { codex: 42 }, thinkingLevel: null }, version: 0 })
+  JSON.stringify({ state: { agentId: 42, modelsByAgent: null, reasoningByAgentModel: [] }, version: 0 }),
+  JSON.stringify({ state: { agentId: 'removed-provider', modelsByAgent: { codex: 42 }, reasoningByAgentModel: null }, version: 0 })
 ]) {
   test(`invalid or unavailable saved configuration does not select a default provider: ${saved}`, async ({ page }) => {
-    await page.addInitScript((saved) => localStorage.setItem('anvil-composer-preferences', saved), saved)
+    await page.addInitScript((saved) => localStorage.setItem('anvil-composer-preferences-v2', saved), saved)
     await page.goto(fixture)
     const composer = page.getByRole('form', { name: 'Start a task' })
     const provider = composer.getByRole('combobox', { name: 'Agent', exact: true })
     await expect(provider).toHaveValue('')
-    await expect(composer.getByRole('combobox', { name: 'Thinking level' })).toHaveValue('Medium')
+    await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('')
     await expect(composer.getByRole('button', { name: 'Choose a Model', exact: true })).toBeDisabled()
     await provider.selectOption('codex')
     await expect(composer.getByRole('button', { name: 'Choose a Model', exact: true })).toBeEnabled()
@@ -84,8 +84,18 @@ test('the new-task dialog shares the same saved configuration as the overview', 
   await expect(dialog.getByRole('button', { name: 'Model: GPT 5 Mini', exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'More task options', exact: true }).click()
   await expect(dialog.getByRole('combobox', { name: 'Agent', exact: true })).toHaveValue('codex')
-  await dialog.getByRole('combobox', { name: 'Thinking level' }).selectOption('High')
+  await dialog.getByRole('combobox', { name: 'Reasoning effort' }).selectOption('high')
   await page.keyboard.press('Escape')
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await expect(overviewComposer.getByRole('combobox', { name: 'Thinking level' })).toHaveValue('High')
+  await expect(overviewComposer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('high')
+})
+
+
+test('old composer preferences are isolated without migration', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('anvil-composer-preferences', JSON.stringify({ state: {
+    agentId: 'codex', modelsByAgent: { codex: 'gpt-5' }, thinkingLevel: 'High', modelEffort: 'max'
+  }, version: 0 })))
+  await page.goto(fixture)
+  await expect(page.getByRole('combobox', { name: 'Agent', exact: true })).toHaveValue('')
+  await expect(page.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('')
 })

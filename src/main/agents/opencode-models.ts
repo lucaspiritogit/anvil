@@ -1,7 +1,7 @@
 import type { ProviderModelList } from '../../shared/types'
 
 /** `opencode models --verbose` emits an ID followed by a pretty-printed JSON object. */
-export function parseOpenCodeModels(stdout: string): Pick<ProviderModelList, 'models' | 'effortsByModel'> {
+export function parseOpenCodeModels(stdout: string): Pick<ProviderModelList, 'models' | 'reasoningByModel'> {
   const efforts = new Map<string, string[]>()
   const lines = stdout.split(/\r?\n/)
   for (let index = 0; index < lines.length; index++) {
@@ -17,5 +17,10 @@ export function parseOpenCodeModels(stdout: string): Pick<ProviderModelList, 'mo
     }
     efforts.set(model, Object.keys(metadata.variants ?? {}))
   }
-  return { models: [...efforts.keys()], effortsByModel: Object.fromEntries(efforts) }
+  return {
+    models: [...efforts.keys()],
+    reasoningByModel: Object.fromEntries([...efforts].map(([model, ids]) => [model, {
+      options: ids.map((id) => ({ id, label: id }))
+    }]))
+  }
 }

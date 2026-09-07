@@ -1,22 +1,16 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export const THINKING_LEVELS = ['Off', 'Low', 'Medium', 'High', 'Extra high'] as const
-export type ThinkingLevel = typeof THINKING_LEVELS[number]
-
 interface ComposerPreferences {
   agentId: string
   modelsByAgent: Record<string, string>
-  thinkingLevel: ThinkingLevel
-  /** OpenCode effort IDs keyed by the full provider/model route. */
-  effortsByModel: Record<string, string>
+  reasoningByAgentModel: Record<string, string>
 }
 
 interface ComposerPreferencesState extends ComposerPreferences {
   setAgentId: (agentId: string) => void
   setModel: (agentId: string, model: string) => void
-  setThinkingLevel: (thinkingLevel: ThinkingLevel) => void
-  setModelEffort: (model: string, effort: string) => void
+  setReasoningEffort: (agentId: string, model: string, effort: string) => void
 }
 
 function stringRecord(value: unknown): Record<string, string> {
@@ -29,9 +23,7 @@ function restorePreferences(saved: unknown): ComposerPreferences {
   return {
     agentId: typeof preferences.agentId === 'string' ? preferences.agentId : '',
     modelsByAgent: stringRecord(preferences.modelsByAgent),
-    effortsByModel: stringRecord(preferences.effortsByModel),
-    thinkingLevel: THINKING_LEVELS.includes(preferences.thinkingLevel as ThinkingLevel)
-      ? preferences.thinkingLevel as ThinkingLevel : 'Medium'
+    reasoningByAgentModel: stringRecord(preferences.reasoningByAgentModel)
   }
 }
 
@@ -41,10 +33,9 @@ export const useComposerPreferences = create<ComposerPreferencesState>()(persist
   ...restorePreferences(undefined),
   setAgentId: (agentId) => set({ agentId }),
   setModel: (agentId, model) => set((state) => ({ modelsByAgent: { ...state.modelsByAgent, [agentId]: model } })),
-  setThinkingLevel: (thinkingLevel) => set({ thinkingLevel }),
-  setModelEffort: (model, effort) => set((state) => ({ effortsByModel: { ...state.effortsByModel, [model]: effort } }))
+  setReasoningEffort: (agentId, model, effort) => set((state) => ({ reasoningByAgentModel: { ...state.reasoningByAgentModel, [JSON.stringify([agentId, model])]: effort } }))
 }), {
-  name: 'anvil-composer-preferences',
-  partialize: ({ agentId, modelsByAgent, thinkingLevel, effortsByModel }) => ({ agentId, modelsByAgent, thinkingLevel, effortsByModel }),
+  name: 'anvil-composer-preferences-v2',
+  partialize: ({ agentId, modelsByAgent, reasoningByAgentModel }) => ({ agentId, modelsByAgent, reasoningByAgentModel }),
   merge: (saved, current) => ({ ...current, ...restorePreferences(saved) })
 }))

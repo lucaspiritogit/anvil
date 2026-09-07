@@ -89,8 +89,7 @@ export function registerRebaseHandlers({
         agent,
         prompt: agentRebasePrompt(task.baseCommit!),
         model: task.model,
-        thinkingLevel: store.getTaskExecution(taskId)?.thinkingLevel,
-        modelEffort: store.getTaskExecution(taskId)?.modelEffort,
+        reasoningEffort: store.getTaskExecution(taskId)?.reasoningEffort,
         projectPath: project.path,
         cwd: reopened.cwd,
         ...(resumeSessionId ? { resumeSessionId } : {})

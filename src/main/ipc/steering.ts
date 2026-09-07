@@ -81,7 +81,7 @@ export function registerSteeringHandlers({
       try {
         agentProcesses.start({
           taskId, issueId: state.currentIssueId ?? undefined, agent, cwd: running.cwd, projectPath: project.path,
-          model: current.model, thinkingLevel: state.thinkingLevel, modelEffort: state.modelEffort,
+          model: current.model, reasoningEffort: state.reasoningEffort,
           resumeSessionId: current.sessionId,
           prompt: location.worktreePath ? `${GIT_SYSTEM_PROMPT}\n\n${prompt}` : prompt
         })

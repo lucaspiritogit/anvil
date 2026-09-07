@@ -29,35 +29,34 @@ async function main(): Promise<void> {
   const agentProcesses = new AgentProcessManager(acpExecutor, codexExecutor)
   try {
     const exits: Promise<unknown>[] = []
-    const run = (taskId: string, thinkingLevel?: TaskInput['thinkingLevel'], protocol?: AgentDefinition['executionProtocol'], modelEffort?: string): void => {
+    const run = (taskId: string, reasoningEffort?: TaskInput['reasoningEffort'], protocol?: AgentDefinition['executionProtocol']): void => {
       exits.push(new Promise<void>((resolve) => agentProcesses.once('exit', resolve)))
       agentProcesses.start({
         taskId,
         agent: { ...agent, executionProtocol: protocol },
         prompt: 'prompt',
         cwd: process.cwd(),
-        ...(thinkingLevel ? { thinkingLevel } : {}),
-        ...(modelEffort ? { modelEffort } : {})
+        ...(reasoningEffort !== undefined ? { reasoningEffort } : {})
       })
     }
 
     run('acp-level', 'high', 'acp')
-    run('acp-native-effort', undefined, 'acp', 'max')
-    run('codex-level', 'low', 'codex-app-server')
+    run('acp-native-effort', 'native-max', 'acp')
+    run('codex-level', 'native-max', 'codex-app-server')
     run('acp-default', undefined, 'acp')
     run('codex-default', undefined, 'codex-app-server')
     await Promise.all(exits)
 
-    assert.deepEqual(acpExecutor.inputs.map((input) => [input.taskId, input.thinkingLevel]), [
-      ['acp-level', 'high'], ['acp-native-effort', undefined], ['acp-default', undefined]
+    assert.deepEqual(acpExecutor.inputs.map((input) => [input.taskId, input.reasoningEffort]), [
+      ['acp-level', 'high'], ['acp-native-effort', 'native-max'], ['acp-default', undefined]
     ])
-    assert.deepEqual(codexExecutor.inputs.map((input) => [input.taskId, input.thinkingLevel]), [
-      ['codex-level', 'low'], ['codex-default', undefined]
+    assert.deepEqual(codexExecutor.inputs.map((input) => [input.taskId, input.reasoningEffort]), [
+      ['codex-level', 'native-max'], ['codex-default', undefined]
     ])
-    assert.equal(acpExecutor.inputs.find((input) => input.taskId === 'acp-native-effort')?.modelEffort, 'max')
+    assert.equal(acpExecutor.inputs.find((input) => input.taskId === 'acp-native-effort')?.reasoningEffort, 'native-max')
     assert.ok(acpExecutor.inputs.every((input) => input.signal instanceof AbortSignal))
     assert.ok(codexExecutor.inputs.every((input) => input.signal instanceof AbortSignal))
-    console.log('Thinking-level forwarding tests passed: StartOptions reach both ACP and Codex executors, and omitted levels stay undefined.')
+    console.log('Reasoning-effort forwarding tests passed: StartOptions reach both ACP and Codex executors, and omitted levels stay undefined.')
   } finally {
     await agentProcesses.close()
   }

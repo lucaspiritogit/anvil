@@ -90,7 +90,22 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     return
   }
   if (!initialized) process.exit(23)
+  if (message.method === 'model/list') {
+    if (scenario === 'models-error') return send({ id: message.id, error: { code: -32000, message: 'Discovery unavailable' } })
+    if (scenario === 'models-malformed') return respond(message.id, { data: [{ model: 'broken' }], nextCursor: null })
+    if (scenario === 'models-empty') return respond(message.id, { data: [], nextCursor: null })
+    if (scenario === 'models-hang') return
+    const data = message.params.cursor ? [{
+      id: 'plain-id', model: 'plain', supportedReasoningEfforts: [], defaultReasoningEffort: 'none'
+    }] : [{
+      id: 'catalogue-id', model: 'reasoner',
+      supportedReasoningEfforts: [{ reasoningEffort: 'native-max', description: 'Maximum reasoning' }, { reasoningEffort: 'low', description: 'Fast reasoning' }],
+      defaultReasoningEffort: 'native-max'
+    }]
+    return respond(message.id, { data, nextCursor: message.params.cursor && scenario !== 'models-cycle' ? null : 'page-2' })
+  }
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
+    if (scenario === 'rejected-effort') return send({ id: message.id, error: { code: -32602, message: 'Effort rejected by backend' } })
     if (realpathSync(message.params.cwd) !== process.cwd() || realpathSync(process.env.PWD) !== process.cwd()) process.exit(24)
     if (!['read-only', 'workspace-write', 'danger-full-access'].includes(message.params.sandbox)) {
       return send({ id: message.id, error: {
@@ -98,7 +113,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         message: "Invalid request: unknown variant `" + message.params.sandbox + "`, expected one of `read-only`, `workspace-write`, `danger-full-access`"
       } })
     }
-    if (message.params.model !== 'test-model' || message.params.approvalPolicy !== 'never' || message.params.sandbox !== 'danger-full-access') process.exit(25)
+    if (!['test-model', 'reasoner'].includes(message.params.model) || message.params.approvalPolicy !== 'never' || message.params.sandbox !== 'danger-full-access') process.exit(25)
     if (scenario === 'bad-thread') return respond(message.id, { thread: { id: null } })
     resumed = message.method === 'thread/resume'
     if (resumed) {

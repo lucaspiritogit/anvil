@@ -11,24 +11,11 @@ export interface TaskExecutionState {
   currentIssueId: string | null
   error: string | null
   /** Original task settings, retained for subsequent turns and session follow-ups. */
-  thinkingLevel?: ThinkingLevel
-  modelEffort?: string
+  reasoningEffort?: string
 }
 
 export type TaskStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
 
-/** Canonical reasoning-effort levels sent to agent processes. */
-export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh'
-
-/** Renderer-facing labels for the composer thinking selector, index-aligned with levels. */
-export const THINKING_LEVEL_LABELS: readonly string[] = ['Off', 'Low', 'Medium', 'High', 'Extra high']
-export const THINKING_LEVEL_VALUES: readonly ThinkingLevel[] = ['off', 'low', 'medium', 'high', 'xhigh']
-
-/** Maps a renderer label ('Off'...'Extra high') to a canonical level; unknown labels fall back to 'medium'. */
-export function thinkingLevelFromLabel(label: string): ThinkingLevel {
-  const index = THINKING_LEVEL_LABELS.indexOf(label)
-  return index >= 0 ? THINKING_LEVEL_VALUES[index]! : 'medium'
-}
 export type DeliveryStatus =
   | 'preparing'
   | 'working'
@@ -65,12 +52,20 @@ export interface ProjectGitStatus {
 
 /**
  * Where an agent's selectable models come from. `command` runs a CLI that
- * prints one model identifier per line, or OpenCode's verbose metadata when
- * requested by `format`. `static` is a list for CLIs that cannot report their own.
+ * prints one model identifier per line. Adapters discover native capabilities.
+ * `static` is a list for CLIs that cannot report their own.
  */
 export type ModelSource =
-  | { kind: 'command'; command: string; args: string[]; format?: 'opencode-verbose' }
+  | { kind: 'adapter'; adapterId: string }
+  | { kind: 'command'; command: string; args: string[] }
   | { kind: 'static'; models: string[] }
+
+export interface ModelReasoningCapabilities {
+  /** Opaque, model-scoped protocol values. Empty means no configurable reasoning. */
+  options: Array<{ id: string; label: string }>
+  /** Only present when the provider advertises a default. */
+  default?: string
+}
 
 /**
  * The models one agent offers, spelled the way that agent's CLI expects them.
@@ -80,8 +75,8 @@ export type ModelSource =
 export interface ProviderModelList {
   agentId: string
   models: string[]
-  /** Native effort IDs advertised by each model. An empty list means no selector. */
-  effortsByModel?: Record<string, string[]>
+  /** Missing entries mean discovery is unavailable, never an empty option list. */
+  reasoningByModel?: Record<string, ModelReasoningCapabilities>
   /** Why the list came back empty; unset when the source succeeded. */
   error?: string
 }

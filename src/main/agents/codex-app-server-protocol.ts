@@ -4,7 +4,6 @@
  * Checked against `codex app-server generate-ts` from codex-cli 0.153.3.
  * Extra response fields and unknown notifications are allowed for forward compatibility.
  */
-import type { ThinkingLevel } from '../../shared/types'
 
 export type CodexRequestId = number | string
 export type CodexObject = Record<string, unknown>
@@ -15,8 +14,6 @@ export interface CodexThreadOptions {
   model?: string
   approvalPolicy: 'never'
   sandbox: 'danger-full-access'
-  /** Anvil-side canonical level; mapped into `config.model_reasoning_effort` before sending. */
-  thinkingLevel?: ThinkingLevel
   config?: Record<string, boolean | number | string>
 }
 
@@ -32,6 +29,18 @@ export interface CodexTurn {
 }
 
 export interface CodexAppServerRequests {
+  'model/list': {
+    params: { cursor?: string | null; limit?: number | null; includeHidden?: boolean | null }
+    result: {
+      data: Array<{
+        id: string
+        model: string
+        supportedReasoningEfforts: Array<{ reasoningEffort: string; description: string }>
+        defaultReasoningEffort: string
+      }>
+      nextCursor: string | null
+    }
+  }
   initialize: {
     params: { clientInfo: { name: string; title: string; version: string } }
     result: { userAgent: string }
@@ -107,6 +116,22 @@ export function codexTurn(value: unknown): CodexTurn {
 
 export function validateCodexResponse(method: keyof CodexAppServerRequests, value: unknown): void {
   const result = codexObject(value)
+  if (method === 'model/list') {
+    if (!Array.isArray(result.data)) throw new Error('Expected Codex model list')
+    if (result.nextCursor !== null) codexString(result.nextCursor)
+    for (const value of result.data) {
+      const model = codexObject(value)
+      codexId(model.id)
+      codexId(model.model)
+      codexString(model.defaultReasoningEffort)
+      if (!Array.isArray(model.supportedReasoningEfforts)) throw new Error('Expected Codex reasoning options')
+      for (const value of model.supportedReasoningEfforts) {
+        const option = codexObject(value)
+        codexId(option.reasoningEffort)
+        codexString(option.description)
+      }
+    }
+  }
   if (method === 'initialize') codexString(result.userAgent)
   if (method === 'thread/start' || method === 'thread/resume') codexId(codexObject(result.thread).id)
   if (method === 'turn/start') codexTurn(result.turn)

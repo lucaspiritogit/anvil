@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
 const fixture = '/tests/e2e/fixture/'
 
-test('model picker filters by company and search, and omits reasoning when metadata is unavailable', async ({ page }, testInfo) => {
+test('model picker searches by company and model name, and omits reasoning when metadata is unavailable', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 900, height: 600 })
   await page.goto(fixture)
   await page.evaluate(() => {
@@ -23,9 +23,7 @@ test('model picker filters by company and search, and omits reasoning when metad
   const search = dialog.getByRole('searchbox', { name: 'Search models' })
   await expect(search).toBeFocused()
   await expect(dialog).toBeInViewport()
-  const companies = dialog.getByRole('navigation', { name: 'Filter models by company' })
-  await companies.getByRole('button', { name: 'Anthropic', exact: true }).click()
-  await expect(companies.getByRole('button', { name: 'Anthropic', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await search.fill('Anthropic')
   await expect(dialog.getByRole('button', { name: 'Claude Sonnet 4.6', exact: true })).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'GPT 5.4', exact: true })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('model-picker.png') })
@@ -38,8 +36,8 @@ test('model picker filters by company and search, and omits reasoning when metad
   const selectedModel = composer.getByRole('button', { name: 'Model: Claude Opus 4.6', exact: true })
   await expect(selectedModel).toBeFocused()
   await composer.getByRole('button', { name: 'More task options', exact: true }).click()
-  await expect(composer.getByRole('combobox', { name: 'Thinking level', exact: true })).toBeDisabled()
-  await expect(composer.getByRole('combobox', { name: 'Thinking level', exact: true }).locator('option:checked')).toHaveText('Agent default')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort', exact: true })).toBeDisabled()
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort', exact: true }).locator('option:checked')).toHaveText('Reasoning unavailable')
   await page.keyboard.press('Escape')
   await page.screenshot({ path: testInfo.outputPath('composer.png') })
   await composer.getByRole('textbox').fill('Build search')
@@ -48,10 +46,10 @@ test('model picker filters by company and search, and omits reasoning when metad
   const startedTasks = await page.evaluate(async () => (await window.anvil.tasks.list()).filter((task) => task.id.startsWith('started-')))
   expect(startedTasks).toHaveLength(1)
   expect(startedTasks[0]).toMatchObject({ agentId: 'opencode', model: 'anthropic/claude-opus-4-6' })
-  expect(startedTasks[0]).not.toHaveProperty('thinkingLevel')
+  expect(startedTasks[0]).not.toHaveProperty('reasoningEffort')
 })
 
-test('creator filters group models by credential provider and preserve the selected route', async ({ page }, testInfo) => {
+test('search preserves credential groups and the selected model route', async ({ page }, testInfo) => {
   await page.goto(fixture)
   await page.evaluate(() => {
     window.anvil.agents.models = async (agentId) => ({
@@ -68,31 +66,20 @@ test('creator filters group models by credential provider and preserve the selec
   await composer.getByRole('combobox', { name: 'Agent', exact: true }).selectOption('opencode')
   await composer.getByRole('button', { name: 'Model: model', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Choose model' })
-  const companies = dialog.getByRole('navigation', { name: 'Filter models by company' })
-  await expect(companies.getByRole('button', { name: 'OpenRouter', exact: true })).toHaveCount(0)
-  await companies.getByRole('button', { name: 'Anthropic', exact: true }).click()
+  const search = dialog.getByRole('searchbox', { name: 'Search models' })
+  await search.fill('Anthropic')
   const openrouter = dialog.getByRole('group', { name: 'OpenRouter models', exact: true })
   const zen = dialog.getByRole('group', { name: 'OpenCode Zen models', exact: true })
   await expect(zen.getByRole('button', { name: 'Claude Sonnet 4.6', exact: true })).toBeVisible()
   await expect(openrouter.getByRole('button', { name: 'Claude Sonnet 4.6', exact: true })).toBeVisible()
-  const artwork = openrouter.locator('span[aria-hidden="true"]').first()
-  await expect(artwork).toHaveCSS('mask-image', /openrouter\.svg/)
-  expect(await artwork.evaluate(async (element) => {
-    const image = new Image()
-    image.src = getComputedStyle(element).maskImage.slice(5, -2)
-    await image.decode()
-    return image.naturalWidth
-  })).toBe(512)
-  await expect(openrouter.getByRole('button')).toContainText('OpenRouter credentials')
-  await expect(zen.getByRole('button')).toContainText('OpenCode Zen credentials')
-  await companies.getByRole('button', { name: 'OpenAI', exact: true }).click()
+  await expect(openrouter.getByRole('button')).toHaveAccessibleDescription('Uses OpenRouter credentials')
+  await expect(zen.getByRole('button')).toHaveAccessibleDescription('Uses OpenCode Zen credentials')
+  await search.fill('OpenAI')
   const go = dialog.getByRole('group', { name: 'OpenCode Go models', exact: true })
   await expect(go.getByRole('button', { name: 'GPT 5.4', exact: true })).toHaveAttribute('title', 'opencode-go/gpt-5.4')
   await expect(openrouter.getByRole('button', { name: 'GPT 5.4', exact: true })).toHaveAttribute('title', 'openrouter/openai/gpt-5.4')
-  await expect(go.getByRole('button')).toContainText('OpenCode Go credentials')
+  await expect(go.getByRole('button')).toHaveAccessibleDescription('Uses OpenCode Go credentials')
   await page.screenshot({ path: testInfo.outputPath('openrouter-provider-groups.png') })
-  await companies.getByRole('button', { name: 'All companies', exact: true }).click()
-  const search = dialog.getByRole('searchbox')
   await search.fill('claude')
   const models = dialog.getByRole('group', { name: 'Models', exact: true }).getByRole('button')
   await expect(models).toHaveCount(3)
@@ -109,7 +96,7 @@ test('creator filters group models by credential provider and preserve the selec
   const selected = composer.getByRole('button', { name: 'Model: Claude Sonnet 4.6', exact: true })
   await expect(selected).toHaveAttribute('title', 'Claude Sonnet 4.6 · OpenRouter credentials')
   await selected.click()
-  await dialog.getByRole('navigation').getByRole('button', { name: 'Anthropic', exact: true }).click()
+  await search.fill('Anthropic')
   await expect(openrouter.getByRole('button', { name: 'Claude Sonnet 4.6', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await page.keyboard.press('Escape')
   await composer.getByRole('textbox').fill('Use OpenRouter for this task')

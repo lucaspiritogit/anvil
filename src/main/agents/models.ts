@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { resolveCommand } from './resolve'
-import { parseOpenCodeModels } from './opencode-models'
+import { getAgentAdapter } from './adapters'
 import type { AgentDefinition, ModelSource, ProviderModelList } from '../../shared/types'
 
 const task = promisify(execFile)
@@ -28,7 +28,7 @@ function parseModelLines(stdout: string): string[] {
   return [...seen]
 }
 
-async function fromCommand(source: Extract<ModelSource, { kind: 'command' }>): Promise<Pick<ProviderModelList, 'models' | 'effortsByModel'>> {
+async function fromCommand(source: Extract<ModelSource, { kind: 'command' }>): Promise<Pick<ProviderModelList, 'models' | 'reasoningByModel'>> {
   const resolved = resolveCommand(source.command)
   if (!resolved) throw new Error(`"${source.command}" is not installed or not on PATH`)
 
@@ -39,7 +39,7 @@ async function fromCommand(source: Extract<ModelSource, { kind: 'command' }>): P
     windowsHide: true,
     env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' }
   })
-  return source.format === 'opencode-verbose' ? parseOpenCodeModels(stdout) : { models: parseModelLines(stdout) }
+  return { models: parseModelLines(stdout) }
 }
 
 /**
@@ -54,7 +54,10 @@ export async function listModels(agent: AgentDefinition): Promise<ProviderModelL
   if (!agent.models) return { agentId: agent.id, models: [] }
 
   try {
-    const catalogue = agent.models.kind === 'static' ? { models: agent.models.models } : await fromCommand(agent.models)
+    const source = agent.models
+    const catalogue = source.kind === 'adapter'
+      ? await getAgentAdapter(source.adapterId).listModels(agent)
+      : source.kind === 'static' ? { models: source.models } : await fromCommand(source)
     if (!catalogue.models.length) {
       return {
         agentId: agent.id,

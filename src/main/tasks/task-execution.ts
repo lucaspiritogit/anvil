@@ -7,7 +7,7 @@ import { TaskIssues } from './task-issues'
 import type { TaskExecutionState } from '../../shared/types'
 
 export interface TaskExecution {
-  initializeTask(taskId: string, projectPath: string, settings?: Pick<TaskExecutionState, 'thinkingLevel' | 'modelEffort'>): void
+  initializeTask(taskId: string, projectPath: string, settings?: Pick<TaskExecutionState, 'reasoningEffort'>): void
   resumeTask(taskId: string): TaskExecutionState
   stopTask(taskId: string, error: string): void
   finishTaskTurn(info: ExitInfo): Promise<void>
@@ -64,7 +64,7 @@ export function registerTaskExecution(
       send('task:updated', running)
       agentProcesses.start({
         taskId, issueId: issue.id, agent, cwd, projectPath: project.path, model: task.model,
-        thinkingLevel: state.thinkingLevel, modelEffort: state.modelEffort,
+        reasoningEffort: state.reasoningEffort,
         prompt: `${worktreePath ? GIT_SYSTEM_PROMPT : ''}\n\n${implementationPrompt(task.prompt, issue, project.path)}`
       })
     } catch (error) {

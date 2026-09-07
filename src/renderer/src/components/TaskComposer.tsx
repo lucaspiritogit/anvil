@@ -4,8 +4,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowDown01Icon, ArrowUp01Icon, AiBrain01Icon } from '@hugeicons/core-free-icons'
 import { IS_MAC } from '../keys'
 import { useStore } from '../state/store'
-import { THINKING_LEVELS, useComposerPreferences, type ThinkingLevel } from '../state/composer-preferences'
-import { thinkingLevelFromLabel } from '@shared/types'
+import { useComposerPreferences } from '../state/composer-preferences'
 import { cn } from '../ui'
 import { AgentIcon } from './AgentIcon'
 import { ComposerModelPicker } from './ComposerModelPicker'
@@ -26,29 +25,23 @@ export function TaskComposer(): JSX.Element {
   const agent = agents.find((candidate) => candidate.id === preferences.agentId)
   const agentId = agent?.id ?? ''
   const model = preferences.modelsByAgent[agentId] ?? ''
-  const thinkingLevel = preferences.thinkingLevel
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const submitting = useRef(false)
   const catalogue = modelsByAgent[agentId]
-  const usesModelEfforts = agentId === 'opencode'
-  const availableEfforts = catalogue?.effortsByModel?.[model] ?? []
-  const savedEffort = preferences.effortsByModel[model]
-  const preferredEffort = thinkingLevel === 'Off' ? 'minimal' : thinkingLevelFromLabel(thinkingLevel)
-  const modelEffort = availableEfforts.includes(savedEffort) ? savedEffort
-    : availableEfforts.includes(preferredEffort) ? preferredEffort
-      : availableEfforts.includes('default') ? 'default' : availableEfforts[0] ?? ''
-  const loadingEfforts = usesModelEfforts && Boolean(model) && !catalogue
-  const thinkingOptions = usesModelEfforts
-    ? availableEfforts.map((value) => ({ value, label: value.split(/[_-]/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') }))
-    : THINKING_LEVELS.map((value) => ({ value, label: value }))
-  const setModelEffort = preferences.setModelEffort
+  const capabilities = catalogue?.reasoningByModel?.[model]
+  const loadingEfforts = Boolean(agentId) && (!catalogue || loadingModelsAgentId === agentId)
+  const reasoningOptions = loadingEfforts || catalogue?.error ? [] : capabilities?.options ?? []
+  const savedEffort = preferences.reasoningByAgentModel[JSON.stringify([agentId, model])]
+  const reasoningEffort = reasoningOptions.find((option) => option.id === savedEffort)?.id
+    ?? reasoningOptions.find((option) => option.id === capabilities?.default)?.id
+    ?? reasoningOptions[0]?.id
+  const setReasoningEffort = preferences.setReasoningEffort
 
-  // Derive the valid value above so submission never waits for this persistence effect.
   useEffect(() => {
-    if (usesModelEfforts && modelEffort && savedEffort !== modelEffort) setModelEffort(model, modelEffort)
-  }, [usesModelEfforts, model, modelEffort, savedEffort, setModelEffort])
+    if (reasoningEffort && savedEffort !== reasoningEffort) setReasoningEffort(agentId, model, reasoningEffort)
+  }, [agentId, model, reasoningEffort, savedEffort, setReasoningEffort])
 
   useEffect(() => {
     promptRef.current?.focus()
@@ -68,9 +61,7 @@ export function TaskComposer(): JSX.Element {
         agentId,
         prompt: prompt.trim(),
         model: model.trim() || undefined,
-        ...(usesModelEfforts
-          ? modelEffort ? { modelEffort } : {}
-          : { thinkingLevel: thinkingLevelFromLabel(thinkingLevel) })
+        ...(reasoningEffort !== undefined ? { reasoningEffort } : {})
       })
       setPrompt('')
     } catch (error) {
@@ -135,19 +126,17 @@ export function TaskComposer(): JSX.Element {
               </select>
               <HugeiconsIcon icon={ArrowDown01Icon} size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
             </label>
-            <label className="relative flex items-center rounded-lg" title="Thinking level">
+            <label className="relative flex items-center rounded-lg" title="Reasoning effort">
               <HugeiconsIcon icon={AiBrain01Icon} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
               <select
-                aria-label="Thinking level"
+                aria-label="Reasoning effort"
                 className={cn(compactSelect, 'pl-8')}
-                value={usesModelEfforts ? modelEffort : thinkingLevel}
-                disabled={loadingEfforts || !thinkingOptions.length}
-                onChange={(event) => usesModelEfforts
-                  ? setModelEffort(model, event.target.value)
-                  : preferences.setThinkingLevel(event.target.value as ThinkingLevel)}
+                value={reasoningEffort ?? ''}
+                disabled={loadingEfforts || !reasoningOptions.length}
+                onChange={(event) => setReasoningEffort(agentId, model, event.target.value)}
               >
-                {!thinkingOptions.length && <option value="">{loadingEfforts ? 'Loading efforts…' : 'Agent default'}</option>}
-                {thinkingOptions.map((option) => <option className="bg-raised text-fg" key={option.value} value={option.value}>{option.label}</option>)}
+                {!reasoningOptions.length && <option value="">{loadingEfforts ? 'Loading efforts…' : catalogue?.error || (model && !capabilities) ? 'Reasoning unavailable' : 'Agent default'}</option>}
+                {reasoningOptions.map((option) => <option className="bg-raised text-fg" key={option.id} value={option.id}>{option.label}</option>)}
               </select>
               <HugeiconsIcon icon={ArrowDown01Icon} size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
             </label>
