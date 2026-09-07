@@ -22,13 +22,13 @@ const CODEX_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-6-ast
 export const BUILTIN_AGENTS: AgentDefinition[] = [
   {
     id: 'opencode',
-    label: 'opencode',
+    label: 'OpenCode',
     description: 'Default. ACP server over stdio, auto-approves tool use for each call.',
     command: 'opencode',
     args: ['acp'],
     executionProtocol: 'acp',
     defaultModel: 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
-    models: { kind: 'command', command: 'opencode', args: ['models'] }
+    models: { kind: 'command', command: 'opencode', args: ['models', '--verbose'], format: 'opencode-verbose' }
   },
   {
     id: 'codex',

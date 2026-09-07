@@ -32,6 +32,23 @@ export function TaskComposer(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const submitting = useRef(false)
   const catalogue = modelsByAgent[agentId]
+  const usesModelEfforts = agentId === 'opencode'
+  const availableEfforts = catalogue?.effortsByModel?.[model] ?? []
+  const savedEffort = preferences.effortsByModel[model]
+  const preferredEffort = thinkingLevel === 'Off' ? 'minimal' : thinkingLevelFromLabel(thinkingLevel)
+  const modelEffort = availableEfforts.includes(savedEffort) ? savedEffort
+    : availableEfforts.includes(preferredEffort) ? preferredEffort
+      : availableEfforts.includes('default') ? 'default' : availableEfforts[0] ?? ''
+  const loadingEfforts = usesModelEfforts && Boolean(model) && !catalogue
+  const thinkingOptions = usesModelEfforts
+    ? availableEfforts.map((value) => ({ value, label: value.split(/[_-]/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') }))
+    : THINKING_LEVELS.map((value) => ({ value, label: value }))
+  const setModelEffort = preferences.setModelEffort
+
+  // Derive the valid value above so submission never waits for this persistence effect.
+  useEffect(() => {
+    if (usesModelEfforts && modelEffort && savedEffort !== modelEffort) setModelEffort(model, modelEffort)
+  }, [usesModelEfforts, model, modelEffort, savedEffort, setModelEffort])
 
   useEffect(() => {
     promptRef.current?.focus()
@@ -42,7 +59,7 @@ export function TaskComposer(): JSX.Element {
   }, [agentId, loadAgentModels])
 
   const submit = async (): Promise<void> => {
-    if (!prompt.trim() || !agent || !model.trim() || submitting.current) return
+    if (!prompt.trim() || !agent || !model.trim() || loadingEfforts || submitting.current) return
     submitting.current = true
     setBusy(true)
     setError(null)
@@ -51,7 +68,9 @@ export function TaskComposer(): JSX.Element {
         agentId,
         prompt: prompt.trim(),
         model: model.trim() || undefined,
-        thinkingLevel: thinkingLevelFromLabel(thinkingLevel)
+        ...(usesModelEfforts
+          ? modelEffort ? { modelEffort } : {}
+          : { thinkingLevel: thinkingLevelFromLabel(thinkingLevel) })
       })
       setPrompt('')
     } catch (error) {
@@ -121,10 +140,14 @@ export function TaskComposer(): JSX.Element {
               <select
                 aria-label="Thinking level"
                 className={cn(compactSelect, 'pl-8')}
-                value={thinkingLevel}
-                onChange={(event) => preferences.setThinkingLevel(event.target.value as ThinkingLevel)}
+                value={usesModelEfforts ? modelEffort : thinkingLevel}
+                disabled={loadingEfforts || !thinkingOptions.length}
+                onChange={(event) => usesModelEfforts
+                  ? setModelEffort(model, event.target.value)
+                  : preferences.setThinkingLevel(event.target.value as ThinkingLevel)}
               >
-                {THINKING_LEVELS.map((level) => <option className="bg-raised text-fg" key={level}>{level}</option>)}
+                {!thinkingOptions.length && <option value="">{loadingEfforts ? 'Loading efforts…' : 'Agent default'}</option>}
+                {thinkingOptions.map((option) => <option className="bg-raised text-fg" key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <HugeiconsIcon icon={ArrowDown01Icon} size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
             </label>
@@ -136,7 +159,7 @@ export function TaskComposer(): JSX.Element {
               aria-label={busy ? 'Starting…' : 'Send'}
               title={busy ? 'Starting…' : 'Send'}
               className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-canvas transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
-              disabled={!prompt.trim() || !agent || !model.trim() || busy}
+              disabled={!prompt.trim() || !agent || !model.trim() || loadingEfforts || busy}
             >
               <HugeiconsIcon icon={ArrowUp01Icon} size={18} aria-hidden="true" />
             </button>

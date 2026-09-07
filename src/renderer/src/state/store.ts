@@ -78,7 +78,7 @@ interface AnvilState {
   sendComments: (taskId: string) => Promise<void>
 
   loadAgentModels: (agentId: string) => Promise<void>
-  startTask: (input: { agentId: string; prompt: string; model?: string; thinkingLevel?: ThinkingLevel }) => Promise<void>
+  startTask: (input: { agentId: string; prompt: string; model?: string; thinkingLevel?: ThinkingLevel; modelEffort?: string }) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string) => Promise<void>
   loadTaskDiff: (taskId: string) => Promise<void>
@@ -211,10 +211,14 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  startTask: async ({ agentId, prompt, model, thinkingLevel }) => {
+  startTask: async ({ agentId, prompt, model, thinkingLevel, modelEffort }) => {
     const projectId = get().activeProjectId
     if (!projectId) return
-    const task = await window.anvil.tasks.start({ projectId, agentId, prompt, model, thinkingLevel })
+    const task = await window.anvil.tasks.start({
+      projectId, agentId, prompt, model,
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+      ...(modelEffort ? { modelEffort } : {})
+    })
     set((s) => ({
       tasks: [task, ...s.tasks],
       eventsByTask: { ...s.eventsByTask, [task.id]: [] },

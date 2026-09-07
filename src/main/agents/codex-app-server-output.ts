@@ -3,6 +3,7 @@ import type { TaskEventCategory, TaskUsage } from '../../shared/types'
 import type { TaskEvent, TaskInput } from './agent-executor'
 import { codexId, codexObject, codexString, type CodexObject } from './codex-app-server-protocol'
 import { ToolOutput, toolInputDescription } from './tool-output'
+import { StreamingTextOutput } from './streaming-text-output'
 
 const ANSI = /\u001b\[[0-9;?]*[ -\/]*[@-~]/g
 const ZERO_USAGE: TaskUsage = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null }
@@ -28,11 +29,13 @@ export class CodexAppServerOutput {
   private messages = new Map<string, string>()
   private completed = new Set<string>()
   private readonly tools: ToolOutput
-  private streams = new Map<string, { text: string; buffer: string; category: TaskEventCategory }>()
+  private readonly textOutput: StreamingTextOutput
+  private streamedText = new Map<string, string>()
 
   constructor(private readonly input: TaskInput, private readonly onEvent: (event: TaskEvent) => void) {
     this.baseline = input.resumeSessionId ? undefined : ZERO_USAGE
     this.tools = new ToolOutput(input, onEvent)
+    this.textOutput = new StreamingTextOutput(input, onEvent)
   }
 
   get output(): string { return [...this.messages.values()].filter(Boolean).join('\n') }
@@ -45,34 +48,25 @@ export class CodexAppServerOutput {
   }
 
   private delta(key: string, text: string, category: TaskEventCategory): void {
-    const state = this.streams.get(key) ?? { text: '', buffer: '', category }
-    state.text += text
-    state.category = category
-    const lines = (state.buffer + text).split('\n')
-    state.buffer = lines.pop() ?? ''
-    this.streams.set(key, state)
-    for (const line of lines) this.line(line, category)
+    this.streamedText.set(key, (this.streamedText.get(key) ?? '') + text)
+    this.textOutput.append(key, text, category)
   }
 
   private snapshot(key: string, text: string, category: TaskEventCategory): void {
-    const previous = this.streams.get(key)?.text ?? ''
+    const previous = this.streamedText.get(key) ?? ''
     if (text.startsWith(previous)) {
       this.delta(key, text.slice(previous.length), category)
     } else {
       this.flush(key)
       this.line('Codex revised the streamed item; the following text is final.', 'system', 'system')
-      this.streams.delete(key)
+      this.streamedText.delete(key)
       this.delta(key, text, category)
     }
     this.flush(key)
   }
 
   flush(key?: string): void {
-    for (const [streamKey, state] of this.streams) {
-      if (key !== undefined && key !== streamKey) continue
-      if (state.buffer) this.line(state.buffer, state.category)
-      state.buffer = ''
-    }
+    this.textOutput.flush(key)
   }
 
   updateUsage(value: unknown, active: boolean): void {

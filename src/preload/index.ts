@@ -56,6 +56,7 @@ const api = {
       prompt: string
       model?: string
       thinkingLevel?: ThinkingLevel
+      modelEffort?: string
     }): Promise<Task> => ipcRenderer.invoke('tasks:start', input),
     cancel: (taskId: string): Promise<boolean> => ipcRenderer.invoke('tasks:cancel', taskId),
     delete: (taskId: string): Promise<void> => ipcRenderer.invoke('tasks:delete', taskId),

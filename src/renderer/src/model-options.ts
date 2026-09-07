@@ -63,3 +63,21 @@ export function groupModelsByProvider(options: ModelOption[]): { providerId: str
   }
   return [...groups.values()]
 }
+
+const subscriptionOrder = ['openrouter', 'opencode-go', 'opencode']
+
+export function groupModelsBySubscription(options: ModelOption[]): { id: string; title: string; models: ModelOption[] }[] {
+  const providerGroups = groupModelsByProvider(options)
+  const groups = subscriptionOrder.map((id) => ({
+    id,
+    title: providerLabels[id],
+    models: providerGroups.find((group) => group.providerId === id)?.models ?? []
+  }))
+  // Keep custom and directly configured routes available without grouping by model company.
+  groups.push({
+    id: 'other',
+    title: 'Other models',
+    models: options.filter((option) => !subscriptionOrder.includes(option.providerId))
+  })
+  return groups.filter((group) => group.models.length > 0)
+}

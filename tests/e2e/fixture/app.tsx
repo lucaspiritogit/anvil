@@ -68,7 +68,15 @@ window.anvil = {
       { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5' },
       { id: 'opencode', label: 'OpenCode', description: 'OpenCode agent', command: 'opencode', args: [], defaultModel: 'provider/model' }
     ],
-    models: async (agentId: string) => ({ agentId, models: agentId === 'codex' ? ['gpt-5', 'gpt-5-mini'] : ['provider/model'] })
+    models: async (agentId: string) => query.has('thinkingModels') && agentId === 'opencode' ? {
+      agentId,
+      models: ['openrouter/deepseek/deepseek-v4', 'provider/reasoner', 'provider/plain'],
+      effortsByModel: {
+        'openrouter/deepseek/deepseek-v4': ['high', 'max'],
+        'provider/reasoner': ['low', 'medium', 'high'],
+        'provider/plain': []
+      }
+    } : { agentId, models: agentId === 'codex' ? ['gpt-5', 'gpt-5-mini'] : ['provider/model'] }
   },
   settings: { get: async () => ({ defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, keybindings: DEFAULT_KEYBINDINGS }) },
   tasks: {

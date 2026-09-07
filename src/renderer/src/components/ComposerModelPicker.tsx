@@ -5,7 +5,7 @@ import { ArrowDown01Icon, Cancel01Icon, Search01Icon, Tick02Icon } from '@hugeic
 import { cn, field } from '../ui'
 import { ProviderIcon } from './ProviderIcon'
 
-import { describeModel, groupModelsByProvider, type ModelOption } from '../model-options'
+import { describeModel, groupModelsBySubscription, type ModelOption } from '../model-options'
 
 export function ComposerModelPicker({ agentId, models, value, onChange, loading, error, disabled = false }: {
   agentId: string
@@ -42,6 +42,7 @@ export function ComposerModelPicker({ agentId, models, value, onChange, loading,
       {open && (
         <ModelPickerDialog
           anchorRef={triggerRef}
+          agentId={agentId}
           options={options}
           value={value}
           loading={loading}
@@ -58,8 +59,9 @@ export function ComposerModelPicker({ agentId, models, value, onChange, loading,
   )
 }
 
-function ModelPickerDialog({ anchorRef, options, value, loading, error, allowCustom, onClose, onSelect }: {
+function ModelPickerDialog({ anchorRef, agentId, options, value, loading, error, allowCustom, onClose, onSelect }: {
   anchorRef: RefObject<HTMLButtonElement | null>
+  agentId: string
   options: ModelOption[]
   value: string
   loading: boolean
@@ -71,14 +73,12 @@ function ModelPickerDialog({ anchorRef, options, value, loading, error, allowCus
   const dialogRef = useRef<HTMLDialogElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const [company, setCompany] = useState('')
   const [query, setQuery] = useState('')
   const [customModel, setCustomModel] = useState(value)
-  const companies = [...new Set(options.map((option) => option.company).filter(Boolean))].sort()
   const search = query.trim().toLowerCase()
-  const filtered = options.filter((option) => (!company || option.company === company)
-    && `${option.name} ${option.id} ${option.company} ${option.providerName}`.toLowerCase().includes(search))
-  const providerGroups = groupModelsByProvider(filtered)
+  const filtered = options.filter((option) =>
+    `${option.name} ${option.id} ${option.company} ${option.providerName}`.toLowerCase().includes(search))
+  const subscriptionGroups = groupModelsBySubscription(filtered)
 
   useLayoutEffect(() => {
     const dialog = dialogRef.current
@@ -141,22 +141,6 @@ function ModelPickerDialog({ anchorRef, options, value, loading, error, allowCus
       }}
     >
       <div className="flex h-full">
-        <nav aria-label="Filter models by company" className="flex w-14 shrink-0 flex-col items-center gap-1.5 overflow-y-auto border-r border-line bg-canvas/40 py-3">
-          {['', ...companies].map((availableCompany) => (
-            <button
-              key={availableCompany}
-              type="button"
-              aria-label={availableCompany || 'All companies'}
-              title={availableCompany || 'All companies'}
-              aria-pressed={company === availableCompany}
-              className={cn('relative grid size-9 shrink-0 place-items-center rounded-lg hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent',
-                company === availableCompany ? 'bg-hover text-fg before:absolute before:-left-2 before:h-5 before:w-0.5 before:rounded-full before:bg-accent' : 'text-dim')}
-              onClick={() => setCompany(availableCompany)}
-            >
-              <ProviderIcon company={availableCompany} size={21} />
-            </button>
-          ))}
-        </nav>
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="mx-3 flex items-center gap-2 border-b border-line focus-within:border-accent">
             <HugeiconsIcon icon={Search01Icon} size={16} className="shrink-0 text-dim" aria-hidden="true" />
@@ -196,20 +180,19 @@ function ModelPickerDialog({ anchorRef, options, value, loading, error, allowCus
               buttons[nextIndex]?.focus()
             }}
           >
-            {providerGroups.map((group) => (
-              <div key={group.providerId} role="group" aria-label={`${group.providerName} models`}>
-                <div className="flex items-center gap-2 px-3 pb-1 pt-3 text-[11px] font-medium text-dim">
-                  <ProviderIcon company={group.providerName} size={14} />
-                  <span>{group.providerName}</span>
-                </div>
+            {agentId === 'opencode' ? subscriptionGroups.map((group) => (
+              <div key={group.id} role="group" aria-label={group.id === 'other' ? group.title : `${group.title} models`} className="border-t border-line pb-2 first:border-t-0 last:pb-0">
+                <h3 className="px-3 pb-2 pt-3 text-[11px] font-medium text-dim">{group.title}</h3>
                 {group.models.map((option) => (
                   <ModelRow key={option.id} option={option} selected={option.id === value} onSelect={onSelect} />
                 ))}
               </div>
+            )) : filtered.map((option) => (
+              <ModelRow key={option.id} option={option} selected={option.id === value} onSelect={onSelect} />
             ))}
             {loading && <p role="status" className="px-3 py-4 text-xs text-dim">Loading models…</p>}
             {!loading && !filtered.length && (
-              <p role="status" className="px-3 py-6 text-center text-xs text-dim">{search || company ? 'No models match your search.' : 'No models listed by this agent.'}</p>
+              <p role="status" className="px-3 py-6 text-center text-xs text-dim">{search ? 'No models match your search.' : 'No models listed by this agent.'}</p>
             )}
           </div>
           {allowCustom && (
@@ -233,7 +216,7 @@ function ModelPickerDialog({ anchorRef, options, value, loading, error, allowCus
             </div>
           )}
           <div className="border-t border-line px-4 py-2 text-[11px] text-dim">
-            {error ? <p role="status">Could not list models: {error}</p> : `${filtered.length} ${filtered.length === 1 ? 'model' : 'models'}${company ? ` · ${company}` : ' · All companies'}`}
+            {error ? <p role="status">Could not list models: {error}</p> : `${filtered.length} ${filtered.length === 1 ? 'model' : 'models'}`}
           </div>
         </div>
       </div>
@@ -256,13 +239,8 @@ function ModelRow({ option, selected, onSelect }: {
       onClick={() => onSelect(option.id)}
       className={cn('mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-2 focus-visible:outline-accent', selected && 'bg-hover')}
     >
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-medium">{option.name}</div>
-        <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-dim">
-          <ProviderIcon company={option.providerName} size={12} />
-          <span className="truncate">{option.providerName} credentials</span>
-        </div>
-      </div>
+      <ProviderIcon company={option.company} size={16} />
+      <span className="min-w-0 flex-1 truncate text-xs font-medium">{option.name}</span>
       {selected && <HugeiconsIcon icon={Tick02Icon} size={16} className="shrink-0 text-accent" aria-hidden="true" />}
     </button>
   )

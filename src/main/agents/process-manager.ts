@@ -25,6 +25,7 @@ export interface StartOptions {
   prompt: string
   model?: string
   thinkingLevel?: ThinkingLevel
+  modelEffort?: string
   cwd: string
   projectPath?: string
   /** Resume this agent session instead of starting a fresh one. */

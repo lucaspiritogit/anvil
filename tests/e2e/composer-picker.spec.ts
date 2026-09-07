@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
 const fixture = '/tests/e2e/fixture/'
 
-test('model picker filters by company and search, and keeps reasoning local', async ({ page }, testInfo) => {
+test('model picker filters by company and search, and omits reasoning when metadata is unavailable', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 900, height: 600 })
   await page.goto(fixture)
   await page.evaluate(() => {
@@ -38,8 +38,8 @@ test('model picker filters by company and search, and keeps reasoning local', as
   const selectedModel = composer.getByRole('button', { name: 'Model: Claude Opus 4.6', exact: true })
   await expect(selectedModel).toBeFocused()
   await composer.getByRole('button', { name: 'More task options', exact: true }).click()
-  await composer.getByRole('combobox', { name: 'Thinking level', exact: true }).selectOption('Medium')
-  await expect(composer.getByRole('combobox', { name: 'Thinking level', exact: true })).toHaveValue('Medium')
+  await expect(composer.getByRole('combobox', { name: 'Thinking level', exact: true })).toBeDisabled()
+  await expect(composer.getByRole('combobox', { name: 'Thinking level', exact: true }).locator('option:checked')).toHaveText('Agent default')
   await page.keyboard.press('Escape')
   await page.screenshot({ path: testInfo.outputPath('composer.png') })
   await composer.getByRole('textbox').fill('Build search')

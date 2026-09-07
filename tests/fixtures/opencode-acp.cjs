@@ -7,6 +7,19 @@ const sessionId = 'session-test'
 let promptId
 let initialized = false
 let modelSelected = false
+const effortConfig = (values) => [{
+  id: 'effort', name: 'Thinking level', category: 'thought_level', type: 'select',
+  currentValue: values[0], options: values.map((value) => ({ value, name: value }))
+}]
+const sessionConfig = () => ['limited-effort', 'removed-effort'].includes(scenario)
+  ? effortConfig(['medium'])
+  : scenario === 'session-effort' ? effortConfig(['high', 'medium']) : []
+const selectedConfig = () => scenario === 'limited-effort' ? effortConfig(['high'])
+  : scenario === 'native-effort' ? effortConfig(['high', 'max'])
+  : scenario === 'grouped-effort' ? [{ ...effortConfig(['high', 'medium'])[0], options: [{
+    group: 'reasoning', name: 'Reasoning', options: effortConfig(['high', 'medium'])[0].options
+  }] }]
+    : scenario === 'rejected-effort' ? effortConfig(['medium']) : []
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n')
 const respond = (id, result) => send({ id, result })
 const update = (update, id = sessionId) => send({ method: 'session/update', params: { sessionId: id, update } })
@@ -53,15 +66,26 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       text('Old turn summary from history.')
       update({ sessionUpdate: 'tool_call', toolCallId: 'old', title: 'Old edit', kind: 'edit', status: 'completed', locations: [{ path: '/old.ts' }] })
     }
-    respond(message.id, { sessionId, configOptions: [] })
+    respond(message.id, { sessionId, configOptions: sessionConfig() })
   } else if (message.method === 'session/set_config_option') {
+    if (message.params.configId === 'effort') {
+      const config = modelSelected ? selectedConfig() : sessionConfig()
+      const values = config.flatMap((option) => option.options).flatMap((option) => option.options ?? [option]).map((option) => option.value)
+      if (!values.includes(message.params.value) || scenario === 'rejected-effort') {
+        return send({ id: message.id, error: {
+          code: -32602, message: `Invalid params: effort not found: ${message.params.value}`,
+          data: { effort: message.params.value }
+        } })
+      }
+      return respond(message.id, { configOptions: config })
+    }
     const expectedModel = scenario === 'openrouter' ? 'openrouter/anthropic/claude-sonnet-4-6' : 'provider/model'
     if (message.params.configId !== 'model' || message.params.value !== expectedModel) process.exit(10)
     modelSelected = true
-    respond(message.id, { configOptions: [] })
+    respond(message.id, { configOptions: selectedConfig() })
   } else if (message.method === 'session/prompt') {
     promptId = message.id
-    if (!modelSelected || message.params.prompt[0].text !== 'Implement the issue') process.exit(11)
+    if ((!modelSelected && scenario !== 'session-effort') || message.params.prompt[0].text !== 'Implement the issue') process.exit(11)
     if (scenario === 'exit') return process.exit(3)
     if (scenario === 'orphan') {
       require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'inherit', 'inherit'] })
@@ -73,7 +97,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     }
     if (scenario === 'rpc-error') return send({ id: message.id, error: { code: -32603, message: 'Provider authentication failed' } })
     if (scenario.startsWith('cancel')) {
-      text('Waiting\n')
+      text(scenario === 'cancel-partial' ? 'Waiting' : 'Waiting\n')
       return
     }
     send({ id: 'permission', method: 'session/request_permission', params: {
@@ -82,7 +106,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         ? [{ optionId: 'deny', name: 'Deny', kind: 'reject_once' }]
         : [{ optionId: 'always', name: 'Always', kind: 'allow_always' }, { optionId: 'once', name: 'Once', kind: 'allow_once' }]
     } })
-  } else if (message.method === 'session/cancel' && scenario === 'cancel') {
+  } else if (message.method === 'session/cancel' && ['cancel', 'cancel-partial'].includes(scenario)) {
     respond(promptId, { stopReason: 'cancelled' })
+    if (scenario === 'cancel-partial') setTimeout(() => text('Late chunk after cancellation'), 10)
   }
 })

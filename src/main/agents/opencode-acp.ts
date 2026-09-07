@@ -1,12 +1,12 @@
 import { isAbsolute } from 'node:path'
-import type { Client } from '@agentclientprotocol/sdk'
+import type { Client, SessionConfigOption } from '@agentclientprotocol/sdk'
 import type { AgentClientProtocol, TaskEvent, TaskInput, TaskResult } from './agent-client-protocol'
 import { AcpOutput } from './acp-output'
 import { OpenCodeAcpConnection, type OpenCodeAcpOptions } from './opencode-acp-connection'
 import { LazyAgentServer } from './lazy-agent-server'
 import type { ThinkingLevel } from '../../shared/types'
 
-/** Canonical levels to the reasoning efforts OpenCode exposes as the "effort" session config option. */
+/** Preferred effort IDs; availability depends on the selected model's ACP config. */
 const OPENCODE_EFFORTS: Record<ThinkingLevel, string> = {
   off: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh'
 }
@@ -103,29 +103,41 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       const request = <Response>(promise: Promise<Response>): Promise<Response> => Promise.race([promise, connection!.failure, interrupted])
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
       startupTimer = setTimeout(() => connection?.fail(new Error('OpenCode ACP session startup timed out.')), this.options.startupTimeoutMs ?? 60_000)
+      let configOptions: SessionConfigOption[] = []
       if (input.resumeSessionId) {
         if (!connection.supportsLoadSession) throw new Error('OpenCode does not support loading sessions')
         sessionId = input.resumeSessionId
         // Loading replays history. Do not count it as this turn's evidence.
-        await request(connection.rpc.loadSession({ sessionId, cwd: input.cwd, mcpServers: [] }))
+        const session = await request(connection.rpc.loadSession({ sessionId, cwd: input.cwd, mcpServers: [] }))
+        configOptions = session.configOptions ?? []
       } else {
         const session = await request(connection.rpc.newSession({ cwd: input.cwd, mcpServers: [] }))
         sessionId = session.sessionId
+        configOptions = session.configOptions ?? []
       }
       input.signal?.throwIfAborted()
       onEvent({ type: 'session', taskId: input.taskId, sessionId })
       if (input.model) {
-        await request(connection.rpc.setSessionConfigOption({ sessionId, configId: 'model', value: input.model }))
+        const selection = await request(connection.rpc.setSessionConfigOption({ sessionId, configId: 'model', value: input.model }))
+        // Model selection replaces the options, including its supported efforts.
+        configOptions = selection.configOptions
       }
-      if (input.thinkingLevel) {
-        // OpenCode rejects the "effort" config when the model has no matching
-        // variant. Keep the prompt running at its default instead of failing.
-        await request(connection.rpc.setSessionConfigOption({
-          sessionId, configId: 'effort', value: OPENCODE_EFFORTS[input.thinkingLevel]
-        }).catch((failure) => {
-          const message = failure instanceof Error ? failure.message : String(failure)
-          output.line(`OpenCode rejected thinking level ${input.thinkingLevel}: ${message}`, 'system', 'system')
-        }))
+      const requestedEffort = input.modelEffort ?? (input.thinkingLevel ? OPENCODE_EFFORTS[input.thinkingLevel] : undefined)
+      if (requestedEffort) {
+        const effort = configOptions.find((option) => option.id === 'effort')
+        const availableEfforts = effort?.type === 'select'
+          ? effort.options.flatMap((option) => 'group' in option ? option.options : [option]).map((option) => option.value)
+          : []
+        const value = requestedEffort
+        if (availableEfforts.includes(value)) {
+          await request(connection.rpc.setSessionConfigOption({ sessionId, configId: 'effort', value }).catch((failure) => {
+            const message = failure instanceof Error ? failure.message : String(failure)
+            output.line(`OpenCode rejected thinking level ${input.modelEffort ?? input.thinkingLevel}: ${message}`, 'system', 'system')
+          }))
+        } else {
+          const current = effort?.type === 'select' ? ` (${effort.currentValue})` : ''
+          output.line(`OpenCode does not advertise thinking level ${input.modelEffort ?? input.thinkingLevel} for this model; keeping its current setting${current}. Available efforts: ${availableEfforts.join(', ') || 'none advertised'}.`, 'system', 'system')
+        }
       }
       clearTimeout(startupTimer)
       input.signal?.throwIfAborted()

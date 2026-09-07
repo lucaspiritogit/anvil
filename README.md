@@ -137,11 +137,46 @@ Search matches both model and provider names. Selecting an OpenRouter model
 preserves its full `openrouter/<creator>/<model>` ID for OpenCode; it does not
 switch to the creator's direct API key.
 
+For OpenCode, the thinking selector uses each model's advertised effort names
+from `opencode models --verbose`. Switching models restores that model's saved
+choice if still supported, otherwise selects a supported value. Models without
+advertised efforts use the agent default. Effort choices are saved per model;
+OpenCode's live ACP options are checked again before starting a prompt.
+
 Successful tasks move to Settled four hours after approval, or after completion
 when there were no code changes. Running, failed, cancelled, and unreviewed
 tasks stay active. Right-click a task to delete it. Deletion removes SQLite
 state and cancels the agent. Valence issues, project files, and Git branches stay
 put. Removing a project also stops its Anvil agents without deleting Valence data.
+
+### OpenCode provider timeouts
+
+OpenCode provider timeouts are configured in `~/.config/opencode/opencode.json`,
+not in Anvil. Merge the following into your existing config to limit OpenRouter
+requests to five minutes and abort streams with no incoming chunks for one minute:
+
+```json
+{
+  "provider": {
+    "openrouter": {
+      "options": {
+        "timeout": 300000,
+        "chunkTimeout": 60000
+      }
+    }
+  }
+}
+```
+
+These limits apply to individual model requests, not shell commands or whole tasks.
+The full-request timeout also bounds streams that send only keepalive comments.
+OpenCode handles any retries; this does not automatically restart an Anvil task.
+Restart Anvil after current tasks finish so its OpenCode server reloads the config.
+Other OpenCode providers can use the same options under their own provider ID.
+
+While an ACP or Codex app-server turn is running, Anvil publishes partial message
+and thinking lines every 250 ms. Later text updates the same log row until a
+newline or message/tool boundary.
 
 ## Valence integration
 

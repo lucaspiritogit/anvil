@@ -66,6 +66,28 @@ test('tool calls show a name and gray input, with one expandable result per call
   await expect(output.locator('[data-output-category]')).toHaveCount(4)
 })
 
+test('partial message and thinking snapshots update existing rows', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=output&tools=1')
+  const output = page.getByRole('log', { name: 'Task output' })
+  await expect(output.locator('[data-output-category="tool_result"]')).toHaveCount(1)
+  for (const category of ['thinking', 'message'] as const) {
+    const event: TaskEvent = {
+      id: `partial-${category}`, taskId: 'output', ts: Date.now(), stream: 'stdout',
+      kind: 'output', category, text: 'Partial text'
+    }
+    const emit = (detail: TaskEvent) => page.evaluate((detail) => {
+      window.dispatchEvent(new CustomEvent('fixture:output', { detail }))
+    }, detail)
+    await emit(event)
+    const row = output.locator(`[data-output-category="${category}"]`)
+    await expect(row).toHaveCount(1)
+    await expect(row).toContainText('Partial text')
+    await emit({ ...event, text: 'Partial text continued without a newline' })
+    await expect(row).toHaveCount(1)
+    await expect(row).toContainText('Partial text continued without a newline')
+  }
+})
+
 test('a long task description leaves room for output and navigation', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 500 })
   await page.goto('/tests/e2e/fixture/?scenario=output&longPrompt=1')

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { mock } from 'node:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -64,6 +65,25 @@ assert.equal(rows().at(-1)?.text, '{"message":"failed","details":"assertion"}')
 const rowCount = rows().length
 acp.update({ sessionUpdate: 'tool_call_update', toolCallId: 'named', status: 'failed', rawOutput: { message: 'failed', details: 'assertion' } })
 assert.equal(rows().length, rowCount)
+
+// Partial text snapshots also persist in place rather than duplicating rows.
+mock.timers.enable({ apis: ['setTimeout'] })
+try {
+  const message = new AcpOutput(input, record)
+  const thought = new CodexAppServerOutput(input, record)
+  message.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Partial message' } })
+  thought.notification('item/reasoning/textDelta', { itemId: 'thought', delta: 'Partial thinking' })
+  mock.timers.tick(250)
+  const partialIds = rows().slice(-2).map(row => row.id)
+  message.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: ' completed\n' } })
+  thought.item({ id: 'thought', type: 'reasoning', content: ['Partial thinking completed'] }, true)
+  assert.deepEqual(rows().slice(-2).map(row => row.id), partialIds)
+  assert.deepEqual(rows().slice(-2).map(row => row.text), ['Partial message completed', 'Partial thinking completed'])
+  message.flush()
+  thought.flush()
+} finally {
+  mock.timers.reset()
+}
 
 // Both protocols persist snapshots in place, including success-to-error transitions.
 const directory = mkdtempSync(join(tmpdir(), 'anvil-output-'))

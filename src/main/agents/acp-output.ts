@@ -3,6 +3,7 @@ import type { SessionUpdate, ToolCall, ToolCallUpdate, Usage } from '@agentclien
 import type { TaskEventCategory, TaskUsage } from '../../shared/types'
 import type { TaskEvent, TaskInput } from './agent-client-protocol'
 import { ToolOutput, toolInputDescription } from './tool-output'
+import { StreamingTextOutput } from './streaming-text-output'
 
 const ANSI = /\u001b\[[0-9;?]*[ -\/]*[@-~]/g
 
@@ -11,14 +12,15 @@ export class AcpOutput {
   output = ''
   usage: TaskUsage | undefined
   readonly changedFiles = new Set<string>()
-  private buffers = new Map<TaskEventCategory, string>()
   private tools = new Map<string, ToolCallUpdate>()
   private readonly toolOutput: ToolOutput
-  private messageId: string | undefined
+  private readonly textOutput: StreamingTextOutput
+  private messageIds = new Map<'message' | 'thinking', string>()
   private costUsd: number | null = null
 
   constructor(private readonly input: TaskInput, private readonly onEvent: (event: TaskEvent) => void) {
     this.toolOutput = new ToolOutput(input, onEvent)
+    this.textOutput = new StreamingTextOutput(input, onEvent)
   }
 
   line(text: string, category: TaskEventCategory, stream: 'stdout' | 'stderr' | 'system' = 'stdout'): void {
@@ -31,17 +33,8 @@ export class AcpOutput {
     })
   }
 
-  private chunk(text: string, category: TaskEventCategory): void {
-    const lines = ((this.buffers.get(category) ?? '') + text).split('\n')
-    this.buffers.set(category, lines.pop() ?? '')
-    for (const line of lines) this.line(line, category)
-  }
-
   flush(): void {
-    for (const [category, text] of this.buffers) {
-      if (text) this.line(text, category)
-    }
-    this.buffers.clear()
+    this.textOutput.flush()
   }
 
   update(update: SessionUpdate): void {
@@ -50,15 +43,14 @@ export class AcpOutput {
       case 'agent_thought_chunk': {
         if (update.content.type !== 'text') return
         const category = update.sessionUpdate === 'agent_message_chunk' ? 'message' : 'thinking'
-        if (category === 'message') {
-          if (update.messageId && this.messageId && update.messageId !== this.messageId) {
-            this.flush()
-            if (!this.output.endsWith('\n')) this.output += '\n'
-          }
-          this.messageId = update.messageId ?? this.messageId
-          this.output += update.content.text
+        const previousMessageId = this.messageIds.get(category)
+        if (update.messageId && previousMessageId && update.messageId !== previousMessageId) {
+          this.flush()
+          if (category === 'message' && !this.output.endsWith('\n')) this.output += '\n'
         }
-        this.chunk(update.content.text, category)
+        if (update.messageId) this.messageIds.set(category, update.messageId)
+        if (category === 'message') this.output += update.content.text
+        this.textOutput.append(category, update.content.text, category)
         break
       }
       case 'tool_call':

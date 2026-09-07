@@ -53,7 +53,7 @@ export function registerTaskHandlers({
 
   ipcMain.handle(
     'tasks:start',
-    async (_event, input: { projectId: string; agentId: string; prompt: string; model?: string; thinkingLevel?: ThinkingLevel }) => {
+    async (_event, input: { projectId: string; agentId: string; prompt: string; model?: string; thinkingLevel?: ThinkingLevel; modelEffort?: string }) => {
       const project = store.getProjects().find((project) => project.id === input.projectId)
       if (!project) throw new Error('Project not found')
 
@@ -111,6 +111,7 @@ export function registerTaskHandlers({
               prompt,
               model,
               thinkingLevel: input.thinkingLevel,
+              modelEffort: input.modelEffort,
               cwd: project.path,
               projectPath: project.path
             })
@@ -140,6 +141,7 @@ export function registerTaskHandlers({
             prompt,
             model,
             thinkingLevel: input.thinkingLevel,
+            modelEffort: input.modelEffort,
             cwd: prepared.cwd,
             projectPath: project.path
           })

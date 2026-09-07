@@ -12,6 +12,8 @@ export interface TaskInput {
   model?: string
   /** Requested reasoning-effort level; adapters translate it to their wire protocol. */
   thinkingLevel?: ThinkingLevel
+  /** Native model-specific effort ID, checked against ACP options before use. */
+  modelEffort?: string
   resumeSessionId?: string
   signal?: AbortSignal
 }

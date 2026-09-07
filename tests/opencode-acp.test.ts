@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
+import { setTimeout as delay } from 'node:timers/promises'
 import { OpenCodeAcpClient } from '../src/main/agents/opencode-acp'
 import { AgentProcessManager, type ExitInfo } from '../src/main/agents/process-manager'
 import { getAgent } from '../src/main/agents/registry'
@@ -73,6 +74,47 @@ async function main(): Promise<void> {
     const modelRequest = (await requests()).findLast((request) => request.method === 'session/set_config_option')
     assert.equal(modelRequest.params.value, openrouterModel, 'Keep the OpenRouter route so OpenCode uses that provider\'s credentials')
 
+    for (const scenario of ['limited-effort', 'removed-effort', 'success']) {
+      events.length = 0
+      const requestCount = (await requests()).length
+      const limitedEffort = await client(scenario).execute({ ...input, thinkingLevel: 'medium' }, record)
+      assert.equal(limitedEffort.status, 'succeeded', limitedEffort.error)
+      assert.ok(!events.some((event) => event.type === 'output' && /effort not found: medium/.test(event.event.text)),
+        'Do not send medium when the selected model does not advertise that effort')
+      assert.ok(!(await requests()).slice(requestCount).some((request) => request.params?.configId === 'effort'), scenario)
+      assert.ok(events.some((event) => event.type === 'output' && /keeping its current setting/.test(event.event.text)), scenario)
+      if (scenario === 'limited-effort') {
+        assert.ok(events.some((event) => event.type === 'output' && /Available efforts: high\./.test(event.event.text)))
+      }
+    }
+
+    for (const selection of [
+      { scenario: 'limited-effort', options: { thinkingLevel: 'high' as const } },
+      { scenario: 'grouped-effort', options: { thinkingLevel: 'medium' as const } },
+      { scenario: 'session-effort', options: { model: undefined, thinkingLevel: 'medium' as const } },
+      { scenario: 'session-effort', options: { model: undefined, thinkingLevel: 'medium' as const, resumeSessionId: 'session-test' } }
+    ]) {
+      const requestCount = (await requests()).length
+      const configured = await client(selection.scenario).execute({ ...input, ...selection.options }, () => {})
+      assert.equal(configured.status, 'succeeded', configured.error)
+      const effortRequests = (await requests()).slice(requestCount).filter((request) => request.params?.configId === 'effort')
+      assert.deepEqual(effortRequests.map((request) => request.params.value), [selection.options.thinkingLevel])
+    }
+
+    for (const modelEffort of ['max', 'medium']) {
+      const requestCount = (await requests()).length
+      const nativeEffort = await client('native-effort').execute({ ...input, modelEffort }, () => {})
+      assert.equal(nativeEffort.status, 'succeeded', nativeEffort.error)
+      const effortRequests = (await requests()).slice(requestCount).filter((request) => request.params?.configId === 'effort')
+      assert.deepEqual(effortRequests.map((request) => request.params.value), modelEffort === 'max' ? ['max'] : [],
+        'Native model efforts must also be checked against the current ACP config')
+    }
+
+    events.length = 0
+    const rejectedEffort = await client('rejected-effort').execute({ ...input, thinkingLevel: 'medium' }, record)
+    assert.equal(rejectedEffort.status, 'succeeded', 'A stale advertised effort should not prevent prompting')
+    assert.ok(events.some((event) => event.type === 'output' && /OpenCode rejected thinking level medium/.test(event.event.text)))
+
     for (const scenario of ['refusal', 'max-tokens', 'rpc-error', 'exit', 'malformed', 'version']) {
       const failed = await client(scenario).execute(input, () => {})
       assert.equal(failed.status, 'failed', scenario)
@@ -90,13 +132,21 @@ async function main(): Promise<void> {
     }).execute(input, () => {})
     assert.match(startup.error!, /startup timed out/)
 
-    for (const scenario of ['cancel', 'cancel-hang']) {
+    for (const scenario of ['cancel', 'cancel-hang', 'cancel-partial']) {
       const controller = new AbortController()
+      const cancellationEvents: TaskEvent[] = []
       const cancelled = await client(scenario).execute({ ...input, signal: controller.signal }, (event) => {
+        cancellationEvents.push(event)
         if (event.type === 'output' && event.event.text === 'Waiting') controller.abort()
       })
       assert.equal(cancelled.status, 'cancelled', scenario)
-      assert.equal(cancelled.output, 'Waiting\n')
+      assert.equal(cancelled.output, scenario === 'cancel-partial' ? 'Waiting' : 'Waiting\n')
+      if (scenario === 'cancel-partial') {
+        const eventCount = cancellationEvents.length
+        await delay(300)
+        assert.equal(cancellationEvents.length, eventCount, 'No timed flush or late update after cancellation')
+        assert.equal(cancellationEvents.filter(event => event.type === 'output' && event.event.text === 'Waiting').length, 1)
+      }
     }
     assert.ok((await requests()).some((request) => request.method === 'session/cancel'))
     const preCancelled = new AbortController()

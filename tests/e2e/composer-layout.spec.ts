@@ -8,7 +8,7 @@ const longModel = 'nvidia/nemotron-3-ultra-550b-a55b:free'
 test('compact composer keeps the model and Send aligned, with other controls behind More', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/')
   await page.evaluate((model) => {
-    window.anvil.agents.models = async (agentId) => ({ agentId, models: [model] })
+    window.anvil.agents.models = async (agentId) => ({ agentId, models: [model], effortsByModel: { [model]: ['low', 'medium', 'high'] } })
   }, longModel)
   const composer = page.getByRole('form', { name: 'Start a task' })
   await composer.getByRole('combobox', { name: 'Agent', exact: true }).selectOption('opencode')
@@ -34,7 +34,7 @@ test('compact composer keeps the model and Send aligned, with other controls beh
     await more.click()
     const options = page.getByRole('group', { name: 'Task options', exact: true })
     await expect(options).toBeInViewport()
-    await options.getByRole('combobox', { name: 'Thinking level', exact: true }).selectOption('Medium')
+    await options.getByRole('combobox', { name: 'Thinking level', exact: true }).selectOption('medium')
     if (width === 900) await page.screenshot({ path: testInfo.outputPath('composer-options.png') })
     await page.keyboard.press('Escape')
     await expect(options).toBeHidden()
@@ -52,6 +52,6 @@ test('compact composer keeps the model and Send aligned, with other controls beh
   await page.keyboard.press('Control+b')
   await expect(composer.getByRole('button', { name: 'More task options', exact: true })).toBeHidden()
   await expect(composer.getByRole('combobox', { name: 'Agent', exact: true })).toHaveValue('opencode')
-  await expect(composer.getByRole('combobox', { name: 'Thinking level', exact: true })).toHaveValue('Medium')
+  await expect(composer.getByRole('combobox', { name: 'Thinking level', exact: true })).toHaveValue('medium')
   await expect(page.getByRole('group', { name: 'Task options', exact: true })).toBeHidden()
 })

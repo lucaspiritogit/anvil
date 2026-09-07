@@ -211,6 +211,16 @@ async function main(): Promise<void> {
   assert.equal(store.getTask(preparing.id)?.status, 'cancelled')
   assert.equal(store.getTask(preparing.id)?.worktreePath, undefined, 'Cancelled preparation must not create a worktree')
   assert.equal(agentProcesses.isRunning(preparing.id), false)
+  const nativeEffortTask: Task = await call('tasks:start', {
+    projectId: project.id, agentId: 'opencode', prompt: 'Use native model effort',
+    model: 'openrouter/deepseek/deepseek-v4', modelEffort: 'max'
+  })
+  await tick()
+  assert.equal(agentProcesses.starts.at(-1).taskId, nativeEffortTask.id)
+  assert.equal(agentProcesses.starts.at(-1).modelEffort, 'max')
+  assert.equal(agentProcesses.starts.at(-1).thinkingLevel, undefined)
+  call('tasks:cancel', nativeEffortTask.id)
+  await tick()
   store.close()
   console.log('IPC handler tests passed: channel registration, execution, usage, review, rebase, deletion guards, failed planning, cancellation, prompts, and terminals.')
 }

@@ -29,29 +29,32 @@ async function main(): Promise<void> {
   const agentProcesses = new AgentProcessManager(acpExecutor, codexExecutor)
   try {
     const exits: Promise<unknown>[] = []
-    const run = (taskId: string, thinkingLevel?: TaskInput['thinkingLevel'], protocol?: AgentDefinition['executionProtocol']): void => {
+    const run = (taskId: string, thinkingLevel?: TaskInput['thinkingLevel'], protocol?: AgentDefinition['executionProtocol'], modelEffort?: string): void => {
       exits.push(new Promise<void>((resolve) => agentProcesses.once('exit', resolve)))
       agentProcesses.start({
         taskId,
         agent: { ...agent, executionProtocol: protocol },
         prompt: 'prompt',
         cwd: process.cwd(),
-        ...(thinkingLevel ? { thinkingLevel } : {})
+        ...(thinkingLevel ? { thinkingLevel } : {}),
+        ...(modelEffort ? { modelEffort } : {})
       })
     }
 
-    run('acp-level', 'High', 'acp')
+    run('acp-level', 'high', 'acp')
+    run('acp-native-effort', undefined, 'acp', 'max')
     run('codex-level', 'low', 'codex-app-server')
     run('acp-default', undefined, 'acp')
     run('codex-default', undefined, 'codex-app-server')
     await Promise.all(exits)
 
     assert.deepEqual(acpExecutor.inputs.map((input) => [input.taskId, input.thinkingLevel]), [
-      ['acp-level', 'High'], ['acp-default', undefined]
+      ['acp-level', 'high'], ['acp-native-effort', undefined], ['acp-default', undefined]
     ])
     assert.deepEqual(codexExecutor.inputs.map((input) => [input.taskId, input.thinkingLevel]), [
       ['codex-level', 'low'], ['codex-default', undefined]
     ])
+    assert.equal(acpExecutor.inputs.find((input) => input.taskId === 'acp-native-effort')?.modelEffort, 'max')
     assert.ok(acpExecutor.inputs.every((input) => input.signal instanceof AbortSignal))
     assert.ok(codexExecutor.inputs.every((input) => input.signal instanceof AbortSignal))
     console.log('Thinking-level forwarding tests passed: StartOptions reach both ACP and Codex executors, and omitted levels stay undefined.')

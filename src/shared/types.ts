@@ -62,11 +62,11 @@ export interface ProjectGitStatus {
 
 /**
  * Where an agent's selectable models come from. `command` runs a CLI that
- * prints one model identifier per line; `static` is a list Anvil ships for
- * CLIs that cannot report their own.
+ * prints one model identifier per line, or OpenCode's verbose metadata when
+ * requested by `format`. `static` is a list for CLIs that cannot report their own.
  */
 export type ModelSource =
-  | { kind: 'command'; command: string; args: string[] }
+  | { kind: 'command'; command: string; args: string[]; format?: 'opencode-verbose' }
   | { kind: 'static'; models: string[] }
 
 /**
@@ -77,6 +77,8 @@ export type ModelSource =
 export interface ProviderModelList {
   agentId: string
   models: string[]
+  /** Native effort IDs advertised by each model. An empty list means no selector. */
+  effortsByModel?: Record<string, string[]>
   /** Why the list came back empty; unset when the source succeeded. */
   error?: string
 }
