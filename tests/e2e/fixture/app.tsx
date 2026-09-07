@@ -47,6 +47,9 @@ if (query.has('steering')) {
     ...(query.has('unsupported') ? { agentId: 'opencode', agentLabel: 'OpenCode' } : {})
   } : task)
 }
+if (query.has('cancelled')) {
+  tasks = tasks.map((task) => task.id === 'failed' ? { ...task, status: 'cancelled' as const } : task)
+}
 tasks = tasks.map((task) => ({ ...task, branchName: `anvil/${task.id === 'approved' ? 'polish-task-cards' : task.id}` }))
 const updates = new Set<(task: Task) => void>()
 const update = (task: Task): Task => {
@@ -224,8 +227,10 @@ window.anvil = {
   terminal: { ensure: noop, resize: noop, onData: subscribe, onExit: subscribe }
 } as unknown as typeof window.anvil
 
+const outputTaskId = query.get('task') ?? 'output'
+const outputTask = tasks.find((task) => task.id === outputTaskId) ?? tasks.find((task) => task.id === 'output')!
 if (query.get('scenario') === 'output') {
-  useStore.setState({ activeProjectId: projects[1].id, view: { kind: 'task', taskId: 'output' } })
+  useStore.setState({ activeProjectId: outputTask.projectId, view: { kind: 'task', taskId: outputTask.id } })
 } else if (query.get('scenario') === 'review') {
   useStore.setState({ activeProjectId: projects[0].id, view: { kind: 'task', taskId: 'review' } })
 }
