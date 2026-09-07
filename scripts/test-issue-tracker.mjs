@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import electron from 'electron'
 
-const availableSuites = ['model-options', 'valence-bundle', 'valence-integration', 'valence-clients', 'issue-tracker', 'issue-tracker-git', 'git-delivery', 'task-deletion', 'task-settlement', 'task-prompts', 'task-usage', 'db-cli', 'ipc-handlers', 'agent-process-manager', 'opencode-acp', 'codex-app-server', 'codex-sandbox', 'agent-server-lifecycle', 'app-shutdown', 'agent-output']
+const availableSuites = ['model-options', 'valence-bundle', 'valence-integration', 'valence-clients', 'issue-tracker', 'issue-tracker-git', 'git-delivery', 'task-deletion', 'task-settlement', 'task-prompts', 'task-usage', 'db-cli', 'ipc-handlers', 'agent-process-manager', 'agent-thinking-forwarding', 'opencode-acp', 'codex-app-server', 'codex-sandbox', 'agent-server-lifecycle', 'app-shutdown', 'agent-output']
 const requestedSuites = process.argv.slice(2)
 const suites = requestedSuites.length ? requestedSuites : availableSuites
 for (const suite of suites) {
