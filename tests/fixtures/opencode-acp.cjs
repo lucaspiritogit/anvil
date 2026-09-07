@@ -8,7 +8,7 @@ let promptId
 let initialized = false
 let modelSelected = false
 const effortConfig = (values) => [{
-  id: 'effort', name: 'Thinking level', category: 'thought_level', type: 'select',
+  id: scenario === 'grouped-effort' ? 'native-reasoning' : 'effort', name: 'Reasoning effort', category: 'thought_level', type: 'select',
   currentValue: values[0], options: values.map((value) => ({ value, name: value }))
 }]
 const sessionConfig = () => ['limited-effort', 'removed-effort'].includes(scenario)
@@ -68,7 +68,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     }
     respond(message.id, { sessionId, configOptions: sessionConfig() })
   } else if (message.method === 'session/set_config_option') {
-    if (message.params.configId === 'effort') {
+    if (['effort', 'native-reasoning'].includes(message.params.configId)) {
       const config = modelSelected ? selectedConfig() : sessionConfig()
       const values = config.flatMap((option) => option.options).flatMap((option) => option.options ?? [option]).map((option) => option.value)
       if (!values.includes(message.params.value) || scenario === 'rejected-effort') {

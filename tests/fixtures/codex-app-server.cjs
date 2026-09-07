@@ -103,6 +103,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     return respond(message.id, { data, nextCursor: message.params.cursor && scenario !== 'models-cycle' ? null : 'page-2' })
   }
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
+    if (scenario === 'rejected-effort') return send({ id: message.id, error: { code: -32602, message: 'Effort rejected by backend' } })
     if (realpathSync(message.params.cwd) !== process.cwd() || realpathSync(process.env.PWD) !== process.cwd()) process.exit(24)
     if (!['read-only', 'workspace-write', 'danger-full-access'].includes(message.params.sandbox)) {
       return send({ id: message.id, error: {
@@ -110,7 +111,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         message: "Invalid request: unknown variant `" + message.params.sandbox + "`, expected one of `read-only`, `workspace-write`, `danger-full-access`"
       } })
     }
-    if (message.params.model !== 'test-model' || message.params.approvalPolicy !== 'never' || message.params.sandbox !== 'workspace-write') process.exit(25)
+    if (!['test-model', 'reasoner'].includes(message.params.model) || message.params.approvalPolicy !== 'never' || message.params.sandbox !== 'workspace-write') process.exit(25)
     if (scenario === 'bad-thread') return respond(message.id, { thread: { id: null } })
     resumed = message.method === 'thread/resume'
     if (resumed) {

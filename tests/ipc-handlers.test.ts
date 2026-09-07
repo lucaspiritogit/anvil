@@ -212,15 +212,25 @@ async function main(): Promise<void> {
   assert.equal(store.getTask(preparing.id)?.worktreePath, undefined, 'Cancelled preparation must not create a worktree')
   assert.equal(agentProcesses.isRunning(preparing.id), false)
   const nativeEffortTask: Task = await call('tasks:start', {
-    projectId: project.id, agentId: 'opencode', prompt: 'Use native model effort',
-    model: 'openrouter/deepseek/deepseek-v4', modelEffort: 'max'
+    projectId: project.id, agentId: 'opencode', prompt: 'Use native reasoning effort',
+    model: 'openrouter/deepseek/deepseek-v4', reasoningEffort: 'max'
   })
   await tick()
   assert.equal(agentProcesses.starts.at(-1).taskId, nativeEffortTask.id)
-  assert.equal(agentProcesses.starts.at(-1).modelEffort, 'max')
-  assert.equal(agentProcesses.starts.at(-1).thinkingLevel, undefined)
+  assert.equal(agentProcesses.starts.at(-1).reasoningEffort, 'max')
   call('tasks:cancel', nativeEffortTask.id)
   await tick()
+  GitDeliveryManager.repository = false
+  const nonGitEffortTask: Task = await call('tasks:start', {
+    projectId: project.id, agentId: 'codex', prompt: 'Use reasoning without Git',
+    model: 'reasoner', reasoningEffort: 'native-max'
+  })
+  await tick()
+  assert.equal(agentProcesses.starts.at(-1).taskId, nonGitEffortTask.id)
+  assert.equal(agentProcesses.starts.at(-1).reasoningEffort, 'native-max')
+  call('tasks:cancel', nonGitEffortTask.id)
+  await tick()
+  GitDeliveryManager.repository = true
   store.close()
   console.log('IPC handler tests passed: channel registration, execution, usage, review, rebase, deletion guards, failed planning, cancellation, prompts, and terminals.')
 }

@@ -28,7 +28,7 @@ function parseModelLines(stdout: string): string[] {
   return [...seen]
 }
 
-async function fromCommand(source: Extract<ModelSource, { kind: 'command' }>): Promise<Pick<ProviderModelList, 'models' | 'effortsByModel'>> {
+async function fromCommand(source: Extract<ModelSource, { kind: 'command' }>): Promise<Pick<ProviderModelList, 'models' | 'reasoningByModel'>> {
   const resolved = resolveCommand(source.command)
   if (!resolved) throw new Error(`"${source.command}" is not installed or not on PATH`)
 

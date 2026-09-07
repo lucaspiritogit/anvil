@@ -77,43 +77,45 @@ async function main(): Promise<void> {
     for (const scenario of ['limited-effort', 'removed-effort', 'success']) {
       events.length = 0
       const requestCount = (await requests()).length
-      const limitedEffort = await client(scenario).execute({ ...input, thinkingLevel: 'medium' }, record)
-      assert.equal(limitedEffort.status, 'succeeded', limitedEffort.error)
+      const limitedEffort = await client(scenario).execute({ ...input, reasoningEffort: 'medium' }, record)
+      assert.equal(limitedEffort.status, 'failed', limitedEffort.error)
+      assert.equal((await requests()).slice(requestCount).some((request) => request.method === 'session/prompt'), false)
       assert.ok(!events.some((event) => event.type === 'output' && /effort not found: medium/.test(event.event.text)),
         'Do not send medium when the selected model does not advertise that effort')
       assert.ok(!(await requests()).slice(requestCount).some((request) => request.params?.configId === 'effort'), scenario)
-      assert.ok(events.some((event) => event.type === 'output' && /keeping its current setting/.test(event.event.text)), scenario)
+      assert.ok(events.some((event) => event.type === 'output' && /does not advertise reasoning effort/.test(event.event.text)), scenario)
       if (scenario === 'limited-effort') {
-        assert.ok(events.some((event) => event.type === 'output' && /Available efforts: high\./.test(event.event.text)))
+        assert.ok(events.some((event) => event.type === 'output' && /Available efforts: high/.test(event.event.text)))
       }
     }
 
     for (const selection of [
-      { scenario: 'limited-effort', options: { thinkingLevel: 'high' as const } },
-      { scenario: 'grouped-effort', options: { thinkingLevel: 'medium' as const } },
-      { scenario: 'session-effort', options: { model: undefined, thinkingLevel: 'medium' as const } },
-      { scenario: 'session-effort', options: { model: undefined, thinkingLevel: 'medium' as const, resumeSessionId: 'session-test' } }
+      { scenario: 'limited-effort', options: { reasoningEffort: 'high' as const } },
+      { scenario: 'grouped-effort', options: { reasoningEffort: 'medium' as const } },
+      { scenario: 'grouped-effort', options: { reasoningEffort: 'medium' as const, resumeSessionId: 'session-test' } },
+      { scenario: 'session-effort', options: { model: undefined, reasoningEffort: 'medium' as const } },
+      { scenario: 'session-effort', options: { model: undefined, reasoningEffort: 'medium' as const, resumeSessionId: 'session-test' } }
     ]) {
       const requestCount = (await requests()).length
       const configured = await client(selection.scenario).execute({ ...input, ...selection.options }, () => {})
       assert.equal(configured.status, 'succeeded', configured.error)
-      const effortRequests = (await requests()).slice(requestCount).filter((request) => request.params?.configId === 'effort')
-      assert.deepEqual(effortRequests.map((request) => request.params.value), [selection.options.thinkingLevel])
+      const effortRequests = (await requests()).slice(requestCount).filter((request) => ['effort', 'native-reasoning'].includes(request.params?.configId))
+      assert.deepEqual(effortRequests.map((request) => request.params.value), [selection.options.reasoningEffort])
     }
 
-    for (const modelEffort of ['max', 'medium']) {
+    for (const reasoningEffort of ['max', 'medium']) {
       const requestCount = (await requests()).length
-      const nativeEffort = await client('native-effort').execute({ ...input, modelEffort }, () => {})
-      assert.equal(nativeEffort.status, 'succeeded', nativeEffort.error)
-      const effortRequests = (await requests()).slice(requestCount).filter((request) => request.params?.configId === 'effort')
-      assert.deepEqual(effortRequests.map((request) => request.params.value), modelEffort === 'max' ? ['max'] : [],
+      const nativeEffort = await client('native-effort').execute({ ...input, reasoningEffort }, () => {})
+      assert.equal(nativeEffort.status, reasoningEffort === 'max' ? 'succeeded' : 'failed', nativeEffort.error)
+      const effortRequests = (await requests()).slice(requestCount).filter((request) => ['effort', 'native-reasoning'].includes(request.params?.configId))
+      assert.deepEqual(effortRequests.map((request) => request.params.value), reasoningEffort === 'max' ? ['max'] : [],
         'Native model efforts must also be checked against the current ACP config')
     }
 
     events.length = 0
-    const rejectedEffort = await client('rejected-effort').execute({ ...input, thinkingLevel: 'medium' }, record)
-    assert.equal(rejectedEffort.status, 'succeeded', 'A stale advertised effort should not prevent prompting')
-    assert.ok(events.some((event) => event.type === 'output' && /OpenCode rejected thinking level medium/.test(event.event.text)))
+    const rejectedEffort = await client('rejected-effort').execute({ ...input, reasoningEffort: 'medium' }, record)
+    assert.equal(rejectedEffort.status, 'failed', 'Rejected explicit effort must prevent prompting')
+    assert.ok(events.some((event) => event.type === 'output' && /OpenCode rejected reasoning effort medium/.test(event.event.text)))
 
     for (const scenario of ['refusal', 'max-tokens', 'rpc-error', 'exit', 'malformed', 'version']) {
       const failed = await client(scenario).execute(input, () => {})

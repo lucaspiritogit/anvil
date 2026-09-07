@@ -38,8 +38,8 @@ test('model picker filters by company and search, and omits reasoning when metad
   const selectedModel = composer.getByRole('button', { name: 'Model: Claude Opus 4.6', exact: true })
   await expect(selectedModel).toBeFocused()
   await composer.getByRole('button', { name: 'More task options', exact: true }).click()
-  await expect(composer.getByRole('combobox', { name: 'Thinking level', exact: true })).toBeDisabled()
-  await expect(composer.getByRole('combobox', { name: 'Thinking level', exact: true }).locator('option:checked')).toHaveText('Agent default')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort', exact: true })).toBeDisabled()
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort', exact: true }).locator('option:checked')).toHaveText('Reasoning unavailable')
   await page.keyboard.press('Escape')
   await page.screenshot({ path: testInfo.outputPath('composer.png') })
   await composer.getByRole('textbox').fill('Build search')
@@ -48,7 +48,7 @@ test('model picker filters by company and search, and omits reasoning when metad
   const startedTasks = await page.evaluate(async () => (await window.anvil.tasks.list()).filter((task) => task.id.startsWith('started-')))
   expect(startedTasks).toHaveLength(1)
   expect(startedTasks[0]).toMatchObject({ agentId: 'opencode', model: 'anthropic/claude-opus-4-6' })
-  expect(startedTasks[0]).not.toHaveProperty('thinkingLevel')
+  expect(startedTasks[0]).not.toHaveProperty('reasoningEffort')
 })
 
 test('creator filters group models by credential provider and preserve the selected route', async ({ page }, testInfo) => {

@@ -11,8 +11,7 @@ import type {
   TaskEvent,
   TaskEventCategory,
   TaskUsage,
-  StreamName,
-  ThinkingLevel
+  StreamName
 } from '../../shared/types'
 
 const ANSI = /\u001b\[[0-9;?]*[ -\/]*[@-~]/g
@@ -23,8 +22,7 @@ export interface StartOptions {
   agent: AgentDefinition
   prompt: string
   model?: string
-  thinkingLevel?: ThinkingLevel
-  modelEffort?: string
+  reasoningEffort?: string
   cwd: string
   projectPath?: string
   /** Resume this agent session instead of starting a fresh one. */
@@ -82,7 +80,7 @@ export function buildArgs(
   prompt: string,
   model?: string,
   session?: string,
-  thinkingLevel?: ThinkingLevel
+  reasoningEffort?: string
 ): string[] {
   const out: string[] = []
   for (const token of template) {
@@ -102,12 +100,12 @@ export function buildArgs(
       out.push(token.replaceAll('{{session}}', session))
       continue
     }
-    if (token.includes('{{thinkingLevel}}')) {
-      if (!thinkingLevel) {
+    if (token.includes('{{reasoningEffort}}')) {
+      if (reasoningEffort === undefined) {
         if (out.length && out[out.length - 1].startsWith('-')) out.pop()
         continue
       }
-      out.push(token.replaceAll('{{thinkingLevel}}', thinkingLevel))
+      out.push(token.replaceAll('{{reasoningEffort}}', reasoningEffort))
       continue
     }
     out.push(token.replaceAll('{{prompt}}', prompt))
@@ -259,7 +257,7 @@ export class AgentProcessManager extends EventEmitter {
       this.startServer(opts, this.codexClient)
       return
     }
-    const { taskId, agent, prompt, model, thinkingLevel, cwd, resumeSessionId } = opts
+    const { taskId, agent, prompt, model, reasoningEffort, cwd, resumeSessionId } = opts
     this.usage.set(taskId, {
       inputTokens: 0,
       outputTokens: 0,
@@ -283,7 +281,7 @@ export class AgentProcessManager extends EventEmitter {
 
     const resuming = Boolean(resumeSessionId && agent.resumeArgs)
     const template = resuming ? agent.resumeArgs! : agent.args
-    const agentArgs = buildArgs(template, prompt, model, resumeSessionId, thinkingLevel)
+    const agentArgs = buildArgs(template, prompt, model, resumeSessionId, reasoningEffort)
     const args = [...resolved.prefixArgs, ...agentArgs]
 
     this.emitSystem(taskId, `$ ${agent.command} ${agentArgs.join(' ')}`)

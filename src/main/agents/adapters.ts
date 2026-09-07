@@ -7,7 +7,7 @@ import { OpenCodeAcpClient } from './opencode-acp'
 import { parseOpenCodeModels } from './opencode-models'
 import { resolveCommand } from './resolve'
 
-export type AgentModelCatalogue = Pick<ProviderModelList, 'models' | 'reasoningByModel' | 'effortsByModel'>
+export type AgentModelCatalogue = Pick<ProviderModelList, 'models' | 'reasoningByModel'>
 
 /** Provider discovery and execution share one registration point. */
 export interface AgentAdapter {

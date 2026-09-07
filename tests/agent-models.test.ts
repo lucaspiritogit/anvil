@@ -21,18 +21,13 @@ const expected = {
     'openrouter/deepseek/deepseek-v4': { options: [{ id: 'high', label: 'high' }, { id: 'max', label: 'max' }] },
     'provider/plain': { options: [] },
     'provider/custom': { options: [{ id: 'default', label: 'default' }, { id: 'custom-effort', label: 'custom-effort' }] }
-  },
-  effortsByModel: {
-    'openrouter/deepseek/deepseek-v4': ['high', 'max'],
-    'provider/plain': [],
-    'provider/custom': ['default', 'custom-effort']
   }
 }
 
 async function main(): Promise<void> {
   assert.deepEqual(parseOpenCodeModels(verboseOutput), expected)
   assert.deepEqual(parseOpenCodeModels(verboseOutput.replaceAll('\n', '\r\n')), expected)
-  assert.deepEqual(parseOpenCodeModels(''), { models: [], effortsByModel: {}, reasoningByModel: {} })
+  assert.deepEqual(parseOpenCodeModels(''), { models: [], reasoningByModel: {} })
   for (const malformed of ['provider/model\n', 'provider/model\n{\n', 'provider/model\n{\ninvalid\n}', 'provider/model\n{\n"variants": []\n}']) {
     assert.throws(() => parseOpenCodeModels(malformed))
   }

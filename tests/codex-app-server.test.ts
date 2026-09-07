@@ -95,6 +95,30 @@ async function main(): Promise<void> {
       excludeTmpdirEnvVar: false, excludeSlashTmp: false
     }, 'Headless validation needs network access for dependencies and local test servers')
 
+    for (const resumeSessionId of [undefined, 'thread-test']) {
+      await writeFile(transcript, '')
+      const configured = await client('success').execute({ ...input, model: 'reasoner', reasoningEffort: 'native-max', resumeSessionId }, () => {})
+      assert.equal(configured.status, 'succeeded', configured.error)
+      const calls = await requests()
+      const thread = calls.find((entry) => entry.method === (resumeSessionId ? 'thread/resume' : 'thread/start'))
+      assert.equal(thread.params.config.model_reasoning_effort, 'native-max')
+      assert.equal(thread.params.threadId, resumeSessionId)
+      assert.equal('reasoningEffort' in thread.params, false, 'Only protocol settings go on the wire')
+      assert.equal(calls.some((entry) => entry.method === 'model/list'), true)
+    }
+    for (const model of ['reasoner', 'plain', undefined]) {
+      await writeFile(transcript, '')
+      const invalid = await client('success').execute({ ...input, model, reasoningEffort: 'removed-option', resumeSessionId: 'thread-test' }, () => {})
+      assert.equal(invalid.status, 'failed')
+      assert.match(invalid.error!, /does not advertise reasoning effort removed-option/)
+      assert.equal((await requests()).some((entry) => entry.method.startsWith('thread/') || entry.method === 'turn/start'), false)
+    }
+    await writeFile(transcript, '')
+    const rejected = await client('rejected-effort').execute({ ...input, model: 'reasoner', reasoningEffort: 'native-max' }, () => {})
+    assert.equal(rejected.status, 'failed')
+    assert.match(rejected.error!, /Codex rejected thread options with reasoning effort native-max.*Effort rejected/)
+    assert.equal((await requests()).some((entry) => entry.method === 'turn/start'), false)
+
     events.length = 0
     const resumed = await client('success').execute({ ...input, resumeSessionId: 'thread-test' }, record)
     assert.equal(resumed.output, expected)

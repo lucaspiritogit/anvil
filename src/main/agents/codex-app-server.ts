@@ -5,12 +5,7 @@ import { CodexAppServerOutput } from './codex-app-server-output'
 import { codexTurn, type CodexObject, type CodexThreadOptions, type CodexTurn } from './codex-app-server-protocol'
 import { LazyAgentServer } from './lazy-agent-server'
 import { codexSandboxPolicy } from './codex-sandbox'
-import type { ThinkingLevel, ProviderModelList, ModelReasoningCapabilities } from '../../shared/types'
-
-/** Canonical levels to the reasoning efforts Codex understands. */
-const CODEX_EFFORTS: Record<ThinkingLevel, 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'> = {
-  off: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh'
-}
+import type { ProviderModelList, ModelReasoningCapabilities } from '../../shared/types'
 
 interface CodexExecution extends ConnectionHandlers {
   server(): CodexAppServerConnection | undefined
@@ -184,13 +179,19 @@ export class CodexAppServerClient implements AgentExecutor {
       }))
       input.signal?.throwIfAborted()
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
-      const options: CodexThreadOptions = {
+      if (input.reasoningEffort !== undefined) {
+        const catalogue = await request(this.listModels(input.cwd))
+        const capabilities = input.model ? catalogue.reasoningByModel?.[input.model] : undefined
+        if (!capabilities?.options.some((option) => option.id === input.reasoningEffort)) {
+          throw new Error(`Codex does not advertise reasoning effort ${input.reasoningEffort} for model ${input.model ?? '(unspecified)'}`)
+        }
+      }
+      const threadOptions: CodexThreadOptions = {
         cwd: input.cwd, model: input.model, approvalPolicy: 'never' as const, sandbox: 'workspace-write' as const,
-        thinkingLevel: input.thinkingLevel,
         // Anvil supplies project-scoped memory. Personal Codex memories and
         // plugin suggestions add unrelated context to every model request.
         config: {
-          ...(input.thinkingLevel ? { model_reasoning_effort: CODEX_EFFORTS[input.thinkingLevel] } : {}),
+          ...(input.reasoningEffort !== undefined ? { model_reasoning_effort: input.reasoningEffort } : {}),
           'memories.use_memories': false,
           'memories.generate_memories': false,
           'features.recommended_plugins': false,
@@ -199,12 +200,14 @@ export class CodexAppServerClient implements AgentExecutor {
           'shell_environment_policy.set.PATH': process.env.PATH ?? ''
         }
       }
-      // thinkingLevel is Anvil-side metadata; Codex receives it via config.model_reasoning_effort.
-      const { thinkingLevel, ...threadOptions } = options
-      void thinkingLevel
       const response = await request(input.resumeSessionId
         ? connection.request('thread/resume', { ...threadOptions, threadId: input.resumeSessionId })
-        : connection.request('thread/start', threadOptions))
+        : connection.request('thread/start', threadOptions)).catch((failure) => {
+        if (input.reasoningEffort !== undefined) {
+          throw new Error(`Codex rejected thread options with reasoning effort ${input.reasoningEffort}: ${failure instanceof Error ? failure.message : String(failure)}`)
+        }
+        throw failure
+      })
       // Anvil's sessionId is the resume handle. Codex resumes by thread.id, not
       // thread.sessionId, which can be shared by multiple forked threads.
       threadId = response.thread.id

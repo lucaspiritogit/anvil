@@ -1,4 +1,4 @@
-import type { TaskEvent as OutputTaskEvent, TaskStatus, TaskUsage, ThinkingLevel } from '../../shared/types'
+import type { TaskEvent as OutputTaskEvent, TaskStatus, TaskUsage } from '../../shared/types'
 
 /** One Anvil agent turn. Issue persistence and validation belong to Valence. */
 export interface TaskInput {
@@ -10,10 +10,8 @@ export interface TaskInput {
   /** Original project owning the Valence tracker, distinct from the worktree. */
   projectPath?: string
   model?: string
-  /** Requested reasoning-effort level; adapters translate it to their wire protocol. */
-  thinkingLevel?: ThinkingLevel
-  /** Native model-specific effort ID, checked against ACP options before use. */
-  modelEffort?: string
+  /** Selected agent/model option ID; adapters translate it to their wire protocol. */
+  reasoningEffort?: string
   resumeSessionId?: string
   signal?: AbortSignal
 }

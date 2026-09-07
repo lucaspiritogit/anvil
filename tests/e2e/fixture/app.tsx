@@ -68,15 +68,20 @@ window.anvil = {
       { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5' },
       { id: 'opencode', label: 'OpenCode', description: 'OpenCode agent', command: 'opencode', args: [], defaultModel: 'provider/model' }
     ],
-    models: async (agentId: string) => query.has('thinkingModels') && agentId === 'opencode' ? {
+    models: async (agentId: string) => query.has('reasoningModels') && agentId === 'opencode' ? {
       agentId,
       models: ['openrouter/deepseek/deepseek-v4', 'provider/reasoner', 'provider/plain'],
-      effortsByModel: {
-        'openrouter/deepseek/deepseek-v4': ['high', 'max'],
-        'provider/reasoner': ['low', 'medium', 'high'],
-        'provider/plain': []
+      reasoningByModel: {
+        'openrouter/deepseek/deepseek-v4': { options: ['high', 'max'].map((id) => ({ id, label: id })) },
+        'provider/reasoner': { options: ['low', 'medium', 'high'].map((id) => ({ id, label: id })), default: 'medium' },
+        'provider/plain': { options: [] }
       }
-    } : { agentId, models: agentId === 'codex' ? ['gpt-5', 'gpt-5-mini'] : ['provider/model'] }
+    } : {
+      agentId, models: agentId === 'codex' ? ['gpt-5', 'gpt-5-mini'] : ['provider/model'],
+      reasoningByModel: agentId === 'codex' ? Object.fromEntries(['gpt-5', 'gpt-5-mini'].map((model) => [model, {
+        options: [{ id: 'native-max', label: 'Maximum reasoning' }, { id: 'high', label: 'High' }], default: 'high'
+      }])) : { 'provider/model': { options: [] } }
+    }
   },
   settings: { get: async () => ({ defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, keybindings: DEFAULT_KEYBINDINGS }) },
   tasks: {
