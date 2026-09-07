@@ -88,6 +88,20 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     return
   }
   if (!initialized) process.exit(23)
+  if (message.method === 'model/list') {
+    if (scenario === 'models-error') return send({ id: message.id, error: { code: -32000, message: 'Discovery unavailable' } })
+    if (scenario === 'models-malformed') return respond(message.id, { data: [{ model: 'broken' }], nextCursor: null })
+    if (scenario === 'models-empty') return respond(message.id, { data: [], nextCursor: null })
+    if (scenario === 'models-hang') return
+    const data = message.params.cursor ? [{
+      id: 'plain-id', model: 'plain', supportedReasoningEfforts: [], defaultReasoningEffort: 'none'
+    }] : [{
+      id: 'catalogue-id', model: 'reasoner',
+      supportedReasoningEfforts: [{ reasoningEffort: 'native-max', description: 'Maximum reasoning' }, { reasoningEffort: 'low', description: 'Fast reasoning' }],
+      defaultReasoningEffort: 'native-max'
+    }]
+    return respond(message.id, { data, nextCursor: message.params.cursor && scenario !== 'models-cycle' ? null : 'page-2' })
+  }
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
     if (realpathSync(message.params.cwd) !== process.cwd() || realpathSync(process.env.PWD) !== process.cwd()) process.exit(24)
     if (!['read-only', 'workspace-write', 'danger-full-access'].includes(message.params.sandbox)) {

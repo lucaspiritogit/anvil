@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
@@ -35,6 +35,31 @@ async function main(): Promise<void> {
     process.exit(1)
   }, 30_000)
   try {
+    const discoveryClient = client('models')
+    assert.deepEqual(await discoveryClient.listModels(directory), {
+      models: ['reasoner', 'plain'],
+      reasoningByModel: {
+        reasoner: { options: [{ id: 'native-max', label: 'Maximum reasoning' }, { id: 'low', label: 'Fast reasoning' }], default: 'native-max' },
+        plain: { options: [], default: 'none' }
+      }
+    })
+    const discoveredRequests = await requests()
+    assert.deepEqual(discoveredRequests.filter((entry) => entry.method === 'model/list').map((entry) => entry.params), [{}, { cursor: 'page-2' }])
+    assert.equal(discoveredRequests.some((entry) => entry.method === 'thread/start'), false)
+    const sharedExecution = await discoveryClient.execute(input, () => {})
+    assert.equal(sharedExecution.status, 'succeeded')
+    assert.equal((await requests()).filter((entry) => entry.method === 'initialize').length, 1, 'Discovery and execution reuse the server')
+    await discoveryClient.close()
+    assert.deepEqual(await client('models-empty').listModels(directory), { models: [], reasoningByModel: {} })
+    await assert.rejects(client('models-error').listModels(directory), /Discovery unavailable/)
+    await assert.rejects(client('models-malformed').listModels(directory), /string|reasoning/)
+    await assert.rejects(client('models-cycle').listModels(directory), /pagination cursor/)
+    const hangingDiscovery = client('models-hang')
+    const pendingDiscovery = hangingDiscovery.listModels(directory)
+    const rejectedDiscovery = assert.rejects(pendingDiscovery, /closed|shutting down/)
+    await hangingDiscovery.close()
+    await rejectedDiscovery
+    await writeFile(transcript, '')
     const result = await client('success').execute(input, record)
     assert.equal(result.status, 'succeeded', result.error)
     assert.equal(result.sessionId, 'thread-test')

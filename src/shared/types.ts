@@ -62,12 +62,20 @@ export interface ProjectGitStatus {
 
 /**
  * Where an agent's selectable models come from. `command` runs a CLI that
- * prints one model identifier per line, or OpenCode's verbose metadata when
- * requested by `format`. `static` is a list for CLIs that cannot report their own.
+ * prints one model identifier per line. Adapters discover native capabilities.
+ * `static` is a list for CLIs that cannot report their own.
  */
 export type ModelSource =
-  | { kind: 'command'; command: string; args: string[]; format?: 'opencode-verbose' }
+  | { kind: 'adapter'; adapterId: string }
+  | { kind: 'command'; command: string; args: string[] }
   | { kind: 'static'; models: string[] }
+
+export interface ModelReasoningCapabilities {
+  /** Opaque, model-scoped protocol values. Empty means no configurable reasoning. */
+  options: Array<{ id: string; label: string }>
+  /** Only present when the provider advertises a default. */
+  default?: string
+}
 
 /**
  * The models one agent offers, spelled the way that agent's CLI expects them.
@@ -79,6 +87,8 @@ export interface ProviderModelList {
   models: string[]
   /** Native effort IDs advertised by each model. An empty list means no selector. */
   effortsByModel?: Record<string, string[]>
+  /** Missing entries mean discovery is unavailable, never an empty option list. */
+  reasoningByModel?: Record<string, ModelReasoningCapabilities>
   /** Why the list came back empty; unset when the source succeeded. */
   error?: string
 }

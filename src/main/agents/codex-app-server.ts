@@ -5,7 +5,7 @@ import { CodexAppServerOutput } from './codex-app-server-output'
 import { codexTurn, type CodexObject, type CodexThreadOptions, type CodexTurn } from './codex-app-server-protocol'
 import { LazyAgentServer } from './lazy-agent-server'
 import { codexSandboxPolicy } from './codex-sandbox'
-import type { ThinkingLevel } from '../../shared/types'
+import type { ThinkingLevel, ProviderModelList, ModelReasoningCapabilities } from '../../shared/types'
 
 /** Canonical levels to the reasoning efforts Codex understands. */
 const CODEX_EFFORTS: Record<ThinkingLevel, 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'> = {
@@ -26,6 +26,58 @@ export class CodexAppServerClient implements AgentExecutor {
 
   close(): Promise<void> {
     return this.server.close()
+  }
+
+  private connection(cwd: string, onCreate?: (server: CodexAppServerConnection) => void): Promise<CodexAppServerConnection> {
+    return this.server.get(() => {
+      const server: CodexAppServerConnection = new CodexAppServerConnection(cwd, this.options, {
+        notification: (method, params) => {
+          for (const active of this.executions) if (active.server() === server) active.notification(method, params)
+        },
+        serverRequest: (method, params) => {
+          const active = [...this.executions].find((entry) => entry.server() === server && entry.thread() === params.threadId)
+          if (active) return active.serverRequest(method, params)
+          switch (method) {
+            case 'item/commandExecution/requestApproval':
+            case 'item/fileChange/requestApproval': return { decision: 'cancel' }
+            case 'item/permissions/requestApproval': return { permissions: {}, scope: 'turn' }
+            case 'mcpServer/elicitation/request': return { action: 'cancel', content: null }
+            case 'item/tool/requestUserInput': return { answers: {} }
+            default: throw new CodexRpcError(-32601, `Anvil does not implement Codex server request: ${method}`)
+          }
+        },
+        diagnostic: (text) => {
+          for (const active of this.executions) if (active.server() === server) active.diagnostic(text)
+        }
+      })
+      onCreate?.(server)
+      return server
+    }, async (server) => {
+      await server.request('initialize', { clientInfo: { name: 'anvil', title: 'Anvil', version: '0.1.0' } })
+      server.initialized()
+    })
+  }
+
+  async listModels(cwd: string): Promise<Pick<ProviderModelList, 'models' | 'reasoningByModel'>> {
+    const connection = await this.connection(cwd)
+    const reasoning = new Map<string, ModelReasoningCapabilities>()
+    const cursors = new Set<string>()
+    let cursor: string | undefined
+    do {
+      const page = await connection.request('model/list', { cursor })
+      for (const model of page.data) {
+        reasoning.set(model.model, {
+          options: model.supportedReasoningEfforts.map((option) => ({ id: option.reasoningEffort, label: option.description })),
+          default: model.defaultReasoningEffort
+        })
+      }
+      cursor = page.nextCursor ?? undefined
+      if (cursor !== undefined) {
+        if (cursors.has(cursor)) throw new Error('Codex model/list repeated a pagination cursor')
+        cursors.add(cursor)
+      }
+    } while (cursor !== undefined)
+    return { models: [...reasoning.keys()], reasoningByModel: Object.fromEntries(reasoning) }
   }
 
   async execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult> {
@@ -126,33 +178,9 @@ export class CodexAppServerClient implements AgentExecutor {
       input.signal?.addEventListener('abort', cancel, { once: true })
       const sandboxPolicy = await codexSandboxPolicy(input.cwd, input.projectPath)
       input.signal?.throwIfAborted()
-      connection = await request(this.server.get(() => {
-        output.line(`$ ${this.options.command ?? 'codex'} ${(this.options.args ?? ['app-server', '--listen', 'stdio://']).join(' ')}`, 'system', 'system')
-        const server: CodexAppServerConnection = new CodexAppServerConnection(input.cwd, this.options, {
-          notification: (method, params) => {
-            for (const active of this.executions) if (active.server() === server) active.notification(method, params)
-          },
-          serverRequest: (method, params) => {
-            const active = [...this.executions].find((entry) => entry.server() === server && entry.thread() === params.threadId)
-            if (active) return active.serverRequest(method, params)
-            switch (method) {
-              case 'item/commandExecution/requestApproval':
-              case 'item/fileChange/requestApproval': return { decision: 'cancel' }
-              case 'item/permissions/requestApproval': return { permissions: {}, scope: 'turn' }
-              case 'mcpServer/elicitation/request': return { action: 'cancel', content: null }
-              case 'item/tool/requestUserInput': return { answers: {} }
-              default: throw new CodexRpcError(-32601, `Anvil does not implement Codex server request: ${method}`)
-            }
-          },
-          diagnostic: (text) => {
-            for (const active of this.executions) if (active.server() === server) active.diagnostic(text)
-          }
-        })
+      connection = await request(this.connection(input.cwd, (server) => {
         connection = server
-        return server
-      }, async (server) => {
-        await server.request('initialize', { clientInfo: { name: 'anvil', title: 'Anvil', version: '0.1.0' } })
-        server.initialized()
+        output.line(`$ ${this.options.command ?? 'codex'} ${(this.options.args ?? ['app-server', '--listen', 'stdio://']).join(' ')}`, 'system', 'system')
       }))
       input.signal?.throwIfAborted()
       output.line(`cwd: ${input.cwd}`, 'system', 'system')

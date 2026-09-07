@@ -4,8 +4,7 @@ import { EventEmitter } from 'node:events'
 import { resolveCommand } from './resolve'
 import { closeAgentServer, killAgentServer } from './agent-server-process'
 import { parseAgentLine } from './output'
-import { OpenCodeAcpClient } from './opencode-acp'
-import { CodexAppServerClient } from './codex-app-server'
+import { getAgentAdapter } from './adapters'
 import type { AgentExecutor, TaskResult } from './agent-executor'
 import type {
   AgentDefinition,
@@ -127,8 +126,8 @@ export class AgentProcessManager extends EventEmitter {
   private shutdown?: Promise<void>
 
   constructor(
-    private readonly openCodeClient: AgentExecutor = new OpenCodeAcpClient(),
-    private readonly codexClient: AgentExecutor = new CodexAppServerClient()
+    private readonly openCodeClient: AgentExecutor = getAgentAdapter('opencode').createExecutor(),
+    private readonly codexClient: AgentExecutor = getAgentAdapter('codex').createExecutor()
   ) {
     super()
   }

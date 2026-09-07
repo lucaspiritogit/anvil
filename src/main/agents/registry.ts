@@ -14,11 +14,6 @@ export const GIT_SYSTEM_PROMPT = [
   'Do not push; the branch stays local for review.'
 ].join('\n')
 
-/**
- * Static picker defaults until model discovery uses app-server's model/list.
- */
-const CODEX_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-6-astra']
-
 export const BUILTIN_AGENTS: AgentDefinition[] = [
   {
     id: 'opencode',
@@ -28,7 +23,7 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     args: ['acp'],
     executionProtocol: 'acp',
     defaultModel: 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
-    models: { kind: 'command', command: 'opencode', args: ['models', '--verbose'], format: 'opencode-verbose' }
+    models: { kind: 'adapter', adapterId: 'opencode' }
   },
   {
     id: 'codex',
@@ -37,8 +32,8 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     command: 'codex',
     args: ['app-server', '--listen', 'stdio://'],
     executionProtocol: 'codex-app-server',
-    defaultModel: CODEX_MODELS[0],
-    models: { kind: 'static', models: CODEX_MODELS }
+    defaultModel: 'gpt-5.6-sol',
+    models: { kind: 'adapter', adapterId: 'codex' }
   }
 ]
 
