@@ -2,6 +2,62 @@ import { expect, test } from '@playwright/test'
 
 const fixture = '/tests/e2e/fixture/'
 
+test('task status icons and highlights remain visible when selected, hovered, and settled', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1100, height: 900 })
+  await page.goto(fixture)
+  const sidebar = page.getByRole('complementary')
+  const approved = sidebar.getByRole('button', { name: 'Open task: Polish task cards', exact: true })
+  const review = sidebar.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
+  const failed = sidebar.getByRole('button', { name: 'Open task: Retry provider setup', exact: true })
+  await expect(approved.getByRole('img', { name: 'Approved', exact: true })).toHaveCSS('color', 'rgb(124, 195, 121)')
+  await expect(review.getByRole('img', { name: 'Ready for review', exact: true })).toHaveClass(/text-orange-400/)
+  await expect(failed.getByRole('img', { name: 'Failed', exact: true })).toHaveCSS('color', 'rgb(224, 108, 117)')
+  await expect(approved.locator('..')).toHaveClass(/bg-ok\/8/)
+  await expect(review.locator('..')).toHaveClass(/bg-orange-400\/8/)
+  await approved.click()
+  await approved.hover()
+  await expect(approved.getByRole('img', { name: 'Approved', exact: true })).toBeVisible()
+  await expect(approved.locator('..')).toHaveClass(/bg-ok\/8/)
+  await expect(approved.locator('..')).toHaveClass(/outline-offset-1/)
+  await page.screenshot({ path: testInfo.outputPath('sidebar-task-statuses.png') })
+  await sidebar.getByRole('button', { name: 'Settle task: Polish task cards', exact: true }).click()
+  const settled = sidebar.getByRole('region', { name: 'Settled tasks' })
+  await settled.getByRole('button', { name: /^Settled/ }).click()
+  const settledTask = settled.getByRole('button', { name: 'Open task: Polish task cards', exact: true })
+  await expect(settledTask.getByRole('img', { name: 'Approved', exact: true })).toBeVisible()
+  await expect(settledTask.locator('..')).toHaveClass(/bg-ok\/8/)
+})
+
+test('task updates replace the sidebar status without leaving stale success indicators', async ({ page }) => {
+  await page.goto(fixture)
+  const task = page.getByRole('button', { name: 'Open task: Build streaming support', exact: true })
+  const scenarios = [
+    { status: 'succeeded', deliveryStatus: 'reviewable', label: 'Ready for review' },
+    { status: 'succeeded', deliveryStatus: 'approved', label: 'Approved' },
+    { status: 'running', deliveryStatus: 'approved', label: 'Working' },
+    { status: 'failed', deliveryStatus: 'reviewable', label: 'Failed' },
+    { status: 'succeeded', deliveryStatus: 'failed', label: 'Failed' },
+    { status: 'cancelled', deliveryStatus: 'approved', label: null },
+    { status: 'succeeded', deliveryStatus: 'no_changes', label: null }
+  ] as const
+  await expect(task.getByRole('img', { name: 'Working', exact: true })).toBeVisible()
+  for (const scenario of scenarios) {
+    await page.evaluate(async ({ status, deliveryStatus }) => {
+      const current = (await window.anvil.tasks.list()).find((task) => task.id === 'running')!
+      window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...current, status, deliveryStatus } }))
+    }, scenario)
+    if (scenario.label) {
+      await expect(task.getByRole('img', { name: scenario.label, exact: true })).toBeVisible()
+      await expect(task.getByRole('img')).toHaveCount(1)
+    } else {
+      await expect(task.getByRole('img')).toHaveCount(0)
+    }
+    if (scenario.label !== 'Approved' && scenario.label !== 'Ready for review') {
+      await expect(task.locator('..')).not.toHaveClass(/bg-(ok|orange-400)\/8/)
+    }
+  }
+})
+
 test('search filters active and settled tasks by title, project, or branch', async ({ page }) => {
   await page.goto(fixture)
   const sidebar = page.getByRole('complementary')

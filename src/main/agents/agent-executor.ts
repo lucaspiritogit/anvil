@@ -7,6 +7,8 @@ export interface TaskInput {
   prompt: string
   /** Absolute project or task worktree path. */
   cwd: string
+  /** Original project owning the Valence tracker, distinct from the worktree. */
+  projectPath?: string
   model?: string
   resumeSessionId?: string
   signal?: AbortSignal
@@ -40,4 +42,6 @@ export interface AgentExecutor {
    * and cancellation return a result; no database or renderer dependencies belong here.
    */
   execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult>
+  /** Permanently stops this executor and waits for its server and tools to exit. */
+  close?(): Promise<void>
 }

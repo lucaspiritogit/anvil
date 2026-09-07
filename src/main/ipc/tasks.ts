@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { getAgent } from '../agents/registry'
-import { planningPrompt } from '../agents/task-results'
+import { planningPrompt } from '../agents/task-prompts'
 import type { TaskMemory } from '../memory/task-memory'
 import type { TaskContext } from '../tasks/context'
 import type { TaskEvents } from '../tasks/events'
@@ -92,7 +92,7 @@ export function registerTaskHandlers({
       }
       try {
         initializeTask(task.id, project.path)
-        const prompt = planningPrompt(await promptWithProjectMemory(project.id, input.prompt))
+        const prompt = planningPrompt(await promptWithProjectMemory(project.id, input.prompt), task.id, project.path)
         requireRunningTask()
 
         // Without Git there is no worktree or diff. Run directly in the project folder.
@@ -110,7 +110,8 @@ export function registerTaskHandlers({
               agent,
               prompt,
               model,
-              cwd: project.path
+              cwd: project.path,
+              projectPath: project.path
             })
           })
           return unmanagedTask
@@ -126,6 +127,7 @@ export function registerTaskHandlers({
           baseCommit: prepared.baseCommit,
           worktreePath: prepared.worktreePath
         })!
+        recordSystemEvent(task.id, `Task worktree: ${prepared.worktreePath}\nBranch: ${prepared.branchName}\nStarting snapshot: ${prepared.baseCommit}`)
         if (prepared.initializedRepository) {
           recordSystemEvent(task.id, 'Created the repository initial commit.')
         }
@@ -136,7 +138,8 @@ export function registerTaskHandlers({
             agent,
             prompt,
             model,
-            cwd: prepared.cwd
+            cwd: prepared.cwd,
+            projectPath: project.path
           })
         })
         return preparedTask

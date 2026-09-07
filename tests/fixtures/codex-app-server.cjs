@@ -16,7 +16,7 @@ const usage = (total) => notify('thread/tokenUsage/updated', { tokenUsage: {
   last: { inputTokens: 2, cachedInputTokens: 1, outputTokens: 1, totalTokens: 3 }, modelContextWindow: 100000
 } })
 const delta = (text, extra = {}) => notify('item/agentMessage/delta', { itemId: 'message', delta: text, ...extra })
-const resultText = 'Done ✓\n<task-result>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</task-result>'
+const resultText = 'Done ✓\nCompleted issue-test through vl. Tests passed.'
 
 if (scenario === 'cancel-hang') process.on('SIGTERM', () => {})
 

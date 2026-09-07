@@ -416,15 +416,22 @@ export function TaskView({ task }: Props): JSX.Element {
           <StatBlock
             label="Tokens"
             value={
-              <span className="flex flex-wrap gap-x-2.5">
-                <span>
-                  {formatTokens(task.inputTokens)}
-                  <span className="ml-1 text-dim/60">in</span>
+              <span className="flex flex-col gap-1">
+                <span className="flex flex-wrap gap-x-2.5">
+                  <span>
+                    {formatTokens(task.inputTokens)}
+                    <span className="ml-1 text-dim/60">in</span>
+                  </span>
+                  <span>
+                    {formatTokens(task.outputTokens)}
+                    <span className="ml-1 text-dim/60">out</span>
+                  </span>
                 </span>
-                <span>
-                  {formatTokens(task.outputTokens)}
-                  <span className="ml-1 text-dim/60">out</span>
-                </span>
+                {task.cachedTokens > 0 && (
+                  <span className="text-xs text-dim/70">
+                    {formatTokens(task.cachedTokens)} cached input
+                  </span>
+                )}
               </span>
             }
             detail={tokenBreakdown(task)}

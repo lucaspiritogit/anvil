@@ -16,43 +16,13 @@ const SECTION_HEAD = 'flex gap-4 items-center justify-between mb-4'
 const SECTION_TITLE = 'mb-1 text-sm font-semibold'
 const SECTION_NOTE = 'text-xs text-dim'
 
-function UsageMeter({
-  label,
-  value,
-  limit,
-  formattedValue,
-  formattedLimit
-}: {
-  label: string
-  value: number
-  limit: number | null
-  formattedValue: string
-  formattedLimit: string
-}): JSX.Element {
-  const percent = limit ? Math.min(100, (value / limit) * 100) : 0
+function UsageStat({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div>
-      <div className="flex justify-between mb-2 text-xs">
-        <span>{label}</span>
-        <span className="text-dim">
-          {limit ? `${formattedValue} of ${formattedLimit}` : `${formattedValue} used`}
-        </span>
-      </div>
-      <div
-        className={cn(
-          'h-1.5 overflow-hidden bg-canvas rounded-full',
-          !limit && 'opacity-55'
-        )}
-      >
-        <span
-          className={cn(
-            'block h-full rounded-[inherit]',
-            limit && value >= limit ? 'bg-danger' : 'bg-accent'
-          )}
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-      {!limit && <span className="block mt-1.5 text-[10px] text-dim">No monthly limit set</span>}
+    <div className="min-w-0">
+      <dt className="text-xs text-dim">{label}</dt>
+      <dd className="mt-1.5 break-words text-[32px] font-semibold leading-tight tracking-tight tabular-nums text-fg">
+        {value}
+      </dd>
     </div>
   )
 }
@@ -129,29 +99,17 @@ export function ProjectOverview({ project, tasks }: Props): JSX.Element {
 
         <GitAlert project={project} />
 
-        <section className={cn(card, SPREAD)}>
+        <section aria-labelledby="monthly-usage-title" className={cn(card, SPREAD)}>
           <div className={SECTION_HEAD}>
             <div>
-              <h2 className={SECTION_TITLE}>Usage this month</h2>
+              <h2 id="monthly-usage-title" className={SECTION_TITLE}>Usage this month</h2>
               <p className={SECTION_NOTE}>Reported by the agent services used for this project.</p>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-6 max-[760px]:grid-cols-1">
-            <UsageMeter
-              label="Tokens"
-              value={monthUsage.tokens}
-              limit={project.monthlyTokenLimit}
-              formattedValue={formatTokens(monthUsage.tokens)}
-              formattedLimit={formatTokens(project.monthlyTokenLimit ?? 0)}
-            />
-            <UsageMeter
-              label="Cost"
-              value={monthUsage.cost}
-              limit={project.monthlyCostLimitUsd}
-              formattedValue={formatCost(monthUsage.cost)}
-              formattedLimit={formatCost(project.monthlyCostLimitUsd ?? 0)}
-            />
-          </div>
+          <dl className="grid grid-cols-2 gap-6 max-[760px]:grid-cols-1">
+            <UsageStat label="Tokens used" value={formatTokens(monthUsage.tokens)} />
+            <UsageStat label="Cost in USD" value={formatCost(monthUsage.cost)} />
+          </dl>
           {monthUsage.unreportedCosts > 0 && (
             <p className="mt-3 text-[11px] text-dim">
               {monthUsage.unreportedCosts} task{monthUsage.unreportedCosts === 1 ? '' : 's'} did not
@@ -162,7 +120,7 @@ export function ProjectOverview({ project, tasks }: Props): JSX.Element {
       </div>
       <div className="shrink-0 px-8 pt-3 pb-6 max-[980px]:px-[22px]">
         <div className={SPREAD}>
-          <TaskComposer key={project.id} project={project} />
+          <TaskComposer key={project.id} />
         </div>
       </div>
     </div>

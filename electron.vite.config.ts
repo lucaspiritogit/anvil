@@ -1,17 +1,25 @@
 import { resolve } from 'node:path'
+import { buildValence } from './scripts/build-valence'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
-    // AI and ACP SDK packages are ESM-only. Bundle them into Electron's CommonJS main
-    // output instead of emitting runtime require() calls that Electron rejects.
-    // Valence stays external so its migrations resolve relative to its installed package.
-    plugins: [externalizeDepsPlugin({ exclude: ['@ai-sdk/openai-compatible', 'ai', '@agentclientprotocol/sdk'] })],
+    plugins: [
+      externalizeDepsPlugin({ exclude: ['@ai-sdk/openai-compatible', 'ai', '@agentclientprotocol/sdk'] }),
+      {
+        name: 'bundle-valence',
+        async closeBundle() {
+          await buildValence(resolve(__dirname, 'out'))
+        }
+      }
+    ],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/main/index.ts') }
+        input: { index: resolve(__dirname, 'src/main/index.ts') },
+        external: ['valence'],
+        output: { paths: { valence: '../valence/dist/index.js' } }
       }
     }
   },

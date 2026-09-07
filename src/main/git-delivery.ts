@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
-import { join, relative, resolve } from 'node:path'
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { isAbsolute, join, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
 import type {
   ProjectGitStatus,
@@ -52,10 +53,11 @@ export interface FinalizedWorktree {
   cleanupWarning?: string
 }
 
-async function git(cwd: string, args: string[], acceptedCodes: number[] = [0]): Promise<GitResult> {
+async function git(cwd: string, args: string[], acceptedCodes: number[] = [0], env?: NodeJS.ProcessEnv): Promise<GitResult> {
   try {
     const result = await execFileAsync('git', ['-C', cwd, ...args], {
       encoding: 'utf8',
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...env },
       windowsHide: true,
       maxBuffer: 32 * 1024 * 1024
     })
@@ -185,15 +187,15 @@ export class GitDeliveryManager {
 
       const branchResult = await git(repoRoot, ['branch', '--show-current'])
       const baseBranch = branchResult.stdout.trim() || baseCommit.slice(0, 12)
-      // A starting point only — the agent is free to rename it.
-      const branchName = `${slug(title)}-${taskId.slice(0, 8)}`
-      const projectRelativePath = relative(resolve(repoRoot), resolve(projectPath))
-      if (projectRelativePath.startsWith('..')) {
+      const branchName = `${slug(title)}-${taskId}`
+      const projectRelativePath = relative(await realpath(repoRoot), await realpath(projectPath))
+      if (projectRelativePath === '..' || projectRelativePath.startsWith(`..${sep}`) || isAbsolute(projectRelativePath)) {
         throw new Error('Project path is outside its Git repository')
       }
 
       await mkdir(this.worktreesRoot, { recursive: true })
       const worktreePath = join(this.worktreesRoot, taskId)
+      baseCommit = await this.snapshot(repoRoot, baseCommit, taskId)
       await git(repoRoot, ['worktree', 'add', '-b', branchName, worktreePath, baseCommit])
 
       return {
@@ -205,6 +207,29 @@ export class GitDeliveryManager {
         initializedRepository
       }
     })
+  }
+
+  /** Capture local code without staging, stashing, or committing on the user's branch. */
+  private async snapshot(repoRoot: string, parent: string, taskId: string): Promise<string> {
+    const directory = await mkdtemp(join(tmpdir(), 'anvil-snapshot-'))
+    const env = { GIT_INDEX_FILE: join(directory, 'index') }
+    try {
+      await git(repoRoot, ['read-tree', parent], [0], env)
+      // Runtime databases and secrets are not task inputs. Git's ignore rules
+      // also keep dependency directories and other ignored files out.
+      const paths = ['.', ':(exclude,glob)**/.valence/**', ':(exclude,glob)**/.anvil-composer/**', ':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*']
+      const managedRelativePath = relative(await realpath(repoRoot), await realpath(this.worktreesRoot))
+      if (managedRelativePath && managedRelativePath !== '..' && !managedRelativePath.startsWith(`..${sep}`) && !isAbsolute(managedRelativePath)) {
+        paths.push(`:(exclude,literal)${managedRelativePath}`)
+      }
+      await git(repoRoot, ['add', '--all', '--', ...paths], [0], env)
+      const tree = (await git(repoRoot, ['write-tree'], [0], env)).stdout.trim()
+      const parentTree = (await git(repoRoot, ['rev-parse', `${parent}^{tree}`])).stdout.trim()
+      if (tree === parentTree) return parent
+      return (await git(repoRoot, ['commit-tree', tree, '-p', parent, '-m', `Anvil task ${taskId} starting snapshot`], [0], env)).stdout.trim()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   }
 
   private async withRepoLock<T>(repoRoot: string, action: () => Promise<T>): Promise<T> {
@@ -240,7 +265,7 @@ export class GitDeliveryManager {
       await git(repoRoot, ['worktree', 'add', worktreePath, branchName])
 
       const baseCommit = (await git(worktreePath, ['rev-parse', 'HEAD'])).stdout.trim()
-      const projectRelativePath = relative(resolve(repoRoot), resolve(projectPath))
+      const projectRelativePath = relative(await realpath(repoRoot), await realpath(projectPath))
       return {
         baseBranch: branchName,
         branchName,

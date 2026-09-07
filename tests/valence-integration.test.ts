@@ -18,19 +18,24 @@ async function main(): Promise<void> {
   const task = await handlers.get('tasks:start')!(null, { projectId: 'project', agentId: 'codex', prompt: 'App change' })
   const tick = async (): Promise<void> => { for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve)) }
   await tick()
-  agentProcesses.result(task.id, { items: [{ ...input, key: 'change', title: 'App change', labels: [], dependencies: [], priority: 'low' }] })
+  agentProcesses.plan(task.id, [{ ...input, key: 'change', title: 'App change', labels: [], dependencies: [], priority: 'low' }])
   await tick()
   const issue = tracker.list().find((entry) => entry.title === 'App change')
   assert.ok(issue, 'Anvil-created issues must be visible to another Valence client')
   assert.equal(issue.status, 'working')
   assert.equal(tracker.get(unrelated.id).status, 'queued', 'Anvil must not claim unrelated higher-priority issues')
-  agentProcesses.result(task.id, { id: issue.id, status: 'complete', checklist: [true], evidence: 'Focused test passed' })
+  assert.match(agentProcesses.starts.at(-1)!.prompt, /vl --project/)
+  // Model an agent completing through vl before its final turn report arrives.
+  tracker.complete(issue.id, { checklist: [true], evidence: 'CLI validation passed' })
+  const completedAt = tracker.get(issue.id).completedAt
+  agentProcesses.finishTurn(task.id, 'Finished. See Valence for validation evidence.')
   await tick()
-  assert.equal(tracker.get(issue.id).evidence, 'Focused test passed')
+  assert.equal(tracker.get(issue.id).evidence, 'CLI validation passed')
+  assert.equal(tracker.get(issue.id).completedAt, completedAt)
   assert.equal(store.getTask(task.id)?.status, 'succeeded')
   const removing = await handlers.get('tasks:start')!(null, { projectId: 'project', agentId: 'codex', prompt: 'Remove project' })
   await tick()
-  agentProcesses.result(removing.id, { items: [{ ...input, key: 'removing' }] })
+  agentProcesses.plan(removing.id, [{ ...input, key: 'removing' }])
   await tick()
   const removingIssueId = store.getTaskExecution(removing.id)!.currentIssueId!
   await handlers.get('projects:remove')!(null, 'project')

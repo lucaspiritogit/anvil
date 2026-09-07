@@ -30,7 +30,7 @@ async function main(): Promise<void> {
     }
     store.addTask(task)
     store.appendEvent({ id: `${id}-output`, taskId: id, ts: now, stream: 'stdout', kind: 'output', category: 'message', text: 'Task completed' })
-    store.saveTaskExecution({ taskId: id, projectPath: testHome, phase: 'complete', issueIds: [], currentIssueId: null, eventOffset: 0, error: null })
+    store.saveTaskExecution({ taskId: id, projectPath: testHome, phase: 'complete', issueIds: [], currentIssueId: null, error: null })
     return task
   }
   try {

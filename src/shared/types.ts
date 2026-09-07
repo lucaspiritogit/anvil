@@ -10,7 +10,6 @@ export interface TaskExecutionState {
   issueIds: string[]
   currentIssueId: string | null
   error: string | null
-  eventOffset: number
 }
 
 export type TaskStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
@@ -86,7 +85,7 @@ export interface AgentDefinition {
   models?: ModelSource
   /** Omitted for legacy CLI execution. OpenCode uses ACP; Codex uses its own server protocol. */
   executionProtocol?: 'acp' | 'codex-app-server'
-  outputProtocol?: 'opencode-json' | 'codex-json' | 'pi-json'
+  outputProtocol?: 'opencode-json' | 'codex-json'
 }
 
 export type StreamName = 'stdout' | 'stderr' | 'system'

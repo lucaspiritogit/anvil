@@ -30,6 +30,16 @@ let tasks: Task[] = [
   { ...base, id: 'failed', title: 'Retry provider setup', prompt: 'Retry provider setup', projectId: projects[1].id, status: 'failed', deliveryStatus: 'agent_failed', reviewedAt: undefined },
   { ...base, id: 'settled', title: 'Clean up old logs', prompt: 'Clean up old logs', settledAt: now - 60000 }
 ]
+if (query.has('usage')) {
+  tasks = tasks.map((task) => task.id === 'approved'
+    ? { ...task, startedAt: now, inputTokens: 126268, outputTokens: 1759, totalTokens: 128027, costUsd: 12.34 }
+    : task)
+}
+if (query.has('taskUsage')) {
+  tasks = tasks.map((task) => task.id === 'output'
+    ? { ...task, inputTokens: 688809, outputTokens: 3639, cachedTokens: 638208, totalTokens: 692448 }
+    : task)
+}
 tasks = tasks.map((task) => ({ ...task, branchName: `anvil/${task.id === 'approved' ? 'polish-task-cards' : task.id}` }))
 const updates = new Set<(task: Task) => void>()
 const update = (task: Task): Task => {
@@ -37,6 +47,7 @@ const update = (task: Task): Task => {
   updates.forEach((listener) => listener(task))
   return task
 }
+window.addEventListener('fixture:task-updated', (event) => update((event as CustomEvent<Task>).detail))
 const events = (taskId: string): TaskEvent[] => {
   if (taskId !== 'output') return []
   if (query.has('tools')) return [

@@ -30,11 +30,10 @@ async function main(): Promise<void> {
   }
   const complete = async (): Promise<Task> => {
     const task = await start()
-    agentProcesses.result(task.id, { items: [issue] })
+    agentProcesses.plan(task.id, [issue])
     await tick()
-    agentProcesses.result(task.id, {
-      id: store.getTaskExecution(task.id)!.currentIssueId,
-      status: 'complete', checklist: [true], evidence: 'Test passed'
+    agentProcesses.completeIssue(task.id, store.getTaskExecution(task.id)!.currentIssueId!, {
+      checklist: [true], evidence: 'Test passed'
     })
     await tick()
     return store.getTask(task.id)!
@@ -67,21 +66,21 @@ async function main(): Promise<void> {
   assert.throws(() => call('tasks:delete', null), /task ID/)
 
   const active = await start()
-  agentProcesses.result(active.id, { items: [issue, { ...issue, key: 'second' }] })
+  agentProcesses.plan(active.id, [issue, { ...issue, key: 'second' }])
   await tick()
   assert.ok(agentProcesses.isRunning(active.id))
   const startsBeforeDelete = agentProcesses.starts.length
   call('tasks:delete', active.id)
   assert.equal(agentProcesses.isRunning(active.id), false)
   // A real child process can still flush buffered output and exit after SIGTERM.
-  agentProcesses.result(active.id, { items: [issue] })
+  agentProcesses.finishTurn(active.id, 'Late buffered output')
   agentProcesses.emit('usage', { taskId: active.id, inputTokens: 1, outputTokens: 1, cachedTokens: 0, totalTokens: 2, costUsd: null })
   await tick()
   assertDeleted(active.id)
   assert.equal(agentProcesses.starts.length, startsBeforeDelete)
 
   const between = await start()
-  agentProcesses.result(between.id, { items: [issue] })
+  agentProcesses.plan(between.id, [issue])
   const startsBeforeQueuedIssue = agentProcesses.starts.length
   call('tasks:delete', between.id)
   await tick()
@@ -90,7 +89,7 @@ async function main(): Promise<void> {
 
   // Deletion while Git delivery is awaiting I/O must not restore tracker state.
   const finalizing = await start()
-  agentProcesses.result(finalizing.id, { items: [issue] })
+  agentProcesses.plan(finalizing.id, [issue])
   await tick()
   const originalFinalize = GitDeliveryManager.prototype.finalize
   let finishDelivery!: () => void
@@ -98,9 +97,8 @@ async function main(): Promise<void> {
     await new Promise<void>((resolve) => { finishDelivery = resolve })
     throw new Error('Late delivery error')
   }
-  agentProcesses.result(finalizing.id, {
-    id: store.getTaskExecution(finalizing.id)!.currentIssueId,
-    status: 'complete', checklist: [true], evidence: 'Passed'
+  agentProcesses.completeIssue(finalizing.id, store.getTaskExecution(finalizing.id)!.currentIssueId!, {
+    checklist: [true], evidence: 'Passed'
   })
   call('tasks:delete', finalizing.id)
   finishDelivery()

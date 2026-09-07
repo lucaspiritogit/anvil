@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
-import { implementationPrompt, issueCompletion, plannedIssues } from '../agents/task-results'
+import { implementationPrompt } from '../agents/task-prompts'
 import type { ExitInfo } from '../agents/process-manager'
 import type { TaskContext } from './context'
 import { TaskIssues } from './task-issues'
@@ -54,16 +54,14 @@ export function registerTaskExecution(
       if (store.getTask(taskId)?.status !== 'running') return
       const issue = issues.claim(taskId)
       if (!issue) throw new Error('No task issue is ready in Valence. Inspect dependencies and work claimed by other clients.')
-      const claimed = store.getTaskExecution(taskId)!
-      store.saveTaskExecution({ ...claimed, eventOffset: store.readEvents(taskId).length })
       const running = store.updateTask(taskId, {
         cwd, worktreePath, endedAt: undefined, error: undefined, exitCode: null,
         deliveryStatus: worktreePath ? 'working' : 'unavailable', deliveryError: undefined
       })!
       send('task:updated', running)
       agentProcesses.start({
-        taskId, issueId: issue.id, agent, cwd, model: task.model,
-        prompt: `${worktreePath ? GIT_SYSTEM_PROMPT : ''}\n\n${implementationPrompt(task.prompt, issue)}`
+        taskId, issueId: issue.id, agent, cwd, projectPath: project.path, model: task.model,
+        prompt: `${worktreePath ? GIT_SYSTEM_PROMPT : ''}\n\n${implementationPrompt(task.prompt, issue, project.path)}`
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -87,14 +85,10 @@ export function registerTaskExecution(
       }
       if (state.phase === 'blocked') return
       if (info.cancelled || info.code !== 0) throw new Error(info.error ?? (info.cancelled ? 'Task cancelled.' : 'Agent failed.'))
-      const output = info.result?.output ?? store.readEvents(info.taskId).slice(state.eventOffset)
-        .filter((event) => event.category === 'message' && event.stream === 'stdout')
-        .map((event) => event.text).join('\n')
       if (state.phase === 'planning') {
-        issues.plan(info.taskId, plannedIssues(output))
+        issues.finishPlanning(info.taskId)
       } else {
-        if (!state.currentIssueId) throw new Error('No issue is currently running')
-        issues.complete(info.taskId, issueCompletion(output, state.currentIssueId))
+        issues.finishIssue(info.taskId)
       }
       notify(info.taskId)
       if (store.getTaskExecution(info.taskId)?.phase === 'complete') {

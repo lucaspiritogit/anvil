@@ -1,12 +1,34 @@
 import type { JSX } from 'react'
 import { useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { ArchiveArrowDownIcon, Folder01Icon, Loading03Icon } from '@hugeicons/core-free-icons'
+import {
+  ArchiveArrowDownIcon, Cancel01Icon, Folder01Icon, Loading03Icon,
+  Notification03Icon, Tick02Icon
+} from '@hugeicons/core-free-icons'
 import type { Project, Task } from '@shared/types'
 import { canSettleTask, settlementDeadline } from '@shared/task-settlement'
 import { useStore } from '../state/store'
 import { cn } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
+
+const TASK_INDICATORS = {
+  running: { icon: Loading03Icon, label: 'Working', tone: 'text-accent', highlight: '' },
+  approved: { icon: Tick02Icon, label: 'Approved', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
+  reviewable: { icon: Notification03Icon, label: 'Ready for review', tone: 'text-orange-400', highlight: 'bg-orange-400/8 hover:bg-orange-400/12 ring-orange-400/30' },
+  failed: { icon: Cancel01Icon, label: 'Failed', tone: 'text-danger', highlight: '' }
+}
+
+function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
+  if (task.status === 'running') return TASK_INDICATORS.running
+  if (task.status === 'failed' || task.deliveryStatus === 'failed' || task.deliveryStatus === 'agent_failed') {
+    return TASK_INDICATORS.failed
+  }
+  if (task.status === 'succeeded') {
+    if (task.deliveryStatus === 'approved') return TASK_INDICATORS.approved
+    if (task.deliveryStatus === 'reviewable') return TASK_INDICATORS.reviewable
+  }
+  return undefined
+}
 
 function relativeAge(timestamp: number, now: number): string {
   const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000))
@@ -29,6 +51,17 @@ export function SidebarTask({ task, project, now, active, compact = false }: {
   const [error, setError] = useState<string | null>(null)
   const eligible = canSettleTask(task)
   const deadline = settlementDeadline(task)
+  const indicator = taskIndicator(task)
+  const statusIcon = (
+    <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex shrink-0', indicator?.tone ?? 'text-dim')}>
+      <HugeiconsIcon
+        icon={indicator?.icon ?? Folder01Icon}
+        size={compact ? 15 : 16}
+        className={task.status === 'running' ? 'animate-spin motion-reduce:animate-none' : undefined}
+        aria-hidden="true"
+      />
+    </span>
+  )
 
   const settle = async (): Promise<void> => {
     if (settling) return
@@ -47,8 +80,9 @@ export function SidebarTask({ task, project, now, active, compact = false }: {
     <article
       className={cn(
         'group relative rounded-lg transition-colors',
-        compact ? 'hover:bg-hover/60' : 'bg-raised/60 hover:bg-hover/70',
-        active && 'bg-hover ring-1 ring-inset ring-line'
+        indicator?.highlight || (active ? 'bg-hover' : compact ? 'hover:bg-hover/60' : 'bg-raised/60 hover:bg-hover/70'),
+        (active || indicator?.highlight) && 'ring-1 ring-inset',
+        active && (indicator?.highlight ? 'outline outline-1 outline-offset-1 outline-dim/60' : 'ring-line')
       )}
     >
       <button
@@ -60,7 +94,7 @@ export function SidebarTask({ task, project, now, active, compact = false }: {
       >
         {compact ? (
           <>
-            <HugeiconsIcon icon={Folder01Icon} size={15} className="shrink-0 text-dim" aria-hidden="true" />
+            {statusIcon}
             <span className="min-w-0 flex-1 truncate text-xs text-dim">{task.title}</span>
             <span className="shrink-0 text-[10px] text-dim/70">{relativeAge(task.settledAt ?? task.startedAt, now)}</span>
           </>
@@ -68,19 +102,12 @@ export function SidebarTask({ task, project, now, active, compact = false }: {
           <>
             <span className="flex items-center justify-between gap-2 mb-2 text-xs text-dim">
               <span className="flex min-w-0 items-center gap-2">
-                <HugeiconsIcon icon={Folder01Icon} size={16} className="shrink-0" aria-hidden="true" />
+                {statusIcon}
                 <span className="truncate">{project?.name ?? 'Project'}</span>
               </span>
-              {task.status === 'running' ? (
-                <span className="flex shrink-0 items-center gap-1.5 text-accent">
-                  <HugeiconsIcon icon={Loading03Icon} size={14} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                  Working
-                </span>
-              ) : (
-                <span className={cn('shrink-0 text-[11px]', eligible && 'group-hover:invisible group-focus-within:invisible')}>
-                  {task.deliveryStatus === 'reviewable' ? 'Review' : task.status === 'failed' ? 'Failed' : relativeAge(task.endedAt ?? task.startedAt, now)}
-                </span>
-              )}
+              <span className={cn('shrink-0 text-[11px]', indicator?.tone, eligible && 'group-hover:invisible group-focus-within:invisible')}>
+                {indicator?.label ?? (task.status === 'cancelled' ? 'Cancelled' : relativeAge(task.endedAt ?? task.startedAt, now))}
+              </span>
             </span>
             <span className={cn('block truncate text-[13px] font-medium', active || task.status === 'running' ? 'text-fg' : 'text-fg/80')}>
               {task.title}

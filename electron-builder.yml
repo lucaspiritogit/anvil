@@ -7,8 +7,6 @@ directories:
 files:
   - out/**
   - package.json
-  # Keep Valence's runtime and generated migrations together as an independent dependency.
-  - node_modules/valence/**
   # Drizzle applies these at startup by reading them from disk.
   - src/main/db/migrations/**
   - src/main/memory/migrations/**

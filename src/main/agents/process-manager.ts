@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { resolveCommand } from './resolve'
+import { closeAgentServer, killAgentServer } from './agent-server-process'
 import { parseAgentLine } from './output'
 import { OpenCodeAcpClient } from './opencode-acp'
 import { CodexAppServerClient } from './codex-app-server'
@@ -23,6 +24,7 @@ export interface StartOptions {
   prompt: string
   model?: string
   cwd: string
+  projectPath?: string
   /** Resume this agent session instead of starting a fresh one. */
   resumeSessionId?: string
 }
@@ -109,6 +111,8 @@ export class AgentProcessManager extends EventEmitter {
   private usage = new Map<string, TaskUsage>()
   private sessions = new Map<string, string>()
   private serverExecutions = new Map<string, AbortController>()
+  private completions = new Set<Promise<void>>()
+  private shutdown?: Promise<void>
 
   constructor(
     private readonly openCodeClient: AgentExecutor = new OpenCodeAcpClient(),
@@ -125,7 +129,7 @@ export class AgentProcessManager extends EventEmitter {
     const controller = new AbortController()
     this.serverExecutions.set(opts.taskId, controller)
     const { agent: _agent, ...input } = opts
-    void client.execute({ ...input, signal: controller.signal }, (event) => {
+    const completion = client.execute({ ...input, signal: controller.signal }, (event) => {
       switch (event.type) {
         case 'output':
           this.emit('event', event.event)
@@ -150,6 +154,8 @@ export class AgentProcessManager extends EventEmitter {
       this.emitSystem(opts.taskId, error, true)
       this.emit('exit', { taskId: opts.taskId, code: null, cancelled: controller.signal.aborted, error } satisfies ExitInfo)
     })
+    this.completions.add(completion)
+    void completion.finally(() => this.completions.delete(completion))
   }
 
   private emitLine(
@@ -232,6 +238,7 @@ export class AgentProcessManager extends EventEmitter {
   }
 
   start(opts: StartOptions): void {
+    if (this.shutdown) throw new Error('Agent processes are shutting down')
     if (this.isRunning(opts.taskId)) throw new Error('This task is already running')
     if (opts.agent.executionProtocol === 'acp') {
       this.startServer(opts, this.openCodeClient)
@@ -277,6 +284,7 @@ export class AgentProcessManager extends EventEmitter {
         cwd,
         shell: resolved.viaShell,
         windowsHide: true,
+        detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
         // spawn() chdirs the child but leaves PWD pointing at Anvil's own launch
         // directory. An agent that trusts $PWD over getcwd() would write its
@@ -322,15 +330,29 @@ export class AgentProcessManager extends EventEmitter {
     if (!child?.pid) return false
     this.cancelled.add(taskId)
 
-    if (process.platform === 'win32') {
-      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
-    } else {
-      child.kill('SIGTERM')
-    }
+    killAgentServer(child)
     return true
   }
 
   cancelAll(): void {
     for (const taskId of [...this.procs.keys(), ...this.serverExecutions.keys()]) this.cancel(taskId)
+  }
+
+  /** Reject new work, cancel active turns, and await all owned server processes. */
+  close(): Promise<void> {
+    if (this.shutdown) return this.shutdown
+    this.shutdown = Promise.resolve().then(async () => {
+      const processes = [...this.procs.entries()].map(([taskId, child]) => {
+        this.cancelled.add(taskId)
+        const closed = new Promise<void>((resolve) => child.once('close', () => resolve()))
+        return closeAgentServer(child, closed)
+      })
+      this.cancelAll()
+      await Promise.all([
+        ...processes, ...this.completions,
+        this.openCodeClient.close?.(), this.codexClient.close?.()
+      ])
+    })
+    return this.shutdown
   }
 }

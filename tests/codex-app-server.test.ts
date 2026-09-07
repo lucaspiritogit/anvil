@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
@@ -16,15 +16,20 @@ async function main(): Promise<void> {
     taskId: 'task-test', issueId: 'issue-test', prompt: 'Implement the issue',
     cwd: directory, model: 'test-model'
   }
-  const client = (scenario: string): CodexAppServerClient => new CodexAppServerClient({
-    command: process.execPath, args: [fixture, scenario, transcript], requestTimeoutMs: 5_000,
-    cancelTimeoutMs: scenario === 'cancel-before-ack' ? 500 : 30
-  })
+  const clients: CodexAppServerClient[] = []
+  const client = (scenario: string): CodexAppServerClient => {
+    const executor = new CodexAppServerClient({
+      command: process.execPath, args: [fixture, scenario, transcript], requestTimeoutMs: 5_000,
+      cancelTimeoutMs: scenario === 'cancel-before-ack' ? 500 : 30
+    })
+    clients.push(executor)
+    return executor
+  }
   const events: TaskEvent[] = []
   const record = (event: TaskEvent): void => { events.push(event) }
   const requests = async (): Promise<any[]> => (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
   const outputEvents = () => events.filter((event) => event.type === 'output').map((event) => event.event)
-  const expected = 'Done ✓\n<task-result>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</task-result>'
+  const expected = 'Done ✓\nCompleted issue-test through vl. Tests passed.'
   const timeout = setTimeout(() => {
     console.error('Codex app-server tests timed out')
     process.exit(1)
@@ -51,6 +56,19 @@ async function main(): Promise<void> {
     assert.equal(initial[2].params.sandbox, 'workspace-write')
     assert.equal(initial[2].params.cwd, directory)
     assert.equal(initial[2].params.model, 'test-model')
+    assert.deepEqual(initial[2].params.config, {
+      'memories.use_memories': false,
+      'memories.generate_memories': false,
+      'features.recommended_plugins': false,
+      tool_output_token_limit: 3000,
+      'shell_environment_policy.set.PATH': process.env.PATH ?? ''
+    }, 'Anvil tasks use project memory, not unrelated Codex personal context')
+    assert.deepEqual(initial[3].params.input, [{ type: 'text', text: input.prompt, text_elements: [] }], 'Only the task prompt is sent, not the persisted event log')
+    assert.equal(initial[3].params.cwd, directory)
+    assert.deepEqual(initial[3].params.sandboxPolicy, {
+      type: 'workspaceWrite', writableRoots: [await realpath(directory)], networkAccess: true,
+      excludeTmpdirEnvVar: false, excludeSlashTmp: false
+    }, 'Headless validation needs network access for dependencies and local test servers')
 
     events.length = 0
     const resumed = await client('success').execute({ ...input, resumeSessionId: 'thread-test' }, record)
@@ -61,6 +79,7 @@ async function main(): Promise<void> {
     assert.equal(resumeRequest.params.threadId, 'thread-test')
     assert.equal(resumeRequest.params.sandbox, 'workspace-write')
     assert.equal(resumeRequest.params.approvalPolicy, 'never')
+    assert.deepEqual(resumeRequest.params.config, initial[2].params.config)
     const unknownUsage = await client('no-baseline').execute({ ...input, resumeSessionId: 'thread-test' }, () => {})
     assert.equal(unknownUsage.usage, undefined, 'Never charge resumed history when Codex supplies no baseline')
 
@@ -129,6 +148,7 @@ async function main(): Promise<void> {
     assert.equal(cancellation.isRunning(input.taskId), false)
     console.log('Codex app-server tests passed: handshake, threads, turns, scoped output, snapshots, usage, permissions, cancellation, errors, and manager integration.')
   } finally {
+    await Promise.all(clients.map((executor) => executor.close()))
     clearTimeout(timeout)
     await rm(directory, { recursive: true, force: true })
   }

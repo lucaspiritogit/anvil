@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test'
+import { restoreComposerSelection } from './composer-setup'
+
+test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
 const fixture = '/tests/e2e/fixture/'
 
@@ -12,18 +15,39 @@ test('overview keeps usage read-only and the composer visible in a short window'
   await expect(main.getByRole('button', { name: 'Start new task' })).toHaveCount(0)
   await expect(main.getByRole('button', { name: 'Send', exact: true })).toBeInViewport()
   await expect(main.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
-  await main.getByRole('textbox', { name: 'New task in Anvil' }).fill('   ')
+  await main.getByRole('textbox', { name: 'Task prompt' }).fill('   ')
   await expect(main.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
   await page.screenshot({ path: testInfo.outputPath('overview-short.png') })
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.screenshot({ path: testInfo.outputPath('overview-desktop.png') })
 })
 
+for (const [scenario, tokens, cost] of [['', '0', '$0.0000'], ['?usage=1', '128K', '$12.34']]) {
+  test(`monthly usage shows prominent totals without limit meters ${scenario || 'at zero'}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 900, height: 600 })
+    await page.goto(`${fixture}${scenario}`)
+    const usage = page.getByRole('region', { name: 'Usage this month' })
+    await expect(usage.getByRole('term')).toHaveText(['Tokens used', 'Cost in USD'])
+    const values = usage.getByRole('definition')
+    await expect(values).toHaveText([tokens, cost])
+    for (const value of await values.all()) {
+      await expect(value).toHaveCSS('font-size', '32px')
+      await expect(value).toHaveCSS('font-weight', '600')
+      await expect(value).toBeInViewport()
+    }
+    await expect(usage.getByText(/limit| of /i)).toHaveCount(0)
+    await expect(usage.locator('[style*="width"]')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeInViewport()
+    await page.screenshot({ path: testInfo.outputPath('monthly-usage.png') })
+  })
+}
+
 test('Send dispatches the prompt and selected model to the current project', async ({ page }) => {
   await page.goto(fixture)
   const composer = page.getByRole('form', { name: 'Start a task' })
   await composer.getByRole('textbox').fill('  Build a project search  ')
-  await composer.getByRole('combobox', { name: 'Model', exact: true }).selectOption('gpt-5-mini')
+  await composer.getByRole('button', { name: 'Model: GPT 5', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Choose model' }).getByRole('button', { name: 'GPT 5 Mini', exact: true }).click()
   await composer.getByRole('button', { name: 'Send', exact: true }).click()
   await expect(page.getByRole('main').getByRole('heading', { name: 'Build a project search' })).toBeVisible()
   const startedTasks = await page.evaluate(async () => (await window.anvil.tasks.list()).filter((task) => task.id.startsWith('started-')))
@@ -64,7 +88,7 @@ test('a dispatch failure keeps the draft and lets the user retry', async ({ page
 for (const [platform, modifier] of [['darwin', 'Meta'], ['linux', 'Control'], ['win32', 'Control']]) {
   test(`${platform} new-task shortcut focuses the composer without submitting or clearing its draft`, async ({ page }) => {
     await page.goto(`${fixture}?platform=${platform}`)
-    const prompt = page.getByRole('textbox', { name: 'New task in Anvil' })
+    const prompt = page.getByRole('textbox', { name: 'Task prompt' })
     await prompt.fill('Keep this draft')
     await page.getByRole('searchbox', { name: 'Search tasks' }).click()
     await page.keyboard.press(`${modifier}+n`)
@@ -75,7 +99,7 @@ for (const [platform, modifier] of [['darwin', 'Meta'], ['linux', 'Control'], ['
     await page.getByRole('button', { name: 'Open task: Layout test task', exact: true }).click()
     await expect(page.getByRole('log', { name: 'Task output' })).toBeVisible()
     await page.keyboard.press(`${modifier}+n`)
-    const workbenchPrompt = page.getByRole('textbox', { name: 'New task in Workbench' })
+    const workbenchPrompt = page.getByRole('textbox', { name: 'Task prompt' })
     await expect(workbenchPrompt).toBeFocused()
     await expect(workbenchPrompt).toBeInViewport()
     await expect(page.getByRole('log', { name: 'Task output' })).toHaveCount(0)
@@ -107,7 +131,7 @@ test('the composer shortcut does not steal focus from a deletion confirmation', 
 
 test('switching projects clears the previous project draft', async ({ page }) => {
   await page.goto(fixture)
-  await page.getByRole('textbox', { name: 'New task in Anvil' }).fill('Only for Anvil')
+  await page.getByRole('textbox', { name: 'Task prompt' }).fill('Only for Anvil')
   await page.getByRole('navigation', { name: 'Filter tasks by project' }).getByRole('button', { name: 'Workbench', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'New task in Workbench' })).toHaveValue('')
+  await expect(page.getByRole('textbox', { name: 'Task prompt' })).toHaveValue('')
 })

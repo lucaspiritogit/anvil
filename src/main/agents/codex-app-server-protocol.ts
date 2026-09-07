@@ -13,6 +13,15 @@ export interface CodexThreadOptions {
   model?: string
   approvalPolicy: 'never'
   sandbox: 'workspace-write'
+  config?: Record<string, boolean | number | string>
+}
+
+export interface CodexSandboxPolicy {
+  type: 'workspaceWrite'
+  writableRoots: string[]
+  networkAccess: boolean
+  excludeTmpdirEnvVar: boolean
+  excludeSlashTmp: boolean
 }
 
 export interface CodexTurn {
@@ -36,7 +45,12 @@ export interface CodexAppServerRequests {
     result: { thread: { id: string } }
   }
   'turn/start': {
-    params: { threadId: string; input: Array<{ type: 'text'; text: string; text_elements: [] }> }
+    params: {
+      threadId: string
+      input: Array<{ type: 'text'; text: string; text_elements: [] }>
+      cwd: string
+      sandboxPolicy: CodexSandboxPolicy
+    }
     result: { turn: CodexTurn }
   }
   'turn/interrupt': {

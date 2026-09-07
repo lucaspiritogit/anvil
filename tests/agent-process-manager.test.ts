@@ -57,10 +57,23 @@ async function main(): Promise<void> {
     assert.equal(missingExit.taskId, 'missing')
     assert.equal(missingExit.code, null)
     assert.match(missingExit.error!, /not installed or not on PATH/)
-    console.log('Agent process manager tests passed: task events, stream buffering, ANSI removal, cancellation, and spawn failure.')
+    const readyToClose = new Promise<void>((resolve) => {
+      agentProcesses.on('event', (event: TaskEvent) => { if (event.text === 'Ready to close') resolve() })
+    })
+    const shutdownExit = once(agentProcesses, 'exit')
+    agentProcesses.start({
+      taskId: 'shutdown', agent: { ...agent, args: ['-e', 'process.on("SIGTERM", () => {}); console.log("Ready to close"); setInterval(() => {}, 1000)'] },
+      prompt: 'Wait for shutdown', cwd: process.cwd()
+    })
+    await readyToClose
+    await agentProcesses.close()
+    assert.equal(((await shutdownExit) as [ExitInfo])[0].cancelled, true)
+    assert.equal(agentProcesses.isRunning('shutdown'), false)
+    assert.throws(() => agentProcesses.start({ taskId: 'late', agent, prompt: 'Too late', cwd: process.cwd() }), /shutting down/)
+    console.log('Agent process manager tests passed: task events, stream buffering, ANSI removal, cancellation, spawn failure, and awaited shutdown.')
   } finally {
     clearTimeout(timeout)
-    agentProcesses.cancelAll()
+    await agentProcesses.close()
   }
 }
 

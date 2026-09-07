@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
 import opencodeMark from '@public/agents/opencode.svg'
+import { ProviderIcon } from './ProviderIcon'
 
 /**
  * Logo marks live in /public so they can be reused anywhere in the app (and by
@@ -19,6 +20,7 @@ export function AgentIcon({
   label: string
   size?: number
 }): JSX.Element {
+  if (agentId === 'codex') return <ProviderIcon company="OpenAI" size={size} />
   const mark = MARKS[agentId]
   const style = { width: size, height: size }
   if (mark) return <img className="flex-none rounded-md" src={mark} alt="" style={style} />

@@ -26,9 +26,14 @@ export function formatCost(costUsd: number | null): string {
 
 /** Input/output/cached split, for the tooltip behind a token total. */
 export function tokenBreakdown(task: Task): string {
-  return [
-    `${task.inputTokens.toLocaleString()} input`,
-    `${task.outputTokens.toLocaleString()} output`,
-    `${task.cachedTokens.toLocaleString()} cached`
-  ].join(', ')
+  const breakdown = [
+    `${task.inputTokens.toLocaleString('en')} input`,
+    `${task.outputTokens.toLocaleString('en')} output`,
+    `${task.cachedTokens.toLocaleString('en')} cached input`
+  ]
+  if (task.agentId === 'codex') {
+    breakdown.push(`${Math.max(0, task.inputTokens - task.cachedTokens).toLocaleString('en')} uncached input`)
+    return `${breakdown.join(', ')}. Input includes cached tokens. Totals accumulate across model requests, not a single prompt.`
+  }
+  return `${breakdown.join(', ')}. Totals accumulate across model requests.`
 }

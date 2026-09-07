@@ -1,12 +1,26 @@
 import { isAbsolute } from 'node:path'
 import type { AgentExecutor, TaskEvent, TaskInput, TaskResult } from './agent-executor'
-import { CodexAppServerConnection, CodexRpcError, type CodexAppServerOptions } from './codex-app-server-connection'
+import { CodexAppServerConnection, CodexRpcError, type CodexAppServerOptions, type ConnectionHandlers } from './codex-app-server-connection'
 import { CodexAppServerOutput } from './codex-app-server-output'
 import { codexTurn, type CodexObject, type CodexTurn } from './codex-app-server-protocol'
+import { LazyAgentServer } from './lazy-agent-server'
+import { codexSandboxPolicy } from './codex-sandbox'
 
-/** Codex's app-server protocol adapted to Anvil tasks. No ACP messages are used. */
+interface CodexExecution extends ConnectionHandlers {
+  server(): CodexAppServerConnection | undefined
+  thread(): string | undefined
+}
+
+/** One lazy app-server with thread-scoped routing. No ACP messages are used. */
 export class CodexAppServerClient implements AgentExecutor {
+  private readonly server = new LazyAgentServer<CodexAppServerConnection>()
+  private readonly executions = new Set<CodexExecution>()
+
   constructor(private readonly options: CodexAppServerOptions = {}) {}
+
+  close(): Promise<void> {
+    return this.server.close()
+  }
 
   async execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult> {
     const output = new CodexAppServerOutput(input, onEvent)
@@ -22,6 +36,10 @@ export class CodexAppServerClient implements AgentExecutor {
     const queued: Array<{ method: string; params: CodexObject }> = []
     let resolveTurn!: (turn: CodexTurn) => void
     const completed = new Promise<CodexTurn>((resolve) => { resolveTurn = resolve })
+    let rejectExecution!: (error: Error) => void
+    const interrupted = new Promise<never>((_, reject) => { rejectExecution = reject })
+    void interrupted.catch(() => {})
+    const request = <Response>(promise: Promise<Response>): Promise<Response> => Promise.race([promise, interrupted])
 
     const interrupt = (): void => {
       if (connection && threadId && turnId && !finished) {
@@ -29,9 +47,9 @@ export class CodexAppServerClient implements AgentExecutor {
       }
     }
     const cancel = (): void => {
-      if (finished || !connection) return
+      if (finished) return
       if (!startingTurn && !turnId) {
-        connection.fail(new Error('Task cancelled.'))
+        rejectExecution(new Error('Task cancelled.'))
         return
       }
       interrupt()
@@ -91,22 +109,63 @@ export class CodexAppServerClient implements AgentExecutor {
       }
     }
 
+    const execution: CodexExecution = {
+      server: () => connection, thread: () => threadId,
+      notification, serverRequest, diagnostic: (text) => output.line(text, 'error', 'stderr')
+    }
+    this.executions.add(execution)
     try {
       input.signal?.throwIfAborted()
       if (!isAbsolute(input.cwd)) throw new Error('Codex app-server requires an absolute working directory')
-      output.line(`$ ${this.options.command ?? 'codex'} ${(this.options.args ?? ['app-server', '--listen', 'stdio://']).join(' ')}`, 'system', 'system')
-      output.line(`cwd: ${input.cwd}`, 'system', 'system')
-      connection = new CodexAppServerConnection(input.cwd, this.options, {
-        notification, serverRequest, diagnostic: (text) => output.line(text, 'error', 'stderr')
-      })
       input.signal?.addEventListener('abort', cancel, { once: true })
-      if (input.signal?.aborted) cancel()
-      await connection.request('initialize', { clientInfo: { name: 'anvil', title: 'Anvil', version: '0.1.0' } })
-      connection.initialized()
-      const options = { cwd: input.cwd, model: input.model, approvalPolicy: 'never' as const, sandbox: 'workspace-write' as const }
-      const response = input.resumeSessionId
-        ? await connection.request('thread/resume', { ...options, threadId: input.resumeSessionId })
-        : await connection.request('thread/start', options)
+      const sandboxPolicy = await codexSandboxPolicy(input.cwd, input.projectPath)
+      input.signal?.throwIfAborted()
+      connection = await request(this.server.get(() => {
+        output.line(`$ ${this.options.command ?? 'codex'} ${(this.options.args ?? ['app-server', '--listen', 'stdio://']).join(' ')}`, 'system', 'system')
+        const server: CodexAppServerConnection = new CodexAppServerConnection(input.cwd, this.options, {
+          notification: (method, params) => {
+            for (const active of this.executions) if (active.server() === server) active.notification(method, params)
+          },
+          serverRequest: (method, params) => {
+            const active = [...this.executions].find((entry) => entry.server() === server && entry.thread() === params.threadId)
+            if (active) return active.serverRequest(method, params)
+            switch (method) {
+              case 'item/commandExecution/requestApproval':
+              case 'item/fileChange/requestApproval': return { decision: 'cancel' }
+              case 'item/permissions/requestApproval': return { permissions: {}, scope: 'turn' }
+              case 'mcpServer/elicitation/request': return { action: 'cancel', content: null }
+              case 'item/tool/requestUserInput': return { answers: {} }
+              default: throw new CodexRpcError(-32601, `Anvil does not implement Codex server request: ${method}`)
+            }
+          },
+          diagnostic: (text) => {
+            for (const active of this.executions) if (active.server() === server) active.diagnostic(text)
+          }
+        })
+        connection = server
+        return server
+      }, async (server) => {
+        await server.request('initialize', { clientInfo: { name: 'anvil', title: 'Anvil', version: '0.1.0' } })
+        server.initialized()
+      }))
+      input.signal?.throwIfAborted()
+      output.line(`cwd: ${input.cwd}`, 'system', 'system')
+      const options = {
+        cwd: input.cwd, model: input.model, approvalPolicy: 'never' as const, sandbox: 'workspace-write' as const,
+        // Anvil supplies project-scoped memory. Personal Codex memories and
+        // plugin suggestions add unrelated context to every model request.
+        config: {
+          'memories.use_memories': false,
+          'memories.generate_memories': false,
+          'features.recommended_plugins': false,
+          tool_output_token_limit: 3000,
+          // Shell tools must retain Anvil's bundled vl launcher on PATH.
+          'shell_environment_policy.set.PATH': process.env.PATH ?? ''
+        }
+      }
+      const response = await request(input.resumeSessionId
+        ? connection.request('thread/resume', { ...options, threadId: input.resumeSessionId })
+        : connection.request('thread/start', options))
       // Anvil's sessionId is the resume handle. Codex resumes by thread.id, not
       // thread.sessionId, which can be shared by multiple forked threads.
       threadId = response.thread.id
@@ -114,7 +173,8 @@ export class CodexAppServerClient implements AgentExecutor {
       input.signal?.throwIfAborted()
       startingTurn = true
       const started = await connection.request('turn/start', {
-        threadId, input: [{ type: 'text', text: input.prompt, text_elements: [] }]
+        threadId, cwd: input.cwd, sandboxPolicy,
+        input: [{ type: 'text', text: input.prompt, text_elements: [] }]
       })
       turnId = started.turn.id
       startingTurn = false
@@ -133,7 +193,8 @@ export class CodexAppServerClient implements AgentExecutor {
       finished = true
       input.signal?.removeEventListener('abort', cancel)
       clearTimeout(cancelTimer)
-      await connection?.close()
+      connection?.flushDiagnostic()
+      this.executions.delete(execution)
       output.flush()
     }
     if (error) output.line(error, 'error', 'system')

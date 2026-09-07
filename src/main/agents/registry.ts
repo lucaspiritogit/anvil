@@ -9,8 +9,8 @@ export const GIT_SYSTEM_PROMPT = [
   'Use Git normally as you work, and commit your own changes with a clear message.',
   'Staging is not committing — run `git commit`, not just `git add`.',
   'Prefix the subject with fix:, feat:, chore:, or docs: when the category is clear.',
-  'You start on a branch named after the task — rename it with `git branch -m` when a',
-  'clearer name fits the work, using the same categories (e.g. fix/parser-null-token).',
+  'Anvil has already created a unique branch in this task\'s own worktree.',
+  'Keep that branch name. Do not switch branches, modify another checkout, or create another worktree.',
   'Do not push; the branch stays local for review.'
 ].join('\n')
 
@@ -39,14 +39,6 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     executionProtocol: 'codex-app-server',
     defaultModel: CODEX_MODELS[0],
     models: { kind: 'static', models: CODEX_MODELS }
-  },
-  {
-    id: 'pi',
-    label: 'Pi',
-    description: 'Non-interactive run.',
-    command: 'pi',
-    args: ['--print', '--mode', 'json', '{{prompt}}'],
-    outputProtocol: 'pi-json'
   }
 ]
 

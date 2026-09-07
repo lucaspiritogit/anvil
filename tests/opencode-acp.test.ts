@@ -16,9 +16,14 @@ async function main(): Promise<void> {
     taskId: 'task-test', issueId: 'issue-test', prompt: 'Implement the issue',
     cwd: directory, model: 'provider/model'
   }
-  const client = (scenario: string): OpenCodeAcpClient => new OpenCodeAcpClient({
-    command: process.execPath, args: [fixture, scenario, transcript], startupTimeoutMs: 5_000, cancelTimeoutMs: 30
-  })
+  const clients: OpenCodeAcpClient[] = []
+  const client = (scenario: string): OpenCodeAcpClient => {
+    const executor = new OpenCodeAcpClient({
+      command: process.execPath, args: [fixture, scenario, transcript], startupTimeoutMs: 5_000, cancelTimeoutMs: 30
+    })
+    clients.push(executor)
+    return executor
+  }
   const requests = async (): Promise<any[]> => (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
   const events: TaskEvent[] = []
   const record = (event: TaskEvent): void => { events.push(event) }
@@ -35,7 +40,7 @@ async function main(): Promise<void> {
     assert.equal(result.sessionId, 'session-test')
     assert.deepEqual(result.changedFiles, ['/changed.ts'])
     assert.deepEqual(result.usage, { inputTokens: 20, outputTokens: 10, cachedTokens: 5, totalTokens: 35, costUsd: 0.25 })
-    const expected = 'Done ✓\n<task-result>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</task-result>'
+    const expected = 'Done ✓\nCompleted issue-test through vl. Tests passed.'
     assert.equal(result.output, expected)
     const outputEvents = events.filter((event) => event.type === 'output').map((event) => event.event)
     assert.deepEqual(outputEvents.filter((event) => event.category === 'message').map((event) => event.text), expected.split('\n'))
@@ -61,6 +66,12 @@ async function main(): Promise<void> {
     assert.equal(resumed.usage?.costUsd, null, 'Do not charge session-cumulative cost again on resume')
     assert.ok(!events.some((event) => event.type === 'output' && /history|Old edit/.test(event.event.text)))
     assert.ok((await requests()).some((request) => request.method === 'session/load'))
+
+    const openrouterModel = 'openrouter/anthropic/claude-sonnet-4-6'
+    const openrouter = await client('openrouter').execute({ ...input, model: openrouterModel }, () => {})
+    assert.equal(openrouter.status, 'succeeded', openrouter.error)
+    const modelRequest = (await requests()).findLast((request) => request.method === 'session/set_config_option')
+    assert.equal(modelRequest.params.value, openrouterModel, 'Keep the OpenRouter route so OpenCode uses that provider\'s credentials')
 
     for (const scenario of ['refusal', 'max-tokens', 'rpc-error', 'exit', 'malformed', 'version']) {
       const failed = await client(scenario).execute(input, () => {})
@@ -115,6 +126,7 @@ async function main(): Promise<void> {
     assert.equal(cancellationManager.isRunning(input.taskId), false)
     console.log('OpenCode ACP tests passed: handshake, model, permissions, output, issue evidence, sessions, usage, failures, cancellation, and manager integration.')
   } finally {
+    await Promise.all(clients.map((executor) => executor.close()))
     clearTimeout(timeout)
     await rm(directory, { recursive: true, force: true })
   }

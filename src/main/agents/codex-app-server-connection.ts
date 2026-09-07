@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { resolveCommand } from './resolve'
-import { killAgentServer } from './agent-server-process'
+import { closeAgentServer } from './agent-server-process'
 import {
   codexObject, validateCodexResponse,
   type CodexAppServerProtocol, type CodexAppServerRequests, type CodexObject, type CodexRequestId
@@ -14,7 +14,7 @@ export interface CodexAppServerOptions {
   cancelTimeoutMs?: number
 }
 
-interface ConnectionHandlers {
+export interface ConnectionHandlers {
   notification(method: string, params: CodexObject): void
   serverRequest(method: string, params: CodexObject): unknown
   diagnostic(text: string): void
@@ -31,7 +31,8 @@ export class CodexAppServerConnection implements CodexAppServerProtocol {
   private failureError: Error | undefined
   private child: ChildProcessWithoutNullStreams
   private closed: Promise<void>
-  private closing = false
+  private closing?: Promise<void>
+  private stderr = ''
   private nextId = 1
   private pending = new Map<CodexRequestId, {
     resolve(value: unknown): void
@@ -65,8 +66,13 @@ export class CodexAppServerConnection implements CodexAppServerProtocol {
       }
     })
     stdout.once('close', () => this.fail(new Error('Codex app-server closed stdout before execution finished')))
-    const stderr = createInterface({ input: this.child.stderr, crlfDelay: Infinity })
-    stderr.on('line', (line) => handlers.diagnostic(line))
+    this.child.stderr.setEncoding('utf8')
+    this.child.stderr.on('data', (chunk: string) => {
+      const lines = (this.stderr + chunk).split('\n')
+      this.stderr = lines.pop() ?? ''
+      for (const line of lines) handlers.diagnostic(line)
+    })
+    this.child.stderr.on('end', () => this.flushDiagnostic())
   }
 
   fail(error: Error): void {
@@ -140,14 +146,15 @@ export class CodexAppServerConnection implements CodexAppServerProtocol {
     this.pending.delete(id)
   }
 
-  async close(): Promise<void> {
-    if (this.closing) return this.closed
-    this.closing = true
-    for (const pending of this.pending.values()) pending.reject(new Error('Codex connection closed'))
-    this.pending.clear()
-    killAgentServer(this.child)
-    const forceKill = setTimeout(() => killAgentServer(this.child, true), 1_000)
-    await this.closed
-    clearTimeout(forceKill)
+  flushDiagnostic(): void {
+    if (this.stderr) this.handlers.diagnostic(this.stderr)
+    this.stderr = ''
+  }
+
+  close(): Promise<void> {
+    if (this.closing) return this.closing
+    this.fail(new Error('Codex connection closed'))
+    this.closing = closeAgentServer(this.child, this.closed)
+    return this.closing
   }
 }

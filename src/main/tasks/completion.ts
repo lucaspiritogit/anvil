@@ -20,6 +20,9 @@ export function createTaskCompletion(
       ...(managed ? { deliveryStatus: 'finalizing' as const } : {})
     })
     if (task) send('task:updated', task)
+    if (task && status === 'failed') {
+      recordSystemEvent(task.id, `Task failed: ${info.error ?? 'Agent failed.'}`, 'delivery', 'error')
+    }
     const project = store.getProjects().find((item) => item.id === task?.projectId)
     if (!project || !task) return
     if (!managed || !task.worktreePath || !task.baseCommit) {
@@ -47,7 +50,7 @@ export function createTaskCompletion(
               }
               recordSystemEvent(info.taskId, command, 'did_not_commit')
             }
-            : undefined
+            : (command: string) => recordSystemEvent(info.taskId, command, 'delivery')
         }
       )
       task = store.updateTask(task.id, {
@@ -61,7 +64,7 @@ export function createTaskCompletion(
         filesChanged: delivery.filesChanged,
         additions: delivery.additions,
         deletions: delivery.deletions,
-        ...(successful ? {} : { deliveryError: 'The agent did not exit successfully.' })
+        ...(successful ? {} : { deliveryError: info.error ?? 'The agent did not exit successfully.' })
       })
       if (delivery.cleanupWarning) {
         recordSystemEvent(task?.id ?? info.taskId, `Worktree cleanup warning: ${delivery.cleanupWarning}`)

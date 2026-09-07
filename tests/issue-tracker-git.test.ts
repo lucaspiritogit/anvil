@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   assert.equal(task.status, 'running', task.error)
   await waitFor(() => agentProcesses.starts.length === 1)
   const item = { key: 'first', labels: ['files'], priority: 'medium', dependencies: [], title: 'Add one file', description: 'One file per review', checklist: ['File exists'], validation: 'Read the file' }
-  agentProcesses.result(task.id, { items: [item, { ...item, key: 'second', dependencies: ['first'] }] })
+  agentProcesses.plan(task.id, [item, { ...item, key: 'second', dependencies: ['first'] }])
   await waitFor(() => agentProcesses.starts.length === 2)
   let board = taskState(seed, task.id)!
   const firstCwd = agentProcesses.starts[1].cwd
@@ -40,7 +40,7 @@ async function main(): Promise<void> {
   writeFileSync(join(firstCwd, 'first.txt'), 'first change\n')
   git(firstCwd, 'add', 'first.txt')
   git(firstCwd, 'commit', '-m', 'feat: first file')
-  agentProcesses.result(task.id, { id: board.items[0].id, status: 'complete', checklist: [true], evidence: 'Read first.txt and verified its content' })
+  agentProcesses.completeIssue(task.id, board.items[0].id, { checklist: [true], evidence: 'Read first.txt and verified its content' })
   await waitFor(() => agentProcesses.starts.length === 3)
   assert.equal(existsSync(firstCwd), true, 'Worktree remains until the entire task finishes')
   assert.equal(seed.getTask(task.id)?.deliveryStatus, 'working')
@@ -49,7 +49,7 @@ async function main(): Promise<void> {
   writeFileSync(join(secondCwd, 'second.txt'), 'second change\n')
   // Exercise Anvil's fallback commit for an agent that leaves a dirty worktree.
   board = taskState(seed, task.id)!
-  agentProcesses.result(task.id, { id: board.items[1].id, status: 'complete', checklist: [true], evidence: 'Read second.txt and verified its content' })
+  agentProcesses.completeIssue(task.id, board.items[1].id, { checklist: [true], evidence: 'Read second.txt and verified its content' })
   await waitFor(() => seed.getTask(task.id)?.deliveryStatus === 'reviewable')
   assert.equal(existsSync(secondCwd), false, 'Final worktree is cleaned up')
   const wholeDiff = await call('tasks:diff', task.id)
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   const greeting = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'hello' })
   await waitFor(() => agentProcesses.starts.length === startsBeforeGreeting + 1)
   const greetingWorktree = agentProcesses.starts.at(-1).cwd
-  agentProcesses.result(greeting.id, { items: [], noChanges: true })
+  agentProcesses.finishTurn(greeting.id, 'Hello!')
   await waitFor(() => seed.getTask(greeting.id)?.deliveryStatus === 'no_changes')
   assert.equal(seed.getTask(greeting.id)?.status, 'succeeded')
   assert.equal(seed.getTaskExecution(greeting.id)?.phase, 'complete')

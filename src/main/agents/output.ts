@@ -70,54 +70,6 @@ function toolSummary(name: string | undefined, input: unknown): string | undefin
   return `${name} · ${flat.length > 160 ? `${flat.slice(0, 159)}…` : flat}`
 }
 
-function blockText(block: JsonObject): string | undefined {
-  return (
-    string(block.text) ??
-    string(block.thinking) ??
-    string(block.content) ??
-    (Array.isArray(block.content) ? contentParts(block.content, 'tool_result')[0]?.text : undefined)
-  )
-}
-
-/**
- * Walks a message's content blocks, mapping each block type onto a category.
- * Block names differ between agents (`tool_use` / `toolUse`, `thinking` /
- * `reasoning`), so both spellings are accepted. `fallback` is the category for
- * plain text blocks, which is `message` for an assistant turn and
- * `tool_result` for a tool-result turn.
- */
-function contentParts(value: unknown, fallback: TaskEventCategory): ParsedAgentPart[] {
-  if (typeof value === 'string') return part(string(value), fallback)
-  if (!Array.isArray(value)) return []
-
-  return value.flatMap((entry) => {
-    const block = object(entry)
-    if (!block) return string(entry) ? part(string(entry), fallback) : []
-
-    const type = string(block.type)?.toLowerCase()
-    if (type === 'thinking' || type === 'reasoning') {
-      return part(blockText(block), 'thinking')
-    }
-    if (type === 'redacted_thinking') {
-      return part('(redacted thinking)', 'thinking')
-    }
-    if (type === 'tool_use' || type === 'tooluse' || type === 'tool_call') {
-      return part(
-        toolSummary(string(block.name) ?? string(block.toolName), block.input ?? block.arguments),
-        'tool_use'
-      )
-    }
-    if (type === 'tool_result' || type === 'toolresult') {
-      const failed = block.is_error === true || block.isError === true
-      return part(blockText(block), failed ? 'error' : 'tool_result', failed ? 'stderr' : 'stdout')
-    }
-    if (type === 'text' || type === undefined) {
-      return part(blockText(block), fallback)
-    }
-    return []
-  })
-}
-
 function parseOpenCode(event: JsonObject): ParsedAgentLine {
   const eventPart = object(event.part)
   if (event.type === 'text') return line(string(eventPart?.text), 'message')
@@ -205,46 +157,6 @@ function parseCodex(event: JsonObject): ParsedAgentLine {
   }
 }
 
-function parsePi(event: JsonObject): ParsedAgentLine {
-  if (event.type === 'tool_execution_end') {
-    const failed = event.isError === true
-    const name = string(event.toolName)
-    if (!name) return NOTHING
-    return failed ? line(`Failed ${name}`, 'error', 'stderr') : line(name, 'tool_use')
-  }
-  if (event.type === 'thinking' || event.type === 'reasoning') {
-    return line(string(event.text) ?? string(event.thinking), 'thinking')
-  }
-  if (event.type === 'error') {
-    return line(string(event.message) ?? 'Pi reported an error', 'error', 'stderr')
-  }
-  if (event.type !== 'message_end') return NOTHING
-
-  const message = object(event.message)
-  const role = message?.role
-  if (role !== 'assistant' && role !== 'toolResult') return NOTHING
-
-  const parts = contentParts(message?.content, role === 'assistant' ? 'message' : 'tool_result')
-  const usage = object(message?.usage)
-  if (!usage) return { parts }
-
-  const cost = object(usage.cost)
-  const inputTokens = number(usage.input)
-  const outputTokens = number(usage.output)
-  const cachedTokens = number(usage.cacheRead) + number(usage.cacheWrite)
-  return {
-    parts,
-    usageMode: 'add',
-    usage: {
-      inputTokens,
-      outputTokens,
-      cachedTokens,
-      totalTokens: number(usage.totalTokens) || inputTokens + outputTokens + cachedTokens,
-      costUsd: typeof cost?.total === 'number' ? cost.total : null
-    }
-  }
-}
-
 const SESSION_KEYS = ['sessionID', 'session_id', 'sessionId']
 
 /**
@@ -281,12 +193,7 @@ export function parseAgentLine(
     return line(rawLine, 'message')
   }
 
-  const parsed =
-    protocol === 'opencode-json'
-      ? parseOpenCode(event)
-      : protocol === 'codex-json'
-        ? parseCodex(event)
-        : parsePi(event)
+  const parsed = protocol === 'opencode-json' ? parseOpenCode(event) : parseCodex(event)
 
   const sessionId = findSessionId(event)
   return sessionId ? { ...parsed, sessionId } : parsed

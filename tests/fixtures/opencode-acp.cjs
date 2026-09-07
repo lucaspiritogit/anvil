@@ -24,8 +24,8 @@ function finish() {
   update({ sessionUpdate: 'tool_call', toolCallId: 'test', title: 'Run tests', kind: 'execute', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'Tests passed' } }] })
   update({ sessionUpdate: 'plan', entries: [{ content: 'Implement issue', priority: 'high', status: 'completed' }] })
   update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Wrong session' } }, 'other-session')
-  const output = 'Done ✓\n<task-result>{"id":"issue-test","status":"complete","checklist":[true],"evidence":"Tests passed"}</task-result>'
-  // Model deltas can split anywhere, including inside JSON strings and tag names.
+  const output = 'Done ✓\nCompleted issue-test through vl. Tests passed.'
+  // Model deltas can split anywhere in the final summary.
   for (const character of output) text(character)
   update({ sessionUpdate: 'usage_update', used: 9999, size: 100000, cost: { amount: 0.25, currency: 'USD' } })
   process.stderr.write('diagnostic\ntrailing diagnostic')
@@ -50,12 +50,13 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   } else if (message.method === 'session/new' || message.method === 'session/load') {
     if (!initialized || realpathSync(message.params.cwd) !== process.cwd() || realpathSync(process.env.PWD) !== process.cwd()) process.exit(9)
     if (message.method === 'session/load') {
-      text('<task-result>{"old":"history"}</task-result>')
+      text('Old turn summary from history.')
       update({ sessionUpdate: 'tool_call', toolCallId: 'old', title: 'Old edit', kind: 'edit', status: 'completed', locations: [{ path: '/old.ts' }] })
     }
     respond(message.id, { sessionId, configOptions: [] })
   } else if (message.method === 'session/set_config_option') {
-    if (message.params.configId !== 'model' || message.params.value !== 'provider/model') process.exit(10)
+    const expectedModel = scenario === 'openrouter' ? 'openrouter/anthropic/claude-sonnet-4-6' : 'provider/model'
+    if (message.params.configId !== 'model' || message.params.value !== expectedModel) process.exit(10)
     modelSelected = true
     respond(message.id, { configOptions: [] })
   } else if (message.method === 'session/prompt') {

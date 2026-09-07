@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { Issue } from 'valence'
+import { taskIssueLabel } from '../src/shared/valence'
 import { Store } from '../src/main/store'
 import { registerIpc } from '../src/main/ipc'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
@@ -45,29 +46,34 @@ async function main(): Promise<void> {
   const task = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Share Valence with a Node client' })
   await tick()
   const input = { title: 'App issue', description: 'One behavior', checklist: ['Verify'], validation: 'Run test' }
-  agentProcesses.result(task.id, { items: [
-    { ...input, key: 'dependent', dependencies: [prerequisite.id], priority: 'urgent' },
-    { ...input, key: 'independent', priority: 'low' }
-  ] })
+  const createTaskIssue = (title: string, ...options: string[]): Issue => cli('create', title,
+    '--description', input.description, '--checklist', 'Verify', '--validation', input.validation,
+    '--label', taskIssueLabel(task.id), ...options)
+  const dependent = createTaskIssue('Dependent', '--dependency', prerequisite.id, '--priority', 'urgent')
+  const independent = createTaskIssue('Independent', '--priority', 'low')
+  agentProcesses.finishTurn(task.id, 'Created the plan through vl.')
   await tick()
   const [dependentId, independentId] = store.getTaskExecution(task.id)!.issueIds
+  assert.deepEqual([dependentId, independentId], [dependent.id, independent.id])
   assert.equal(cli('show', independentId).status, 'working')
   assert.equal(cli('show', dependentId).status, 'queued')
   assert.equal(cli('show', prerequisite.id).status, 'queued', 'Anvil cannot claim an external prerequisite')
   assert.equal(existsSync(join(projectPath, '.valence')), false, 'Reuse config storage without creating a second database')
   cli('start', prerequisite.id)
   cli('complete', prerequisite.id, '--confirm-checklist', '--evidence', 'External validation passed')
-  agentProcesses.result(task.id, { id: independentId, status: 'complete', checklist: [true], evidence: 'App validation passed' })
+  cli('complete', independentId, '--confirm-checklist', '--evidence', 'App validation passed')
+  agentProcesses.finishTurn(task.id)
   await tick()
   assert.equal(cli('show', dependentId).status, 'working', 'External completion unlocks an Anvil dependent')
-  agentProcesses.result(task.id, { id: dependentId, status: 'complete', checklist: [true], evidence: 'Dependent validation passed' })
+  cli('complete', dependentId, '--confirm-checklist', '--evidence', 'Dependent validation passed')
+  agentProcesses.finishTurn(task.id)
   await tick()
   assert.equal(store.getTask(task.id)?.status, 'succeeded')
   assert.equal(cli('show', dependentId).evidence, 'Dependent validation passed')
 
   const interrupted = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Interrupted work' })
   await tick()
-  agentProcesses.result(interrupted.id, { items: [{ ...input, key: 'interrupted' }] })
+  agentProcesses.plan(interrupted.id, [{ ...input, key: 'interrupted' }])
   await tick()
   const interruptedId = store.getTaskExecution(interrupted.id)!.currentIssueId!
   const external = cli('create', 'External working issue', '--description', 'Keep working through app restarts', '--checklist', 'Verify', '--validation', 'Run test')

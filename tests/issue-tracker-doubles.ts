@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { openTracker, type BatchIssue, type Completion, type Issue } from 'valence'
+import { taskIssueLabel } from '../src/shared/valence'
 
 export const testHome = realpathSync(mkdtempSync(join(tmpdir(), 'anvil-issue-tracker-test-')))
 export const handlers = new Map<string, (...args: any[]) => any>()
@@ -27,8 +29,29 @@ export class AgentProcessManager extends EventEmitter {
     this.active.add(options.taskId)
     this.starts.push(options)
   }
-  result(taskId: string, payload: unknown, code = 0): void {
-    this.emit('event', { id: randomUUID(), taskId, ts: Date.now(), stream: 'stdout', kind: 'output', category: 'message', text: `<task-result>${JSON.stringify(payload)}</task-result>` })
+  createPlan(taskId: string, inputs: BatchIssue[]): Issue[] {
+    const tracker = openTracker(this.starts.findLast((start) => start.taskId === taskId).projectPath)
+    try {
+      return tracker.createMany(inputs.map((input) => ({ ...input, labels: [...(input.labels ?? []), taskIssueLabel(taskId)] })))
+    } finally {
+      tracker.close()
+    }
+  }
+  plan(taskId: string, inputs: BatchIssue[]): void {
+    this.createPlan(taskId, inputs)
+    this.finishTurn(taskId, 'Plan created in Valence.')
+  }
+  completeIssue(taskId: string, issueId: string, completion: Completion): void {
+    const tracker = openTracker(this.starts.findLast((start) => start.taskId === taskId).projectPath)
+    try {
+      tracker.complete(issueId, completion)
+    } finally {
+      tracker.close()
+    }
+    this.finishTurn(taskId, 'Completed through vl.')
+  }
+  finishTurn(taskId: string, text = 'Done.', code = 0): void {
+    this.emit('event', { id: randomUUID(), taskId, ts: Date.now(), stream: 'stdout', kind: 'output', category: 'message', text })
     this.active.delete(taskId)
     this.emit('exit', { taskId, code, cancelled: false })
   }
