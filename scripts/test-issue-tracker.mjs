@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import electron from 'electron'
 
-const availableSuites = ['agent-models', 'model-options', 'valence-bundle', 'valence-integration', 'valence-clients', 'issue-tracker', 'issue-tracker-git', 'git-delivery', 'task-deletion', 'task-settlement', 'task-prompts', 'task-usage', 'task-steering', 'db-cli', 'ipc-handlers', 'agent-process-manager', 'agent-reasoning-forwarding', 'agent-cli-reasoning-effort', 'opencode-acp', 'codex-app-server', 'codex-sandbox', 'agent-server-lifecycle', 'app-shutdown', 'agent-output', 'agent-streaming-output']
+const availableSuites = ['agent-models', 'model-options', 'valence-bundle', 'valence-integration', 'valence-clients', 'issue-tracker', 'issue-tracker-git', 'git-delivery', 'git-merge', 'github-git', 'github-pull-requests', 'pull-request-draft', 'task-deletion', 'task-settlement', 'task-prompts', 'task-usage', 'task-steering', 'db-cli', 'ipc-handlers', 'agent-process-manager', 'agent-reasoning-forwarding', 'agent-cli-reasoning-effort', 'opencode-acp', 'codex-app-server', 'codex-sandbox', 'agent-server-lifecycle', 'app-shutdown', 'agent-output', 'agent-streaming-output']
 const requestedSuites = process.argv.slice(2)
 const suites = requestedSuites.length ? requestedSuites : availableSuites
 for (const suite of suites) {
@@ -24,7 +24,7 @@ try {
         // The ACP SDK is ESM-only; Electron 33's Node runtime needs it bundled.
         build.onResolve({ filter: /^@agentclientprotocol\/sdk$/ }, () => ({ path: resolve('node_modules/@agentclientprotocol/sdk/dist/acp.js') }))
         build.onResolve({ filter: /^(electron|\.{1,2}\/agents\/(process-manager|models)|\.{1,2}\/git-delivery|\.{1,2}\/terminal|\.{1,2}\/memory\/project-memory)$/ }, (args) => {
-          if (['issue-tracker-git', 'git-delivery'].includes(suite) && resolve(args.resolveDir, args.path) === resolve('src/main/git-delivery')) return undefined
+          if (['issue-tracker-git', 'git-delivery', 'git-merge', 'github-git'].includes(suite) && resolve(args.resolveDir, args.path) === resolve('src/main/git-delivery')) return undefined
           return { path: resolve('tests/issue-tracker-doubles.ts') }
         })
       }

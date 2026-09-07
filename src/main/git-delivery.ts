@@ -1,14 +1,18 @@
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
+import { githubRepository } from './github-repository'
 import type {
   ProjectGitStatus,
+  PullRequestGitPreview,
   RebaseStep,
   TaskCommit,
-  TaskDiff
+  TaskDiff,
+  TaskMergePreview
 } from '../shared/types'
 
 const execFileAsync = promisify(execFile)
@@ -125,7 +129,7 @@ function parseNumstat(output: string): Pick<FinalizedWorktree, 'filesChanged' | 
 export class GitDeliveryManager {
   private readonly repoLocks = new Map<string, Promise<void>>()
 
-  constructor(private readonly worktreesRoot: string) {}
+  constructor(private readonly worktreesRoot: string, private readonly remoteGit: typeof git = git) {}
 
   /**
    * Resolves whether a project folder is inside a Git work tree. Never throws:
@@ -379,6 +383,93 @@ export class GitDeliveryManager {
       ...stats,
       cleanupWarning
     }
+  }
+
+  async getPullRequestPreview(projectPath: string, branchName: string): Promise<PullRequestGitPreview> {
+    const remoteUrl = await this.pullRequestRemote(projectPath)
+    const repository = githubRepository(remoteUrl)
+    const local = await this.getMergePreview(projectPath, branchName)
+    const temporaryRef = `refs/anvil/pr-preview/${randomUUID()}`
+    try {
+      // Fetch into a private ref, not the user's checkout, index, or FETCH_HEAD.
+      await this.remoteGit(projectPath, ['fetch', '--no-tags', '--no-write-fetch-head', '--', remoteUrl, `refs/heads/${local.targetBranch}:${temporaryRef}`], [0], { GIT_TERMINAL_PROMPT: '0' })
+      const remoteTargetCommit = (await git(projectPath, ['rev-parse', '--verify', temporaryRef])).stdout.trim()
+      const commitCount = Number((await git(projectPath, ['rev-list', '--count', `${remoteTargetCommit}..${local.sourceCommit}`])).stdout.trim())
+      return { ...local, repository, remote: 'origin', remoteTargetCommit, commitCount }
+    } finally {
+      await git(projectPath, ['update-ref', '-d', temporaryRef])
+    }
+  }
+
+  private async pullRequestRemote(projectPath: string): Promise<string> {
+    const remotes = (await git(projectPath, ['remote', 'get-url', '--push', '--all', 'origin'])).stdout.trim().split(/\r?\n/)
+    if (remotes.length !== 1 || !remotes[0]) throw new Error('Configure exactly one origin push URL before opening a PR.')
+    githubRepository(remotes[0])
+    return remotes[0]
+  }
+
+  async pushPullRequestBranch(projectPath: string, expected: PullRequestGitPreview): Promise<void> {
+    const repoRoot = await realpath((await git(projectPath, ['rev-parse', '--show-toplevel'])).stdout.trim())
+    await this.withRepoLock(repoRoot, async () => {
+      const current = await this.getPullRequestPreview(repoRoot, expected.sourceBranch)
+      if (current.repository !== expected.repository || current.sourceCommit !== expected.sourceCommit ||
+        current.targetBranch !== expected.targetBranch || current.targetCommit !== expected.targetCommit ||
+        current.remoteTargetCommit !== expected.remoteTargetCommit || current.commitCount !== expected.commitCount) {
+        throw new Error('The branches or remote changed. Close this dialog and open PR again to refresh the preview.')
+      }
+      const remoteUrl = await this.pullRequestRemote(repoRoot)
+      if (githubRepository(remoteUrl) !== expected.repository) throw new Error('The origin remote changed. Reopen the PR dialog.')
+      // Explicit refspec, no force, no credential overrides, no author changes.
+      await this.remoteGit(repoRoot, ['push', '--porcelain', '--', remoteUrl, `${expected.sourceCommit}:refs/heads/${expected.sourceBranch}`], [0], { GIT_TERMINAL_PROMPT: '0' })
+    })
+  }
+
+  async getMergePreview(projectPath: string, branchName: string): Promise<TaskMergePreview> {
+    await git(projectPath, ['check-ref-format', `refs/heads/${branchName}`])
+    const targetBranch = (await git(projectPath, ['branch', '--show-current'])).stdout.trim()
+    if (!targetBranch) throw new Error('Check out a branch in the project before approving this task.')
+    if (targetBranch === branchName) throw new Error('The task branch is checked out in the project. Check out the destination branch first.')
+
+    const sourceCommit = (await git(projectPath, ['rev-parse', '--verify', `refs/heads/${branchName}^{commit}`])).stdout.trim()
+    const targetCommit = (await git(projectPath, ['rev-parse', '--verify', 'HEAD'])).stdout.trim()
+    const commitCount = Number((await git(projectPath, ['rev-list', '--count', `${targetCommit}..${sourceCommit}`])).stdout.trim())
+    return { sourceBranch: branchName, targetBranch, sourceCommit, targetCommit, commitCount }
+  }
+
+  /** Merge only the branch tips the user confirmed, without switching their checkout. */
+  async merge(projectPath: string, branchName: string, expected: TaskMergePreview): Promise<void> {
+    const repoRoot = await realpath((await git(projectPath, ['rev-parse', '--show-toplevel'])).stdout.trim())
+    await this.withRepoLock(repoRoot, async () => {
+      const current = await this.getMergePreview(repoRoot, branchName)
+      if (!expected || current.sourceBranch !== expected.sourceBranch || current.targetBranch !== expected.targetBranch ||
+        current.sourceCommit !== expected.sourceCommit || current.targetCommit !== expected.targetCommit ||
+        current.commitCount !== expected.commitCount) {
+        throw new Error('The branches changed since the merge preview was loaded. Close this dialog and approve again.')
+      }
+
+      for (const operation of ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer']) {
+        const operationPath = (await git(repoRoot, ['rev-parse', '--git-path', operation])).stdout.trim()
+        if (existsSync(isAbsolute(operationPath) ? operationPath : join(repoRoot, operationPath))) {
+          throw new Error('Finish or abort the existing Git operation before approving this task.')
+        }
+      }
+      const dirty = (await git(repoRoot, ['status', '--porcelain=v1', '--untracked-files=all'])).stdout.trim()
+      if (dirty) throw new Error('Commit or stash local changes in the project before approving this task.')
+
+      try {
+        await git(repoRoot, ['-c', 'merge.autoStash=false', 'merge', '--no-edit', '--commit', '--no-squash', '--no-autostash', `refs/heads/${branchName}`])
+      } catch (error) {
+        const mergeHead = await git(repoRoot, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], [0, 1])
+        if (mergeHead.exitCode === 0) {
+          try {
+            await git(repoRoot, ['merge', '--abort'])
+          } catch (abortError) {
+            throw new Error(`Merge failed: ${error instanceof Error ? error.message : String(error)}. Could not abort the merge: ${abortError instanceof Error ? abortError.message : String(abortError)}`)
+          }
+        }
+        throw new Error(`Merge failed. The task was not approved: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    })
   }
 
   async getDiff(repoPath: string, baseCommit: string, headCommit: string): Promise<TaskDiff> {

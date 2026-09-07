@@ -150,7 +150,7 @@ export class CodexAppServerClient implements AgentExecutor {
       else output.notification(method, params)
     }
     const serverRequest = (method: string, params: CodexObject): unknown => {
-      const active = !finished && !input.signal?.aborted && params.threadId === threadId &&
+      const active = !input.readOnly && !finished && !input.signal?.aborted && params.threadId === threadId &&
         (turnId ? params.turnId === turnId : startingTurn)
       switch (method) {
         case 'item/commandExecution/requestApproval':
@@ -192,7 +192,7 @@ export class CodexAppServerClient implements AgentExecutor {
       input.signal?.throwIfAborted()
       if (!isAbsolute(input.cwd)) throw new Error('Codex app-server requires an absolute working directory')
       input.signal?.addEventListener('abort', cancel, { once: true })
-      const sandboxPolicy = codexSandboxPolicy()
+      const sandboxPolicy = input.readOnly ? { type: 'readOnly' as const } : codexSandboxPolicy()
       input.signal?.throwIfAborted()
       connection = await request(this.connection(input.cwd, (server) => {
         connection = server
@@ -208,7 +208,7 @@ export class CodexAppServerClient implements AgentExecutor {
         }
       }
       const threadOptions: CodexThreadOptions = {
-        cwd: input.cwd, model: input.model, approvalPolicy: 'never' as const, sandbox: 'danger-full-access' as const,
+        cwd: input.cwd, model: input.model, approvalPolicy: 'never' as const, sandbox: input.readOnly ? 'read-only' : 'danger-full-access',
         // Anvil supplies project-scoped memory. Personal Codex memories and
         // plugin suggestions add unrelated context to every model request.
         config: {

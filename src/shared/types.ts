@@ -39,6 +39,41 @@ export interface Project {
   gitPlatform: 'github'
 }
 
+export interface TaskMergePreview {
+  sourceBranch: string
+  targetBranch: string
+  sourceCommit: string
+  targetCommit: string
+  commitCount: number
+}
+
+export interface PullRequestGitPreview extends TaskMergePreview {
+  repository: string
+  remote: 'origin'
+  remoteTargetCommit: string
+}
+
+export interface PullRequestPreview extends PullRequestGitPreview {
+  account: string
+}
+
+export interface PullRequestInfo {
+  number: number
+  url: string
+  title: string
+  description: string
+  author: string
+  sourceBranch: string
+  targetBranch: string
+  existing: boolean
+}
+
+export type PullRequestField = 'title' | 'description'
+
+export interface GitHubCredentialStatus {
+  configured: boolean
+}
+
 export interface ProjectGitStatus {
   /** True when the project folder resolves to a Git work tree. */
   isRepository: boolean

@@ -23,7 +23,7 @@ async function main(): Promise<void> {
   const addTask = (id: string, patch: Partial<Task> = {}): Task => {
     const task: Task = {
       id, projectId: 'project', title: id, prompt: id, agentId: 'codex', agentLabel: 'Codex',
-      cwd: testHome, status: 'succeeded', deliveryStatus: 'reviewable',
+      cwd: testHome, status: 'succeeded', deliveryStatus: 'reviewable', branchName: 'task',
       startedAt: now - 24 * 60 * 60 * 1000, endedAt: now - 12 * 60 * 60 * 1000,
       inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: 0,
       filesChanged: 1, additions: 1, deletions: 0, ...patch
@@ -35,7 +35,7 @@ async function main(): Promise<void> {
   }
   try {
     addTask('reviewed')
-    const approved: Task = call('tasks:approve', 'reviewed')
+    const approved: Task = await call('tasks:approve', { taskId: 'reviewed', preview: await call('tasks:merge-preview', 'reviewed') })
     assert.equal(approved.reviewedAt, now)
     now += 4 * 60 * 60 * 1000 - 1
     call('tasks:list')
@@ -59,7 +59,7 @@ async function main(): Promise<void> {
       ['cancelled', { status: 'cancelled', deliveryStatus: 'agent_failed' }]
     ] as [string, Partial<Task>][]) {
       addTask(id, patch)
-      assert.throws(() => call('tasks:settle', id), /successful, reviewed/)
+      assert.throws(() => call('tasks:settle', id), id === 'running' ? /not finished executing/ : /successful, reviewed/)
     }
     addTask('no-changes', { deliveryStatus: 'no_changes' })
     addTask('legacy-approved', { deliveryStatus: 'approved' })

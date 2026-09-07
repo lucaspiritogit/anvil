@@ -38,7 +38,7 @@ test('review shows Pierre beside the event stream, with file navigation and focu
   expect(errors).toEqual([])
 })
 
-test('Pierre line comments and approval remain available', async ({ page }) => {
+test('Pierre line comments and approval remain available', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.getByRole('tab', { name: /^Changes/ }).click()
   const review = page.getByRole('region', { name: 'Code changes' })
@@ -54,8 +54,60 @@ test('Pierre line comments and approval remain available', async ({ page }) => {
   await expect(review.getByRole('button', { name: 'Rebase', exact: true })).toBeEnabled()
   await expect(review.getByText('Update sidebar spacing')).toBeVisible()
   await review.getByRole('button', { name: 'Approve', exact: true }).click()
+  const confirmation = page.getByRole('alertdialog', { name: 'Merge and approve?' })
+  await expect(confirmation).toContainText('anvil/review')
+  await expect(confirmation).toContainText('user-current')
+  await expect(confirmation).toContainText('3 commits will be brought in')
+  await page.screenshot({ path: testInfo.outputPath('merge-confirmation.png') })
+  await confirmation.getByRole('button', { name: 'Cancel' }).click()
+  await expect(confirmation).toBeHidden()
+  await expect(review.getByRole('button', { name: 'Approve', exact: true })).toBeFocused()
+  await review.getByRole('button', { name: 'Approve', exact: true }).click()
+  await confirmation.getByRole('button', { name: 'Merge and approve', exact: true }).click()
+  await expect(confirmation.getByRole('button', { name: 'Merging…' })).toBeDisabled()
+  await expect(confirmation).toBeHidden()
   await expect(review.getByRole('button', { name: 'Approved', exact: true })).toBeDisabled()
 })
+
+test('merge errors stay in the confirmation without approving the task', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=review&mergeFailure=1')
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  const approve = page.getByRole('button', { name: 'Approve', exact: true })
+  await approve.click()
+  const confirmation = page.getByRole('alertdialog')
+  await confirmation.getByRole('button', { name: 'Merge and approve', exact: true }).click()
+  await expect(confirmation.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(confirmation).toBeVisible()
+  await expect(confirmation.getByRole('alert')).toHaveText('Merge failed. The task was not approved.')
+  await page.keyboard.press('Escape')
+  await expect(confirmation).toBeHidden()
+  await expect(approve).toBeEnabled()
+  await expect(approve).toBeFocused()
+})
+
+test('preview failures disable approval', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=review&mergePreviewFailure=1')
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  const confirmation = page.getByRole('alertdialog')
+  await expect(confirmation.getByRole('alert')).toHaveText('Check out a branch before approving')
+  await expect(confirmation.getByRole('button', { name: 'Merge and approve', exact: true })).toBeDisabled()
+  await confirmation.getByRole('button', { name: 'Cancel' }).click()
+  await expect(confirmation).toBeHidden()
+})
+
+for (const commitCount of [0, 1]) {
+  test(`merge confirmation handles ${commitCount} incoming commits`, async ({ page }) => {
+    await page.goto(`/tests/e2e/fixture/?scenario=review&mergeCommitCount=${commitCount}`)
+    await page.getByRole('tab', { name: /^Changes/ }).click()
+    await page.getByRole('button', { name: 'Approve', exact: true }).click()
+    const confirmation = page.getByRole('alertdialog')
+    await expect(confirmation).toContainText(`${commitCount} commit${commitCount === 1 ? '' : 's'} will be brought in`)
+    if (!commitCount) await expect(confirmation).toContainText('already merged')
+    await expect(confirmation.getByRole('button', { name: 'Merge and approve', exact: true })).toBeEnabled()
+  })
+}
 
 test('narrow review switches panels without losing file or steering drafts', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 500 })

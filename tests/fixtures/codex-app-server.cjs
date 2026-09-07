@@ -72,7 +72,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (requests.has(message.id) && !message.method) {
     const method = requests.get(message.id)
     if (method.includes('Execution/requestApproval') || method.includes('fileChange/requestApproval')) {
-      const expectedDecision = ['stale-command', 'foreign-command'].includes(message.id) ? 'cancel' : 'accept'
+      const expectedDecision = scenario === 'read-only' || ['stale-command', 'foreign-command'].includes(message.id) ? 'cancel' : 'accept'
       if (message.result.decision !== expectedDecision) process.exit(21)
     } else if (method === 'unknown/serverRequest') {
       if (message.error.code !== -32601) process.exit(22)
@@ -113,7 +113,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         message: "Invalid request: unknown variant `" + message.params.sandbox + "`, expected one of `read-only`, `workspace-write`, `danger-full-access`"
       } })
     }
-    if (!['test-model', 'reasoner'].includes(message.params.model) || message.params.approvalPolicy !== 'never' || message.params.sandbox !== 'danger-full-access') process.exit(25)
+    if (!['test-model', 'reasoner'].includes(message.params.model) || message.params.approvalPolicy !== 'never' || message.params.sandbox !== (scenario === 'read-only' ? 'read-only' : 'danger-full-access')) process.exit(25)
     if (scenario === 'bad-thread') return respond(message.id, { thread: { id: null } })
     resumed = message.method === 'thread/resume'
     if (resumed) {
@@ -126,7 +126,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   }
   if (message.method === 'turn/start') {
     if (message.params.threadId !== threadId || message.params.input[0].text !== 'Implement the issue') process.exit(27)
-    if (JSON.stringify(message.params.sandboxPolicy) !== JSON.stringify({ type: 'dangerFullAccess' })) process.exit(29)
+    if (JSON.stringify(message.params.sandboxPolicy) !== JSON.stringify({ type: scenario === 'read-only' ? 'readOnly' : 'dangerFullAccess' })) process.exit(29)
     if (scenario === 'rpc-error') return send({ id: message.id, error: { code: -32603, message: 'Authenticate with codex login' } })
     if (scenario === 'exit') return process.exit(3)
     if (scenario === 'orphan') {
@@ -147,7 +147,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     notify('turn/started', { turn: turn() })
     if (scenario.startsWith('cancel')) return delta('Waiting\n')
     if (scenario.startsWith('steer')) return delta('Waiting for steering\n')
-    if (scenario === 'permissions') {
+    if (scenario === 'permissions' || scenario === 'read-only') {
       permission('item/commandExecution/requestApproval', 1, { availableDecisions: ['accept', 'acceptForSession', 'decline', 'cancel'] })
       permission('item/fileChange/requestApproval', 'file')
       permission('item/permissions/requestApproval', 'permissions', { permissions: { network: { enabled: true } } })

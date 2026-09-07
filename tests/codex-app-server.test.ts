@@ -170,6 +170,15 @@ async function main(): Promise<void> {
     assert.deepEqual(permissionResponses.find((response) => response.id === 'input').result, { answers: {} })
     assert.equal(permissionResponses.find((response) => response.id === 'unknown').error.code, -32601)
 
+    const beforeReadOnly = (await requests()).length
+    const readOnly = await client('read-only').execute({ ...input, readOnly: true }, () => {})
+    assert.equal(readOnly.status, 'succeeded', readOnly.error)
+    const readOnlyRequests = (await requests()).slice(beforeReadOnly)
+    assert.equal(readOnlyRequests.find((request) => request.method === 'thread/start').params.sandbox, 'read-only')
+    assert.deepEqual(readOnlyRequests.find((request) => request.method === 'turn/start').params.sandboxPolicy, { type: 'readOnly' })
+    assert.equal(readOnlyRequests.find((request) => request.id === 'file').result.decision, 'cancel')
+    assert.deepEqual(readOnlyRequests.find((request) => request.id === 'permissions').result.permissions, {})
+
     for (const scenario of ['steer', 'steer-error']) {
       const executor = client(scenario)
       let ready!: () => void

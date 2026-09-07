@@ -13,12 +13,12 @@ export interface CodexThreadOptions {
   cwd: string
   model?: string
   approvalPolicy: 'never'
-  sandbox: 'danger-full-access'
+  sandbox: 'danger-full-access' | 'read-only'
   config?: Record<string, boolean | number | string>
 }
 
 export interface CodexSandboxPolicy {
-  type: 'dangerFullAccess'
+  type: 'dangerFullAccess' | 'readOnly'
 }
 
 export interface CodexTurn {

@@ -9,6 +9,7 @@ import type {
   TaskComment,
   TaskDiff,
   TaskEvent,
+  TaskMergePreview,
   Settings
 } from '@shared/types'
 
@@ -60,7 +61,7 @@ interface AnvilState {
   loadGitStatus: (id: string) => Promise<void>
   initGitRepo: (id: string) => Promise<void>
 
-  approveTask: (taskId: string) => Promise<void>
+  approveTask: (taskId: string, preview: TaskMergePreview) => Promise<void>
   openRebase: (taskId: string | null) => void
   rebaseTask: (taskId: string, steps: RebaseStep[]) => Promise<void>
   rebaseWithAgent: (taskId: string) => Promise<void>
@@ -292,16 +293,12 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  approveTask: async (taskId) => {
-    try {
-      const task = await window.anvil.tasks.approve(taskId)
-      set((s) => ({
-        tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
-        commentError: null
-      }))
-    } catch (error) {
-      set({ commentError: error instanceof Error ? error.message : String(error) })
-    }
+  approveTask: async (taskId, preview) => {
+    const task = await window.anvil.tasks.approve({ taskId, preview })
+    set((s) => ({
+      tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+      commentError: null
+    }))
   },
 
   openRebase: (taskId) => set({ rebaseTaskId: taskId, commentError: null }),

@@ -5,6 +5,8 @@ import { useStore } from '../state/store'
 import { btn, cn, deliveryTone, dot, field, statusTone } from '../ui'
 import { AgentIcon } from './AgentIcon'
 import { AgentRebaseModal } from './AgentRebaseModal'
+import { ApproveTaskModal } from './ApproveTaskModal'
+import { OpenPullRequestModal } from './OpenPullRequestModal'
 import { CopyableText } from './CopyableText'
 import { RebaseModal } from './RebaseModal'
 import { TaskSteeringComposer } from './TaskSteeringComposer'
@@ -368,7 +370,8 @@ export function TaskView({ task }: Props): JSX.Element {
   const rebaseWithAgent = useStore((s) => s.rebaseWithAgent)
   const rebasing = useStore((s) => s.rebasing === task.id)
   const rebaseTaskId = useStore((s) => s.rebaseTaskId)
-  const approveTask = useStore((s) => s.approveTask)
+  const [approvalTaskId, setApprovalTaskId] = useState<string | null>(null)
+  const [pullRequestTaskId, setPullRequestTaskId] = useState<string | null>(null)
   const approved = task.deliveryStatus === 'approved'
 
   const outputRef = useRef<HTMLDivElement>(null)
@@ -411,6 +414,12 @@ export function TaskView({ task }: Props): JSX.Element {
 
   return (
     <div className="@container relative flex flex-col h-full min-w-0 min-h-0 overflow-hidden">
+      {pullRequestTaskId === task.id && (
+        <OpenPullRequestModal key={task.id} task={task} onClose={() => setPullRequestTaskId(null)} />
+      )}
+      {approvalTaskId === task.id && (
+        <ApproveTaskModal key={task.id} taskId={task.id} onClose={() => setApprovalTaskId(null)} />
+      )}
       {rebaseTaskId === task.id &&
         (settings?.rebaseMode === 'agent' ? (
           <AgentRebaseModal taskId={task.id} />
@@ -498,7 +507,10 @@ export function TaskView({ task }: Props): JSX.Element {
                   <button className={btn.ghost} disabled={approved || !pending.length || sending} onClick={() => void sendComments(task.id)}>
                     {sending ? 'Sending…' : 'Send comments'}
                   </button>
-                  <button className={cn(btn.primary, 'bg-ok disabled:opacity-45')} disabled={approved || !diff || rebasing} onClick={() => void approveTask(task.id)}>
+                  <button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
+                    Open PR
+                  </button>
+                  <button className={cn(btn.primary, 'bg-ok disabled:opacity-45')} disabled={approved || !diff || rebasing || sending} onClick={() => setApprovalTaskId(task.id)}>
                     {approved ? 'Approved' : 'Approve'}
                   </button>
                 </div>

@@ -1,6 +1,6 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Project, Task, TaskComment, TaskDiff, TaskEvent } from '../../../src/shared/types'
+import type { Project, Task, TaskComment, TaskDiff, TaskEvent, TaskMergePreview, PullRequestPreview, PullRequestField } from '../../../src/shared/types'
 import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import { useStore } from '../../../src/renderer/src/state/store'
@@ -76,6 +76,7 @@ index 3333333..4444444 100644
 +Review the final task diff before approving.
 `
 }
+let githubTokenConfigured = false
 let comments: TaskComment[] = []
 let diffRequests = 0
 const events = (taskId: string): TaskEvent[] => {
@@ -117,6 +118,40 @@ window.anvil = {
       }])) : { 'provider/model': { options: [] } }
     }
   },
+  github: {
+    credentialStatus: async () => ({ configured: githubTokenConfigured }),
+    setToken: async () => {
+      if (query.has('tokenFailure')) throw new Error('GitHub rejected the token')
+      githubTokenConfigured = true
+      return { configured: true }
+    },
+    removeToken: async () => { githubTokenConfigured = false; return { configured: false } },
+    preview: async (taskId: string): Promise<PullRequestPreview> => {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      if (query.has('prPreviewFailure')) throw new Error('Add your GitHub token in Settings.')
+      return {
+        sourceBranch: tasks.find((task) => task.id === taskId)!.branchName!, targetBranch: 'main',
+        sourceCommit: 'source-head', targetCommit: 'local-head', remoteTargetCommit: 'remote-head',
+        repository: 'developer/anvil', remote: 'origin', account: 'developer', commitCount: query.has('prEmpty') ? 0 : 3
+      }
+    },
+    draftField: async (input: { taskId: string; field: PullRequestField; title: string; description: string }) => {
+      window.dispatchEvent(new CustomEvent('fixture:pr-draft', { detail: input }))
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      if (query.has('prDraftFailure')) throw new Error('The agent could not draft PR text.')
+      return input.field === 'title' ? 'Improve sidebar review' : '## Changes\nImprove sidebar spacing and document review behavior.'
+    },
+    openPullRequest: async (input: { taskId: string; preview: PullRequestPreview; title: string; description: string }) => {
+      window.dispatchEvent(new CustomEvent('fixture:open-pr', { detail: input }))
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      if (query.has('prFailure')) throw new Error('The branch was pushed, but the PR could not be confirmed. Retry to check for an existing PR.')
+      return {
+        number: 42, url: 'https://github.com/developer/anvil/pull/42', title: input.title, description: input.description,
+        author: 'developer', sourceBranch: input.preview.sourceBranch, targetBranch: input.preview.targetBranch, existing: query.has('prExisting')
+      }
+    },
+    openUrl: async (url: string) => { window.dispatchEvent(new CustomEvent('fixture:pr-url', { detail: url })) }
+  },
   settings: { get: async () => ({ defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, keybindings: DEFAULT_KEYBINDINGS }) },
   tasks: {
     list: async () => tasks,
@@ -144,7 +179,20 @@ window.anvil = {
       if (query.has('diffFailure') && diffRequests === 1) throw new Error('Could not load the task diff')
       return query.has('emptyDiff') ? { patch: '', commits: [] } : reviewDiff
     },
-    approve: async (taskId: string) => update({ ...tasks.find((task) => task.id === taskId)!, deliveryStatus: 'approved' }),
+    mergePreview: async (taskId: string): Promise<TaskMergePreview> => {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      if (query.has('mergePreviewFailure')) throw new Error('Check out a branch before approving')
+      return {
+        sourceBranch: tasks.find((task) => task.id === taskId)!.branchName!, targetBranch: 'user-current',
+        sourceCommit: 'source-head', targetCommit: 'target-head', commitCount: Number(query.get('mergeCommitCount') ?? 3)
+      }
+    },
+    approve: async (input: { taskId: string; preview: TaskMergePreview }) => {
+      window.dispatchEvent(new CustomEvent('fixture:approval', { detail: input }))
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      if (query.has('mergeFailure')) throw new Error('Merge failed. The task was not approved.')
+      return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', reviewedAt: Date.now() })
+    },
     onEvent: (listener: (event: TaskEvent) => void) => {
       const receive = (event: Event) => listener((event as CustomEvent<TaskEvent>).detail)
       window.addEventListener('fixture:output', receive)

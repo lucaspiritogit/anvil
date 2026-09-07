@@ -150,6 +150,34 @@ tasks stay active. Right-click a task to delete it. Deletion removes SQLite
 state and cancels the agent. Valence issues, project files, and Git branches stay
 put. Removing a project also stops its Anvil agents without deleting Valence data.
 
+### GitHub pull requests
+
+In Settings, save a personal GitHub token with access to the repository and
+**Pull requests: write** permission. Anvil encrypts it with Electron's system
+keychain storage, separately from ordinary settings. It refuses insecure
+plaintext storage. The token is used only for GitHub API requests, never passed
+to agents or written to Git configuration.
+
+In a completed task's Changes panel, **Open PR** sits beside **Approve**.
+The dialog shows the GitHub repository, task branch, destination branch, incoming
+commit count, and token account. Enter a title and description, or use each
+sparkle button to draft that field with the task's agent and model. Drafting uses
+a fresh read-only session, not the task's original session. You can edit the result
+before submitting.
+
+This first version supports same-repository PRs on GitHub.com through a single
+`origin` push URL. The destination is the remote branch with the same name as your
+current local checkout. That remote branch must already exist. Preview fetches
+its current tip without changing your checkout or index. Confirmation pushes the
+task branch without force, then creates the PR or returns an existing open PR.
+Git fetch and push use your existing SSH or Git credential-helper authentication.
+Anvil does not replace `user.name`, `user.email`, or commit authorship. GitHub
+attributes the PR to the personal token's account, not the Git author fields.
+
+The result dialog shows the PR number, title, author, branches, and GitHub link.
+The link is also recorded in task output. Opening a PR does not merge or approve
+the task locally. **Approve** remains the separate local merge action.
+
 ### OpenCode provider timeouts
 
 OpenCode provider timeouts are configured in `~/.config/opencode/opencode.json`,

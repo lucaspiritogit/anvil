@@ -4,7 +4,7 @@ import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { reviewPrompt } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
-import type { TaskComment } from '../../shared/types'
+import type { Task, TaskComment, TaskMergePreview } from '../../shared/types'
 
 interface ReviewHandlerDependencies extends TaskContext {
   recordSystemEvent: RecordSystemEvent
@@ -14,16 +14,38 @@ interface ReviewHandlerDependencies extends TaskContext {
 export function registerReviewHandlers({
   store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTask
 }: ReviewHandlerDependencies): void {
-  // Approval takes a reviewed task out of the review queue.
-  ipcMain.handle('tasks:approve', (_event, taskId: string) => {
+  const approving = new Set<string>()
+  const requireReviewableTask = (taskId: string) => {
     requireFinishedTask(taskId)
     const task = store.getTask(taskId)
     if (!task) throw new Error('Task not found')
     if (task.deliveryStatus !== 'reviewable') throw new Error('This task is not awaiting review')
+    if (!task.branchName) throw new Error('This task has no branch to merge')
+    const project = store.getProjects().find((item) => item.id === task.projectId)
+    if (!project) throw new Error('Project not found')
+    return { project, branchName: task.branchName }
+  }
 
-    const approved = store.updateTask(taskId, { deliveryStatus: 'approved', reviewedAt: Date.now() })!
-    send('task:updated', approved)
-    return approved
+  ipcMain.handle('tasks:merge-preview', async (_event, taskId: string): Promise<TaskMergePreview> => {
+    const { project, branchName } = requireReviewableTask(taskId)
+    return gitDelivery.getMergePreview(project.path, branchName)
+  })
+
+  ipcMain.handle('tasks:approve', async (_event, input: { taskId: string; preview: TaskMergePreview }): Promise<Task> => {
+    const { taskId, preview } = input
+    if (approving.has(taskId)) throw new Error('This task is already being approved')
+    const { project, branchName } = requireReviewableTask(taskId)
+    approving.add(taskId)
+    try {
+      await gitDelivery.merge(project.path, branchName, preview)
+      const approved = store.updateTask(taskId, { deliveryStatus: 'approved', reviewedAt: Date.now() })
+      if (!approved) throw new Error('Task was deleted')
+      recordSystemEvent(taskId, `Merged ${branchName} into ${preview.targetBranch} with git merge, bringing in ${preview.commitCount} commit${preview.commitCount === 1 ? '' : 's'}.`)
+      send('task:updated', approved)
+      return approved
+    } finally {
+      approving.delete(taskId)
+    }
   })
 
   ipcMain.handle('comments:list', (_event, taskId: string) => store.getComments(taskId))
@@ -55,6 +77,7 @@ export function registerReviewHandlers({
   // Resume the original agent session on the task branch with pending review notes.
   ipcMain.handle('comments:send', async (_event, taskId: string) => {
     requireFinishedTask(taskId)
+    if (approving.has(taskId)) throw new Error('This task is being approved')
     const task = store.getTask(taskId)
     if (!task) throw new Error('Task not found')
     if (agentProcesses.isRunning(taskId)) throw new Error('This task is already running')

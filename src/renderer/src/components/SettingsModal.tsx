@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
 import { ProviderModelSelect } from './ProviderModelSelect'
+import { GitHubSettings } from './GitHubSettings'
 import { acceleratorFromEvent, IS_MAC } from '../keys'
 import { useStore } from '../state/store'
 import { btn, cn, field, hint, modal } from '../ui'
@@ -174,6 +175,8 @@ export function SettingsModal(): JSX.Element {
           </small>
         </label>
 
+        <GitHubSettings />
+
         <div className={modal.section}>
           <h3 className="my-3 text-[13px] font-semibold">Keyboard shortcuts</h3>
           {SHORTCUTS.map((shortcut) => (
@@ -227,8 +230,8 @@ export function SettingsModal(): JSX.Element {
               <span className="block">
                 <strong className="block">Work is done on push</strong>
                 <small className="block mt-1 text-dim leading-[1.4]">
-                  Use {activeProject.gitPlatform} delivery after a successful task. This setting is
-                  saved now; remote push and pull requests are not enabled yet.
+                  Reserve this project preference for automatic GitHub delivery. Automatic delivery is not enabled yet;
+                  use Open PR to push and open a pull request manually.
                 </small>
               </span>
             </label>

@@ -13,6 +13,8 @@ export interface TaskInput {
   /** Selected agent/model option ID; adapters translate it to their wire protocol. */
   reasoningEffort?: string
   resumeSessionId?: string
+  /** Metadata drafting must not change project files or run privileged tools. */
+  readOnly?: boolean
   signal?: AbortSignal
 }
 

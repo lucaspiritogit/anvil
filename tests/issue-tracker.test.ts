@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   await tick()
   const deliveriesBeforeCompletion = GitDeliveryManager.head
   assert.equal('items' in store.getTaskExecution(taskId)!, false, 'Persist IDs, not duplicate issue records')
-  assert.throws(() => call('tasks:approve', taskId), /not finished/)
+  await assert.rejects(call('tasks:approve', { taskId }), /not finished/)
   await assert.rejects(call('comments:send', taskId), /not finished/)
   agentProcesses.emit('usage', { taskId, inputTokens: 5, outputTokens: 2, cachedTokens: 0, totalTokens: 7, costUsd: null })
   agentProcesses.emit('usage', { taskId, inputTokens: 5, outputTokens: 2, cachedTokens: 0, totalTokens: 7, costUsd: null })
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   assert.equal(store.getTask(taskId)?.deliveryStatus, 'reviewable')
   assert.equal(store.getTask(taskId)?.totalTokens, 11)
   assert.equal((await call('tasks:diff', taskId)).patch, `base..commit-${deliveriesBeforeCompletion + 1}`)
-  call('tasks:approve', taskId)
+  await call('tasks:approve', { taskId, preview: await call('tasks:merge-preview', taskId) })
   assert.equal(store.getTask(taskId)?.deliveryStatus, 'approved')
 
   const helloId = await start('hello')
@@ -182,7 +182,7 @@ async function main(): Promise<void> {
   await tick()
   await complete(deliveryId)
   assert.equal(store.getTask(deliveryId)?.deliveryStatus, 'failed')
-  assert.throws(() => call('tasks:approve', deliveryId), /not awaiting review/)
+  await assert.rejects(call('tasks:approve', { taskId: deliveryId }), /not awaiting review/)
   GitDeliveryManager.failFinalize = false
   GitDeliveryManager.repository = false
   for (const agentId of ['opencode', 'codex']) {

@@ -131,6 +131,32 @@ export class AgentProcessManager extends EventEmitter {
     super()
   }
 
+  /** A fresh, read-only turn for metadata, separate from the task's session and lifecycle. */
+  async generateText(options: Pick<StartOptions, 'agent' | 'prompt' | 'cwd' | 'model' | 'reasoningEffort'>): Promise<string> {
+    if (this.shutdown) throw new Error('Agent processes are shutting down')
+    const client = options.agent.id === 'codex' ? this.codexClient : options.agent.id === 'opencode' ? this.openCodeClient : undefined
+    if (!client) throw new Error('This agent does not support PR drafting')
+    const taskId = `pr-draft-${randomUUID()}`
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 120_000)
+    this.serverExecutions.set(taskId, controller)
+    const { agent: _agent, ...input } = options
+    const execution = Promise.resolve().then(() => client.execute({ ...input, taskId, readOnly: true, signal: controller.signal }, () => {}))
+    const completion = execution.then(() => {}, () => {})
+    this.completions.add(completion)
+    try {
+      const result = await execution
+      if (result.status !== 'succeeded') throw new Error(result.error ?? 'PR drafting was cancelled or timed out.')
+      const text = result.output.trim()
+      if (!text) throw new Error('The agent returned an empty draft.')
+      return text
+    } finally {
+      clearTimeout(timer)
+      this.serverExecutions.delete(taskId)
+      this.completions.delete(completion)
+    }
+  }
+
   isRunning(taskId: string): boolean {
     return this.procs.has(taskId) || this.serverExecutions.has(taskId)
   }

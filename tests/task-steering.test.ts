@@ -47,7 +47,7 @@ async function main(): Promise<void> {
     await assert.rejects(call('tasks:steer', { taskId: 'task', message: 42 }), /needs some text/)
     await assert.rejects(steer('missing'), /Task not found/)
     const task: Task = await call('tasks:start', {
-      projectId: 'project', agentId: 'codex', prompt: 'Original task', model: 'original-model', thinkingLevel: 'high'
+      projectId: 'project', agentId: 'codex', prompt: 'Original task', model: 'original-model', reasoningEffort: 'high'
     })
     await tick()
     await assert.rejects(steer(task.id, '  '), /needs some text/)
@@ -101,7 +101,7 @@ async function main(): Promise<void> {
     assert.equal(resumed.taskId, task.id)
     assert.equal(resumed.agent.id, 'codex')
     assert.equal(resumed.model, 'original-model')
-    assert.equal(resumed.thinkingLevel, 'high')
+    assert.equal(resumed.reasoningEffort, 'high')
     assert.equal(resumed.resumeSessionId, 'newest-session')
     assert.equal(resumed.projectPath, testHome)
     assert.equal(resumed.cwd, testHome)
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
     const task = restarted.getTasks().find((task) => task.prompt === 'Original task' && task.id !== 'unsupported' && task.id !== 'unmanaged')!
     assert.equal(task.model, 'original-model')
     assert.equal(task.sessionId, 'newest-session')
-    assert.equal(restarted.getTaskExecution(task.id)?.thinkingLevel, 'high', 'Thinking settings survive restart')
+    assert.equal(restarted.getTaskExecution(task.id)?.reasoningEffort, 'high', 'Reasoning settings survive restart')
   } finally {
     restarted.close()
   }

@@ -55,7 +55,7 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
           if (acceptingUpdates && notification.sessionId === sessionId) output.update(notification.update)
         },
         requestPermission: async (request) => {
-          if (input.signal?.aborted || !acceptingUpdates || request.sessionId !== sessionId) {
+          if (input.readOnly || input.signal?.aborted || !acceptingUpdates || request.sessionId !== sessionId) {
             return { outcome: { outcome: 'cancelled' } }
           }
           const option = request.options.find((option) => option.kind === 'allow_once')
@@ -108,6 +108,11 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
         const session = await request(connection.rpc.newSession({ cwd: input.cwd, mcpServers: [] }))
         sessionId = session.sessionId
         configOptions = session.configOptions ?? []
+        if (input.readOnly) {
+          const planMode = session.modes?.availableModes.find((mode) => mode.id === 'plan')
+          if (!planMode) throw new Error('This OpenCode server does not offer read-only plan mode for PR drafting.')
+          await request(connection.rpc.setSessionMode({ sessionId, modeId: planMode.id }))
+        }
       }
       input.signal?.throwIfAborted()
       onEvent({ type: 'session', taskId: input.taskId, sessionId })

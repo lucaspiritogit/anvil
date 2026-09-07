@@ -50,7 +50,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   appendFileSync(transcript, JSON.stringify(message) + '\n')
   if (message.id === 'permission') {
     const outcome = message.result.outcome
-    if (scenario === 'deny-only') {
+    if (scenario === 'deny-only' || scenario === 'read-only') {
       if (outcome.outcome !== 'cancelled') process.exit(7)
     } else if (outcome.optionId !== 'once') process.exit(8)
     finish()
@@ -66,7 +66,12 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       text('Old turn summary from history.')
       update({ sessionUpdate: 'tool_call', toolCallId: 'old', title: 'Old edit', kind: 'edit', status: 'completed', locations: [{ path: '/old.ts' }] })
     }
-    respond(message.id, { sessionId, configOptions: sessionConfig() })
+    respond(message.id, { sessionId, configOptions: sessionConfig(), ...(scenario === 'read-only' ? {
+      modes: { currentModeId: 'build', availableModes: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }] }
+    } : {}) })
+  } else if (message.method === 'session/set_mode') {
+    if (message.params.modeId !== 'plan') process.exit(12)
+    respond(message.id, {})
   } else if (message.method === 'session/set_config_option') {
     if (['effort', 'native-reasoning'].includes(message.params.configId)) {
       const config = modelSelected ? selectedConfig() : sessionConfig()

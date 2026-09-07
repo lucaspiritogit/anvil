@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
   AgentDefinition,
+  GitHubCredentialStatus,
+  PullRequestField,
+  PullRequestInfo,
+  PullRequestPreview,
   ProviderModelList,
   RebaseStep,
   Project,
@@ -9,6 +13,7 @@ import type {
   TaskComment,
   TaskDiff,
   TaskEvent,
+  TaskMergePreview,
   Settings
 } from '../shared/types'
 
@@ -24,6 +29,17 @@ const api = {
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
     set: (patch: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke('settings:set', patch)
+  },
+  github: {
+    credentialStatus: (): Promise<GitHubCredentialStatus> => ipcRenderer.invoke('github:credential-status'),
+    setToken: (token: string): Promise<GitHubCredentialStatus> => ipcRenderer.invoke('github:set-token', token),
+    removeToken: (): Promise<GitHubCredentialStatus> => ipcRenderer.invoke('github:remove-token'),
+    preview: (taskId: string): Promise<PullRequestPreview> => ipcRenderer.invoke('github:pr-preview', taskId),
+    openPullRequest: (input: { taskId: string; preview: PullRequestPreview; title: string; description: string }): Promise<PullRequestInfo> =>
+      ipcRenderer.invoke('github:open-pr', input),
+    draftField: (input: { taskId: string; field: PullRequestField; title: string; description: string }): Promise<string> =>
+      ipcRenderer.invoke('github:draft-pr-field', input),
+    openUrl: (url: string): Promise<void> => ipcRenderer.invoke('github:open-pr-url', url)
   },
   agents: {
     list: (): Promise<AgentDefinition[]> => ipcRenderer.invoke('agents:list'),
@@ -64,7 +80,8 @@ const api = {
       ipcRenderer.invoke('tasks:rebase', input),
     rebaseWithAgent: (taskId: string): Promise<Task> =>
       ipcRenderer.invoke('tasks:rebase-agent', taskId),
-    approve: (taskId: string): Promise<Task> => ipcRenderer.invoke('tasks:approve', taskId),
+    mergePreview: (taskId: string): Promise<TaskMergePreview> => ipcRenderer.invoke('tasks:merge-preview', taskId),
+    approve: (input: { taskId: string; preview: TaskMergePreview }): Promise<Task> => ipcRenderer.invoke('tasks:approve', input),
     onEvent: (handler: (event: TaskEvent) => void): (() => void) =>
       subscribe<TaskEvent>('task:event', handler),
     onUpdated: (handler: (task: Task) => void): (() => void) => subscribe<Task>('task:updated', handler)

@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { AgentProcessManager } from './agents/process-manager'
 import { GitDeliveryManager } from './git-delivery'
 import { registerAgentHandlers } from './ipc/agents'
+import { registerGitHubHandlers } from './ipc/github'
+import { GitHubCredentials } from './github-credentials'
 import { registerProjectHandlers } from './ipc/projects'
 import { registerRebaseHandlers } from './ipc/rebase'
 import { registerReviewHandlers } from './ipc/review'
@@ -73,6 +75,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): {
   }
   registerSteeringHandlers({ ...context, ...taskEvents, resumeTask: execution.resumeTask })
   registerReviewHandlers(reviewContext)
+  registerGitHubHandlers({ ...reviewContext, credentials: new GitHubCredentials(join(dataDirectory, 'github-token.enc')) })
   registerRebaseHandlers(reviewContext)
   registerTerminalHandlers(terminals)
 

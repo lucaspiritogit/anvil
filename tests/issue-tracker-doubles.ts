@@ -13,6 +13,11 @@ export const ipcMain = {
   handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler),
   on: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler)
 }
+export const safeStorage = {
+  isEncryptionAvailable: () => false,
+  encryptString: () => { throw new Error('Use an explicit credential encryption test double') },
+  decryptString: () => { throw new Error('Use an explicit credential encryption test double') }
+}
 export const dialog = {}
 export const shell = {}
 export class BrowserWindow {}
@@ -82,5 +87,9 @@ export class GitDeliveryManager {
     if (GitDeliveryManager.failFinalize) throw new Error('finalize failed')
     return { headCommit: `commit-${++GitDeliveryManager.head}`, hasChanges: true, filesChanged: 1, additions: 1, deletions: 0 }
   }
+  async getMergePreview(_path: string, branchName: string): Promise<any> {
+    return { sourceBranch: branchName, targetBranch: 'main', sourceCommit: 'task-head', targetCommit: 'main-head', commitCount: 1 }
+  }
+  async merge(): Promise<void> {}
   async getDiff(_path: string, base: string, head: string): Promise<any> { return { patch: `${base}..${head}`, commits: [] } }
 }

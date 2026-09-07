@@ -60,6 +60,16 @@ async function main(): Promise<void> {
     assert.deepEqual(initialRequests[1].params.mcpServers, [])
     assert.equal(initialRequests.find((request) => request.id === 'permission').result.outcome.optionId, 'once')
 
+    const beforeReadOnly = (await requests()).length
+    const readOnly = await client('read-only').execute({ ...input, readOnly: true }, () => {})
+    assert.equal(readOnly.status, 'succeeded', readOnly.error)
+    const readOnlyRequests = (await requests()).slice(beforeReadOnly)
+    assert.equal(readOnlyRequests.find((request) => request.method === 'session/set_mode').params.modeId, 'plan')
+    assert.equal(readOnlyRequests.find((request) => request.id === 'permission').result.outcome.outcome, 'cancelled')
+    const unsupportedReadOnly = await client('success').execute({ ...input, readOnly: true }, () => {})
+    assert.equal(unsupportedReadOnly.status, 'failed')
+    assert.match(unsupportedReadOnly.error!, /read-only plan mode/)
+
     events.length = 0
     const resumed = await client('success').execute({ ...input, resumeSessionId: 'session-test' }, record)
     assert.equal(resumed.output, expected)
