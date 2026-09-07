@@ -35,7 +35,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (permissions.has(id) && !method) {
     const session = permissions.get(id)
     permissions.delete(id)
-    if (isAcp ? message.result.outcome.optionId !== 'once' : message.result.decision !== 'decline') process.exit(10)
+    if (isAcp ? message.result.outcome.optionId !== 'once' : message.result.decision !== 'accept') process.exit(10)
     session.timer = setTimeout(() => complete(session), 60)
     return
   }

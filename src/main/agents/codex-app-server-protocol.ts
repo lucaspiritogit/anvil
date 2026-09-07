@@ -14,18 +14,14 @@ export interface CodexThreadOptions {
   cwd: string
   model?: string
   approvalPolicy: 'never'
-  sandbox: 'workspace-write'
+  sandbox: 'danger-full-access'
   /** Anvil-side canonical level; mapped into `config.model_reasoning_effort` before sending. */
   thinkingLevel?: ThinkingLevel
   config?: Record<string, boolean | number | string>
 }
 
 export interface CodexSandboxPolicy {
-  type: 'workspaceWrite'
-  writableRoots: string[]
-  networkAccess: boolean
-  excludeTmpdirEnvVar: boolean
-  excludeSlashTmp: boolean
+  type: 'dangerFullAccess'
 }
 
 export interface CodexTurn {
@@ -56,6 +52,14 @@ export interface CodexAppServerRequests {
       sandboxPolicy: CodexSandboxPolicy
     }
     result: { turn: CodexTurn }
+  }
+  'turn/steer': {
+    params: {
+      threadId: string
+      expectedTurnId: string
+      input: Array<{ type: 'text'; text: string; text_elements: [] }>
+    }
+    result: { turnId: string }
   }
   'turn/interrupt': {
     params: { threadId: string; turnId: string }
@@ -106,4 +110,5 @@ export function validateCodexResponse(method: keyof CodexAppServerRequests, valu
   if (method === 'initialize') codexString(result.userAgent)
   if (method === 'thread/start' || method === 'thread/resume') codexId(codexObject(result.thread).id)
   if (method === 'turn/start') codexTurn(result.turn)
+  if (method === 'turn/steer') codexId(result.turnId)
 }

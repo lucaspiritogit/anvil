@@ -58,12 +58,13 @@ A typical task flows like this:
    cumulative local diff for review. Approve, comment, rebase, or settle from
    there.
 
-Codex keeps the `workspace-write` sandbox. Each turn grants write access to its
-worktree and Git metadata, plus networking for dependency installs and local test
-servers. The source checkout and other task files are not additional writable
-roots. Git metadata is shared by linked worktrees, so agents must keep Anvil's
-assigned branch and avoid changing other branches. Install dependencies in the
-task worktree; do not symlink another checkout's `node_modules` or build caches.
+Codex runs with `danger-full-access` and no approval prompts so agents can launch
+Chromium and run Playwright validation. Commands have your normal user permissions,
+including filesystem and network access outside the task worktree. Use Anvil only
+with projects you trust. Worktrees separate code changes; they are not security
+boundaries. Agents must keep Anvil's assigned branch and avoid changing other
+branches or checkouts. Install dependencies in the task worktree; do not symlink
+another checkout's `node_modules` or build caches.
 
 Token totals accumulate across model requests, including the planning and
 implementation turns. Codex input includes cached tokens; cached input is shown

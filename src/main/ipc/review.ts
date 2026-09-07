@@ -99,6 +99,9 @@ export function registerReviewHandlers({
         agent,
         prompt: `${GIT_SYSTEM_PROMPT}\n\n${reviewPrompt(sent)}`,
         model: task.model,
+        thinkingLevel: store.getTaskExecution(taskId)?.thinkingLevel,
+        modelEffort: store.getTaskExecution(taskId)?.modelEffort,
+        projectPath: project.path,
         cwd: reopened.cwd,
         ...(resumeSessionId ? { resumeSessionId } : {})
       })

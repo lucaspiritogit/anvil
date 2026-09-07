@@ -58,6 +58,7 @@ const api = {
       thinkingLevel?: ThinkingLevel
       modelEffort?: string
     }): Promise<Task> => ipcRenderer.invoke('tasks:start', input),
+    steer: (input: { taskId: string; message: string }): Promise<void> => ipcRenderer.invoke('tasks:steer', input),
     cancel: (taskId: string): Promise<boolean> => ipcRenderer.invoke('tasks:cancel', taskId),
     delete: (taskId: string): Promise<void> => ipcRenderer.invoke('tasks:delete', taskId),
     settle: (taskId: string): Promise<Task> => ipcRenderer.invoke('tasks:settle', taskId),

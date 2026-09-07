@@ -22,6 +22,11 @@ export class TerminalManager { dispose(): void {} }
 
 export class AgentProcessManager extends EventEmitter {
   starts: any[] = []
+  steering: { taskId: string; sessionId: string; message: string }[] = []
+  async steer(input: { taskId: string; sessionId: string; message: string }): Promise<void> {
+    if (!this.active.has(input.taskId)) throw new Error('No active turn')
+    this.steering.push(input)
+  }
   active = new Set<string>()
   isRunning(id: string): boolean { return this.active.has(id) }
   start(options: any): void {

@@ -5,6 +5,7 @@ const threadId = 'thread-test'
 const turnId = 'turn-test'
 let initialized = false
 let resumed = false
+let steeringAttempts = 0
 const requests = new Map()
 const send = (message) => process.stdout.write(JSON.stringify(message) + '\n')
 const respond = (id, result) => send({ id, result })
@@ -71,7 +72,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (requests.has(message.id) && !message.method) {
     const method = requests.get(message.id)
     if (method.includes('Execution/requestApproval') || method.includes('fileChange/requestApproval')) {
-      if (message.result.decision !== 'decline') process.exit(21)
+      const expectedDecision = ['stale-command', 'foreign-command'].includes(message.id) ? 'cancel' : 'accept'
+      if (message.result.decision !== expectedDecision) process.exit(21)
     } else if (method === 'unknown/serverRequest') {
       if (message.error.code !== -32601) process.exit(22)
     }
@@ -96,7 +98,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         message: "Invalid request: unknown variant `" + message.params.sandbox + "`, expected one of `read-only`, `workspace-write`, `danger-full-access`"
       } })
     }
-    if (message.params.model !== 'test-model' || message.params.approvalPolicy !== 'never' || message.params.sandbox !== 'workspace-write') process.exit(25)
+    if (message.params.model !== 'test-model' || message.params.approvalPolicy !== 'never' || message.params.sandbox !== 'danger-full-access') process.exit(25)
     if (scenario === 'bad-thread') return respond(message.id, { thread: { id: null } })
     resumed = message.method === 'thread/resume'
     if (resumed) {
@@ -109,6 +111,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   }
   if (message.method === 'turn/start') {
     if (message.params.threadId !== threadId || message.params.input[0].text !== 'Implement the issue') process.exit(27)
+    if (JSON.stringify(message.params.sandboxPolicy) !== JSON.stringify({ type: 'dangerFullAccess' })) process.exit(29)
     if (scenario === 'rpc-error') return send({ id: message.id, error: { code: -32603, message: 'Authenticate with codex login' } })
     if (scenario === 'exit') return process.exit(3)
     if (scenario === 'orphan') {
@@ -128,16 +131,29 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     respond(message.id, { turn: turn() })
     notify('turn/started', { turn: turn() })
     if (scenario.startsWith('cancel')) return delta('Waiting\n')
+    if (scenario.startsWith('steer')) return delta('Waiting for steering\n')
     if (scenario === 'permissions') {
       permission('item/commandExecution/requestApproval', 1, { availableDecisions: ['accept', 'acceptForSession', 'decline', 'cancel'] })
       permission('item/fileChange/requestApproval', 'file')
       permission('item/permissions/requestApproval', 'permissions', { permissions: { network: { enabled: true } } })
+      permission('item/commandExecution/requestApproval', 'stale-command', { turnId: 'old-turn' })
+      permission('item/commandExecution/requestApproval', 'foreign-command', { threadId: 'other-thread' })
+      permission('item/permissions/requestApproval', 'stale-permissions', { turnId: 'old-turn', permissions: { network: { enabled: true } } })
+      permission('item/permissions/requestApproval', 'foreign-permissions', { threadId: 'other-thread', permissions: { network: { enabled: true } } })
       permission('mcpServer/elicitation/request', 'elicitation')
       permission('item/tool/requestUserInput', 'input')
       permission('unknown/serverRequest', 'unknown')
       return
     }
     // The acknowledgement cannot be interpreted as successful completion.
+    setTimeout(finish, 30)
+  } else if (message.method === 'turn/steer') {
+    if (message.params.threadId !== threadId || message.params.expectedTurnId !== turnId) process.exit(30)
+    if (message.params.input[0].text !== 'Adjust validation') process.exit(31)
+    if (scenario === 'steer-error' && steeringAttempts++ === 0) {
+      return send({ id: message.id, error: { code: -32600, message: 'Steering not permitted for this turn' } })
+    }
+    respond(message.id, { turnId })
     setTimeout(finish, 30)
   } else if (message.method === 'turn/interrupt') {
     if (message.params.threadId !== threadId || message.params.turnId !== turnId) process.exit(28)

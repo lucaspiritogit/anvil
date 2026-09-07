@@ -6,10 +6,13 @@ export type { Issue } from 'valence'
 export interface TaskExecutionState {
   taskId: string
   projectPath: string
-  phase: 'planning' | 'working' | 'complete' | 'blocked'
+  phase: 'planning' | 'working' | 'recovering' | 'complete' | 'blocked'
   issueIds: string[]
   currentIssueId: string | null
   error: string | null
+  /** Original task settings, retained for subsequent turns and session follow-ups. */
+  thinkingLevel?: ThinkingLevel
+  modelEffort?: string
 }
 
 export type TaskStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
@@ -100,6 +103,8 @@ export interface AgentDefinition {
   models?: ModelSource
   /** Omitted for legacy CLI execution. OpenCode uses ACP; Codex uses its own server protocol. */
   executionProtocol?: 'acp' | 'codex-app-server'
+  /** The adapter can inject user input into an active turn without restarting it. */
+  supportsSteering?: boolean
   outputProtocol?: 'opencode-json' | 'codex-json'
 }
 

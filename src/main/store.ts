@@ -172,7 +172,7 @@ export class Store {
     this.markInterruptedTasksFailed()
     // Restart stops Anvil execution, not other clients sharing Valence storage.
     for (const row of this.db.select().from(schema.taskExecutions).all()) {
-      if (row.state.phase === 'planning' || row.state.phase === 'working') {
+      if (row.state.phase === 'planning' || row.state.phase === 'working' || row.state.phase === 'recovering') {
         this.saveTaskExecution({ ...row.state, phase: 'blocked', error: 'Interrupted by app restart. Inspect Valence work before requeueing.' })
       }
     }

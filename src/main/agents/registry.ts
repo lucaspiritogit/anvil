@@ -33,10 +33,11 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
   {
     id: 'codex',
     label: 'Codex',
-    description: 'App-server over stdio, non-interactive workspace-write sandbox.',
+    description: 'App-server over stdio, unrestricted execution without approval prompts.',
     command: 'codex',
     args: ['app-server', '--listen', 'stdio://'],
     executionProtocol: 'codex-app-server',
+    supportsSteering: true,
     defaultModel: CODEX_MODELS[0],
     models: { kind: 'static', models: CODEX_MODELS }
   }

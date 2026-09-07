@@ -4,9 +4,11 @@ import { implementationPrompt } from '../agents/task-prompts'
 import type { ExitInfo } from '../agents/process-manager'
 import type { TaskContext } from './context'
 import { TaskIssues } from './task-issues'
+import type { TaskExecutionState } from '../../shared/types'
 
 export interface TaskExecution {
-  initializeTask(taskId: string, projectPath: string): void
+  initializeTask(taskId: string, projectPath: string, settings?: Pick<TaskExecutionState, 'thinkingLevel' | 'modelEffort'>): void
+  resumeTask(taskId: string): TaskExecutionState
   stopTask(taskId: string, error: string): void
   finishTaskTurn(info: ExitInfo): Promise<void>
   requireFinishedTask(taskId: string): void
@@ -22,8 +24,9 @@ export function registerTaskExecution(
     const task = store.getTask(taskId)
     if (task) send('task:updated', task)
   }
-  const initializeTask = (taskId: string, projectPath: string): void => {
-    issues.initialize(taskId, projectPath)
+  const initializeTask: TaskExecution['initializeTask'] = (taskId, projectPath, settings = {}) => {
+    const state = issues.initialize(taskId, projectPath)
+    store.saveTaskExecution({ ...state, ...settings })
     notify(taskId)
   }
   const stopTask = (taskId: string, error: string): void => {
@@ -61,6 +64,7 @@ export function registerTaskExecution(
       send('task:updated', running)
       agentProcesses.start({
         taskId, issueId: issue.id, agent, cwd, projectPath: project.path, model: task.model,
+        thinkingLevel: state.thinkingLevel, modelEffort: state.modelEffort,
         prompt: `${worktreePath ? GIT_SYSTEM_PROMPT : ''}\n\n${implementationPrompt(task.prompt, issue, project.path)}`
       })
     } catch (error) {
@@ -87,6 +91,8 @@ export function registerTaskExecution(
       if (info.cancelled || info.code !== 0) throw new Error(info.error ?? (info.cancelled ? 'Task cancelled.' : 'Agent failed.'))
       if (state.phase === 'planning') {
         issues.finishPlanning(info.taskId)
+      } else if (state.phase === 'recovering') {
+        issues.finishRecovery(info.taskId)
       } else {
         issues.finishIssue(info.taskId)
       }
@@ -108,11 +114,23 @@ export function registerTaskExecution(
   agentProcesses.on('exit', (info: ExitInfo) => { void finishTaskTurn(info) })
 
   const requireFinishedTask = (taskId: string): void => {
+    const task = store.getTask(taskId)
+    if (task?.status === 'running' || agentProcesses.isRunning(taskId) ||
+      task?.deliveryStatus === 'finalizing' || task?.deliveryStatus === 'did_not_commit') {
+      throw new Error('This task has not finished executing')
+    }
     const state = store.getTaskExecution(taskId)
     if (state?.phase !== 'complete' || issues.list(taskId).some((issue) => issue.status !== 'complete')) {
       throw new Error('This task has not finished executing')
     }
   }
 
-  return { initializeTask, stopTask, finishTaskTurn, requireFinishedTask }
+  const resumeTask = (taskId: string): TaskExecutionState => {
+    if (starting.has(taskId) || finishing.has(taskId) || agentProcesses.isRunning(taskId)) {
+      throw new Error('This task has not finished stopping. Wait and try again.')
+    }
+    return issues.resume(taskId)
+  }
+
+  return { initializeTask, resumeTask, stopTask, finishTaskTurn, requireFinishedTask }
 }

@@ -79,6 +79,7 @@ interface AnvilState {
 
   loadAgentModels: (agentId: string) => Promise<void>
   startTask: (input: { agentId: string; prompt: string; model?: string; thinkingLevel?: ThinkingLevel; modelEffort?: string }) => Promise<void>
+  steerTask: (taskId: string, message: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string) => Promise<void>
   loadTaskDiff: (taskId: string) => Promise<void>
@@ -225,6 +226,12 @@ export const useStore = create<AnvilState>((set, get) => ({
       view: { kind: 'task', taskId: task.id },
       newTaskOpen: false
     }))
+  },
+
+  steerTask: async (taskId, message) => {
+    // Task/session selection and inherited settings are authoritative in main.
+    // Updates arrive through task:updated, not a potentially stale IPC snapshot.
+    await window.anvil.tasks.steer({ taskId, message })
   },
 
   cancelTask: async (taskId) => {

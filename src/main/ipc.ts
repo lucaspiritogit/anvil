@@ -7,6 +7,7 @@ import { registerProjectHandlers } from './ipc/projects'
 import { registerRebaseHandlers } from './ipc/rebase'
 import { registerReviewHandlers } from './ipc/review'
 import { registerTaskHandlers } from './ipc/tasks'
+import { registerSteeringHandlers } from './ipc/steering'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerTerminalHandlers } from './ipc/terminals'
 import { createProjectMemory, type ProjectMemory } from './memory/project-memory'
@@ -70,6 +71,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): {
     recordSystemEvent: taskEvents.recordSystemEvent,
     requireFinishedTask: execution.requireFinishedTask
   }
+  registerSteeringHandlers({ ...context, ...taskEvents, resumeTask: execution.resumeTask })
   registerReviewHandlers(reviewContext)
   registerRebaseHandlers(reviewContext)
   registerTerminalHandlers(terminals)

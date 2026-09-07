@@ -6,7 +6,7 @@ import { closeAgentServer, killAgentServer } from './agent-server-process'
 import { parseAgentLine } from './output'
 import { OpenCodeAcpClient } from './opencode-acp'
 import { CodexAppServerClient } from './codex-app-server'
-import type { AgentExecutor, TaskResult } from './agent-executor'
+import type { AgentExecutor, TaskResult, TaskSteeringInput } from './agent-executor'
 import type {
   AgentDefinition,
   TaskEvent,
@@ -123,6 +123,7 @@ export class AgentProcessManager extends EventEmitter {
   private usage = new Map<string, TaskUsage>()
   private sessions = new Map<string, string>()
   private serverExecutions = new Map<string, AbortController>()
+  private steeringExecutors = new Map<string, AgentExecutor>()
   private completions = new Set<Promise<void>>()
   private shutdown?: Promise<void>
 
@@ -137,9 +138,19 @@ export class AgentProcessManager extends EventEmitter {
     return this.procs.has(taskId) || this.serverExecutions.has(taskId)
   }
 
+  async steer(input: TaskSteeringInput): Promise<void> {
+    if (this.shutdown) throw new Error('Agent processes are shutting down')
+    const controller = this.serverExecutions.get(input.taskId)
+    if (!controller || controller.signal.aborted) throw new Error('This task has no active agent turn')
+    const client = this.steeringExecutors.get(input.taskId)
+    if (!client?.steer) throw new Error('This agent does not support steering')
+    await client.steer(input)
+  }
+
   private startServer(opts: StartOptions, client: AgentExecutor): void {
     const controller = new AbortController()
     this.serverExecutions.set(opts.taskId, controller)
+    if (opts.agent.supportsSteering && client.steer) this.steeringExecutors.set(opts.taskId, client)
     const { agent: _agent, ...input } = opts
     const completion = client.execute({ ...input, signal: controller.signal }, (event) => {
       switch (event.type) {
@@ -154,6 +165,7 @@ export class AgentProcessManager extends EventEmitter {
           break
       }
     }).then((result) => {
+      this.steeringExecutors.delete(opts.taskId)
       this.serverExecutions.delete(opts.taskId)
       this.emit('exit', {
         taskId: opts.taskId,
@@ -161,6 +173,7 @@ export class AgentProcessManager extends EventEmitter {
         cancelled: result.status === 'cancelled', error: result.error, result
       } satisfies ExitInfo)
     }, (failure: unknown) => {
+      this.steeringExecutors.delete(opts.taskId)
       this.serverExecutions.delete(opts.taskId)
       const error = failure instanceof Error ? failure.message : String(failure)
       this.emitSystem(opts.taskId, error, true)

@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path'
-import type { AgentExecutor, TaskEvent, TaskInput, TaskResult } from './agent-executor'
+import type { AgentExecutor, TaskEvent, TaskInput, TaskResult, TaskSteeringInput } from './agent-executor'
 import { CodexAppServerConnection, CodexRpcError, type CodexAppServerOptions, type ConnectionHandlers } from './codex-app-server-connection'
 import { CodexAppServerOutput } from './codex-app-server-output'
 import { codexTurn, type CodexObject, type CodexThreadOptions, type CodexTurn } from './codex-app-server-protocol'
@@ -13,6 +13,8 @@ const CODEX_EFFORTS: Record<ThinkingLevel, 'minimal' | 'low' | 'medium' | 'high'
 }
 
 interface CodexExecution extends ConnectionHandlers {
+  taskId: string
+  steer(input: TaskSteeringInput): Promise<void>
   server(): CodexAppServerConnection | undefined
   thread(): string | undefined
 }
@@ -26,6 +28,13 @@ export class CodexAppServerClient implements AgentExecutor {
 
   close(): Promise<void> {
     return this.server.close()
+  }
+
+  async steer(input: TaskSteeringInput): Promise<void> {
+    if (!input.message.trim()) throw new Error('A steering message needs some text')
+    const execution = [...this.executions].find((entry) => entry.taskId === input.taskId)
+    if (!execution) throw new Error('This task has no active Codex turn')
+    await execution.steer(input)
   }
 
   async execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult> {
@@ -99,12 +108,12 @@ export class CodexAppServerClient implements AgentExecutor {
       switch (method) {
         case 'item/commandExecution/requestApproval':
         case 'item/fileChange/requestApproval':
-          // Never turn a headless task into approval of a sandbox escape or a
-          // persistent policy amendment. The configured policy is `never`.
-          output.line(`Declined Codex approval: ${method}`, 'system', 'system')
-          return { decision: active ? 'decline' : 'cancel' }
+          // Full-access tasks need no prompts. Approve only the active request,
+          // not a persistent policy amendment or requests from stale turns.
+          output.line(`${active ? 'Approved' : 'Cancelled'} Codex approval: ${method}`, 'system', 'system')
+          return { decision: active ? 'accept' : 'cancel' }
         case 'item/permissions/requestApproval':
-          return { permissions: {}, scope: 'turn' }
+          return { permissions: active ? params.permissions ?? {} : {}, scope: 'turn' }
         case 'mcpServer/elicitation/request':
           return { action: 'cancel', content: null }
         case 'item/tool/requestUserInput':
@@ -116,6 +125,18 @@ export class CodexAppServerClient implements AgentExecutor {
     }
 
     const execution: CodexExecution = {
+      taskId: input.taskId,
+      steer: async (steering) => {
+        if (finished || input.signal?.aborted || startingTurn || !connection || !threadId || !turnId) {
+          throw new Error('Codex is not ready for steering. Wait for an active turn and try again.')
+        }
+        if (steering.sessionId !== threadId) throw new Error('The task session changed. Try sending again.')
+        const response = await request(connection.request('turn/steer', {
+          threadId, expectedTurnId: turnId,
+          input: [{ type: 'text', text: steering.message, text_elements: [] }]
+        }))
+        if (response.turnId !== turnId) throw new Error('Codex acknowledged steering for a different turn')
+      },
       server: () => connection, thread: () => threadId,
       notification, serverRequest, diagnostic: (text) => output.line(text, 'error', 'stderr')
     }
@@ -124,7 +145,7 @@ export class CodexAppServerClient implements AgentExecutor {
       input.signal?.throwIfAborted()
       if (!isAbsolute(input.cwd)) throw new Error('Codex app-server requires an absolute working directory')
       input.signal?.addEventListener('abort', cancel, { once: true })
-      const sandboxPolicy = await codexSandboxPolicy(input.cwd, input.projectPath)
+      const sandboxPolicy = codexSandboxPolicy()
       input.signal?.throwIfAborted()
       connection = await request(this.server.get(() => {
         output.line(`$ ${this.options.command ?? 'codex'} ${(this.options.args ?? ['app-server', '--listen', 'stdio://']).join(' ')}`, 'system', 'system')
@@ -157,7 +178,7 @@ export class CodexAppServerClient implements AgentExecutor {
       input.signal?.throwIfAborted()
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
       const options: CodexThreadOptions = {
-        cwd: input.cwd, model: input.model, approvalPolicy: 'never' as const, sandbox: 'workspace-write' as const,
+        cwd: input.cwd, model: input.model, approvalPolicy: 'never' as const, sandbox: 'danger-full-access' as const,
         thinkingLevel: input.thinkingLevel,
         // Anvil supplies project-scoped memory. Personal Codex memories and
         // plugin suggestions add unrelated context to every model request.

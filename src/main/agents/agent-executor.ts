@@ -39,6 +39,13 @@ export interface TaskResult {
   error?: string
 }
 
+export interface TaskSteeringInput {
+  taskId: string
+  /** Must match the active execution, never an older task session. */
+  sessionId: string
+  message: string
+}
+
 /** Anvil's execution interface, independent of an agent's wire protocol. */
 export interface AgentExecutor {
   /**
@@ -46,6 +53,8 @@ export interface AgentExecutor {
    * and cancellation return a result; no database or renderer dependencies belong here.
    */
   execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult>
+  /** Injects input into an active turn. Omitted for agents without live steering. */
+  steer?(input: TaskSteeringInput): Promise<void>
   /** Permanently stops this executor and waits for its server and tools to exit. */
   close?(): Promise<void>
 }

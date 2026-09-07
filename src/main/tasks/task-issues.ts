@@ -75,6 +75,28 @@ export class TaskIssues {
     })
   }
 
+  /** User follow-ups can recover a stopped turn without discarding its issue plan. */
+  resume(taskId: string): TaskExecutionState {
+    const state = this.requireState(taskId)
+    if (state.phase === 'complete') return state
+    return this.store.saveTaskExecution({
+      ...state, phase: state.issueIds.length ? 'recovering' : 'planning', error: null
+    })
+  }
+
+  finishRecovery(taskId: string): void {
+    const state = this.requireState(taskId)
+    this.withTracker(state, (tracker) => {
+      // A user message must not bypass the original checklist or finish work
+      // based on an assistant's claim. Valence remains authoritative.
+      if (state.currentIssueId && tracker.get(state.currentIssueId).status !== 'complete') {
+        throw new Error(`Issue ${state.currentIssueId} is not complete. The agent must unblock and complete it through vl.`)
+      }
+      const complete = state.issueIds.every((id) => tracker.get(id).status === 'complete')
+      this.store.saveTaskExecution({ ...state, currentIssueId: null, phase: complete ? 'complete' : 'working', error: null })
+    })
+  }
+
   stop(taskId: string, error: string): void {
     const state = this.store.getTaskExecution(taskId)
     if (!state || state.phase === 'complete') return

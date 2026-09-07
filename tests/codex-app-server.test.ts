@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
     assert.ok(initial.every((request) => !('jsonrpc' in request)))
     assert.deepEqual(initial[0].params, { clientInfo: { name: 'anvil', title: 'Anvil', version: '0.1.0' } })
     assert.equal(initial[2].params.approvalPolicy, 'never')
-    assert.equal(initial[2].params.sandbox, 'workspace-write')
+    assert.equal(initial[2].params.sandbox, 'danger-full-access')
     assert.equal(initial[2].params.cwd, directory)
     assert.equal(initial[2].params.model, 'test-model')
     assert.deepEqual(initial[2].params.config, {
@@ -66,9 +66,8 @@ async function main(): Promise<void> {
     assert.deepEqual(initial[3].params.input, [{ type: 'text', text: input.prompt, text_elements: [] }], 'Only the task prompt is sent, not the persisted event log')
     assert.equal(initial[3].params.cwd, directory)
     assert.deepEqual(initial[3].params.sandboxPolicy, {
-      type: 'workspaceWrite', writableRoots: [await realpath(directory)], networkAccess: true,
-      excludeTmpdirEnvVar: false, excludeSlashTmp: false
-    }, 'Headless validation needs network access for dependencies and local test servers')
+      type: 'dangerFullAccess'
+    }, 'Browser validation must run without the Codex OS sandbox')
 
     events.length = 0
     const resumed = await client('success').execute({ ...input, resumeSessionId: 'thread-test' }, record)
@@ -77,7 +76,7 @@ async function main(): Promise<void> {
     assert.ok(!outputEvents().some((event) => /old history|old issue/.test(event.text)))
     const resumeRequest = (await requests()).find((request) => request.method === 'thread/resume')
     assert.equal(resumeRequest.params.threadId, 'thread-test')
-    assert.equal(resumeRequest.params.sandbox, 'workspace-write')
+    assert.equal(resumeRequest.params.sandbox, 'danger-full-access')
     assert.equal(resumeRequest.params.approvalPolicy, 'never')
     assert.deepEqual(resumeRequest.params.config, initial[2].params.config)
     const unknownUsage = await client('no-baseline').execute({ ...input, resumeSessionId: 'thread-test' }, () => {})
@@ -103,11 +102,53 @@ async function main(): Promise<void> {
 
     assert.equal((await client('permissions').execute(input, () => {})).status, 'succeeded')
     const permissionResponses = (await requests()).filter((request) => !request.method && request.id !== undefined)
-    assert.ok(permissionResponses.some((response) => response.result?.decision === 'decline'))
-    assert.deepEqual(permissionResponses.find((response) => response.id === 'permissions').result, { permissions: {}, scope: 'turn' })
+    assert.equal(permissionResponses.find((response) => response.id === 1).result.decision, 'accept')
+    assert.equal(permissionResponses.find((response) => response.id === 'file').result.decision, 'accept')
+    assert.deepEqual(permissionResponses.find((response) => response.id === 'permissions').result, { permissions: { network: { enabled: true } }, scope: 'turn' })
+    for (const requestId of ['stale-command', 'foreign-command']) {
+      assert.equal(permissionResponses.find((response) => response.id === requestId).result.decision, 'cancel')
+    }
+    for (const requestId of ['stale-permissions', 'foreign-permissions']) {
+      assert.deepEqual(permissionResponses.find((response) => response.id === requestId).result, { permissions: {}, scope: 'turn' })
+    }
     assert.deepEqual(permissionResponses.find((response) => response.id === 'elicitation').result, { action: 'cancel', content: null })
     assert.deepEqual(permissionResponses.find((response) => response.id === 'input').result, { answers: {} })
     assert.equal(permissionResponses.find((response) => response.id === 'unknown').error.code, -32601)
+
+    for (const scenario of ['steer', 'steer-error']) {
+      const executor = client(scenario)
+      let ready!: () => void
+      const started = new Promise<void>((resolve) => { ready = resolve })
+      const execution = executor.execute(input, (event) => {
+        if (event.type === 'output' && event.event.text === 'Waiting for steering') ready()
+      })
+      await started
+      const steering = { taskId: input.taskId, sessionId: 'thread-test', message: 'Adjust validation' }
+      await assert.rejects(executor.steer({ ...steering, taskId: 'other-task' }), /no active/)
+      await assert.rejects(executor.steer({ ...steering, sessionId: 'old-thread' }), /session changed/)
+      await assert.rejects(executor.steer({ ...steering, message: ' ' }), /needs some text/)
+      if (scenario === 'steer-error') await assert.rejects(executor.steer(steering), /Steering not permitted/)
+      await executor.steer(steering)
+      assert.equal((await execution).status, 'succeeded')
+      await assert.rejects(executor.steer(steering), /no active/)
+    }
+    const steeringRequests = (await requests()).filter((request) => request.method === 'turn/steer')
+    assert.equal(steeringRequests.length, 3)
+    assert.deepEqual(steeringRequests[0].params, {
+      threadId: 'thread-test', expectedTurnId: 'turn-test',
+      input: [{ type: 'text', text: 'Adjust validation', text_elements: [] }]
+    })
+
+    const steeringManager = new AgentProcessManager(undefined, client('steer'))
+    let managerReady!: () => void
+    const managerStarted = new Promise<void>((resolve) => { managerReady = resolve })
+    steeringManager.on('event', (event) => { if (event.text === 'Waiting for steering') managerReady() })
+    const steeringExit = once(steeringManager, 'exit')
+    steeringManager.start({ ...input, agent: getAgent('codex')! })
+    await managerStarted
+    await steeringManager.steer({ taskId: input.taskId, sessionId: 'thread-test', message: 'Adjust validation' })
+    assert.equal(((await steeringExit) as [ExitInfo])[0].code, 0)
+    await assert.rejects(steeringManager.steer({ taskId: input.taskId, sessionId: 'thread-test', message: 'Adjust validation' }), /no active/)
 
     for (const scenario of ['cancel', 'cancel-hang', 'cancel-before-ack']) {
       const controller = new AbortController()

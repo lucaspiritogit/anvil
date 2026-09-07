@@ -40,6 +40,13 @@ if (query.has('taskUsage')) {
     ? { ...task, inputTokens: 688809, outputTokens: 3639, cachedTokens: 638208, totalTokens: 692448 }
     : task)
 }
+if (query.has('steering')) {
+  tasks = tasks.map((task) => task.id === 'output' ? {
+    ...task, sessionId: query.has('noSession') ? undefined : 'latest-session', model: 'task-model',
+    ...(query.has('running') ? { status: 'running', deliveryStatus: 'working', endedAt: undefined } : {}),
+    ...(query.has('unsupported') ? { agentId: 'opencode', agentLabel: 'OpenCode' } : {})
+  } : task)
+}
 tasks = tasks.map((task) => ({ ...task, branchName: `anvil/${task.id === 'approved' ? 'polish-task-cards' : task.id}` }))
 const updates = new Set<(task: Task) => void>()
 const update = (task: Task): Task => {
@@ -65,7 +72,7 @@ window.anvil = {
   projects: { list: async () => projects, gitStatus: async () => ({ isRepository: true }) },
   agents: {
     list: async () => [
-      { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5' },
+      { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5', supportsSteering: true },
       { id: 'opencode', label: 'OpenCode', description: 'OpenCode agent', command: 'opencode', args: [], defaultModel: 'provider/model' }
     ],
     models: async (agentId: string) => query.has('thinkingModels') && agentId === 'opencode' ? {
@@ -91,6 +98,13 @@ window.anvil = {
       }
       tasks = [task, ...tasks]
       return task
+    },
+    steer: async (input: { taskId: string; message: string }) => {
+      window.dispatchEvent(new CustomEvent('fixture:steering', { detail: input }))
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      if (query.has('steerFailure')) throw new Error('The agent rejected steering')
+      const task = tasks.find((task) => task.id === input.taskId)!
+      update({ ...task, status: 'running', deliveryStatus: 'working', endedAt: undefined })
     },
     events: async (taskId: string) => events(taskId),
     onEvent: (listener: (event: TaskEvent) => void) => {

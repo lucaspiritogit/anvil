@@ -91,7 +91,7 @@ export function registerTaskHandlers({
         if (current.status !== 'running') throw new Error('Task stopped during preparation')
       }
       try {
-        initializeTask(task.id, project.path)
+        initializeTask(task.id, project.path, { thinkingLevel: input.thinkingLevel, modelEffort: input.modelEffort })
         const prompt = planningPrompt(await promptWithProjectMemory(project.id, input.prompt), task.id, project.path)
         requireRunningTask()
 

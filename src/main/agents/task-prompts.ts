@@ -1,4 +1,4 @@
-import type { Issue, TaskComment } from '../../shared/types'
+import type { Issue, Task, TaskComment, TaskExecutionState } from '../../shared/types'
 import { taskIssueLabel } from '../../shared/valence'
 
 function trackerInstructions(projectPath: string): string {
@@ -30,6 +30,26 @@ export function implementationPrompt(task: string, issue: Issue, projectPath: st
     `Task: ${task}`,
     `Issue: ${JSON.stringify({ id, title, description, checklist, validation })}`
   ].join('\n')
+}
+
+export function taskFollowupPrompt(task: Task, state: TaskExecutionState, message: string): string {
+  if (state.phase === 'complete') return message
+  if (state.phase === 'planning') return [
+    planningPrompt(task.prompt, task.id, state.projectPath),
+    'The developer is unblocking an interrupted planning turn. Inspect existing task-labeled issues first; fix and requeue partial blocked issues instead of duplicating the plan.',
+    `Developer message: ${message}`
+  ].join('\n\n')
+  return [
+    'The developer is unblocking this task. Keep its existing plan and branch.',
+    trackerInstructions(state.projectPath),
+    `Original task: ${task.prompt}`,
+    `Task issue IDs: ${state.issueIds.join(', ')}`,
+    state.currentIssueId
+      ? `Resume issue ${state.currentIssueId}. Inspect its status, requeue and start it if blocked, then implement, validate, commit, and complete it through vl. If still working, verify it belongs to this interrupted task before requeueing. Do not take over another client's work.`
+      : 'Inspect and unblock the remaining task issues so Anvil can schedule them. Leave unfinished issues queued; do not claim new work.',
+    'Do not create a replacement plan or claim other issues. Anvil checks Valence completion and runs the remaining issues in order.',
+    `Developer message: ${message}`
+  ].join('\n\n')
 }
 
 export function agentRebasePrompt(baseCommit: string): string {

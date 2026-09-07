@@ -6,6 +6,7 @@ import { btn, cn, deliveryTone, dot, field, statusTone } from '../ui'
 import { AgentIcon } from './AgentIcon'
 import { AgentRebaseModal } from './AgentRebaseModal'
 import { RebaseModal } from './RebaseModal'
+import { TaskSteeringComposer } from './TaskSteeringComposer'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
 import type {
   DeliveryStatus,
@@ -301,7 +302,7 @@ function StatBlock({
 }): JSX.Element {
   return (
     <div
-      className="flex flex-col gap-[5px] px-3.5 py-2.5 border-l border-line first:border-l-0"
+      className="flex flex-col gap-[3px] px-3.5 py-2 border-l border-line first:border-l-0"
       title={detail}
     >
       <span className="flex gap-[7px] items-center text-xs text-fg">
@@ -383,8 +384,8 @@ export function TaskView({ task }: Props): JSX.Element {
         ) : (
           diff && <RebaseModal taskId={task.id} commits={diff.commits} />
         ))}
-      <header className="flex shrink-0 flex-col gap-2.5 max-h-[40%] px-4 pt-3.5 pb-3 overflow-y-auto break-words">
-        <div className="flex gap-3 items-start justify-between">
+      <header className="flex shrink-0 flex-col gap-2 max-h-[45%] px-4 pt-3 pb-2 overflow-hidden break-words">
+        <div className="flex shrink-0 gap-3 items-start justify-between">
           <h1 className="text-[17px] font-semibold leading-[1.35] text-fg">{task.title}</h1>
           {task.status === 'running' && (
             <button className={btn.danger} onClick={() => void cancelTask(task.id)}>
@@ -393,7 +394,7 @@ export function TaskView({ task }: Props): JSX.Element {
           )}
         </div>
 
-        <div className="flex gap-2.5 items-center">
+        <div className="flex shrink-0 gap-2.5 items-center">
           <AgentIcon agentId={task.agentId} label={task.agentLabel} size={26} />
           <div className="flex flex-col gap-px min-w-0">
             <span className="text-[13px] font-semibold text-fg">{task.agentLabel}</span>
@@ -411,7 +412,7 @@ export function TaskView({ task }: Props): JSX.Element {
           </div>
         </div>
 
-        <div className="grid auto-cols-[minmax(0,1fr)] grid-flow-col overflow-hidden bg-raised border border-line rounded-card">
+        <div aria-label="Task statistics" role="group" className="grid shrink-0 auto-cols-[minmax(0,1fr)] grid-flow-col overflow-hidden bg-raised border border-line rounded-card">
           <StatBlock label="Elapsed" value={formatDuration(task, now)} tone={task.status} />
           <StatBlock
             label="Tokens"
@@ -441,7 +442,9 @@ export function TaskView({ task }: Props): JSX.Element {
         </div>
 
         {task.prompt.trim() !== task.title && (
-          <p className="text-[13px] text-dim whitespace-pre-wrap">{task.prompt}</p>
+          <div role="region" aria-label="Task prompt" tabIndex={0} className="min-h-0 max-h-28 overflow-y-auto overscroll-contain pr-2 text-[13px] text-dim whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {task.prompt}
+          </div>
         )}
       </header>
 
@@ -471,11 +474,12 @@ export function TaskView({ task }: Props): JSX.Element {
       </div>
 
       {panel === 'output' ? (
+        <div className="relative flex-1 min-w-0 min-h-0">
         <div
           ref={outputRef}
           role="log"
           aria-label="Task output"
-          className="flex-1 min-w-0 min-h-0 px-4 py-3 overflow-y-auto overscroll-contain font-mono text-[12.5px] leading-[1.55]"
+          className="h-full min-w-0 px-4 py-3 overflow-y-auto overscroll-contain font-mono text-[12.5px] leading-[1.55]"
           onScroll={onScroll}
         >
           {!events && <p className={PLACEHOLDER}>Loading output…</p>}
@@ -483,6 +487,15 @@ export function TaskView({ task }: Props): JSX.Element {
           {events?.map((event) => (
             <LogRow key={event.id} event={event} />
           ))}
+        </div>
+        {!follow && (
+          <button
+            className="absolute right-[22px] bottom-[18px] px-3 py-1.5 text-xs bg-hover border border-line rounded-full"
+            onClick={() => setFollow(true)}
+          >
+            Jump to latest
+          </button>
+        )}
         </div>
       ) : (
         <div className="flex-1 min-h-0 px-4 pt-3.5 pb-6 overflow-auto [&_[data-diffs]]:border [&_[data-diffs]]:border-line [&_[data-diffs]]:rounded-md">
@@ -586,14 +599,7 @@ export function TaskView({ task }: Props): JSX.Element {
         </div>
       )}
 
-      {panel === 'output' && !follow && (
-        <button
-          className="absolute right-[22px] bottom-[18px] px-3 py-1.5 text-xs bg-hover border border-line rounded-full"
-          onClick={() => setFollow(true)}
-        >
-          Jump to latest
-        </button>
-      )}
+      {panel === 'output' && <TaskSteeringComposer key={task.id} task={task} />}
     </div>
   )
 }

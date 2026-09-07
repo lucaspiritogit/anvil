@@ -11,6 +11,7 @@ import { registerProjectHandlers } from '../src/main/ipc/projects'
 import { registerRebaseHandlers } from '../src/main/ipc/rebase'
 import { registerReviewHandlers } from '../src/main/ipc/review'
 import { registerTaskHandlers } from '../src/main/ipc/tasks'
+import { registerSteeringHandlers } from '../src/main/ipc/steering'
 import { registerSettingsHandlers } from '../src/main/ipc/settings'
 import { registerTerminalHandlers } from '../src/main/ipc/terminals'
 import { createTaskMemory } from '../src/main/memory/task-memory'
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
   } as unknown as TerminalManager
 
   registerTaskHandlers({ ...context, ...taskEvents, ...execution, promptWithProjectMemory: memory.promptWithProjectMemory })
+  registerSteeringHandlers({ ...context, ...taskEvents, resumeTask: execution.resumeTask })
   registerReviewHandlers(reviewContext)
   registerRebaseHandlers(reviewContext)
   registerTerminalHandlers(terminals)
@@ -74,7 +76,7 @@ async function main(): Promise<void> {
   assert.deepEqual([...handlers.keys()].sort(), [
     'agents:list', 'agents:models', 'comments:add', 'comments:list', 'comments:remove', 'comments:send',
     'projects:add', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:update',
-    'tasks:approve', 'tasks:cancel', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:list', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:settle', 'tasks:start',
+    'tasks:approve', 'tasks:cancel', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:list', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:settle', 'tasks:start', 'tasks:steer',
     'settings:get', 'settings:set', 'terminal:ensure', 'terminal:resize', 'terminal:write'
   ].sort())
   const call = (name: string, input?: unknown): any => handlers.get(name)!(null, input)
@@ -108,7 +110,7 @@ async function main(): Promise<void> {
     ['create', 'terminal', '/project', 80, 24], ['write', 'terminal', 'pwd\r'], ['resize', 'terminal', 120, 40]
   ])
 
-  const task: Task = await call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Task title\nDetails' })
+  const task: Task = await call('tasks:start', { projectId: project.id, agentId: 'codex', model: 'chosen-model', thinkingLevel: 'high', prompt: 'Task title\nDetails' })
   await tick()
   assert.equal(task.title, 'Task title')
   assert.equal(agentProcesses.starts.length, 1)
@@ -119,6 +121,8 @@ async function main(): Promise<void> {
   agentProcesses.plan(task.id, [issue, { ...issue, key: 'second', dependencies: ['first'] }])
   await tick()
   assert.equal(agentProcesses.starts.length, 2)
+  assert.equal(agentProcesses.starts[1].thinkingLevel, 'high', 'Implementation inherits the original task effort')
+  assert.equal(store.getTaskExecution(task.id)?.thinkingLevel, 'high')
   let tracker = trackers.get(task.id)!
   agentProcesses.emit('session', { taskId: task.id, sessionId: 'session' })
   agentProcesses.emit('usage', { taskId: task.id, inputTokens: 5, outputTokens: 2, cachedTokens: 0, totalTokens: 7, costUsd: 0.1 })
@@ -147,6 +151,7 @@ async function main(): Promise<void> {
   assert.ok(followup.comments[0].sentAt)
   assert.equal(agentProcesses.starts.at(-1).resumeSessionId, 'session')
   assert.match(agentProcesses.starts.at(-1).prompt, /file.ts:9 — Fix this/)
+  assert.equal(agentProcesses.starts.at(-1).thinkingLevel, 'high')
   agentProcesses.finishTurn(task.id)
   await tick()
   assert.equal(tasks.get(task.id)?.deliveryStatus, 'reviewable', 'Review follow-ups finalize without replanning')
