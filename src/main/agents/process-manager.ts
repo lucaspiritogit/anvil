@@ -81,7 +81,8 @@ export function buildArgs(
   template: string[],
   prompt: string,
   model?: string,
-  session?: string
+  session?: string,
+  thinkingLevel?: ThinkingLevel
 ): string[] {
   const out: string[] = []
   for (const token of template) {
@@ -99,6 +100,14 @@ export function buildArgs(
         continue
       }
       out.push(token.replaceAll('{{session}}', session))
+      continue
+    }
+    if (token.includes('{{thinkingLevel}}')) {
+      if (!thinkingLevel) {
+        if (out.length && out[out.length - 1].startsWith('-')) out.pop()
+        continue
+      }
+      out.push(token.replaceAll('{{thinkingLevel}}', thinkingLevel))
       continue
     }
     out.push(token.replaceAll('{{prompt}}', prompt))
@@ -250,7 +259,7 @@ export class AgentProcessManager extends EventEmitter {
       this.startServer(opts, this.codexClient)
       return
     }
-    const { taskId, agent, prompt, model, cwd, resumeSessionId } = opts
+    const { taskId, agent, prompt, model, thinkingLevel, cwd, resumeSessionId } = opts
     this.usage.set(taskId, {
       inputTokens: 0,
       outputTokens: 0,
@@ -274,7 +283,7 @@ export class AgentProcessManager extends EventEmitter {
 
     const resuming = Boolean(resumeSessionId && agent.resumeArgs)
     const template = resuming ? agent.resumeArgs! : agent.args
-    const agentArgs = buildArgs(template, prompt, model, resumeSessionId)
+    const agentArgs = buildArgs(template, prompt, model, resumeSessionId, thinkingLevel)
     const args = [...resolved.prefixArgs, ...agentArgs]
 
     this.emitSystem(taskId, `$ ${agent.command} ${agentArgs.join(' ')}`)
