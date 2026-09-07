@@ -12,6 +12,7 @@ import { RebaseModal } from './RebaseModal'
 import { TaskSteeringComposer } from './TaskSteeringComposer'
 import { TaskActivity } from './TaskActivity'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
+import { isTaskSettled } from '@shared/task-settlement'
 import type {
   DeliveryStatus,
   Task,
@@ -585,7 +586,7 @@ export function TaskView({ task }: Props): JSX.Element {
               Jump to latest
             </button>}
           </div>
-          <TaskSteeringComposer key={task.id} task={task} hidden={activePanel !== 'output'} />
+          {!isTaskSettled(task) && <TaskSteeringComposer key={task.id} task={task} hidden={activePanel !== 'output'} />}
         </aside>
       </div>
     </div>
