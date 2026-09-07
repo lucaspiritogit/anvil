@@ -5,6 +5,7 @@ import { taskFollowupPrompt } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
 import type { Task } from '../../shared/types'
+import { isTaskSettled } from '../../shared/task-settlement'
 
 interface SteeringHandlerDependencies extends TaskContext {
   recordSystemEvent: RecordSystemEvent
@@ -34,6 +35,7 @@ export function registerSteeringHandlers({
       if (!task) throw new Error('Task not found')
       const agent = getAgent(task.agentId)
       if (!agent) throw new Error('Agent not found')
+      if (isTaskSettled(task)) throw new Error('This task is settled and cannot receive new instructions')
       if (task.status === 'running') {
         if (!agent.supportsSteering) throw new Error('This agent cannot accept input while running. Stop it before sending a follow-up.')
         if (!task.sessionId) throw new Error('This task does not have an agent session yet')

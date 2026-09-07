@@ -144,6 +144,10 @@ async function main(): Promise<void> {
     agentProcesses.finishTurn('unmanaged')
     await tick()
     assert.equal(store.getTask('unmanaged')?.deliveryStatus, 'unavailable')
+
+    store.addTask({ ...finished, id: 'settled', prompt: 'Settled task', settledAt: 1 })
+    await assert.rejects(steer('settled'), /settled and cannot receive new instructions/)
+    assert.equal(store.getTask('settled')?.status, 'succeeded', 'A settled task stays closed')
   } finally {
     store.close()
   }
