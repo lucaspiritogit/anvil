@@ -70,7 +70,9 @@ async function main(): Promise<void> {
       const initial = await shared.entries()
       assert.equal(initial.filter((entry) => entry.event === 'spawn').length, 1)
       assert.equal(initial.filter((entry) => entry.method === 'initialize').length, 1)
-      assert.deepEqual(initial.filter((entry) => entry.method === freshMethod).map((entry) => entry.params?.cwd), [directory, otherDirectory])
+      const freshCwds = initial.filter((entry) => entry.method === freshMethod).map((entry) => entry.params?.cwd)
+      freshCwds.sort()
+      assert.deepEqual(freshCwds, [directory, otherDirectory].sort(), 'Concurrent tasks use their own cwd')
       const pid = initial[0].pid
       process.kill(pid, 0)
       const third = await shared.client.execute(input('third'), record)

@@ -73,6 +73,15 @@ export class OpenCodeAcpConnection {
     this.stderr = ''
   }
 
+  /** Wait briefly for stderr to end so a trailing unterminated diagnostic is not raced. */
+  async drainDiagnostic(timeoutMs = 100): Promise<void> {
+    await Promise.race([
+      new Promise<void>((resolve) => this.child.stderr.once('end', resolve)),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
+    ])
+    this.flushDiagnostic()
+  }
+
   fail(error: Error): void {
     if (this.failureError) return
     this.failureError = error

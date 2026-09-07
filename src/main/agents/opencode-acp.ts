@@ -133,6 +133,7 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       clearTimeout(cancelTimer)
       input.signal?.removeEventListener('abort', cancel)
       connection?.flushDiagnostic()
+      await connection?.drainDiagnostic()
       this.executions.delete(execution)
       output.flush()
     }

@@ -2,7 +2,7 @@ import { isAbsolute } from 'node:path'
 import type { AgentExecutor, TaskEvent, TaskInput, TaskResult } from './agent-executor'
 import { CodexAppServerConnection, CodexRpcError, type CodexAppServerOptions, type ConnectionHandlers } from './codex-app-server-connection'
 import { CodexAppServerOutput } from './codex-app-server-output'
-import { codexTurn, type CodexObject, type CodexTurn } from './codex-app-server-protocol'
+import { codexTurn, type CodexObject, type CodexThreadOptions, type CodexTurn } from './codex-app-server-protocol'
 import { LazyAgentServer } from './lazy-agent-server'
 import { codexSandboxPolicy } from './codex-sandbox'
 import type { ThinkingLevel } from '../../shared/types'
@@ -156,8 +156,9 @@ export class CodexAppServerClient implements AgentExecutor {
       }))
       input.signal?.throwIfAborted()
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
-      const options = {
+      const options: CodexThreadOptions = {
         cwd: input.cwd, model: input.model, approvalPolicy: 'never' as const, sandbox: 'workspace-write' as const,
+        thinkingLevel: input.thinkingLevel,
         // Anvil supplies project-scoped memory. Personal Codex memories and
         // plugin suggestions add unrelated context to every model request.
         config: {
@@ -170,9 +171,12 @@ export class CodexAppServerClient implements AgentExecutor {
           'shell_environment_policy.set.PATH': process.env.PATH ?? ''
         }
       }
+      // thinkingLevel is Anvil-side metadata; Codex receives it via config.model_reasoning_effort.
+      const { thinkingLevel, ...threadOptions } = options
+      void thinkingLevel
       const response = await request(input.resumeSessionId
-        ? connection.request('thread/resume', { ...options, threadId: input.resumeSessionId })
-        : connection.request('thread/start', options))
+        ? connection.request('thread/resume', { ...threadOptions, threadId: input.resumeSessionId })
+        : connection.request('thread/start', threadOptions))
       // Anvil's sessionId is the resume handle. Codex resumes by thread.id, not
       // thread.sessionId, which can be shared by multiple forked threads.
       threadId = response.thread.id
@@ -201,6 +205,7 @@ export class CodexAppServerClient implements AgentExecutor {
       input.signal?.removeEventListener('abort', cancel)
       clearTimeout(cancelTimer)
       connection?.flushDiagnostic()
+      await connection?.drainDiagnostic()
       this.executions.delete(execution)
       output.flush()
     }

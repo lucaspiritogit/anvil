@@ -4,6 +4,8 @@
  * Checked against `codex app-server generate-ts` from codex-cli 0.153.3.
  * Extra response fields and unknown notifications are allowed for forward compatibility.
  */
+import type { ThinkingLevel } from '../../shared/types'
+
 export type CodexRequestId = number | string
 export type CodexObject = Record<string, unknown>
 export type CodexTurnStatus = 'inProgress' | 'completed' | 'interrupted' | 'failed'
@@ -13,6 +15,8 @@ export interface CodexThreadOptions {
   model?: string
   approvalPolicy: 'never'
   sandbox: 'workspace-write'
+  /** Anvil-side canonical level; mapped into `config.model_reasoning_effort` before sending. */
+  thinkingLevel?: ThinkingLevel
   config?: Record<string, boolean | number | string>
 }
 
