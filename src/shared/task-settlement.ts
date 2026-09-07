@@ -2,6 +2,11 @@ import type { Task } from './types'
 
 export const TASK_SETTLE_TTL_MS = 4 * 60 * 60 * 1000
 
+/** A task is settled once it has been reviewed and closed (succeeded tasks only). */
+export function isTaskSettled(task: Task): boolean {
+  return task.settledAt !== undefined
+}
+
 /** No-change tasks need no code review. Everything else must be approved first. */
 export function canSettleTask(task: Task): boolean {
   return task.status === 'succeeded' &&
