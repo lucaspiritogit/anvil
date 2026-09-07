@@ -4,6 +4,12 @@ import type { AgentClientProtocol, TaskEvent, TaskInput, TaskResult } from './ag
 import { AcpOutput } from './acp-output'
 import { OpenCodeAcpConnection, type OpenCodeAcpOptions } from './opencode-acp-connection'
 import { LazyAgentServer } from './lazy-agent-server'
+import type { ThinkingLevel } from '../../shared/types'
+
+/** Canonical levels to the reasoning efforts OpenCode exposes as the "effort" session config option. */
+const OPENCODE_EFFORTS: Record<ThinkingLevel, string> = {
+  off: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh'
+}
 
 interface AcpExecution {
   server(): OpenCodeAcpConnection | undefined
@@ -112,9 +118,14 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
         await request(connection.rpc.setSessionConfigOption({ sessionId, configId: 'model', value: input.model }))
       }
       if (input.thinkingLevel) {
-        // Older OpenCode builds may not expose this config; the prompt still runs at its default.
-        await request(connection.rpc.setSessionConfigOption({ sessionId, configId: 'thinkingLevel', value: input.thinkingLevel })
-          .catch(() => undefined))
+        // OpenCode rejects the "effort" config when the model has no matching
+        // variant. Keep the prompt running at its default instead of failing.
+        await request(connection.rpc.setSessionConfigOption({
+          sessionId, configId: 'effort', value: OPENCODE_EFFORTS[input.thinkingLevel]
+        }).catch((failure) => {
+          const message = failure instanceof Error ? failure.message : String(failure)
+          output.line(`OpenCode rejected thinking level ${input.thinkingLevel}: ${message}`, 'system', 'system')
+        }))
       }
       clearTimeout(startupTimer)
       input.signal?.throwIfAborted()
