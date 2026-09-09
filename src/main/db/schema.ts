@@ -213,6 +213,7 @@ export const issues = sqliteTable('issues', {
   priority: text('priority').$type<Issue['priority']>().notNull(),
   status: text('status').$type<Issue['status']>().notNull(),
   evidence: text('evidence'),
+  startedAt: integer('started_at'),
   completedAt: integer('completed_at'),
   reviewedAt: integer('reviewed_at'),
   // Task worktree commit range captured for the per-issue review diff.

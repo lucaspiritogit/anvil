@@ -8,21 +8,25 @@ import { onTestCleanup } from './test-cleanup'
 
 const migrationsFolder = join(process.cwd(), 'src/main/db/migrations')
 
+function migrationsBefore(directory: string, migrationIndex: number): string {
+  const previous = join(directory, 'previous')
+  mkdirSync(join(previous, 'meta'), { recursive: true })
+  const journal = JSON.parse(readFileSync(join(migrationsFolder, 'meta/_journal.json'), 'utf8'))
+  journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx < migrationIndex)
+  writeFileSync(join(previous, 'meta/_journal.json'), JSON.stringify(journal))
+  for (const entry of journal.entries) {
+    copyFileSync(join(migrationsFolder, `${entry.tag}.sql`), join(previous, `${entry.tag}.sql`))
+  }
+  return previous
+}
+
 function fixture(existing = false): { db: Database.Database; path: string } {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-valence-schema-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
   const path = join(directory, 'anvil.db')
   let originalTasks: unknown[] | undefined
   if (existing) {
-    const previous = join(directory, 'previous')
-    mkdirSync(join(previous, 'meta'), { recursive: true })
-    const journal = JSON.parse(readFileSync(join(migrationsFolder, 'meta/_journal.json'), 'utf8'))
-    journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx < 5)
-    writeFileSync(join(previous, 'meta/_journal.json'), JSON.stringify(journal))
-    for (const entry of journal.entries) {
-      copyFileSync(join(migrationsFolder, `${entry.tag}.sql`), join(previous, `${entry.tag}.sql`))
-    }
-    new Store(path, { migrationsFolder: previous }).close()
+    new Store(path, { migrationsFolder: migrationsBefore(directory, 5) }).close()
     const old = new Database(path)
     try {
       seedTasks(old)
@@ -99,6 +103,34 @@ for (const existing of [false, true]) {
     expect(db.pragma('foreign_key_check')).toEqual([])
   })
 }
+
+test('adds a nullable issue start timestamp without inventing history or changing existing records', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'anvil-issue-start-migration-'))
+  onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
+  const path = join(directory, 'anvil.db')
+  new Store(path, { migrationsFolder: migrationsBefore(directory, 10) }).close()
+  const db = new Database(path)
+  onTestCleanup(() => { db.close() })
+  seedTasks(db)
+  parent(db, 'parent', 'task-a')
+  for (const status of ['queued', 'working', 'review', 'complete']) {
+    issue(db, status, 'parent')
+    db.prepare('UPDATE issues SET status = ?, base_commit = ?, head_commit = ? WHERE id = ?')
+      .run(status, 'base', 'head', status)
+  }
+  db.prepare('INSERT INTO issue_dependencies VALUES (?, ?, ?)').run('queued', 'complete', 0)
+  const before = db.prepare<[], Record<string, unknown>>('SELECT * FROM issues ORDER BY sequence').all()
+  expect(before.every((row) => !Object.hasOwn(row, 'started_at'))).toBe(true)
+
+  const migrated = new Store(path, { migrationsFolder })
+  onTestCleanup(() => migrated.close())
+  expect(db.prepare('SELECT * FROM issues ORDER BY sequence').all())
+    .toEqual(before.map((row) => ({ ...row, started_at: null })))
+  expect(migrated.issueTracker('project').list().every((entry) => entry.startedAt === undefined)).toBe(true)
+  expect(db.prepare('SELECT * FROM issue_dependencies').all())
+    .toEqual([{ issue_id: 'queued', dependency_id: 'complete', position: 0 }])
+  expect(db.pragma('foreign_key_check')).toEqual([])
+})
 
 test('issues accept review status and reject unknown statuses', () => {
   const { db } = fixture()

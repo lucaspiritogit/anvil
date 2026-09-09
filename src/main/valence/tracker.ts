@@ -203,7 +203,9 @@ export class IssueTracker {
       const incomplete = issue.dependencies.filter((dependencyId) => this.get(dependencyId).status !== 'complete')
       if (incomplete.length)
         throw new Error(`Issue is blocked by incomplete dependencies: ${incomplete.join(', ')}`)
-      this.database.update(issues).set({ status: 'working' }).where(eq(issues.id, id)).run()
+      this.database.update(issues).set({
+        status: 'working', startedAt: issue.startedAt ?? Date.now()
+      }).where(eq(issues.id, id)).run()
       return this.get(id)
     }, { behavior: 'immediate' })
   }
@@ -334,11 +336,12 @@ export class IssueTracker {
   }
 
   private toIssue(row: typeof issues.$inferSelect): Issue {
-    const { sequence, evidence, completedAt, reviewedAt, baseCommit, headCommit, ...issue } = row
+    const { sequence, evidence, startedAt, completedAt, reviewedAt, baseCommit, headCommit, ...issue } = row
     return {
       ...issue,
       dependencies: this.database.select().from(issueDependencies).where(eq(issueDependencies.issueId, row.id)).orderBy(issueDependencies.position).all().map((entry) => entry.dependencyId),
       ...(evidence === null ? {} : { evidence }),
+      ...(startedAt === null ? {} : { startedAt }),
       ...(completedAt === null ? {} : { completedAt }),
       ...(reviewedAt === null ? {} : { reviewedAt }),
       ...(baseCommit === null ? {} : { baseCommit }),

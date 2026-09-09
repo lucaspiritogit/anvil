@@ -1,0 +1,1 @@
+ALTER TABLE `issues` ADD `started_at` integer;

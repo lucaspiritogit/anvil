@@ -467,6 +467,8 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
   const pending = (comments ?? []).filter((comment) => comment.sentAt === null)
   // While an issue awaits review no agent is running; the run indicator becomes a review gate.
   const childInReview = !issueId && (snapshot?.children.some((child) => child.status === 'review') ?? false)
+  const issueStartedAt = issue?.startedAt === undefined ? undefined : new Date(issue.startedAt)
+  const issueCompletedAt = issue?.completedAt === undefined ? undefined : new Date(issue.completedAt)
 
   const onScroll = (e: React.UIEvent<HTMLDivElement>): void => {
     const el = e.currentTarget
@@ -533,6 +535,15 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
           </span>
         </div>}
       </header>
+
+      {issue && <div aria-label="Subtask timing" role="group" className="flex shrink-0 flex-wrap items-center gap-x-7 gap-y-2 px-6 py-3 bg-raised border-y border-line @max-[760px]:px-4 [@media(max-height:600px)]:py-2">
+        <StatBlock label="Started" detail="First recorded start, preserved across retries." value={issueStartedAt
+          ? <time dateTime={issueStartedAt.toISOString()}>{issueStartedAt.toLocaleString()}</time>
+          : 'Not recorded'} />
+        <StatBlock label="Completed" detail="Developer approval time, including time waiting for review." value={issueCompletedAt
+          ? <time dateTime={issueCompletedAt.toISOString()}>{issueCompletedAt.toLocaleString()}</time>
+          : issue.status === 'complete' ? 'Not recorded' : 'Not completed'} />
+      </div>}
 
       {!issueId && <div aria-label="Task statistics" role="group" className="flex shrink-0 flex-wrap items-center gap-x-7 gap-y-2 px-6 py-3 bg-raised border-y border-line @max-[760px]:px-4 [@media(max-height:600px)]:py-2">
         <StatBlock label="Elapsed" value={formatDuration(task, now)} />

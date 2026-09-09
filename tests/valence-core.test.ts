@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -116,6 +116,41 @@ test('priority then creation ordering, completion evidence, transitions and arra
   expect(a.requeue(low.id).status).toBe('queued')
   expect(() => a.requeue(low.id)).toThrow()
   expect(() => a.update(low.id, { status: 'complete' } as UpdateIssue)).toThrow(/Unknown/)
+})
+
+test('records the first issue start in Unix milliseconds and preserves it through retries, review and restart', () => {
+  const { a, input, store, path } = fixture()
+  const firstStartedAt = 1_789_000_000_123
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(firstStartedAt)
+  const issue = a.create(input())
+  const dependent = a.create(input({ dependencies: [issue.id] }))
+  expect(issue.startedAt).toBeUndefined()
+  expect(issue.completedAt).toBeUndefined()
+  expect(() => a.start(dependent.id)).toThrow(/incomplete/)
+  expect(a.get(dependent.id).startedAt).toBeUndefined()
+  expect(a.claim({ ids: [issue.id] })).toMatchObject({ status: 'working', startedAt: firstStartedAt })
+
+  clock.mockReturnValue(firstStartedAt + 1_000)
+  a.block(issue.id)
+  a.requeue(issue.id)
+  expect(a.start(issue.id).startedAt).toBe(firstStartedAt)
+  a.submitForReview(issue.id, { checklist: [true], evidence: 'First attempt' })
+  expect(a.get(issue.id)).toMatchObject({ status: 'review', startedAt: firstStartedAt })
+  expect(a.get(issue.id).completedAt).toBeUndefined()
+  expect(a.reject(issue.id).startedAt).toBe(firstStartedAt)
+  a.submitForReview(issue.id, { checklist: [true], evidence: 'Rework passed' })
+  const completedAt = firstStartedAt + 10_000
+  clock.mockReturnValue(completedAt)
+  expect(a.approve(issue.id)).toMatchObject({ startedAt: firstStartedAt, completedAt, reviewedAt: completedAt })
+
+  clock.mockReturnValue(completedAt + 1_000)
+  expect(a.start(dependent.id).startedAt).toBe(completedAt + 1_000)
+  a.close()
+  store.close()
+  const reopened = new Store(path, { migrationsFolder: resolve('src/main/db/migrations') })
+  onTestCleanup(() => reopened.close())
+  expect(reopened.issueTracker('a').get(issue.id)).toMatchObject({ startedAt: firstStartedAt, completedAt })
+  expect(reopened.issueTracker('a').list().find((entry) => entry.id === dependent.id)?.startedAt).toBe(completedAt + 1_000)
 })
 
 test('review status gates completion behind developer approval', () => {

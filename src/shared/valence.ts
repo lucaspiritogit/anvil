@@ -27,6 +27,9 @@ export interface Issue {
   dependencies: string[]
   status: 'queued' | 'working' | 'blocked' | 'review' | 'complete'
   evidence?: string
+  /** First recorded start in Unix milliseconds, preserved across retries. Absent for legacy or unstarted issues. */
+  startedAt?: number
+  /** Developer approval time in Unix milliseconds, including any wait for review. */
   completedAt?: number
   reviewedAt?: number
   /** Task worktree commit range captured for the per-issue review diff. */

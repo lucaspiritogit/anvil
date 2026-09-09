@@ -198,6 +198,27 @@ test('snapshot reads current parent children during planning and after the execu
   }
 })
 
+test('subtask snapshots expose persisted start and completion timestamps without changing the parent', () => {
+  const { directory, store, taskId, issues, read } = snapshotFixture()
+  const state = issues.initialize(taskId, directory)
+  const tracker = store.issueTracker(store.getTask(taskId)!.projectId)
+  onTestCleanup(() => tracker.close())
+  const child = tracker.create({ parentId: state.parentIssueId, title: 'Timed issue',
+    description: 'Expose lifecycle timestamps', checklist: ['Verify'], validation: 'Run test' })
+  const parent = read().parent
+  issues.finishPlanning(taskId)
+  const startedAt = 1_789_000_000_123
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(startedAt)
+  issues.claim(taskId)
+  expect(read()).toMatchObject({ parent, children: [{ id: child.id, startedAt }] })
+  tracker.submitForReview(child.id, { checklist: [true], evidence: 'Passed' })
+  expect(read().children[0].completedAt).toBeUndefined()
+  clock.mockReturnValue(startedAt + 60_000)
+  tracker.approve(child.id)
+  expect(read()).toMatchObject({ parent, children: [{ id: child.id, startedAt, completedAt: startedAt + 60_000 }] })
+  expect(read().parent).toEqual(parent)
+})
+
 test('snapshot distinguishes absent metadata, deleted tasks, and unavailable storage without initializing it', () => {
   const { directory, store, taskId, read } = snapshotFixture()
   expect(read()).toBeNull()

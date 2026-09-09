@@ -216,7 +216,11 @@ test('serializes steering and comments through resume, completion and recovery',
     store.addTask({ ...finished, id: 'unmanaged', branchName: undefined, baseCommit: undefined, deliveryStatus: 'unavailable' })
     store.saveTaskExecution({ ...new TaskIssues(store).initialize('unmanaged', testHome), phase: 'complete' })
     await steer('unmanaged', 'Continue without Git')
-    expect(agentProcesses.starts.at(-1).prompt).toBe('Continue without Git')
+    const unmanagedPrompt = agentProcesses.starts.at(-1).prompt
+    expect(unmanagedPrompt).toMatch(/Continue without Git$/)
+    expect(unmanagedPrompt).toContain('Keep long-running commands observable')
+    expect(unmanagedPrompt).toContain('Use targeted tests and checks')
+    expect(unmanagedPrompt).not.toContain('Use Git normally')
     expect(agentProcesses.starts.at(-1).resumeSessionId).toBe(finished.sessionId)
     agentProcesses.finishTurn('unmanaged')
     await tick()

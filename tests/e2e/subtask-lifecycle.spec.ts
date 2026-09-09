@@ -52,6 +52,10 @@ test('a newly created task discovers planning children and keeps execution and r
   await first.click()
   await expect(page.getByRole('log')).toContainText('Queued. Execution has not started.')
   await expect(page.getByRole('log')).not.toContainText('Parent planning history')
+  const timing = page.getByRole('group', { name: 'Subtask timing' })
+  await expect(timing).toContainText('Started')
+  await expect(timing).toContainText('Not recorded')
+  await expect(timing).toContainText('Not completed')
   await page.evaluate(() => {
     const calls: { kind: string; detail: unknown }[] = []
     Object.assign(window, { issueReviewCalls: calls })
@@ -64,15 +68,19 @@ test('a newly created task discovers planning children and keeps execution and r
   for (let index = 0; index < snapshot.children.length; index++) {
     const child = snapshot.children[index]
     child.status = 'working'
+    child.startedAt = Date.UTC(2026, 8, 9, 12, index)
     await publish()
     await (index ? second : first).click()
     await expect(page.getByLabel('Valence status')).toHaveText('Working')
+    await expect(timing.locator('time')).toHaveCount(1)
+    await expect(timing.locator('time')).toHaveAttribute('datetime', new Date(child.startedAt).toISOString())
     await emit(`Result for ${child.title}`, child.id)
     await expect(page.getByRole('log')).toContainText(`Result for ${child.title}`)
     await expect(page.getByRole('log')).not.toContainText(`Result for ${snapshot.children[1 - index].title}`)
     child.status = 'review'
     await publish()
     await expect(page.getByLabel('Valence status')).toHaveText('Review')
+    await expect(timing).toContainText('Not completed')
     await expect((index ? second : first)).toContainText('Review')
     // The run indicator becomes a review gate while the agent waits.
     await expect(page.getByRole('status', { name: 'Review gate' })).toBeVisible()
@@ -102,9 +110,18 @@ test('a newly created task discovers planning children and keeps execution and r
       await expect.poll(() => reviewCalls().then((calls) => calls.length)).toBe(3)
     }
     child.status = 'complete'
+    child.completedAt = child.startedAt + 60_000
     await publish()
     await expect(page.getByLabel('Valence status')).toHaveText('Finished')
+    await expect(timing.locator('time')).toHaveCount(2)
+    await expect(timing.locator('time').first()).toHaveAttribute('datetime', new Date(child.startedAt).toISOString())
+    await expect(timing.locator('time').last()).toHaveAttribute('datetime', new Date(child.completedAt).toISOString())
   }
+  // Legacy issues expose their completion without inventing a start timestamp.
+  delete snapshot.children[1].startedAt
+  await publish()
+  await expect(timing).toContainText('Not recorded')
+  await expect(timing.locator('time')).toHaveCount(1)
   // Tracker failure keeps the selected child's cached history, then an explicit retry recovers.
   await page.evaluate(() => { window.anvil.tasks.issues = async () => { throw new Error('Tracker unavailable') } })
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))

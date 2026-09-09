@@ -1,15 +1,28 @@
 import type { Issue, Task, TaskComment, TaskExecutionState } from '../../shared/types'
 
+// Shared task instructions apply to both agent protocols and non-Git tasks.
+// Keep history-only rebases separate: they must not run validation or change files.
+const ANVIL_TASK_INSTRUCTIONS = [
+  'Keep long-running commands observable. Do not pipe tests, builds, installs, or validation commands through tail, output-capturing substitutions, or filters that hide progress.',
+  'Run commands directly or stream and save output with tee. Use a concise reporter that still shows progress. Preserve command failures in pipelines, using pipefail in shells that support it.',
+  'Reading existing files or saved logs with tail is fine. Summarize saved output after the command finishes.',
+  'Use targeted tests and checks for the current issue or review changes. Expand validation when dependencies or shared behavior change.',
+  'Run full-suite validation once after relevant issues are integrated, not by default after every issue. Rerun if later changes invalidate that evidence.',
+  'Honor required repository checks and issue validation; do not skip or weaken them. Record the commands run and their actual results; do not claim unperformed checks passed.'
+].join('\n')
+
 function valenceIssueTrackerInstructionsPrompt(projectPath: string): string {
   return `Use vl --project ${JSON.stringify(projectPath)} <command>. Run vl --help for commands. The launcher selects the owning Anvil database; --project selects the registered original project. init only checks storage readiness.`
 }
 
 export function planningPrompt(task: string, state: Pick<TaskExecutionState, 'projectPath' | 'parentIssueId'>): string {
   return [
+    ANVIL_TASK_INSTRUCTIONS,
     valenceIssueTrackerInstructionsPrompt(state.projectPath),
     'Create issues for this task with findings, paths, checklists, validation, and priorities.',
     `Create issues under parent ${JSON.stringify(state.parentIssueId)}.`,
     'Create prerequisites first; dependencies use their actual issue IDs.',
+    'Give each issue targeted validation commands. Put full-suite validation in a final integration checkpoint, either the last implementation issue or a dedicated validation issue, with dependencies on all implementation issues whose changes it validates. Do not repeat full-suite requirements across every issue unless repository instructions require them.',
     'Leave the finished plan queued. Do not claim or implement issues. If planning fails, block any partial issues before exiting.',
     'Summarize the plan in plain text.',
     `Task: ${task}`
@@ -19,6 +32,7 @@ export function planningPrompt(task: string, state: Pick<TaskExecutionState, 'pr
 export function implementationPrompt(task: string, issue: Issue, projectPath: string): string {
   const { id, parentId, title, description, checklist, validation } = issue
   return [
+    ANVIL_TASK_INSTRUCTIONS,
     'Implement this issue, validate it, and commit.',
     valenceIssueTrackerInstructionsPrompt(projectPath),
     'Anvil already claimed your issue. Submit it for review through vl only after satisfying its checklist (vl submit-review with --confirm-checklist and real validation evidence). Anvil then pauses for developer review before any next issue.',
@@ -31,13 +45,14 @@ export function implementationPrompt(task: string, issue: Issue, projectPath: st
 }
 
 export function taskFollowupPrompt(task: Task, state: TaskExecutionState, message: string): string {
-  if (state.phase === 'complete') return message
+  if (state.phase === 'complete') return [ANVIL_TASK_INSTRUCTIONS, message].join('\n\n')
   if (state.phase === 'planning') return [
     planningPrompt(task.prompt, state),
     'The developer is unblocking planning. Inspect existing issues for this task; fix and requeue partial blocked issues instead of duplicating the plan.',
     `Developer message: ${message}`
   ].join('\n\n')
   return [
+    ANVIL_TASK_INSTRUCTIONS,
     'The developer is unblocking this task. Keep its existing plan and branch.',
     valenceIssueTrackerInstructionsPrompt(state.projectPath),
     `Original task: ${task.prompt}`,
@@ -59,6 +74,7 @@ function commentNotes(comments: TaskComment[]): string {
 export function issueReworkPrompt(projectPath: string, issueId: string, comments: TaskComment[]): string {
   const notes = commentNotes(comments)
   return [
+    ANVIL_TASK_INSTRUCTIONS,
     valenceIssueTrackerInstructionsPrompt(projectPath),
     `The developer reviewed issue ${JSON.stringify(issueId)} and requested changes. The issue is working again in Valence.`,
     'Address the notes below in the code, then commit. Do not claim or create other issues, or change issue ownership or dependencies.',
@@ -83,6 +99,7 @@ export function agentRebasePrompt(baseCommit: string): string {
 export function reviewPrompt(comments: TaskComment[]): string {
   const notes = commentNotes(comments)
   return [
+    ANVIL_TASK_INSTRUCTIONS,
     'The developer reviewed your changes and left the notes below.',
     'Address each one in the code, then commit.',
     '',
