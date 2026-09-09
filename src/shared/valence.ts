@@ -25,9 +25,10 @@ export interface Issue {
   labels: string[]
   priority: 'urgent' | 'high' | 'medium' | 'low'
   dependencies: string[]
-  status: 'queued' | 'working' | 'blocked' | 'complete'
+  status: 'queued' | 'working' | 'blocked' | 'review' | 'complete'
   evidence?: string
   completedAt?: number
+  reviewedAt?: number
 }
 
 export interface CreateIssue {

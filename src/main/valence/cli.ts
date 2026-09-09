@@ -10,7 +10,8 @@ const commands: Record<string, string[]> = {
   'parent update': ['title', 'description', 'file'], 'parent show': [], 'parent list': [],
   create: [...issueOptions, 'file'], update: [...issueOptions, 'title', 'file'],
   show: [], list: ['parent'], ready: ['parent'], claim: ['parent'], start: [],
-  complete: ['evidence', 'confirm-checklist', 'file'], block: [], requeue: []
+  'submit-review': ['evidence', 'confirm-checklist', 'file'], approve: [], reject: [],
+  block: [], requeue: []
 }
 const jsonOutput = process.argv.slice(2).includes('--json')
 function output(value: unknown): void {
@@ -42,7 +43,7 @@ function main(): void {
   const allowed = [...commands[command], 'project', 'json', 'help']
   for (const option of Object.keys(values)) if (!allowed.includes(option)) throw new Error(`Option --${option} is not supported by ${command}`)
   const creates = command === 'create' || command === 'parent create'
-  const takesId = ['update', 'show', 'start', 'complete', 'block', 'requeue', 'parent show', 'parent update'].includes(command)
+  const takesId = ['update', 'show', 'start', 'submit-review', 'approve', 'reject', 'block', 'requeue', 'parent show', 'parent update'].includes(command)
   const expected = takesId || (creates && values.file === undefined) ? 1 : 0
   if (positionals.length !== expected) throw new Error(`vl ${command} requires ${expected} positional argument(s). Run vl --help`)
   if (values.file !== undefined && Object.keys(values).some((key) => !['file', 'json', 'help', 'project'].includes(key))) {
@@ -69,10 +70,10 @@ function main(): void {
       case 'list': result = tracker.list(values.parent); break
       case 'ready': result = tracker.ready(values.parent); break
       case 'claim': result = tracker.claim(values.parent === undefined ? undefined : { parentId: values.parent }); break
-      case 'start': case 'block': case 'requeue': result = tracker[command](id); break
-      case 'complete':
+      case 'start': case 'block': case 'requeue': case 'approve': case 'reject': result = tracker[command](id); break
+      case 'submit-review':
         if (!values.file && !values['confirm-checklist']) throw new Error('Use --confirm-checklist or --file with checklist confirmations')
-        result = tracker.complete(id, values.file ? input as Completion : {
+        result = tracker.submitForReview(id, values.file ? input as Completion : {
           checklist: tracker.get(id).checklist.map(() => true), evidence: values.evidence as string
         })
         break

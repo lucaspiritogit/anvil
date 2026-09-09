@@ -7,6 +7,7 @@ const STATUS: Record<Issue['status'], { label: string; tone: string }> = {
   queued: { label: 'Queued', tone: 'text-dim' },
   working: { label: 'Working', tone: 'text-accent' },
   blocked: { label: 'Blocked', tone: 'text-danger' },
+  review: { label: 'In Review', tone: 'text-warn' },
   complete: { label: 'Complete', tone: 'text-ok' }
 }
 

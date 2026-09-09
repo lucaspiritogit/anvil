@@ -99,7 +99,8 @@ export async function run(): Promise<void> {
       cli('requeue', issue.id)
       cli('start', issue.id)
       await writeFile(join(worktree, 'completion.json'), JSON.stringify({ checklist: [true], evidence: 'Packaged CLI passed' }))
-      cli('complete', issue.id, '--file=completion.json')
+      cli('submit-review', issue.id, '--file=completion.json')
+      cli('approve', issue.id)
       assert.equal(cli('show', issue.id).evidence, 'Packaged CLI passed')
       assert.equal(existsSync(join(worktree, '.valence')), false, 'Do not create a worktree tracker')
 

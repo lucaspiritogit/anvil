@@ -51,14 +51,15 @@ test('polls internal CLI changes without task events and derives current selecte
   expect(loader.getSnapshot().empty).toBe(true)
   const child = writer.create({ parentId: parent.id, title: 'External', description: 'Summary', checklist: ['Checked'], validation: 'Test' })
   writer.update(child.id, { title: 'Renamed' })
-  for (const status of ['queued', 'working', 'blocked', 'complete']) {
+  for (const status of ['queued', 'working', 'blocked', 'review', 'complete']) {
     if (status === 'working') writer.start(child.id)
     if (status === 'blocked') writer.block(child.id)
-    if (status === 'complete') {
+    if (status === 'review') {
       writer.requeue(child.id)
       writer.start(child.id)
-      writer.complete(child.id, { checklist: [true], evidence: 'Test passed' })
+      writer.submitForReview(child.id, { checklist: [true], evidence: 'Test passed' })
     }
+    if (status === 'complete') writer.approve(child.id)
     await vi.advanceTimersByTimeAsync(500)
     const current = loader.getSnapshot()
     expect(current.snapshot?.children[0].status).toBe(status)

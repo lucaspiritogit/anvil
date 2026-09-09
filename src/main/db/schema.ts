@@ -213,11 +213,12 @@ export const issues = sqliteTable('issues', {
   priority: text('priority').$type<Issue['priority']>().notNull(),
   status: text('status').$type<Issue['status']>().notNull(),
   evidence: text('evidence'),
-  completedAt: integer('completed_at')
+  completedAt: integer('completed_at'),
+  reviewedAt: integer('reviewed_at')
 }, (table) => [
   index('issues_parent_sequence_idx').on(table.parentId, table.sequence),
   check('issues_priority_valid', oneOf(table.priority, ['urgent', 'high', 'medium', 'low'])),
-  check('issues_status_valid', oneOf(table.status, ['queued', 'working', 'blocked', 'complete']))
+  check('issues_status_valid', oneOf(table.status, ['queued', 'working', 'blocked', 'review', 'complete']))
 ])
 
 // The Issue.dependencies array is read from these rows ORDER BY position.

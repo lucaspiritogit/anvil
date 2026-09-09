@@ -100,6 +100,20 @@ for (const existing of [false, true]) {
   })
 }
 
+test('issues accept review status and reject unknown statuses', () => {
+  const { db } = fixture()
+  parent(db, 'p', 'task-a')
+  const insert = (id: string, status: string): void => {
+    db.prepare(`INSERT INTO issues (id, parent_id, title, description, checklist, validation, labels,
+      priority, status, evidence, completed_at, reviewed_at) VALUES (?, ?, 'Issue', 'Description',
+      '["Check"]', 'Run tests', '[]', 'high', ?, NULL, NULL, NULL)`).run(id, 'p', status)
+  }
+  insert('r', 'review')
+  expect(db.prepare('SELECT status, reviewed_at FROM issues WHERE id = ?').get('r'))
+    .toEqual({ status: 'review', reviewed_at: null })
+  expect(() => insert('bad', 'pending')).toThrow(/CHECK/)
+})
+
 test('task and project deletion remove owned Valence records and incoming dependency links', () => {
   const { db } = fixture()
   parent(db, 'p-a', 'task-a')

@@ -57,7 +57,8 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   writeFileSync(join(firstCwd, 'first.txt'), 'first change\n')
   git(firstCwd, 'add', 'first.txt')
   git(firstCwd, 'commit', '-m', 'feat: first file')
-  cli('complete', board.items[0].id, '--confirm-checklist', '--evidence', 'Read first.txt and verified its content')
+  cli('submit-review', board.items[0].id, '--confirm-checklist', '--evidence', 'Read first.txt and verified its content')
+  cli('approve', board.items[0].id)
   agentProcesses.finishTurn(task.id, 'Completed through the built CLI')
   await waitFor(() => taskStarts().length === 3)
   expect(git(firstCwd, 'branch', '--show-current')).toBe(task.branchName)
@@ -67,7 +68,8 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   writeFileSync(join(secondCwd, 'second.txt'), 'second change\n')
   // Exercise Anvil's fallback commit for an agent that leaves a dirty worktree.
   board = taskState(seed, task.id)!
-  cli('complete', board.items[1].id, '--confirm-checklist', '--evidence', 'Read second.txt and verified its content')
+  cli('submit-review', board.items[1].id, '--confirm-checklist', '--evidence', 'Read second.txt and verified its content')
+  cli('approve', board.items[1].id)
   agentProcesses.finishTurn(task.id, 'Completed through the built CLI')
   await waitFor(() => seed.getTask(task.id)?.deliveryStatus === 'reviewable')
   expect(existsSync(secondCwd), 'Finalization retains the task worktree').toBe(true)

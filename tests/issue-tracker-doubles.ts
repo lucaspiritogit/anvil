@@ -70,7 +70,8 @@ export class AgentProcessManager extends EventEmitter {
   completeIssue(taskId: string, issueId: string, completion: Completion): void {
     const tracker = openIssueTracker(this.starts.findLast((start) => start.taskId === taskId).projectPath, this.databasePath)
     try {
-      tracker.complete(issueId, completion)
+      tracker.submitForReview(issueId, completion)
+      tracker.approve(issueId)
     } finally {
       tracker.close()
     }

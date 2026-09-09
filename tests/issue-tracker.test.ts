@@ -26,7 +26,9 @@ test('schedules dependencies and priorities sequentially and retains final task 
     return task.id
   }
   const complete = async (taskId: string): Promise<void> => {
-    cli('complete', store.getTaskExecution(taskId)!.currentIssueId!, '--confirm-checklist', '--evidence', 'Focused tests passed')
+    const issueId = store.getTaskExecution(taskId)!.currentIssueId!
+    cli('submit-review', issueId, '--confirm-checklist', '--evidence', 'Focused tests passed')
+    cli('approve', issueId)
     agentProcesses.finishTurn(taskId, 'Completed through the built CLI')
     await tick()
   }
@@ -148,7 +150,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
     await tick()
     const currentId = store.getTaskExecution(failedId)!.currentIssueId!
     const before = agentProcesses.starts.length
-    expect(() => tracker.complete(currentId, completion)).toThrow(/checklist|evidence/)
+    expect(() => tracker.submitForReview(currentId, completion)).toThrow(/checklist|evidence/)
     agentProcesses.finishTurn(failedId, 'Everything is complete!')
     await tick()
     expect(agentProcesses.starts.length).toBe(before)
@@ -161,7 +163,8 @@ test('schedules dependencies and priorities sequentially and retains final task 
   await tick()
   const [assignedId, otherId] = store.getTaskExecution(wrongIssueTaskId)!.issueIds
   tracker.start(otherId)
-  tracker.complete(otherId, { checklist: [true, true], evidence: 'Completed the wrong issue' })
+  tracker.submitForReview(otherId, { checklist: [true, true], evidence: 'Completed the wrong issue' })
+  tracker.approve(otherId)
   agentProcesses.finishTurn(wrongIssueTaskId, 'Done.')
   await tick()
   expect(store.getTask(wrongIssueTaskId)?.status).toBe('pending')
@@ -211,7 +214,8 @@ test('schedules dependencies and priorities sequentially and retains final task 
     await serverExit('Plain text plan summary, not a structured result.')
     const currentId = store.getTaskExecution(serverId)!.currentIssueId!
     expect(agentProcesses.starts.at(-1).issueId).toBe(currentId)
-    tracker.complete(currentId, { checklist: [true, true], evidence: 'Server validation passed' })
+    tracker.submitForReview(currentId, { checklist: [true, true], evidence: 'Server validation passed' })
+    tracker.approve(currentId)
     await serverExit('')
     expect(tracker.get(currentId).evidence).toBe('Server validation passed')
     expect(store.getTask(serverId)?.status, 'Completion needs no assistant output').toBe('succeeded')

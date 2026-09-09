@@ -1,0 +1,1 @@
+ALTER TABLE `issues` ADD `reviewed_at` integer;

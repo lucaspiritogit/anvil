@@ -34,8 +34,9 @@ test('cascades task-owned plans on project removal', async () => {
   expect(issue.status).toBe('working')
   expect(tracker.get(unrelated.id).status, 'Anvil must not claim unrelated higher-priority issues').toBe('queued')
   expect(agentProcesses.starts.at(-1)!.prompt).toMatch(/vl --project/)
-  // Model an agent completing through vl before its final turn report arrives.
-  tracker.complete(issue.id, { checklist: [true], evidence: 'CLI validation passed' })
+  // Model an agent submitting through vl and the developer approving before the turn report arrives.
+  tracker.submitForReview(issue.id, { checklist: [true], evidence: 'CLI validation passed' })
+  tracker.approve(issue.id)
   const completedAt = tracker.get(issue.id).completedAt
   agentProcesses.finishTurn(task.id, 'Finished. See Valence for validation evidence.')
   await tick()
@@ -88,7 +89,8 @@ test.each(['start', 'complete'] as const)('task %s ignores standalone storage an
   issues.finishPlanning(taskId)
   if (operation === 'complete') {
     issues.claim(taskId)
-    tracker.complete(child.id, { checklist: [true], evidence: 'Verified in Anvil' })
+    tracker.submitForReview(child.id, { checklist: [true], evidence: 'Verified in Anvil' })
+    tracker.approve(child.id)
   }
 
   // Historical task JSON need not contain the old standalone parent mapping.
@@ -144,7 +146,8 @@ test.each(['missing', 'changed'] as const)('recovers embedded plans with %s stan
   expect(recovered.resume(taskId).phase).toBe('recovering')
   const client = openCliTracker(directory, tracker.databasePath)
   onTestCleanup(() => client.close())
-  client.complete(child.id, { checklist: [true], evidence: 'Completed through embedded CLI' })
+  client.submitForReview(child.id, { checklist: [true], evidence: 'Completed through embedded CLI' })
+  client.approve(child.id)
   recovered.finishRecovery(taskId)
   expect(reopened.getTaskExecution(taskId)?.phase).toBe('complete')
   expect(recovered.snapshot(taskId)?.children[0].evidence).toBe('Completed through embedded CLI')
@@ -175,13 +178,14 @@ test('snapshot reads current parent children during planning and after the execu
   const later = tracker.create({ ...input, title: 'Added later', parentId: parent.id })
   tracker.updateParent(parent.id, { description: 'Current parent summary' })
   tracker.start(planned.id)
-  for (const status of ['working', 'blocked', 'complete'] as const) {
+  for (const status of ['working', 'blocked', 'review', 'complete'] as const) {
     if (status === 'blocked') tracker.block(planned.id)
-    if (status === 'complete') {
+    if (status === 'review') {
       tracker.requeue(planned.id)
       tracker.start(planned.id)
-      tracker.complete(planned.id, { checklist: [true], evidence: 'Checked externally' })
+      tracker.submitForReview(planned.id, { checklist: [true], evidence: 'Checked externally' })
     }
+    if (status === 'complete') tracker.approve(planned.id)
     const before = tracker.list()
     const snapshot = read()
     expect(snapshot.parent).toEqual(tracker.getParent(parent.id))
@@ -231,7 +235,8 @@ test('reopened storage restores child snapshots and tagged history alongside leg
     description: 'Survive restart', checklist: ['Checked'], validation: 'Reopen storage' })
   issues.finishPlanning(taskId)
   tracker.start(child.id)
-  tracker.complete(child.id, { checklist: [true], evidence: 'Saved before restart' })
+  tracker.submitForReview(child.id, { checklist: [true], evidence: 'Saved before restart' })
+  tracker.approve(child.id)
   store.appendEvent({ id: `${taskId}-legacy`, taskId, ts: 1, stream: 'stdout', kind: 'output', category: 'message', text: 'Historical parent output' })
   store.appendEvent({ id: `${taskId}-child`, taskId, issueId: child.id, ts: 2, stream: 'stdout', kind: 'output', category: 'message', text: 'Only this child output' })
   const expectedSnapshot = issues.snapshot(taskId)
@@ -288,7 +293,8 @@ test('initialization and claiming roll back together and retries retain task own
   expect(() => issues.finishRecovery(taskId)).toThrow(/not complete/)
   tracker.requeue(child.id)
   tracker.start(child.id)
-  tracker.complete(child.id, { checklist: [true], evidence: 'External client validated' })
+  tracker.submitForReview(child.id, { checklist: [true], evidence: 'External client validated' })
+  tracker.approve(child.id)
   issues.finishRecovery(taskId)
   expect(store.getTaskExecution(taskId)?.phase).toBe('complete')
 })
@@ -339,7 +345,8 @@ test('reuses an existing task parent and recovers a persisted interrupted claim'
   expect(client.get(child.id).status).toBe('working')
   recovered.resume(taskId)
   expect(() => recovered.finishRecovery(taskId)).toThrow(/not complete/)
-  client.complete(child.id, { checklist: [true], evidence: 'Finished after interruption' })
+  client.submitForReview(child.id, { checklist: [true], evidence: 'Finished after interruption' })
+  client.approve(child.id)
   recovered.finishRecovery(taskId)
   expect(reopened.getTaskExecution(taskId)?.phase).toBe('complete')
   expect(recovered.initialize(taskId, directory).parentIssueId).toBe(parent.id)

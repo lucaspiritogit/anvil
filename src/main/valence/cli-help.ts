@@ -19,9 +19,11 @@ Commands:
   ready                List ready issues by priority, then creation order
   claim                Atomically start the next ready issue
   start <id>           Start a queued issue whose dependencies are complete
-  complete <id>        Complete working issue with checklist confirmation and evidence
-  block <id>           Manually block queued or working work
-  requeue <id>         Return blocked or interrupted working issue to the queue
+  submit-review <id>   Submit a working issue for developer review with checklist confirmation and evidence
+  approve <id>         Approve an issue in review, marking it complete
+  reject <id>          Reject an issue in review, returning it to working with evidence cleared
+  block <id>           Manually block queued, working, or review work
+  requeue <id>         Return blocked, interrupted working, or review work to the queue
 
 Anvil storage:
   Use the launcher supplied by the owning Anvil profile. It sets ANVIL_DATABASE_PATH.
@@ -45,10 +47,12 @@ Issue fields for create and update:
   --title <text>       Update only
   --file <path>        JSON input instead of field flags
 
-Completion:
+Completion (submit-review):
   --confirm-checklist  Explicitly confirm every checklist item
   --evidence <text>    Required validation evidence
   --file <path>        Alternatively, JSON with checklist booleans and evidence
+  Approval is developer-only: approve moves a review issue to complete and
+  reject returns it to working with evidence cleared.
 
 All commands accept --json and --help.
 Use --parent <id> with list, ready, or claim to select one parent's issues.

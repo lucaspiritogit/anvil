@@ -229,11 +229,12 @@ export class IssueTracker {
     }, { behavior: 'immediate' })
   }
 
-  complete(id: string, completion: Completion): Issue {
+  /** Confirm the checklist with evidence and hold the issue for developer review. */
+  submitForReview(id: string, completion: Completion): Issue {
     return this.database.transaction(() => {
       const issue = this.get(id)
       if (issue.status !== 'working')
-        throw new Error('Only working issues can be completed')
+        throw new Error('Only working issues can be submitted for review')
       if (!completion || !Array.isArray(completion.checklist) ||
         completion.checklist.length !== issue.checklist.length || !Array.from(completion.checklist).every((entry) => entry === true)) {
         throw new Error('Completion must confirm every checklist item with true')
@@ -241,7 +242,34 @@ export class IssueTracker {
 
       const evidence = requiredText(completion.evidence, 'evidence')
       this.database.update(issues).set({
-        status: 'complete', evidence, completedAt: Date.now()
+        status: 'review', evidence
+      }).where(eq(issues.id, id)).run()
+      return this.get(id)
+    }, { behavior: 'immediate' })
+  }
+
+  /** Developer approval is the only path to complete; dependencies gate on it. */
+  approve(id: string): Issue {
+    return this.database.transaction(() => {
+      const issue = this.get(id)
+      if (issue.status !== 'review')
+        throw new Error('Only issues in review can be approved')
+      const now = Date.now()
+      this.database.update(issues).set({
+        status: 'complete', completedAt: now, reviewedAt: now
+      }).where(eq(issues.id, id)).run()
+      return this.get(id)
+    }, { behavior: 'immediate' })
+  }
+
+  /** Send a review issue back to work; submitted evidence is no longer valid. */
+  reject(id: string): Issue {
+    return this.database.transaction(() => {
+      const issue = this.get(id)
+      if (issue.status !== 'review')
+        throw new Error('Only issues in review can be rejected')
+      this.database.update(issues).set({
+        status: 'working', evidence: null
       }).where(eq(issues.id, id)).run()
       return this.get(id)
     }, { behavior: 'immediate' })
@@ -250,8 +278,8 @@ export class IssueTracker {
   block(id: string): Issue {
     return this.database.transaction(() => {
       const issue = this.get(id)
-      if (issue.status !== 'queued' && issue.status !== 'working')
-        throw new Error('Only queued or working issues can be blocked')
+      if (issue.status !== 'queued' && issue.status !== 'working' && issue.status !== 'review')
+        throw new Error('Only queued, working, or review issues can be blocked')
       this.database.update(issues).set({ status: 'blocked' }).where(eq(issues.id, id)).run()
       return this.get(id)
     }, { behavior: 'immediate' })
@@ -260,8 +288,8 @@ export class IssueTracker {
   requeue(id: string): Issue {
     return this.database.transaction(() => {
       const issue = this.get(id)
-      if (issue.status !== 'working' && issue.status !== 'blocked')
-        throw new Error('Only working or blocked issues can be requeued')
+      if (issue.status !== 'working' && issue.status !== 'blocked' && issue.status !== 'review')
+        throw new Error('Only working, blocked, or review issues can be requeued')
       this.database.update(issues).set({ status: 'queued' }).where(eq(issues.id, id)).run()
       return this.get(id)
     }, { behavior: 'immediate' })
@@ -293,12 +321,13 @@ export class IssueTracker {
   }
 
   private toIssue(row: typeof issues.$inferSelect): Issue {
-    const { sequence, evidence, completedAt, ...issue } = row
+    const { sequence, evidence, completedAt, reviewedAt, ...issue } = row
     return {
       ...issue,
       dependencies: this.database.select().from(issueDependencies).where(eq(issueDependencies.issueId, row.id)).orderBy(issueDependencies.position).all().map((entry) => entry.dependencyId),
       ...(evidence === null ? {} : { evidence }),
-      ...(completedAt === null ? {} : { completedAt })
+      ...(completedAt === null ? {} : { completedAt }),
+      ...(reviewedAt === null ? {} : { reviewedAt })
     }
 
   }

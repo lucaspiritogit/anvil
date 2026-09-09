@@ -98,12 +98,13 @@ test('priority then creation ordering, completion evidence, transitions and arra
   expect(a.claim({ ids: [], parentId: low.parentId })).toBeUndefined()
   expect(a.claim()?.id).toBe(urgent.id)
   expect(() => a.update(urgent.id, { title: 'Changed' })).toThrow(/queued or blocked/)
-  expect(() => a.complete(urgent.id, { checklist: [], evidence: 'Test' })).toThrow(/checklist/)
-  expect(() => a.complete(urgent.id, { checklist: [false], evidence: 'Test' })).toThrow(/checklist/)
-  expect(() => a.complete(urgent.id, { checklist: [true], evidence: ' ' })).toThrow(/evidence/)
+  expect(() => a.submitForReview(urgent.id, { checklist: [], evidence: 'Test' })).toThrow(/checklist/)
+  expect(() => a.submitForReview(urgent.id, { checklist: [false], evidence: 'Test' })).toThrow(/checklist/)
+  expect(() => a.submitForReview(urgent.id, { checklist: [true], evidence: ' ' })).toThrow(/evidence/)
   expect(a.get(urgent.id).status).toBe('working')
-  expect(a.complete(urgent.id, { checklist: [true], evidence: ' Tests passed ' })).toMatchObject({ status: 'complete', evidence: 'Tests passed', completedAt: expect.any(Number) })
-  for (const action of [() => a.start(urgent.id), () => a.block(urgent.id), () => a.requeue(urgent.id)]) expect(action).toThrow()
+  expect(a.submitForReview(urgent.id, { checklist: [true], evidence: ' Tests passed ' })).toMatchObject({ status: 'review', evidence: 'Tests passed' })
+  expect(a.approve(urgent.id)).toMatchObject({ status: 'complete', evidence: 'Tests passed', completedAt: expect.any(Number), reviewedAt: expect.any(Number) })
+  for (const action of [() => a.start(urgent.id), () => a.block(urgent.id), () => a.requeue(urgent.id), () => a.approve(urgent.id), () => a.reject(urgent.id)]) expect(action).toThrow()
   a.block(low.id)
   a.update(low.id, { labels: ['label'], dependencies: [urgent.id], checklist: ['New check'] })
   expect(a.update(low.id, { labels: [], dependencies: [] })).toMatchObject({ labels: [], dependencies: [], checklist: ['New check'] })
@@ -117,6 +118,54 @@ test('priority then creation ordering, completion evidence, transitions and arra
   expect(() => a.update(low.id, { status: 'complete' } as UpdateIssue)).toThrow(/Unknown/)
 })
 
+test('review status gates completion behind developer approval', () => {
+  const { a, input } = fixture()
+  const [first, second] = a.createMany([
+    { ...input(), key: 'first' },
+    { ...input(), key: 'second', dependencies: ['first'] }
+  ])
+  expect(a.ready().map(({ id }) => id)).toEqual([first.id])
+  expect(() => a.submitForReview(first.id, { checklist: [true], evidence: 'Early' })).toThrow(/working/)
+  expect(() => a.approve(first.id)).toThrow(/review/)
+  expect(() => a.reject(first.id)).toThrow(/review/)
+  a.start(first.id)
+  expect(() => a.submitForReview(first.id, { checklist: [], evidence: 'Test' })).toThrow(/checklist/)
+  expect(() => a.submitForReview(first.id, { checklist: [false], evidence: 'Test' })).toThrow(/checklist/)
+  expect(() => a.submitForReview(first.id, { checklist: [true], evidence: ' ' })).toThrow(/evidence/)
+  expect(a.submitForReview(first.id, { checklist: [true], evidence: ' Tests passed ' }))
+    .toMatchObject({ status: 'review', evidence: 'Tests passed' })
+  expect(a.ready()).toEqual([])
+  expect(() => a.update(first.id, { title: 'Changed' })).toThrow(/queued or blocked/)
+  expect(() => a.start(second.id)).toThrow(/incomplete/)
+  expect(() => a.submitForReview(first.id, { checklist: [true], evidence: 'Again' })).toThrow(/working/)
+  a.block(first.id)
+  expect(a.get(first.id).status).toBe('blocked')
+  expect(a.requeue(first.id).status).toBe('queued')
+  a.start(first.id)
+  a.submitForReview(first.id, { checklist: [true], evidence: 'Tests passed' })
+  expect(a.approve(first.id)).toMatchObject({
+    status: 'complete', evidence: 'Tests passed', completedAt: expect.any(Number), reviewedAt: expect.any(Number)
+  })
+  expect(a.ready().map(({ id }) => id)).toEqual([second.id])
+  expect(() => a.approve(first.id)).toThrow(/review/)
+  expect(() => a.reject(first.id)).toThrow(/review/)
+})
+
+test('reject returns review issues to working and clears evidence', () => {
+  const { a, input } = fixture()
+  const issue = a.create(input())
+  a.start(issue.id)
+  a.submitForReview(issue.id, { checklist: [true], evidence: 'First attempt' })
+  expect(a.reject(issue.id)).toMatchObject({ status: 'working' })
+  const rejected = a.get(issue.id)
+  expect(rejected.evidence).toBeUndefined()
+  expect(rejected.completedAt).toBeUndefined()
+  expect(rejected.reviewedAt).toBeUndefined()
+  expect(a.ready()).toEqual([])
+  a.submitForReview(issue.id, { checklist: [true], evidence: 'Second attempt' })
+  expect(a.approve(issue.id).evidence).toBe('Second attempt')
+})
+
 test('rejects foreign project IDs across CRUD, dependencies and selection', () => {
   const { a, b, pa, pb, input } = fixture()
   const foreign = b.create(input({ parentId: pb.id }))
@@ -124,7 +173,7 @@ test('rejects foreign project IDs across CRUD, dependencies and selection', () =
   const operations = [
     () => a.get(foreign.id), () => a.update(foreign.id, { title: 'Changed' }),
     () => a.start(foreign.id), () => a.block(foreign.id), () => a.requeue(foreign.id),
-    () => a.complete(foreign.id, { checklist: [true], evidence: 'Tests' }),
+    () => a.submitForReview(foreign.id, { checklist: [true], evidence: 'Tests' }),
     () => a.getParent(pb.id), () => a.updateParent(pb.id, { title: 'Changed' }),
     () => a.list(pb.id), () => a.ready(pb.id), () => a.claim({ parentId: pb.id }),
     () => a.claim({ ids: [own.id, foreign.id] }),
@@ -152,7 +201,8 @@ test('supports dependencies across parents in the same project and preserves per
   const next = a.create(input({ parentId: secondParent.id, dependencies: [dependency.id] }))
   expect(a.ready(secondParent.id)).toEqual([])
   a.start(dependency.id)
-  a.complete(dependency.id, { checklist: [true], evidence: 'Passed' })
+  a.submitForReview(dependency.id, { checklist: [true], evidence: 'Passed' })
+  a.approve(dependency.id)
   a.close()
   const reopened = store.issueTracker('a')
   expect(reopened.list().map(({ id }) => id)).toEqual([dependency.id, next.id])

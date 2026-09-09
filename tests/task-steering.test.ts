@@ -174,7 +174,8 @@ test('serializes steering and comments through resume, completion and recovery',
       key, parentId: unfinished.parentIssueId, title: key, description: key, checklist: ['Check'], validation: 'Test'
     })))
     tracker.start(completed.id)
-    tracker.complete(completed.id, { checklist: [true], evidence: 'Validated' })
+    tracker.submitForReview(completed.id, { checklist: [true], evidence: 'Validated' })
+    tracker.approve(completed.id)
     tracker.start(interrupted.id)
     store.saveTaskExecution({
       ...unfinished, phase: 'blocked', issueIds: [completed.id, interrupted.id], currentIssueId: interrupted.id
