@@ -1,4 +1,4 @@
-import type { TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, ComposerPreferences, WorkspacePreferences, TaskComment, TaskMergePreview } from './types'
+import type { AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, ComposerPreferences, WorkspacePreferences, TaskComment, TaskMergePreview } from './types'
 
 /** The renderer supplies identities, never paths for privileged project actions. */
 export interface IpcRequests {
@@ -15,6 +15,11 @@ export interface IpcRequests {
   'workspaces:preferences:get': string
   'workspaces:preferences:set': { workspaceId: string; patch: Partial<WorkspacePreferences> }
   'workspaces:composer:import': ComposerPreferences
+  'accounts:status': AgentAccountTarget
+  'accounts:connect': AgentAccountConnect
+  'accounts:disconnect': AgentAccountTarget
+  'accounts:cancel': AgentAccountTarget & { sessionId: string }
+  'accounts:terminal': AgentAccountTarget & { sessionId: string; data?: string; cols?: number; rows?: number }
   'agents:list': undefined
   'agents:models': { agentId: string; workspaceId?: string }
   'projects:list': undefined

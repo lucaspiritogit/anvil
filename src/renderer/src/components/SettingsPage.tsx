@@ -1,3 +1,4 @@
+import { WorkspaceAgentAccounts } from './WorkspaceAgentAccounts'
 import type { JSX } from 'react'
 import { SETTINGS_SECTIONS } from '../settings-sections'
 import { useEffect, useRef, useState } from 'react'
@@ -208,6 +209,7 @@ export function SettingsPage(): JSX.Element {
           )}
           <div className="min-w-0">
             {section === 'providers' && <>
+              <WorkspaceAgentAccounts />
               <div className={field.wrap}>
                 <span className={field.label}>Default agent</span>
                 <ProviderPicker agents={agents} value={defaultAgentId} onChange={setDefaultAgentId} label="Default agent" />

@@ -116,6 +116,16 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'workspaces:composer:import': composer,
   'settings:get': optional(workspaceId),
   'settings:set': object({ workspaceId, patch: settingsPatch }),
+  'accounts:status': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
+  'accounts:disconnect': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
+  'accounts:cancel': object({ workspaceId, agentId: oneOf('codex', 'opencode'), sessionId: id }),
+  'accounts:terminal': object({ workspaceId, agentId: oneOf('codex', 'opencode'), sessionId: id, data: optional(text(16_384, false)), cols: optional(number(1, 500)), rows: optional(number(1, 300)) }),
+  'accounts:connect': (value, field) => {
+    const input = object<IpcRequests['accounts:connect']>({ workspaceId, agentId: oneOf('codex', 'opencode'), method: oneOf('apiKey', 'chatgpt', 'native'), apiKey: optional(text(8192, true, /^[^\s]+$/)) })(value, field)
+    if (input.agentId === 'codex' ? input.method === 'native' : input.method !== 'native') invalid(field, 'has an unsupported agent login method')
+    if ((input.method === 'apiKey') !== (input.apiKey !== undefined)) invalid(field, 'requires a key only for API key login')
+    return input
+  },
   'agents:list': none,
   'agents:models': object({ agentId: id, workspaceId: optional(id) }),
   'projects:list': none,

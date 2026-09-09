@@ -533,3 +533,38 @@ test('sends exact inline image data to Codex and rejects models without vision',
     await client.close()
   }
 })
+
+test('native account RPC stores only in the selected profile and supports subscription cancellation and logout', async () => {
+  const { CodexAppServerConnection } = await import('../src/main/agents/codex-app-server-connection')
+  const work = testWorkspace('native-auth-work')
+  const personal = testWorkspace('native-auth-personal')
+  const global = testWorkspace('native-auth-global')
+  await writeFile(join(global.codexHome, 'auth.json'), 'global sentinel')
+  const notification = vi.fn()
+  const connect = async (workspace: WorkspaceExecutionContext) => {
+    const connection = new CodexAppServerConnection(workspace.home, {
+      workspace, command: process.execPath, args: [resolve('tests/fixtures/workspace-codex.cjs')], requestTimeoutMs: 2000
+    }, { notification, diagnostic: vi.fn(), serverRequest: () => ({}) })
+    onTestCleanup(() => connection.close())
+    await connection.request('initialize', { clientInfo: { name: 'fixture', title: 'Fixture', version: '1' } })
+    connection.initialized()
+    return connection
+  }
+  const workConnection = await connect(work)
+  const personalConnection = await connect(personal)
+  await workConnection.request('account/login/start', { type: 'apiKey', apiKey: 'synthetic-work-key' })
+  expect((await workConnection.request('account/read', { refreshToken: false })).account).toEqual({ type: 'apiKey' })
+  expect((await personalConnection.request('account/read', { refreshToken: false })).account).toBeNull()
+  expect((await readFile(join(work.codexHome, 'auth.json'), 'utf8'))).toContain('synthetic-work-key')
+  const pending = await personalConnection.request('account/login/start', { type: 'chatgpt' })
+  expect(pending.type).toBe('chatgpt')
+  await personalConnection.request('account/login/cancel', { loginId: 'fixture-login' })
+  expect((await personalConnection.request('account/read', { refreshToken: false })).account).toBeNull()
+  await personalConnection.request('account/login/start', { type: 'chatgpt' })
+  await expect.poll(() => notification.mock.calls.some(([method, params]) => method === 'account/login/completed' && params.success === true)).toBe(true)
+  expect((await personalConnection.request('account/read', { refreshToken: false })).account).toMatchObject({ type: 'chatgpt', email: 'fixture@example.test' })
+  await workConnection.request('account/logout', {})
+  expect((await workConnection.request('account/read', { refreshToken: false })).account).toBeNull()
+  expect(await readFile(join(global.codexHome, 'auth.json'), 'utf8')).toBe('global sentinel')
+  expect(JSON.stringify(notification.mock.calls)).not.toContain('synthetic-work-key')
+})

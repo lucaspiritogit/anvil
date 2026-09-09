@@ -133,6 +133,36 @@ export class AgentProcessManager extends EventEmitter {
   private completions = new Set<Promise<void>>()
   private shutdown?: Promise<void>
 
+  private readonly executionWorkspaces = new Map<string, string>()
+  private readonly accountChanges = new Set<string>()
+
+  isWorkspaceBusy(workspaceId: string): boolean {
+    return [...this.executionWorkspaces].some(([taskId, owner]) => owner === workspaceId && this.isRunning(taskId))
+  }
+
+  acquireAccountChange(workspaceId: string): () => void {
+    if (this.accountChanges.has(workspaceId) || this.isWorkspaceBusy(workspaceId)) {
+      throw new Error('Wait for active work or the pending account change in this workspace to finish.')
+    }
+    this.accountChanges.add(workspaceId)
+    return () => { this.accountChanges.delete(workspaceId) }
+  }
+
+  async invalidateWorkspaceClients(workspaceId: string): Promise<void> {
+    if (this.isWorkspaceBusy(workspaceId)) throw new Error('Workspace has active work')
+    const closing: Promise<void>[] = []
+    for (const [key, client] of this.clients) {
+      if (JSON.parse(key)[0] !== workspaceId) continue
+      this.clients.delete(key)
+      if (client.close) closing.push(client.close())
+    }
+    await Promise.all(closing)
+  }
+
+  private requireAccountReady(workspaceId: string): void {
+    if (this.accountChanges.has(workspaceId)) throw new Error('Finish or cancel the pending account change in this workspace before starting work.')
+  }
+
   private readonly clients = new Map<string, AgentExecutor>()
 
   constructor(
@@ -157,11 +187,13 @@ export class AgentProcessManager extends EventEmitter {
   /** A fresh, read-only turn for metadata, separate from the task's session and lifecycle. */
   async generateText(options: Pick<StartOptions, 'agent' | 'prompt' | 'cwd' | 'model' | 'reasoningEffort' | 'workspace'>): Promise<string> {
     if (this.shutdown) throw new Error('Agent processes are shutting down')
+    this.requireAccountReady(options.workspace.workspaceId)
     const client = ['codex', 'opencode'].includes(options.agent.id) ? this.executor(options.agent.id, options.workspace) : undefined
     if (!client) throw new Error('This agent does not support PR drafting')
     const taskId = `pr-draft-${randomUUID()}`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 120_000)
+    this.executionWorkspaces.set(taskId, options.workspace.workspaceId)
     this.serverExecutions.set(taskId, controller)
     const { agent: _agent, ...input } = options
     const execution = Promise.resolve().then(() => client.execute({ ...input, taskId, readOnly: true, signal: controller.signal }, () => {}))
@@ -176,6 +208,7 @@ export class AgentProcessManager extends EventEmitter {
     } finally {
       clearTimeout(timer)
       this.serverExecutions.delete(taskId)
+      this.executionWorkspaces.delete(taskId)
       this.completions.delete(completion)
     }
   }
@@ -201,6 +234,7 @@ export class AgentProcessManager extends EventEmitter {
   private startServer(opts: StartOptions, client: AgentExecutor): void {
     const { issueId } = opts
     const controller = new AbortController()
+    this.executionWorkspaces.set(opts.taskId, opts.workspace.workspaceId)
     this.serverExecutions.set(opts.taskId, controller)
     if (opts.agent.supportsSteering && client.steer) this.steeringExecutors.set(opts.taskId, client)
     let started = false
@@ -225,6 +259,7 @@ export class AgentProcessManager extends EventEmitter {
     }))().then((result) => {
       this.steeringExecutors.delete(opts.taskId)
       this.serverExecutions.delete(opts.taskId)
+      this.executionWorkspaces.delete(opts.taskId)
       const cancelled = this.cancelled.delete(opts.taskId)
       if (!started && opts.onStartFailed) {
         opts.onStartFailed(new Error(result.error ?? 'Agent stopped before accepting the turn'))
@@ -238,6 +273,7 @@ export class AgentProcessManager extends EventEmitter {
     }, (failure: unknown) => {
       this.steeringExecutors.delete(opts.taskId)
       this.serverExecutions.delete(opts.taskId)
+      this.executionWorkspaces.delete(opts.taskId)
       const error = failure instanceof Error ? failure.message : String(failure)
       this.emitSystem(opts.taskId, error, true, issueId)
       const cancelled = this.cancelled.delete(opts.taskId)
@@ -345,6 +381,7 @@ export class AgentProcessManager extends EventEmitter {
     if (opts.images?.length && !['acp', 'codex-app-server'].includes(opts.agent.executionProtocol ?? '')) {
       throw new Error(`${opts.agent.label} does not support image attachments. Choose Codex or OpenCode with an image-capable model.`)
     }
+    this.requireAccountReady(opts.workspace.workspaceId)
     opts.beforeDispatch?.()
     if (this.isRunning(opts.taskId)) throw new Error('This task is already running')
     if (opts.agent.executionProtocol === 'acp') {
@@ -420,6 +457,7 @@ export class AgentProcessManager extends EventEmitter {
       started = true
       opts.onStarted?.()
     })
+    this.executionWorkspaces.set(taskId, opts.workspace.workspaceId)
     this.procs.set(taskId, child)
 
     const flushOut = this.pipe(taskId, agent, 'stdout', child.stdout!, issueId)
@@ -434,6 +472,7 @@ export class AgentProcessManager extends EventEmitter {
       flushOut()
       flushErr()
       this.procs.delete(taskId)
+      this.executionWorkspaces.delete(taskId)
       this.usage.delete(taskId)
       this.sessions.delete(taskId)
       const cancelled = this.cancelled.delete(taskId)

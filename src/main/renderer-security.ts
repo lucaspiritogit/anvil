@@ -89,3 +89,17 @@ export function protectRendererWindow(window: BrowserWindow, rendererUrl: string
     return { action: 'deny' }
   })
 }
+
+export function isCodexLoginUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && ['auth.openai.com', 'auth0.openai.com', 'chatgpt.com'].includes(url.hostname) &&
+      !url.username && !url.password && !url.port && url.href === value
+  } catch { return false }
+}
+
+export async function openExternalCodexLogin(value: string): Promise<void> {
+  if (!isCodexLoginUrl(value)) throw new Error('Invalid Codex sign-in URL')
+  try { await shell.openExternal(value) }
+  catch { throw new Error('Could not open Codex sign-in in your browser') }
+}

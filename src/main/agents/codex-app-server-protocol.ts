@@ -34,6 +34,12 @@ export type CodexAccount =
   | { type: 'amazonBedrock'; usesCodexManagedCredentials: boolean }
 
 export interface CodexAppServerRequests {
+  'account/login/start': {
+    params: { type: 'apiKey'; apiKey: string } | { type: 'chatgpt' }
+    result: { type: 'apiKey' } | { type: 'chatgpt'; loginId: string; authUrl: string }
+  }
+  'account/login/cancel': { params: { loginId: string }; result: { status: string } }
+  'account/logout': { params: Record<string, never>; result: CodexObject }
   'config/read': {
     params: { includeLayers: boolean }
     result: { config: CodexObject }
@@ -131,6 +137,11 @@ export function codexTurn(value: unknown): CodexTurn {
 
 export function validateCodexResponse(method: keyof CodexAppServerRequests, value: unknown): void {
   const result = codexObject(value)
+  if (method === 'account/login/start') {
+    if (result.type === 'chatgpt') { codexId(result.loginId); codexString(result.authUrl) }
+    else if (result.type !== 'apiKey') throw new Error('Unsupported Codex login response')
+  }
+  if (method === 'account/login/cancel') codexString(result.status)
   if (method === 'config/read') codexObject(result.config)
   if (method === 'account/read') {
     if (typeof result.requiresOpenaiAuth !== 'boolean') throw new Error('Expected Codex authentication requirement')

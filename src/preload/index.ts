@@ -1,3 +1,4 @@
+import type { WorkspaceAgentAccount } from '../shared/types'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { IpcArgs, IpcInvokeChannel, IpcRequests, IpcSendChannel } from '../shared/ipc-requests'
 import type {
@@ -92,6 +93,14 @@ const api = {
     draftField: (input: IpcRequests['github:draft-pr-field']): Promise<string> =>
       invoke('github:draft-pr-field', input),
     openUrl: (url: string): Promise<void> => invoke('github:open-pr-url', url)
+  },
+  accounts: {
+    status: (input: IpcRequests['accounts:status']): Promise<WorkspaceAgentAccount> => invoke('accounts:status', input),
+    connect: (input: IpcRequests['accounts:connect']): Promise<WorkspaceAgentAccount> => invoke('accounts:connect', input),
+    disconnect: (input: IpcRequests['accounts:disconnect']): Promise<WorkspaceAgentAccount> => invoke('accounts:disconnect', input),
+    cancel: (input: IpcRequests['accounts:cancel']): Promise<WorkspaceAgentAccount> => invoke('accounts:cancel', input),
+    terminal: (input: IpcRequests['accounts:terminal']): Promise<TerminalSnapshot> => invoke('accounts:terminal', input),
+    onChanged: (handler: (state: WorkspaceAgentAccount) => void): (() => void) => subscribe('accounts:changed', handler)
   },
   agents: {
     list: (): Promise<AgentDefinition[]> => invoke('agents:list'),

@@ -1,3 +1,6 @@
+import { WorkspaceAccounts } from './agents/workspace-accounts'
+import { registerAccountHandlers } from './ipc/agent-accounts'
+import { openExternalCodexLogin } from './renderer-security'
 import { invalidateWorkspaceModels, closeModelDiscovery } from './agents/models'
 import { watchWorkspaceAuthChanges } from './agents/workspace-auth-changes'
 import { resolveTaskWorkspace } from './agents/workspace-execution'
@@ -84,6 +87,18 @@ export function registerIpc(
   })
   registerWorkspaceHandlers(ipc, store, broadcast)
   registerAgentHandlers(ipc, store)
+  const accounts = new WorkspaceAccounts(store, {
+    acquire: (workspaceId) => agentProcesses.acquireAccountChange(workspaceId),
+    busy: (workspaceId) => agentProcesses.isWorkspaceBusy(workspaceId),
+    invalidate: async (workspaceId) => {
+      await agentProcesses.invalidateWorkspaceClients(workspaceId)
+      invalidateWorkspaceModels(workspaceId)
+      broadcast('agents:models:changed', workspaceId)
+    },
+    openBrowser: openExternalCodexLogin,
+    changed: (state) => broadcast('accounts:changed', state)
+  })
+  registerAccountHandlers(ipc, accounts)
   const stopAuthWatcher = watchWorkspaceAuthChanges(store, (workspaceId) => {
     invalidateWorkspaceModels(workspaceId)
     broadcast('agents:models:changed', workspaceId)
@@ -119,7 +134,7 @@ export function registerIpc(
   registerTerminalHandlers(ipc, terminals, store)
 
   return {
-    agentProcesses, closeAgentDiscovery: closeModelDiscovery, terminals, githubPolling, stopCaffeineMode,
+    agentProcesses, closeAgentDiscovery: async () => { await accounts.close(); await closeModelDiscovery() }, terminals, githubPolling, stopCaffeineMode,
     closeStore: () => {
       stopAuthWatcher()
       store.close()

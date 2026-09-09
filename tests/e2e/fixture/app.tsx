@@ -1,3 +1,4 @@
+import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
 import { useTaskIssues } from '../../../src/renderer/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
@@ -255,6 +256,7 @@ window.anvil = {
     },
     update: async ({ id, ...patch }: Partial<Project> & { id: string }) => Object.assign(projects.find((project) => project.id === id)!, patch)
   },
+  accounts: fixtureAccounts((id) => workspaceRows.find((workspace) => workspace.id === id)?.name ?? id, query.has('accountBusy')),
   agents: {
     onModelsChanged: () => () => {},
     list: async () => [

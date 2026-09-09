@@ -5,6 +5,12 @@ import { userInfo } from 'node:os'
 import { closeProcessTree } from './process-tree'
 import type { TerminalSnapshot } from '../shared/types'
 
+export interface ManagedTerminalCommand {
+  command: string
+  args: string[]
+  environment: NodeJS.ProcessEnv
+}
+
 export interface TerminalHandlers {
   onData: (id: string, data: string, sequence: number) => void
   onExit: (id: string, code: number) => void
@@ -33,16 +39,16 @@ export class TerminalManager {
     return this.terms.has(id)
   }
 
-  create(id: string, cwd: string, cols = 80, rows = 24): void {
+  create(id: string, cwd: string, cols = 80, rows = 24, managed?: ManagedTerminalCommand): void {
     if (this.shutdown) throw new Error('Terminals are shutting down')
     if (this.terms.has(id)) return
 
-    const term = ptySpawn(defaultShell(), process.platform === 'win32' ? [] : ['-l'], {
+    const term = ptySpawn(managed?.command ?? defaultShell(), managed?.args ?? (process.platform === 'win32' ? [] : ['-l']), {
       name: 'xterm-256color',
       cols,
       rows,
       cwd,
-      env: { ...process.env, PWD: cwd } as Record<string, string>
+      env: { ...(managed?.environment ?? process.env), PWD: cwd } as Record<string, string>
     })
 
     this.exits.set(term, new Promise<void>((resolve) => { term.onExit(() => resolve()) }))
@@ -79,9 +85,9 @@ export class TerminalManager {
     }
   }
 
-  dispose(id: string): void {
+  dispose(id: string): Promise<void> {
     const term = this.terms.get(id)
-    if (!term) return
+    if (!term) return Promise.resolve()
     this.terms.delete(id)
     this.history.delete(id)
     const closed = this.exits.get(term) ?? Promise.resolve()
@@ -92,6 +98,7 @@ export class TerminalManager {
     void retiring.then(() => this.retiring.delete(retiring), (error) => {
       console.warn('Could not close terminal:', error)
     })
+    return retiring
   }
 
   close(): Promise<void> {

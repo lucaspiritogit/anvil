@@ -365,3 +365,23 @@ export interface Settings {
   /** Accelerator per shortcut, e.g. `{ toggleSidebar: 'Mod+B' }`. */
   keybindings: Keybindings
 }
+
+export interface AgentAccountTarget {
+  workspaceId: string
+  agentId: 'codex' | 'opencode'
+}
+
+export interface AgentAccountConnect extends AgentAccountTarget {
+  method: 'apiKey' | 'chatgpt' | 'native'
+  apiKey?: string
+}
+
+export interface WorkspaceAgentAccount extends AgentAccountTarget {
+  workspaceName: string
+  status: 'signed-out' | 'connected' | 'pending' | 'cancelled' | 'busy' | 'error'
+  accounts: string[]
+  busy: boolean
+  message?: string
+  sessionId?: string
+  terminal?: boolean
+}
