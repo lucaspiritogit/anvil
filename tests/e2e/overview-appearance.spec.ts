@@ -72,7 +72,7 @@ test('obsolete reads cannot replace a newer image or color, and decode failures 
   await expect(layer).toHaveCount(0)
   await page.evaluate(() => {
     window.anvil.wallpapers.read = async () => 'data:image/png;base64,broken'
-    window.settingsTest.apply({ overviewBackgroundMode: 'image' })
+    window.settingsTest.apply({ overviewBackgroundMode: 'image', overviewWallpaperId: 'broken-decode.png' })
   })
   await expect(layer).toHaveCount(0)
   await expect(overview).toHaveCSS('background-color', 'rgb(171, 205, 239)')

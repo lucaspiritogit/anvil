@@ -45,6 +45,9 @@ test('a newly created task discovers planning children and keeps execution and r
       status: 'queued', checklist: ['Verified'], validation: 'Run tests', labels: [], priority: 'medium',
       dependencies: snapshot.children.length ? ['Implement rows'] : [] })
     await publish()
+    if (snapshot.children.length === 1) {
+      await sidebar.getByRole('button', { name: `Expand subtasks: ${task.title}` }).click()
+    }
     await expect(rows.getByRole('listitem')).toHaveCount(snapshot.children.length)
   }
   const first = rows.getByRole('button', { name: 'Open subtask: Implement rows', exact: true })

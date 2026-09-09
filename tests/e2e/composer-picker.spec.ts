@@ -198,7 +198,9 @@ test('providers stay beside scrollable models, support keyboard navigation, and 
 })
 
 test('Escape dismisses the unified picker and returns focus to its trigger', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 600, height: 720 })
   await page.goto(fixture)
+  const overview = page.getByTestId('project-overview')
   const composer = page.getByRole('form', { name: 'Start a task' })
   await composer.getByRole('textbox', { name: 'Task prompt' }).fill('Keep the draft')
   const more = composer.getByRole('button', { name: 'More task options', exact: true })
@@ -214,7 +216,7 @@ test('Escape dismisses the unified picker and returns focus to its trigger', asy
   await more.click()
   await page.keyboard.press('Escape')
   await expect(more).toBeFocused()
-  const branch = composer.getByRole('button', { name: 'Project branch', exact: true })
+  const branch = overview.getByRole('button', { name: 'Project branch', exact: true })
   await branch.click()
   await page.keyboard.press('Escape')
   await expect(branch).toBeFocused()

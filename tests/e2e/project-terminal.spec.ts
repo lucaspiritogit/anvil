@@ -56,6 +56,7 @@ for (const [platform, modifier] of [['darwin', 'Meta'], ['linux', 'Control']] as
 test('terminal startup failure offers a restart and Escape returns to the overview', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/')
   await page.evaluate(() => { window.anvil.terminal.ensure = async () => { throw new Error('Shell unavailable') } })
+  await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeVisible()
   await page.keyboard.press('Control+t')
   const dialog = page.getByRole('dialog', { name: 'Project terminal', exact: true })
   await expect(dialog.getByRole('button', { name: 'Restart shell', exact: true })).toBeVisible()

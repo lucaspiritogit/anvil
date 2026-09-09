@@ -176,6 +176,8 @@ test('project input supports keyboard-only selection, cancellation and no matche
   await page.keyboard.press('Shift+Tab')
   await expect(page.getByRole('button', { name: 'New task', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
+  await expect(taskSearch).toBeFocused()
+  await page.keyboard.press('Tab')
   const selector = page.getByRole('combobox', { name: 'Project', exact: true })
   await expect(selector).toBeFocused()
   await expect(selector).toHaveAttribute('aria-expanded', 'true')

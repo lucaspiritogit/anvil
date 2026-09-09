@@ -28,6 +28,8 @@ for (const width of [1440, 900]) {
     value.children[3].title = 'A completed child with a title that is too long to fit within the sidebar row'
     await publish(page, 'running', value)
     await publish(page, 'output', snapshot('layout'))
+    await sidebar.getByRole('button', { name: 'Expand subtasks: Build streaming support' }).click()
+    await sidebar.getByRole('button', { name: 'Expand subtasks: Layout test task' }).click()
     await expect(children.getByRole('listitem')).toHaveCount(4)
     await expect(sidebar.getByRole('list', { name: 'Subtasks of Layout test task' }).getByRole('listitem')).toHaveCount(4)
     await expect(page.getByRole('tabpanel', { name: 'Issues' })).toHaveCount(0)
@@ -97,6 +99,7 @@ test('children survive filters, search, cached read errors and settlement; delet
   value.children[0].title = 'needle child'
   await publish(page, 'approved', value)
   await expect(parent).toBeVisible()
+  await sidebar.getByRole('button', { name: 'Expand subtasks: Polish task cards' }).click()
   await expect(children.getByRole('listitem')).toHaveCount(4)
   await expect(sidebar.getByRole('article')).toHaveCount(1)
   const selector = sidebar.getByRole('combobox', { name: 'Project', exact: true })
