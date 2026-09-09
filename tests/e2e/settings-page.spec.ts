@@ -130,16 +130,13 @@ for (const collapsed of [false, true]) {
 
 test('Escape leaves settings without dismissing the preceding task composer', async ({ page }) => {
   await page.goto(`${fixture}?platform=darwin`)
-  await page.getByRole('button', { name: 'New task', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Start new task', exact: true })
-  const prompt = dialog.getByRole('textbox', { name: 'Task prompt' })
-  await prompt.fill('Keep the modal draft')
+  const prompt = page.getByRole('textbox', { name: 'Task prompt' })
+  await prompt.fill('Keep the draft')
   await page.keyboard.press('Meta+,')
   await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
-  await expect(dialog).toBeHidden()
   await page.keyboard.press('Escape')
-  await expect(dialog).toBeVisible()
-  await expect(prompt).toHaveValue('Keep the modal draft')
+  await expect(prompt).toBeVisible()
+  await expect(prompt).toHaveValue('Keep the draft')
 })
 
 test('settings suspends native dialogs and restores their drafts', async ({ page }) => {

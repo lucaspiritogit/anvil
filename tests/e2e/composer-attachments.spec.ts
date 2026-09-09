@@ -76,12 +76,10 @@ async function expectUrlsReleased(page: Page): Promise<void> {
   })).toEqual([])
 }
 
-for (const surface of ['overview', 'modal'] as const) {
-  test.describe(surface, () => {
+test.describe(() => {
     test.beforeEach(async ({ page }) => {
       await page.goto('/tests/e2e/fixture/')
       await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeVisible()
-      if (surface === 'modal') await page.evaluate(() => window.composerTest.openModal())
     })
 
     const composer = (page: Page): Locator => page.getByRole('form', { name: 'Start a task' })
@@ -106,7 +104,7 @@ for (const surface of ['overview', 'modal'] as const) {
       await expect(prompt(page)).toHaveValue('Before clipboard text after')
       await expect(composer(page).getByRole('img')).toHaveCount(1)
       await expect.poll(() => composer(page).getByRole('img').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
-      await page.screenshot({ path: testInfo.outputPath(`mixed-paste-${surface}.png`) })
+      await page.screenshot({ path: testInfo.outputPath('mixed-paste-overview.png') })
       await send(page).click()
       await expect.poll(() => page.evaluate(() => window.composerTest.starts[0]?.images?.length)).toBe(1)
       expect(await page.evaluate(() => window.composerTest.starts[0].prompt)).toBe('Before clipboard text after')
@@ -123,7 +121,7 @@ for (const surface of ['overview', 'modal'] as const) {
       expect(await page.evaluate(() => window.composerTest.starts[0].images!.every((image) => image.bytes instanceof Uint8Array))).toBe(true)
       await expect(composer(page)).toHaveCount(0)
       await expectUrlsReleased(page)
-      await page.evaluate((surface) => surface === 'modal' ? window.composerTest.openModal() : window.composerTest.overview(), surface)
+      await page.evaluate(() => window.composerTest.overview())
       await expect(prompt(page)).toHaveValue('')
       await expect(composer(page).getByRole('img')).toHaveCount(0)
       await expect(send(page)).toBeDisabled()
@@ -260,15 +258,13 @@ for (const surface of ['overview', 'modal'] as const) {
     test('closing or replacing the draft releases previews and ignores late reads', async ({ page }) => {
       await paste(prompt(page), [samples[0], { ...samples[1], read: 'pending' }])
       await expect(composer(page).getByRole('img')).toHaveCount(1)
-      if (surface === 'modal') await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-      else await page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true }).click()
+      await page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true }).click()
       await expect(composer(page)).toHaveCount(0)
       await expectUrlsReleased(page)
-      await page.evaluate((surface) => surface === 'modal' ? window.composerTest.openModal() : window.composerTest.overview(), surface)
+      await page.evaluate(() => window.composerTest.overview())
       await page.evaluate(() => window.dispatchEvent(new Event('fixture:read-ready')))
       await paste(prompt(page), [samples[2]])
       await expect(composer(page).getByRole('img')).toHaveCount(1)
       await expect(composer(page).getByRole('img')).toHaveAttribute('alt', 'Preview of clipboard.webp')
     })
-  })
-}
+})

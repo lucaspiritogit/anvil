@@ -71,22 +71,6 @@ for (const saved of [
   })
 }
 
-test('the new-task dialog shares the same saved configuration as the overview', async ({ page }) => {
-  await page.goto(fixture)
-  const overviewComposer = page.getByRole('main').getByRole('form', { name: 'Start a task' })
-  await chooseProvider(overviewComposer.getByRole('button', { name: /^(Choose a model|Model:)/ }), 'codex', 'gpt-5-mini')
-  await page.getByRole('button', { name: 'New task', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Start new task', exact: true })
-  await expect(dialog.getByRole('button', { name: 'Model: GPT 5 Mini', exact: true })).toBeVisible()
-  await dialog.getByRole('button', { name: 'More task options', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: /^(Choose a model|Model:)/ })).toHaveAccessibleDescription('Codex')
-  await dialog.getByRole('combobox', { name: 'Reasoning effort' }).selectOption('high')
-  await page.keyboard.press('Escape')
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await expect(overviewComposer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('high')
-})
-
-
 test('old composer preferences are isolated without migration', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('anvil-composer-preferences', JSON.stringify({ state: {
     agentId: 'codex', modelsByAgent: { codex: 'gpt-5' }, thinkingLevel: 'High', modelEffort: 'max'

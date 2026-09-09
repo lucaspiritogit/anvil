@@ -128,7 +128,6 @@ declare global {
       starts: IpcRequests['tasks:start'][]
       failNextStart: boolean
       selectProject: (id: string) => void
-      openModal: () => void
       overview: () => void
     }
     wallpaperTest: { items: Wallpaper[]; reads: string[]; fail: boolean; loading: boolean }
@@ -184,8 +183,7 @@ window.composerTest = {
   starts: [],
   failNextStart: false,
   selectProject: (id) => useStore.setState({ activeProjectId: id }),
-  openModal: () => useStore.setState({ view: { kind: 'task', taskId: 'review' }, newTaskOpen: true }),
-  overview: () => useStore.setState({ view: { kind: 'home' }, newTaskOpen: false })
+  overview: () => useStore.setState({ view: { kind: 'home' } })
 }
 
 window.anvil = {

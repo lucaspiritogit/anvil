@@ -26,7 +26,7 @@ export function Sidebar(): JSX.Element {
   const settingsSection = useStore((state) => state.settingsSection)
   const setSettingsSection = useStore((state) => state.setSettingsSection)
   const setSettingsOpen = useStore((state) => state.setSettingsOpen)
-  const setNewTaskOpen = useStore((state) => state.setNewTaskOpen)
+  const focusTaskComposer = useStore((state) => state.focusTaskComposer)
   const sidebarCollapsed = useStore((state) => state.sidebarCollapsed)
   const [projectFilter, setProjectFilter] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -93,8 +93,18 @@ export function Sidebar(): JSX.Element {
         ANVIL
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5 px-2.5 pb-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2 h-9 px-2.5 border border-line focus-within:border-dim/60">
+      <div className="flex shrink-0 flex-col gap-2 px-2.5 pb-3">
+        <button
+          className="flex h-9 shrink-0 items-center gap-2 border border-line px-2.5 text-xs text-fg hover:bg-hover disabled:opacity-40 focus-visible:outline focus-visible:outline-accent"
+          aria-label="New task"
+          title="New task"
+          disabled={!activeProjectId}
+          onClick={focusTaskComposer}
+        >
+          <HugeiconsIcon icon={Edit02Icon} size={16} aria-hidden="true" />
+          New Task
+        </button>
+        <div className="flex items-center gap-2 h-9 px-2.5 border border-line focus-within:border-dim/60">
           <HugeiconsIcon icon={Search01Icon} size={16} className="shrink-0 text-dim" aria-hidden="true" />
           <input
             type="search"
@@ -110,15 +120,6 @@ export function Sidebar(): JSX.Element {
             </button>
           )}
         </div>
-        <button
-          className={cn(ICON_BUTTON, 'size-9 border border-line disabled:opacity-40')}
-          aria-label="New task"
-          title="New task"
-          disabled={!activeProjectId}
-          onClick={() => setNewTaskOpen(true)}
-        >
-          <HugeiconsIcon icon={Edit02Icon} size={18} aria-hidden="true" />
-        </button>
       </div>
 
       <div className="flex shrink-0 items-end gap-1.5 px-2.5 pb-3">

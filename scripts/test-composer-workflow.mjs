@@ -69,14 +69,13 @@ try {
   clipboardBackup = await application.evaluate(({ clipboard }) => clipboard.availableFormats().map((format) => [format, Array.from(clipboard.readBuffer(format))]))
   const png = await sharp({ create: { width: 48, height: 32, channels: 4, background: '#6789ab' } }).png().toBuffer()
   const entries = async () => (await readFile(transcript, 'utf8')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
-  for (const placement of ['overview', 'modal']) {
-    if (placement === 'modal') await page.getByRole('button', { name: 'New task', exact: true }).click()
-    const surface = placement === 'modal' ? page.getByRole('dialog', { name: 'Start new task' }) : page.getByTestId('project-overview')
+  {
+    const surface = page.getByTestId('project-overview')
     const branch = surface.getByRole('button', { name: 'Project branch', exact: true })
     await expect(surface.getByTestId('composer-project-name')).toHaveText('Workflow project')
     await branch.click()
-    await page.getByRole('dialog', { name: 'Choose branch' }).getByRole('button', { name: placement === 'overview' ? 'feature/workflow' : 'main', exact: true }).click()
-    const selectedBranch = placement === 'overview' ? 'feature/workflow' : 'main'
+    await page.getByRole('dialog', { name: 'Choose branch' }).getByRole('button', { name: 'feature/workflow', exact: true }).click()
+    const selectedBranch = 'feature/workflow'
     await expect(branch).toHaveAccessibleDescription(selectedBranch)
     assert.equal(git('branch', '--show-current'), selectedBranch)
     const composer = surface.getByRole('form', { name: 'Start a task' })
@@ -88,7 +87,7 @@ try {
     await expect(page.getByRole('option', { name: 'reference.txt', exact: true })).toBeVisible()
     await prompt.press('Enter')
     await prompt.press('Shift+Enter')
-    await prompt.pressSequentially(`Image from ${placement}`)
+    await prompt.pressSequentially('Image from overview')
     await page.evaluate(() => {
       window.smokePastedImage = new Promise((resolve) => document.addEventListener('paste', async (event) => {
         const file = Array.from(event.clipboardData.items).find((item) => item.type === 'image/png').getAsFile()
@@ -108,7 +107,7 @@ try {
       await application.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0].setSize(width, 800), width)
       await expect(prompt).toBeInViewport()
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-      await page.screenshot({ path: join(screenshots, `${placement}-${width}.png`) })
+      await page.screenshot({ path: join(screenshots, `overview-${width}.png`) })
     }
     const before = (await entries()).filter((entry) => entry.method === 'turn/start').length
     await prompt.press('Enter')
@@ -130,7 +129,7 @@ try {
     assert.equal(task.baseBranch, selectedBranch)
     assert.equal(thread.params.cwd, task.cwd)
     await expect.poll(async () => (await entries()).filter((entry) => entry.accepted === true).length).toBe(before + 1)
-    console.log(`${placement}: project/provider/model/base branch/cwd/path-only reference and ${received.length} PNG bytes verified; sha256 ${createHash('sha256').update(received).digest('hex')}; ${liveCodex ? 'real' : 'fake'} Codex accepted turn.`)
+    console.log(`overview: project/provider/model/base branch/cwd/path-only reference and ${received.length} PNG bytes verified; sha256 ${createHash('sha256').update(received).digest('hex')}; ${liveCodex ? 'real' : 'fake'} Codex accepted turn.`)
     await page.evaluate((id) => window.anvil.tasks.cancel(id), task.id)
   }
   if (process.argv.includes('--manual')) {

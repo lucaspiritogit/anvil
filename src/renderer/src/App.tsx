@@ -3,7 +3,6 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import { ProjectTerminal } from './components/ProjectTerminal'
 import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
-import { NewTaskModal } from './components/NewTaskModal'
 import { SettingsPage } from './components/SettingsPage'
 import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { TaskContextMenu } from './components/TaskContextMenu'
@@ -22,7 +21,6 @@ export function App(): JSX.Element {
   const load = useStore((s) => s.load)
   const applyEvent = useStore((s) => s.applyEvent)
   const applyTaskUpdate = useStore((s) => s.applyTaskUpdate)
-  const newTaskOpen = useStore((s) => s.newTaskOpen)
   const settingsOpen = useStore((s) => s.settingsOpen)
   const taskMenu = useStore((s) => s.taskMenu)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
@@ -125,7 +123,6 @@ export function App(): JSX.Element {
         <Sidebar />
         <div ref={workspaceRef} className={cn('min-w-0 min-h-0', settingsOpen && 'hidden')} inert={settingsOpen}>
           <Workspace />
-          {newTaskOpen && <NewTaskModal />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
         {settingsOpen && <SettingsPage />}

@@ -52,7 +52,6 @@ interface AnvilState {
   gitInitPending: string | null
   gitInitError: string | null
 
-  newTaskOpen: boolean
   taskComposerFocusRequest: number
   settingsOpen: boolean
   settingsSection: SettingsSectionId
@@ -109,7 +108,6 @@ interface AnvilState {
 
   saveSettings: (patch: Partial<Settings>) => Promise<void>
   toggleSidebar: () => void
-  setNewTaskOpen: (open: boolean) => void
   setSettingsOpen: (open: boolean) => void
 }
 
@@ -139,7 +137,6 @@ export const useStore = create<AnvilState>((set, get) => ({
   sendingComments: null,
   commentError: null,
 
-  newTaskOpen: false,
   taskComposerFocusRequest: 0,
   settingsOpen: false,
   settingsSection: 'general',
@@ -242,7 +239,6 @@ export const useStore = create<AnvilState>((set, get) => ({
     const projectId = get().activeProjectId
     if (!projectId) throw new Error('Choose a project before starting a task')
     const view = get().view
-    const newTaskOpen = get().newTaskOpen
     const task = await window.anvil.tasks.start({
       projectId, agentId, prompt, model,
       ...(images?.length ? { images } : {}),
@@ -252,8 +248,8 @@ export const useStore = create<AnvilState>((set, get) => ({
     set((s) => ({
       tasks: [task, ...s.tasks],
       eventsByTask: { ...s.eventsByTask, [task.id]: [] },
-      ...(s.activeProjectId === projectId && s.view === view && s.newTaskOpen === newTaskOpen
-        ? { view: { kind: 'task' as const, taskId: task.id }, newTaskOpen: false }
+      ...(s.activeProjectId === projectId && s.view === view
+        ? { view: { kind: 'task' as const, taskId: task.id } }
         : {})
     }))
   },
@@ -466,7 +462,7 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   showHome: () => set({ view: { kind: 'home' } }),
   focusTaskComposer: () => set((state) => {
-    if (!state.activeProjectId || state.newTaskOpen || state.settingsOpen || state.taskMenu || state.rebaseTaskId) return state
+    if (!state.activeProjectId || state.settingsOpen || state.taskMenu || state.rebaseTaskId) return state
     return {
       view: { kind: 'home' },
       taskComposerFocusRequest: state.taskComposerFocusRequest + 1
@@ -519,7 +515,6 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
 
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-  setNewTaskOpen: (open) => set({ newTaskOpen: open }),
   setSettingsOpen: (open) => set((state) => {
     if (state.settingsOpen === open) return state
     return open

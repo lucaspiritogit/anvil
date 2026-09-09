@@ -63,9 +63,7 @@ test('ignores email addresses and preserves multiline editing', async ({ page })
   expect(await page.evaluate(() => window.composerTest.starts)).toEqual([])
 })
 
-test('arrows and Enter select; Escape dismisses without closing NewTaskModal or submitting', async ({ page }) => {
-  await page.evaluate(() => window.composerTest.openModal())
-  const dialog = page.getByRole('dialog', { name: 'Start new task' })
+test('arrows and Enter select; Escape dismisses without submitting', async ({ page }) => {
   await prompt(page).fill('@index')
   const list = page.getByRole('listbox', { name: 'Project files' })
   await expect(list.getByRole('option')).toHaveCount(2)
@@ -79,12 +77,9 @@ test('arrows and Enter select; Escape dismisses without closing NewTaskModal or 
   await prompt(page).pressSequentially('@no-such-file')
   await expect(page.getByText('No matching files.')).toBeVisible()
   await prompt(page).press('Enter')
-  await expect(dialog).toBeVisible()
   await prompt(page).press('Escape')
   await expect(list).toHaveCount(0)
-  await expect(dialog).toBeVisible()
-  await prompt(page).press('Escape')
-  await expect(dialog).toHaveCount(0)
+  expect(await page.evaluate(() => window.composerTest.starts)).toEqual([])
 })
 
 test('shows loading/errors and retries a fresh listing', async ({ page }) => {
@@ -132,8 +127,7 @@ test('keeps a missing-file draft for correction before send', async ({ page }) =
   expect(await page.evaluate(() => window.composerTest.starts[0].fileReferences)).toBeUndefined()
 })
 
-test('IME confirmation and Escape do not select, submit or close the modal', async ({ page }) => {
-  await page.evaluate(() => window.composerTest.openModal())
+test('IME confirmation and Escape do not select or submit', async ({ page }) => {
   await prompt(page).fill('@index')
   await expect(page.getByRole('listbox', { name: 'Project files' })).toBeVisible()
   await prompt(page).evaluate((element) => {
@@ -142,7 +136,6 @@ test('IME confirmation and Escape do not select, submit or close the modal', asy
     element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true }))
   })
   await expect(prompt(page)).toHaveValue('@index')
-  await expect(page.getByRole('dialog', { name: 'Start new task' })).toBeVisible()
   expect(await page.evaluate(() => window.composerTest.starts)).toEqual([])
   await prompt(page).evaluate((element) => element.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })))
   await expect(page.getByRole('listbox', { name: 'Project files' })).toBeVisible()

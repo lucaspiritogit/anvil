@@ -64,7 +64,7 @@ export function useComposerFileMentions(projectId: string | null, prompt: string
     reset: () => { setChosen([]); setSelection([0, 0]) },
     onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
       if (event.nativeEvent.isComposing || composing || event.keyCode === 229) {
-        // IME confirmation must neither select a file nor submit/close a modal.
+        // IME confirmation must neither select a file nor submit the draft.
         event.stopPropagation()
         return true
       }
