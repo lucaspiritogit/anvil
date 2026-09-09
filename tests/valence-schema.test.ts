@@ -1,36 +1,23 @@
 import { expect, test } from 'vitest'
 import Database from 'better-sqlite3'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from '../src/main/store'
 import { onTestCleanup } from './test-cleanup'
-
-const migrationsFolder = join(process.cwd(), 'src/main/db/migrations')
-
-function migrationsBefore(directory: string, migrationIndex: number): string {
-  const previous = join(directory, 'previous')
-  mkdirSync(join(previous, 'meta'), { recursive: true })
-  const journal = JSON.parse(readFileSync(join(migrationsFolder, 'meta/_journal.json'), 'utf8'))
-  journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx < migrationIndex)
-  writeFileSync(join(previous, 'meta/_journal.json'), JSON.stringify(journal))
-  for (const entry of journal.entries) {
-    copyFileSync(join(migrationsFolder, `${entry.tag}.sql`), join(previous, `${entry.tag}.sql`))
-  }
-  return previous
-}
+import { migrateBefore, migrationsFolder } from './migration-fixture'
 
 function fixture(existing = false): { db: Database.Database; path: string } {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-valence-schema-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
   const path = join(directory, 'anvil.db')
-  let originalTasks: unknown[] | undefined
+  let originalTasks: Record<string, unknown>[] | undefined
   if (existing) {
-    new Store(path, { migrationsFolder: migrationsBefore(directory, 5) }).close()
+    migrateBefore(path, 5)
     const old = new Database(path)
     try {
       seedTasks(old)
-      originalTasks = old.prepare('SELECT * FROM tasks ORDER BY id').all()
+      originalTasks = old.prepare<[], Record<string, unknown>>('SELECT * FROM tasks ORDER BY id').all()
     } finally { old.close() }
   }
   new Store(path, { migrationsFolder }).close()
@@ -38,7 +25,7 @@ function fixture(existing = false): { db: Database.Database; path: string } {
   db.pragma('foreign_keys = ON')
   onTestCleanup(() => { db.close() })
   if (!existing) seedTasks(db)
-  if (originalTasks) expect(db.prepare('SELECT * FROM tasks ORDER BY id').all()).toEqual(originalTasks)
+  if (originalTasks) expect(db.prepare('SELECT * FROM tasks ORDER BY id').all()).toEqual(originalTasks.map((row) => ({ ...row, workspace_id: 'default' })))
   return { db, path }
 }
 
@@ -108,7 +95,7 @@ test('adds a nullable issue start timestamp without inventing history or changin
   const directory = mkdtempSync(join(tmpdir(), 'anvil-issue-start-migration-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
   const path = join(directory, 'anvil.db')
-  new Store(path, { migrationsFolder: migrationsBefore(directory, 10) }).close()
+  migrateBefore(path, 10)
   const db = new Database(path)
   onTestCleanup(() => { db.close() })
   seedTasks(db)

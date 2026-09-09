@@ -33,6 +33,7 @@ function setupCaffeine() {
   const stop = registerCaffeineMode(store, blocker)
   onTestCleanup(stop)
   const task: Task = {
+    workspaceId: 'default',
     id: 'first', projectId: 'project', title: 'Task', prompt: 'Task', agentId: 'codex', agentLabel: 'Codex',
     cwd: testHome, status: 'running', deliveryStatus: 'preparing', startedAt: 1,
     inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,

@@ -48,7 +48,7 @@ test('rejects settled steering and preserves stopped resume and live steering pa
       filesChanged: 1, additions: 1, deletions: 0
     }
     const addTask = (id: string, patch: Partial<Task> & Pick<Task, 'status' | 'deliveryStatus'>): Task => {
-      const task: Task = { ...baseTask, id, ...patch }
+      const task: Task = { workspaceId: 'default', ...baseTask, id, ...patch }
       store.addTask(task)
       store.saveTaskExecution({
         taskId: id, projectPath: testHome, parentIssueId: store.issueTracker('project').createParent({ anvilTaskId: id, title: task.title }).id, phase: 'complete', issueIds: [], currentIssueId: null,

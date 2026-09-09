@@ -224,8 +224,29 @@ export interface TaskEvent {
   text: string
 }
 
+export const DEFAULT_WORKSPACE_ID = 'default'
+export const MAX_WORKSPACE_NAME_LENGTH = 80
+
+export interface Workspace {
+  id: string
+  name: string
+  createdAt: number
+}
+
+export interface ComposerPreferences {
+  agentId: string
+  modelsByAgent: Record<string, string>
+  reasoningByAgentModel: Record<string, string>
+}
+
+export interface WorkspacePreferences {
+  composer: ComposerPreferences
+  lastProjectId: string | null
+}
+
 export interface Task {
   id: string
+  readonly workspaceId: string
   projectId: string
   agentId: string
   agentLabel: string

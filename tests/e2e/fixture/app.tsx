@@ -19,6 +19,7 @@ let projects: Project[] = ['Anvil', 'Workbench'].map((name, index) => ({
   monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
 }))
 const base: Task = {
+  workspaceId: 'default',
   id: 'approved', projectId: projects[0].id, title: 'Polish task cards', prompt: 'Polish task cards',
   agentId: 'codex', agentLabel: 'Codex', status: 'succeeded', deliveryStatus: 'approved',
   startedAt: now - 60 * 60 * 1000, endedAt: now - 30 * 60 * 1000, reviewedAt: now,

@@ -14,6 +14,7 @@ test('recovers persisted PRs and handles caching, stale tasks, credentials, rate
   let store = new Store(database, options)
   store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
   const base: Task = {
+    workspaceId: 'default',
     id: 'task', projectId: 'project', title: 'Feature', prompt: 'Feature', agentId: 'codex', agentLabel: 'Codex',
     cwd: testHome, status: 'succeeded', deliveryStatus: 'reviewable', startedAt: 1, endedAt: 2,
     headCommit: 'a'.repeat(40), branchName: 'feature', inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,

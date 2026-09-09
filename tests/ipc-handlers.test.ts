@@ -597,6 +597,23 @@ test('keeps image bytes separate through memory preparation and both startup pat
   }
 })
 
+test('keeps the original task workspace when selection changes during image validation', async () => {
+  const { call, project, store, tick } = setupIpc()
+  const original = store.getActiveWorkspace()
+  const work = store.createWorkspace('Work')
+  const images = await taskImages()
+  store.selectWorkspace(work.id)
+  const starting: Promise<Task> = call('tasks:start', {
+    projectId: project.id, agentId: 'codex', prompt: 'Inspect image', images
+  })
+  store.selectWorkspace(original.id)
+  const task = await starting
+  await tick()
+  expect(task.workspaceId).toBe(work.id)
+  expect(store.getTask(task.id)?.workspaceId).toBe(work.id)
+  expect(store.getTasks(original.id)).toEqual([])
+})
+
 test('starts an image-only task but rejects an entirely empty draft before creating a task', async () => {
   const { call, project, store, tick, agentProcesses } = setupIpc()
   const images = await taskImages()

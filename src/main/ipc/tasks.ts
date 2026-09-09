@@ -79,6 +79,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
   ipc.handle(
     'tasks:start',
     async (_event, input) => {
+      const workspaceId = store.getActiveWorkspace().id
       // Decode before task/Valence/worktree creation. Text-only calls keep their synchronous preparation.
       const images = input.images?.length ? await validateTaskImages(input.images) : undefined
       const project = store.getProjects().find((project) => project.id === input.projectId)
@@ -99,6 +100,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
 
       const task: Task = {
         id: randomUUID(),
+        workspaceId,
         projectId: project.id,
         agentId: agent.id,
         agentLabel: agent.label,
