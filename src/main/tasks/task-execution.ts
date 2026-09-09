@@ -38,6 +38,13 @@ export function registerTaskExecution(
 
   // Each task runs one agent process at a time; other tasks have their own worktrees.
   const starting = new Set<string>()
+
+  // The committed worktree tip when a turn ends anchors the issue's review diff.
+  const turnHeadCommit = (taskId: string): string | undefined => {
+    if (!store.getTask(taskId)?.branchName) return undefined
+    return gitDelivery.worktreeHead(taskId) ?? undefined
+  }
+
   const startNextTurn = async (taskId: string): Promise<void> => {
     if (starting.has(taskId) || agentProcesses.isRunning(taskId)) return
     starting.add(taskId)
@@ -50,11 +57,13 @@ export function registerTaskExecution(
       const agent = getAgent(task.agentId)
       if (!agent) throw new Error('Agent not found')
       let cwd = task.cwd
+      let baseCommit: string | undefined
       if (task.branchName) {
         const checkout = await gitDelivery.checkoutBranch(project.path, taskId, task.branchName, task.baseBranch, () => {
           if (store.getTask(taskId)?.status !== 'running') throw new Error('Task stopped before the next issue')
         })
         cwd = checkout.cwd
+        baseCommit = checkout.baseCommit
       }
       if (store.getTask(taskId)?.status !== 'running') {
         if (!store.getTask(taskId)) void gitDelivery.releaseWorktree(taskId)
@@ -62,7 +71,7 @@ export function registerTaskExecution(
       }
       const images = state.hasImages ? store.taskImages.read(taskId) : undefined
       if (state.hasImages && !images) throw new Error('The original task images were cleared. Start a new task and attach the images again.')
-      const issue = issues.claim(taskId)
+      const issue = issues.claim(taskId, baseCommit)
       if (!issue) throw new Error('No task issue is ready in Valence. Inspect dependencies and work claimed by other clients.')
       const running = store.updateTask(taskId, {
         cwd, endedAt: undefined, error: undefined, exitCode: null,
@@ -100,9 +109,9 @@ export function registerTaskExecution(
       if (state.phase === 'planning') {
         issues.finishPlanning(info.taskId)
       } else if (state.phase === 'recovering') {
-        issues.finishRecovery(info.taskId)
+        issues.finishRecovery(info.taskId, turnHeadCommit(info.taskId))
       } else {
-        issues.finishIssue(info.taskId)
+        issues.finishIssue(info.taskId, turnHeadCommit(info.taskId))
       }
       notify(info.taskId)
       if (store.getTaskExecution(info.taskId)?.phase === 'complete') {

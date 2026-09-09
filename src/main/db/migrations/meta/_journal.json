@@ -64,6 +64,13 @@
       "when": 1788957062911,
       "tag": "0008_keen_ricochet",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788958232992,
+      "tag": "0009_parallel_swordsman",
+      "breakpoints": true
     }
   ]
 }

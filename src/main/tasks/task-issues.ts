@@ -44,13 +44,20 @@ export class TaskIssues {
     })
   }
 
-  claim(taskId: string): Issue | undefined {
+  claim(taskId: string, baseCommit?: string): Issue | undefined {
     const claimed = this.store.transaction(() => {
       const state = this.requireState(taskId)
       if (state.phase !== 'working' || state.currentIssueId) throw new Error('Task is not ready to claim work')
       return this.withTracker(state, (tracker) => {
         const issue = tracker.claim({ ids: state.issueIds, parentId: state.parentIssueId })
-        if (issue) this.store.saveTaskExecution({ ...state, currentIssueId: issue.id })
+        if (issue) {
+          // A re-claimed rework keeps its original base; only a first claim records one.
+          const started = baseCommit && !issue.baseCommit
+            ? tracker.recordCommits(issue.id, { baseCommit })
+            : issue
+          this.store.saveTaskExecution({ ...state, currentIssueId: started.id })
+          return started
+        }
         return issue
       })
     })
@@ -75,13 +82,16 @@ export class TaskIssues {
     }))
   }
 
-  finishIssue(taskId: string): void {
+  finishIssue(taskId: string, headCommit?: string): void {
     const state = this.requireState(taskId)
     if (!state.currentIssueId) throw new Error('No issue is currently running')
     this.withTracker(state, (tracker) => {
       const issue = tracker.get(state.currentIssueId!)
+      this.recordReviewCommit(tracker, issue, headCommit)
       if (issue.status !== 'complete') {
-        throw new Error(`Issue ${issue.id} is ${issue.status} in Valence, not complete. The agent must complete it through vl.`)
+        throw new Error(issue.status === 'review'
+          ? `Issue ${issue.id} is awaiting developer review in Valence. Approve it to continue the task.`
+          : `Issue ${issue.id} is ${issue.status} in Valence, not complete. The agent must complete it through vl.`)
       }
       // Valence already validated the checklist and evidence. Never infer success from text.
       const complete = state.issueIds.every((id) => tracker.get(id).status === 'complete')
@@ -101,13 +111,17 @@ export class TaskIssues {
     })
   }
 
-  finishRecovery(taskId: string): void {
+  finishRecovery(taskId: string, headCommit?: string): void {
     const state = this.requireState(taskId)
     this.withTracker(state, (tracker) => {
       // A user message must not bypass the original checklist or finish work
       // based on an assistant's claim. Valence remains authoritative.
-      if (state.currentIssueId && tracker.get(state.currentIssueId).status !== 'complete') {
-        throw new Error(`Issue ${state.currentIssueId} is not complete. The agent must unblock and complete it through vl.`)
+      const current = state.currentIssueId ? tracker.get(state.currentIssueId) : undefined
+      if (current) this.recordReviewCommit(tracker, current, headCommit)
+      if (current && current.status !== 'complete') {
+        throw new Error(current.status === 'review'
+          ? `Issue ${current.id} is awaiting developer review in Valence. Approve it to continue the task.`
+          : `Issue ${current.id} is not complete. The agent must unblock and complete it through vl.`)
       }
       const complete = state.issueIds.every((id) => tracker.get(id).status === 'complete')
       this.store.saveTaskExecution({ ...state, currentIssueId: null, phase: complete ? 'complete' : 'working', error: null })
@@ -134,6 +148,13 @@ export class TaskIssues {
     const state = this.store.getTaskExecution(taskId)
     if (!state) throw new Error('Task execution not found')
     return state
+  }
+
+  /** The worktree commit at submit time anchors the per-issue review diff. */
+  private recordReviewCommit(tracker: IssueTracker, issue: Issue, headCommit: string | undefined): void {
+    if (headCommit && (issue.status === 'review' || issue.status === 'complete') && issue.headCommit !== headCommit) {
+      tracker.recordCommits(issue.id, { headCommit })
+    }
   }
 
   private withTracker<Result>(state: TaskExecutionState, operation: (tracker: IssueTracker) => Result): Result {

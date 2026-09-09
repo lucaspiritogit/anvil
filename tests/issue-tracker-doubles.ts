@@ -114,6 +114,12 @@ export class GitDeliveryManager {
   }
   async merge(): Promise<void> {}
   async getDiff(_path: string, base: string, head: string): Promise<any> { return { patch: `${base}..${head}`, commits: [] } }
+  worktreeHead(): string | null { return null }
+  async getIssueDiff(_path: string, source: any): Promise<any> {
+    if (source.baseCommit && source.headCommit) return { patch: `${source.baseCommit}..${source.headCommit}`, commits: [] }
+    if (source.taskBaseCommit && source.taskHeadCommit) return { patch: `${source.taskBaseCommit}..${source.taskHeadCommit}`, commits: [] }
+    return null
+  }
 }
 
 export function resetTestDoubles(): void {

@@ -166,6 +166,27 @@ test('reject returns review issues to working and clears evidence', () => {
   expect(a.approve(issue.id).evidence).toBe('Second attempt')
 })
 
+test('records per-issue commit ranges and re-captures the head after rework', () => {
+  const { a, input } = fixture()
+  const issue = a.create(input())
+  expect(() => a.recordCommits(issue.id, {})).toThrow(/commit range/)
+  expect(() => a.recordCommits(issue.id, { baseCommit: '   ' })).toThrow(/baseCommit/)
+  expect(() => a.recordCommits('missing', { headCommit: 'd'.repeat(40) })).toThrow(/not found/)
+  const base = 'a'.repeat(40)
+  expect(a.recordCommits(issue.id, { baseCommit: base })).toMatchObject({ status: 'queued', baseCommit: base })
+  a.start(issue.id)
+  a.submitForReview(issue.id, { checklist: [true], evidence: 'First attempt' })
+  const firstHead = 'b'.repeat(40)
+  expect(a.recordCommits(issue.id, { headCommit: firstHead })).toMatchObject({ status: 'review', headCommit: firstHead })
+  a.reject(issue.id)
+  // Rejection keeps the range so rework extends the same diff.
+  expect(a.get(issue.id)).toMatchObject({ status: 'working', baseCommit: base, headCommit: firstHead })
+  a.submitForReview(issue.id, { checklist: [true], evidence: 'Rework' })
+  const reworkHead = 'c'.repeat(40)
+  expect(a.recordCommits(issue.id, { headCommit: reworkHead }).headCommit).toBe(reworkHead)
+  expect(a.approve(issue.id)).toMatchObject({ status: 'complete', baseCommit: base, headCommit: reworkHead })
+})
+
 test('rejects foreign project IDs across CRUD, dependencies and selection', () => {
   const { a, b, pa, pb, input } = fixture()
   const foreign = b.create(input({ parentId: pb.id }))

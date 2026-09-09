@@ -103,6 +103,38 @@ test('restart preserves unfinished work and follow-ups retain the cumulative dif
   expect(git(repo, 'branch', '--show-current')).toBe('main')
 })
 
+test('per-issue diff uses the recorded range and falls back to the task diff for legacy issues', async () => {
+  const { repo, manager } = await fixture()
+  const task = await manager.prepareBranch(repo, 'ranges', 'Ranges')
+  await writeFile(join(task.cwd, 'one.txt'), 'one\n')
+  git(task.cwd, 'add', 'one.txt')
+  git(task.cwd, 'commit', '-m', 'feat: one')
+  const firstHead = git(task.cwd, 'rev-parse', 'HEAD')
+  await writeFile(join(task.cwd, 'two.txt'), 'two\n')
+  git(task.cwd, 'add', 'two.txt')
+  git(task.cwd, 'commit', '-m', 'feat: two')
+  const taskHead = git(task.cwd, 'rev-parse', 'HEAD')
+  expect(manager.worktreeHead('ranges')).toBe(taskHead)
+  expect(manager.worktreeHead('missing-worktree')).toBeNull()
+
+  const perIssue = await manager.getIssueDiff(repo, {
+    baseCommit: task.baseCommit, headCommit: firstHead,
+    taskBaseCommit: task.baseCommit, taskHeadCommit: taskHead
+  })
+  expect(perIssue?.patch).toContain('one.txt')
+  expect(perIssue?.patch).not.toContain('two.txt')
+  expect(perIssue?.commits.map(({ subject }) => subject)).toEqual(['feat: one'])
+
+  const legacy = await manager.getIssueDiff(repo, { taskBaseCommit: task.baseCommit, taskHeadCommit: taskHead })
+  expect(legacy?.patch).toContain('one.txt')
+  expect(legacy?.patch).toContain('two.txt')
+  expect(legacy?.commits).toHaveLength(2)
+
+  expect(await manager.getIssueDiff(repo, {})).toBeNull()
+  expect(await manager.getIssueDiff(repo, { baseCommit: task.baseCommit })).toBeNull()
+  await manager.releaseWorktree('ranges')
+})
+
 test('project branch selection changes the next task base without affecting running tasks', async () => {
   const { repo, manager, finish } = await fixture()
   git(repo, 'switch', '-c', 'feature')

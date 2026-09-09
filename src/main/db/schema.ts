@@ -214,7 +214,10 @@ export const issues = sqliteTable('issues', {
   status: text('status').$type<Issue['status']>().notNull(),
   evidence: text('evidence'),
   completedAt: integer('completed_at'),
-  reviewedAt: integer('reviewed_at')
+  reviewedAt: integer('reviewed_at'),
+  // Task worktree commit range captured for the per-issue review diff.
+  baseCommit: text('base_commit'),
+  headCommit: text('head_commit')
 }, (table) => [
   index('issues_parent_sequence_idx').on(table.parentId, table.sequence),
   check('issues_priority_valid', oneOf(table.priority, ['urgent', 'high', 'medium', 'low'])),

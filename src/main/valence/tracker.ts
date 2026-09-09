@@ -248,6 +248,19 @@ export class IssueTracker {
     }, { behavior: 'immediate' })
   }
 
+  /** Persist the task worktree commit range captured for an issue's review diff. */
+  recordCommits(id: string, commits: { baseCommit?: string; headCommit?: string }): Issue {
+    return this.database.transaction(() => {
+      const patch: { baseCommit?: string; headCommit?: string } = {}
+      if (commits.baseCommit !== undefined) patch.baseCommit = requiredText(commits.baseCommit, 'baseCommit')
+      if (commits.headCommit !== undefined) patch.headCommit = requiredText(commits.headCommit, 'headCommit')
+      if (!Object.keys(patch).length) throw new Error('Expected a commit range to record')
+      this.get(id)
+      this.database.update(issues).set(patch).where(eq(issues.id, id)).run()
+      return this.get(id)
+    }, { behavior: 'immediate' })
+  }
+
   /** Developer approval is the only path to complete; dependencies gate on it. */
   approve(id: string): Issue {
     return this.database.transaction(() => {
@@ -321,13 +334,15 @@ export class IssueTracker {
   }
 
   private toIssue(row: typeof issues.$inferSelect): Issue {
-    const { sequence, evidence, completedAt, reviewedAt, ...issue } = row
+    const { sequence, evidence, completedAt, reviewedAt, baseCommit, headCommit, ...issue } = row
     return {
       ...issue,
       dependencies: this.database.select().from(issueDependencies).where(eq(issueDependencies.issueId, row.id)).orderBy(issueDependencies.position).all().map((entry) => entry.dependencyId),
       ...(evidence === null ? {} : { evidence }),
       ...(completedAt === null ? {} : { completedAt }),
-      ...(reviewedAt === null ? {} : { reviewedAt })
+      ...(reviewedAt === null ? {} : { reviewedAt }),
+      ...(baseCommit === null ? {} : { baseCommit }),
+      ...(headCommit === null ? {} : { headCommit })
     }
 
   }

@@ -4,7 +4,9 @@ import { expect, test } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { writeFileSync, existsSync, unlinkSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import Database from 'better-sqlite3'
 import { Store } from '../src/main/store'
+import { GitDeliveryManager } from '../src/main/git-delivery'
 import { registerTestIpc } from './test-ipc'
 import { taskState } from './task-state'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
@@ -81,8 +83,8 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   expect(git(projectPath, 'branch', '--show-current'), 'The project branch stays unchanged').toBe('main')
   expect(git(projectPath, 'worktree', 'list', '--porcelain').split('\n').filter((line) => line.startsWith('worktree ')).length).toBe(3)
   const wholeDiff = await call('tasks:diff', task.id)
-  expect(wholeDiff.patch).toMatch(/first.txt/)
-  expect(wholeDiff.patch).toMatch(/second.txt/)
+  expect(wholeDiff?.patch).toMatch(/first.txt/)
+  expect(wholeDiff?.patch).toMatch(/second.txt/)
   git(projectPath, 'checkout', '-b', 'user-current')
   const preview = await call('tasks:merge-preview', task.id)
   expect(preview.targetBranch).toBe('user-current')
@@ -114,4 +116,106 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   await waitFor(() => !existsSync(task.cwd))
   expect(git(projectPath, 'rev-parse', task.branchName), 'Deleting a task preserves its committed branch').toBeTruthy()
   seed.close()
+})
+
+test('captures a per-issue diff range at claim and submit, re-captures after rework, and falls back for legacy issues', async () => {
+  const projectPath = join(testHome, 'issue-ranges-project')
+  mkdirSync(projectPath)
+  const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+  git(projectPath, 'init', '-b', 'main')
+  git(projectPath, 'config', 'user.name', 'Anvil test')
+  git(projectPath, 'config', 'user.email', 'anvil-test@example.invalid')
+  writeFileSync(join(projectPath, '.gitignore'), '.anvil-composer/**\n.valence/**\n')
+  git(projectPath, 'add', '.gitignore')
+  git(projectPath, 'commit', '-m', 'Initial commit')
+  const database = join(testHome, '.anvil-composer/anvil.db')
+  const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
+  const store = new Store(database, options)
+  const cli = await taskCli(database, projectPath)
+  store.addProject({ id: 'issue-ranges', name: 'Issue ranges', path: projectPath, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+
+  const { agentProcesses: realAgentProcesses } = registerTestIpc()
+  const agentProcesses = realAgentProcesses as unknown as AgentProcessManager
+  const call = (name: string, input: unknown): any => handlers.get(name)!(rendererEvent, input)
+  const waitFor = async (condition: () => boolean): Promise<void> => {
+    const until = Date.now() + 10_000
+    while (!condition()) {
+      if (Date.now() > until) throw new Error('Timed out waiting for board transition')
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+  }
+  const delivery = new GitDeliveryManager(join(testHome, '.anvil-composer', 'worktrees'))
+
+  const task = await call('tasks:start', { projectId: 'issue-ranges', agentId: 'codex', prompt: 'Two reviewed files' })
+  expect(task.status, task.error).toBe('running')
+  await waitFor(() => agentProcesses.starts.length === 1)
+  const item = { key: 'first', labels: [], priority: 'medium' as const, dependencies: [], title: 'Add one file', description: 'One file per review', checklist: ['File exists'], validation: 'Read the file' }
+  agentProcesses.plan(task.id, [item, { ...item, key: 'second', dependencies: ['first'] }])
+  await waitFor(() => agentProcesses.starts.length === 2)
+
+  const firstCwd = agentProcesses.starts[1].cwd
+  writeFileSync(join(firstCwd, 'first.txt'), 'first change\n')
+  git(firstCwd, 'add', 'first.txt')
+  git(firstCwd, 'commit', '-m', 'feat: first file')
+  const firstHead = git(firstCwd, 'rev-parse', 'HEAD')
+  let board = taskState(store, task.id)!
+  cli('submit-review', board.items[0].id, '--confirm-checklist', '--evidence', 'Read first.txt and verified its content')
+  cli('approve', board.items[0].id)
+  agentProcesses.finishTurn(task.id, 'Completed the first issue')
+  await waitFor(() => agentProcesses.starts.length === 3)
+
+  const secondCwd = agentProcesses.starts[2].cwd
+  writeFileSync(join(secondCwd, 'second.txt'), 'second attempt\n')
+  git(secondCwd, 'add', 'second.txt')
+  git(secondCwd, 'commit', '-m', 'feat: second attempt')
+  board = taskState(store, task.id)!
+  cli('submit-review', board.items[1].id, '--confirm-checklist', '--evidence', 'Read second.txt and verified its content')
+  cli('reject', board.items[1].id)
+  writeFileSync(join(secondCwd, 'second.txt'), 'second rework\n')
+  git(secondCwd, 'add', 'second.txt')
+  git(secondCwd, 'commit', '-m', 'fix: second rework')
+  const reworkHead = git(secondCwd, 'rev-parse', 'HEAD')
+  cli('submit-review', board.items[1].id, '--confirm-checklist', '--evidence', 'Rework verified against second.txt')
+  cli('approve', board.items[1].id)
+  agentProcesses.finishTurn(task.id, 'Reworked and completed')
+  await waitFor(() => store.getTask(task.id)?.deliveryStatus === 'reviewable')
+
+  const [first, second] = taskState(store, task.id)!.items
+  const taskHead = store.getTask(task.id)!.headCommit!
+  expect(first.status).toBe('complete')
+  expect(first.baseCommit, 'Claim records the worktree HEAD as the issue base').toBe(task.baseCommit)
+  expect(first.headCommit, 'Turn end records the submitted HEAD').toBe(firstHead)
+  expect(second.baseCommit, 'The next issue starts where the previous one ended').toBe(firstHead)
+  expect(second.headCommit, 'Rework resubmission re-records the HEAD').toBe(reworkHead)
+
+  const firstDiff = await delivery.getIssueDiff(projectPath, {
+    baseCommit: first.baseCommit, headCommit: first.headCommit,
+    taskBaseCommit: task.baseCommit, taskHeadCommit: taskHead
+  })
+  expect(firstDiff?.patch).toMatch(/first\.txt/)
+  expect(firstDiff?.patch).not.toMatch(/second\.txt/)
+  expect(firstDiff?.commits.map(({ subject }) => subject)).toEqual(['feat: first file'])
+
+  const secondDiff = await delivery.getIssueDiff(projectPath, { baseCommit: second.baseCommit, headCommit: second.headCommit })
+  expect(secondDiff?.patch).toMatch(/second\.txt/)
+  expect(secondDiff?.patch).not.toMatch(/first\.txt/)
+  expect(secondDiff?.commits.map(({ subject }) => subject).sort()).toEqual(['feat: second attempt', 'fix: second rework'])
+
+  const connection = new Database(database, { fileMustExist: true })
+  try {
+    connection.prepare('UPDATE issues SET base_commit = NULL, head_commit = NULL WHERE id = ?').run(first.id)
+  } finally {
+    connection.close()
+  }
+  const legacy = taskState(store, task.id)!.items[0]
+  expect(legacy.baseCommit).toBeUndefined()
+  const legacyDiff = await delivery.getIssueDiff(projectPath, {
+    baseCommit: legacy.baseCommit, headCommit: legacy.headCommit,
+    taskBaseCommit: task.baseCommit, taskHeadCommit: taskHead
+  })
+  expect(legacyDiff?.patch).toMatch(/first\.txt/)
+  expect(legacyDiff?.patch).toMatch(/second\.txt/)
+  expect(legacyDiff?.commits).toHaveLength(3)
+  expect(await delivery.getIssueDiff(projectPath, {})).toBeNull()
+  store.close()
 })

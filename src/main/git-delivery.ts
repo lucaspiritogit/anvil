@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
@@ -539,4 +539,39 @@ export class GitDeliveryManager {
       })
     return { patch: patch.stdout, commits }
   }
+
+  /** Current commit of the task worktree, or null when there is none to read.
+   * Runs synchronously so turn-end recording stays ordered with the exit event. */
+  worktreeHead(taskId: string): string | null {
+    const worktree = this.taskWorktree(taskId)
+    if (!existsSync(worktree)) return null
+    try {
+      const head = execFileSync('git', ['-C', worktree, 'rev-parse', 'HEAD'], {
+        encoding: 'utf8',
+        env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+        maxBuffer: 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
+      })
+      return head.trim() || null
+    } catch {
+      return null
+    }
+  }
+
+  /** Review diff for one issue; issues without a recorded range fall back to the whole task diff. */
+  async getIssueDiff(repoPath: string, source: IssueDiffSource): Promise<TaskDiff | null> {
+    if (source.baseCommit && source.headCommit) return this.getDiff(repoPath, source.baseCommit, source.headCommit)
+    if (source.taskBaseCommit && source.taskHeadCommit) return this.getDiff(repoPath, source.taskBaseCommit, source.taskHeadCommit)
+    return null
+  }
+}
+
+export interface IssueDiffSource {
+  /** Commits recorded for the issue itself, captured at claim and submit-for-review. */
+  baseCommit?: string | null
+  headCommit?: string | null
+  /** Whole-task range; the fallback for legacy issues without a recorded range. */
+  taskBaseCommit?: string | null
+  taskHeadCommit?: string | null
 }

@@ -29,6 +29,9 @@ export interface Issue {
   evidence?: string
   completedAt?: number
   reviewedAt?: number
+  /** Task worktree commit range captured for the per-issue review diff. */
+  baseCommit?: string
+  headCommit?: string
 }
 
 export interface CreateIssue {
