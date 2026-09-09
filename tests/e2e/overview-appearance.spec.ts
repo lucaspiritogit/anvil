@@ -7,7 +7,7 @@ test('saved image stays inside overview across project switches, task views and 
   const sidebar = page.locator('aside').first()
   const baseline = await sidebar.evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).backgroundImage])
   await page.getByRole('button', { name: 'Open task: Layout test task', exact: true }).click()
-  const output = page.getByRole('complementary', { name: 'Prompt and output' })
+  const output = page.getByRole('region', { name: 'Output', exact: true })
   const taskBackground = await output.evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).backgroundImage])
   await page.keyboard.press('Control+t')
   const terminalBackground = await page.locator('.xterm-viewport').evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).backgroundImage])

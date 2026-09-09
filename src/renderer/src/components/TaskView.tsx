@@ -1,5 +1,7 @@
 import type { JSX, ReactNode } from 'react'
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
 import { useStore } from '../state/store'
 import { btn, cn, deliveryTone, dot, field, ISSUE_STATUS, statusTone } from '../ui'
@@ -20,6 +22,7 @@ import type {
   DeliveryStatus,
   Task,
   TaskComment,
+  TaskDiff,
   TaskEvent,
   TaskEventCategory,
   TaskStatus
@@ -43,6 +46,7 @@ interface PatchFilesProps {
   patch: string
   comments: TaskComment[]
   draft: CommentDraft | null
+  trailing?: ReactNode
   onSelectLine: (draft: CommentDraft | null) => void
   onSubmit: (draft: CommentDraft, body: string) => void
   onRemove: (id: string) => void
@@ -51,11 +55,10 @@ interface PatchFilesProps {
 const PLACEHOLDER = 'mx-2 my-1 text-xs text-dim'
 /** The note and its composer share a card that hangs off a coloured spine. */
 const NOTE_CARD = 'px-3 py-2.5 my-1.5 bg-raised border-l-2'
+const EMPTY_PANEL = 'grid flex-1 place-content-center gap-2 p-6 text-center text-sm text-dim'
+const ICON_BTN = 'grid size-7 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-dim'
 
 type TaskPanel = 'output' | 'changes' | 'issues'
-
-const PANEL_TAB =
-  'relative -mb-px px-4 py-2 text-xs font-medium uppercase tracking-[0.08em] border border-b-0 focus-visible:outline focus-visible:outline-accent'
 
 const PatchFiles = lazy(async () => {
   const [{ FileDiff }, { parsePatchFiles }] = await Promise.all([
@@ -68,6 +71,7 @@ const PatchFiles = lazy(async () => {
       patch,
       comments,
       draft,
+      trailing,
       onSelectLine,
       onSubmit,
       onRemove
@@ -103,12 +107,14 @@ const PatchFiles = lazy(async () => {
       if (!selectedFile) return <p className="p-5 text-sm text-dim">No file changes in this range.</p>
       return (
         <div className="flex flex-1 flex-col min-h-0 min-w-0">
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-line">
-            <label className="flex min-w-0 flex-1 items-center gap-2 text-xs text-dim">
-              Files · {selectedIndex + 1} of {files.length}
+          <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 border-b border-line text-xs">
+            <div className="flex min-w-0 flex-1 items-center gap-1">
+              <button className={ICON_BTN} aria-label="Previous file" disabled={selectedIndex === 0} onClick={() => selectFile(files[selectedIndex - 1].name)}>
+                <HugeiconsIcon icon={ArrowLeft01Icon} size={16} aria-hidden="true" />
+              </button>
               <select
                 aria-label="Changed file"
-                className={cn(field.control, 'min-w-0 max-w-sm flex-1 px-2 py-1.5 text-xs')}
+                className={cn(field.control, 'min-w-0 flex-1 max-w-xl px-2 py-1 font-mono text-xs')}
                 value={selectedFile.name}
                 onChange={(event) => selectFile(event.target.value)}
               >
@@ -118,13 +124,14 @@ const PatchFiles = lazy(async () => {
                   </option>
                 ))}
               </select>
-            </label>
-            <span className="text-[11px] text-dim">Unified diff · Wrapped lines</span>
-          </div>
-          <div key={selectedFile.name} className="flex-1 min-h-0 overflow-auto overscroll-contain">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-              <span className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]">{selectedFile.name}</span>
-              <label className="flex items-center gap-2 text-xs text-dim">
+              <button className={ICON_BTN} aria-label="Next file" disabled={selectedIndex === files.length - 1} onClick={() => selectFile(files[selectedIndex + 1].name)}>
+                <HugeiconsIcon icon={ArrowRight01Icon} size={16} aria-hidden="true" />
+              </button>
+              <span className="ml-1 shrink-0 tabular-nums text-dim">{selectedIndex + 1} / {files.length}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-dim">
+              {trailing}
+              <label className="flex items-center gap-1.5 hover:text-fg">
                 <input
                   type="checkbox"
                   className="accent-accent"
@@ -141,7 +148,10 @@ const PatchFiles = lazy(async () => {
                 />
                 Viewed
               </label>
+              <span className="tabular-nums">{viewedCount} of {files.length} viewed</span>
             </div>
+          </div>
+          <div key={selectedFile.name} className="flex-1 min-h-0 overflow-auto overscroll-contain">
             <FileDiff
               fileDiff={selectedFile}
               disableWorkerPool
@@ -175,17 +185,6 @@ const PatchFiles = lazy(async () => {
               }}
             />
           </div>
-          <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-line text-xs">
-            <span className="text-dim">{viewedCount} of {files.length} files viewed</span>
-            <div className="flex gap-2">
-              <button className={cn(btn.ghost, 'disabled:opacity-40')} disabled={selectedIndex === 0} onClick={() => selectFile(files[selectedIndex - 1].name)}>
-                ← Previous
-              </button>
-              <button className={cn(btn.ghost, 'disabled:opacity-40')} disabled={selectedIndex === files.length - 1} onClick={() => selectFile(files[selectedIndex + 1].name)}>
-                Next file →
-              </button>
-            </div>
-          </footer>
         </div>
       )
     }
@@ -253,6 +252,94 @@ function CommentComposer({
   )
 }
 
+/**
+ * The commit list and its rebase action live behind one disclosure in the diff
+ * toolbar, so the review surface stays about the code until the developer asks.
+ */
+function CommitsMenu({ diff, disabled, rebasing, onRebase }: {
+  diff: TaskDiff
+  disabled: boolean
+  rebasing: boolean
+  onRebase: () => void
+}): JSX.Element {
+  const ref = useRef<HTMLDetailsElement>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (event: PointerEvent): void => {
+      if (!ref.current?.contains(event.target as Node)) ref.current?.removeAttribute('open')
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [open])
+
+  const count = diff.commits.length
+  return (
+    <details ref={ref} className="relative" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="flex cursor-pointer select-none list-none items-center gap-1 hover:text-fg [&::-webkit-details-marker]:hidden">
+        {count} commit{count === 1 ? '' : 's'}
+        <HugeiconsIcon icon={ArrowDown01Icon} size={14} aria-hidden="true" />
+      </summary>
+      <div className="absolute right-0 top-full z-20 mt-1.5 w-[min(460px,80vw)] border border-line bg-raised p-3 text-fg shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <span className="text-[11px] text-dim">Commits on this branch</span>
+          <button
+            className={cn(btn.ghost, 'py-1 text-xs')}
+            disabled={disabled || count < 2 || rebasing}
+            title={count < 2 ? 'Nothing to rebase: this branch has a single commit' : 'Rewrite these commits'}
+            onClick={onRebase}
+          >
+            {rebasing ? 'Rebasing…' : 'Rebase'}
+          </button>
+        </div>
+        <ul className="max-h-64 overflow-y-auto">
+          {diff.commits.map((commit) => <li key={commit.sha} className="flex gap-2 py-1.5 border-t border-line">
+            <code className="shrink-0 text-accent">{commit.sha.slice(0, 8)}</code>
+            <span className="min-w-0 break-words">{commit.subject}</span>
+          </li>)}
+        </ul>
+      </div>
+    </details>
+  )
+}
+
+/**
+ * The prompt opens the transcript rather than sitting above it: long prompts
+ * clamp instead of squeezing the output, and reading one is a scroll away.
+ */
+function PromptBlock({ label, text }: { label: string; text: string }): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [clamped, setClamped] = useState(false)
+
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const measure = (): void => {
+      if (!expanded) setClamped(element.scrollHeight > element.clientHeight + 1)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [expanded, text])
+
+  return (
+    <section role="region" aria-label="Task prompt" tabIndex={0} className="my-3 border-l-2 border-accent/50 pl-3.5 font-sans focus-visible:outline focus-visible:outline-accent">
+      <div className="mb-1 flex items-center gap-3 text-[11px] text-dim">
+        <span className="font-medium">{label}</span>
+        {(clamped || expanded) && <button className="text-accent hover:underline" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+          {expanded ? 'Show less' : 'Show more'}
+        </button>}
+      </div>
+      <div ref={ref} className={cn('text-[13px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]', !expanded && 'line-clamp-6')}>
+        {text}
+      </div>
+    </section>
+  )
+}
+
 const CATEGORY_LABEL: Record<TaskEventCategory, string> = {
   message: 'message',
   thinking: 'thinking',
@@ -294,7 +381,7 @@ function LogRow({ event }: { event: TaskEvent }): JSX.Element {
       role="button"
       tabIndex={0}
       aria-expanded={expanded}
-      className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-4 py-1.5 cursor-pointer border-b border-line/55 last:border-b-0 hover:bg-hover/45"
+      className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 cursor-pointer border-b border-line/55 last:border-b-0 hover:bg-hover/45"
       onClick={() => setExpanded((value) => !value)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -353,9 +440,17 @@ function StatBlock({ label, value, detail }: {
   detail?: string
 }): JSX.Element {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 text-xs" title={detail}>
+    <div className="flex items-baseline gap-x-1.5 whitespace-nowrap" title={detail}>
       <span className="text-dim">{label}</span>
-      <span className="font-medium tabular-nums">{value}</span>
+      <span className="font-medium tabular-nums text-fg">{value}</span>
+    </div>
+  )
+}
+
+function Notice({ tone = 'danger', children }: { tone?: 'danger' | 'warn'; children: ReactNode }): JSX.Element {
+  return (
+    <div role="alert" className={cn('shrink-0 max-h-20 overflow-auto px-5 py-2 text-xs [overflow-wrap:anywhere]', tone === 'danger' ? 'text-danger bg-danger/8' : 'text-warn bg-warn/8')}>
+      {children}
     </div>
   )
 }
@@ -403,7 +498,6 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
   const [now, setNow] = useState(Date.now())
   const [follow, setFollow] = useState(true)
   const reviewable = !issueId && (task.deliveryStatus === 'reviewable' || approved)
-  const [focused, setFocused] = useState(false)
   const [activePanel, setActivePanel] = useState<TaskPanel>('output')
 
   useEffect(() => {
@@ -419,7 +513,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
   useEffect(() => {
     const output = outputRef.current
     if (follow && output) output.scrollTop = output.scrollHeight
-  }, [events, follow, focused, activePanel, task.status, task.deliveryStatus])
+  }, [events, follow, activePanel, task.status, task.deliveryStatus])
 
   useEffect(() => {
     if (reviewable && !diff) void loadTaskDiff(task.id)
@@ -461,6 +555,12 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
     }
   }
 
+  const rebase = (): void => {
+    if (settings?.rebaseMode !== 'agent') openRebase(task.id)
+    else if (settings.confirmRebase === false) void rebaseWithAgent(task.id)
+    else openRebase(task.id)
+  }
+
   useEffect(() => {
     if (!comments) void loadComments(task.id)
   }, [comments, loadComments, task.id])
@@ -470,6 +570,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
   const childInReview = !issueId && (snapshot?.children.some((child) => child.status === 'review') ?? false)
   const issueStartedAt = issue?.startedAt === undefined ? undefined : new Date(issue.startedAt)
   const issueCompletedAt = issue?.completedAt === undefined ? undefined : new Date(issue.completedAt)
+  const issueHasDiff = issue?.status === 'review' || issue?.status === 'complete'
 
   const onScroll = (e: React.UIEvent<HTMLDivElement>): void => {
     const el = e.currentTarget
@@ -482,6 +583,8 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
     {issueError && <button className={btn.ghost} onClick={refresh}>Retry</button>}
     <button className={btn.ghost} onClick={() => void openTask(task.id)}>Open owning task</button>
   </div>
+
+  const panels: readonly TaskPanel[] = issueId ? ['output', 'changes'] : ['output', 'changes', 'issues']
 
   return (
     <div className="@container relative flex flex-col h-full min-w-0 min-h-0 overflow-hidden">
@@ -497,75 +600,105 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
         ) : (
           diff && <RebaseModal taskId={task.id} commits={diff.commits} />
         ))}
-      <header className="shrink-0 max-h-[35%] overflow-y-auto px-6 py-4 @max-[760px]:px-4 [@media(max-height:600px)]:py-2">
-        <div className="flex flex-wrap gap-2 items-center justify-between text-xs">
-          <span className="flex min-w-0 items-center gap-2 text-dim">
-            <span className="truncate" title={workspaceName} aria-label="Task workspace">{workspaceName}</span>
-            <span aria-hidden="true">/</span>
-            <span className="truncate" title={project?.path}>{project?.name ?? 'Tasks'}</span>
-            <span aria-hidden="true">/</span>
-            <span>{issue ? 'Valence subtask' : 'Agent run'}</span>
-            {issue && <button className={btn.text} onClick={() => void openTask(task.id)}>Open owning task</button>}
-          </span>
-          <div className="flex flex-wrap gap-2 items-center">
-            {issue ? <span aria-label="Valence status" className={ISSUE_STATUS[issue.status].tone}>{ISSUE_STATUS[issue.status].label}</span> : <>
-              <span className={dot(task.status)} />
-              <span className={statusTone(task.status)}>{STATUS_LABEL[task.status]}</span>
-              <span className="text-dim">·</span>
-              <span className={deliveryTone(task.deliveryStatus)}>{DELIVERY_LABEL[task.deliveryStatus]}</span>
+
+      <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4">
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="min-w-0 flex-1 text-base font-medium leading-snug [overflow-wrap:anywhere]">{issue?.title ?? task.title}</h1>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs">
+            {issue ? <>
+              <span aria-label="Valence status" className={cn('font-medium', ISSUE_STATUS[issue.status].tone)}>{ISSUE_STATUS[issue.status].label}</span>
+              {issue.status === 'review' && <>
+                <button className={cn(btn.ghost, 'ml-2')} disabled={!!reviewBusy} onClick={() => void reviewIssue('reject')}>
+                  {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
+                </button>
+                <button className={cn(btn.primary, 'bg-ok')} disabled={!!reviewBusy} onClick={() => void reviewIssue('approve')}>
+                  {reviewBusy === 'approve' ? 'Approving…' : 'Approve'}
+                </button>
+              </>}
+            </> : <>
+              <span className="flex items-center gap-2">
+                <span className={dot(task.status)} />
+                <span className={cn('font-medium', statusTone(task.status))}>{STATUS_LABEL[task.status]}</span>
+                <span className="text-dim">·</span>
+                <span className={deliveryTone(task.deliveryStatus)}>{DELIVERY_LABEL[task.deliveryStatus]}</span>
+              </span>
+              {task.status === 'running' && (
+                <button className={cn(btn.danger, 'ml-2')} onClick={() => void cancelTask(task.id)}>Stop</button>
+              )}
+              {reviewable && <span className="ml-2 flex items-center gap-2">
+                {!approved && pending.length > 0 && <button className={btn.ghost} disabled={sending} onClick={() => void sendComments(task.id)}>
+                  {sending ? 'Sending…' : `Send ${pending.length} comment${pending.length === 1 ? '' : 's'}`}
+                </button>}
+                <button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
+                  Open PR
+                </button>
+                {!approved && <button className={cn(btn.primary, 'bg-ok')} disabled={!diff || rebasing || sending} onClick={() => setApprovalTaskId(task.id)}>
+                  Approve
+                </button>}
+              </span>}
             </>}
-            {!issueId && task.status === 'running' && (
-              <button className={cn(btn.danger, 'ml-2')} onClick={() => void cancelTask(task.id)}>Stop</button>
-            )}
           </div>
         </div>
-        <h1 className="my-2.5 text-[22px] font-medium leading-snug [overflow-wrap:anywhere] @max-[760px]:text-xl [@media(max-height:600px)]:my-1">{issue?.title ?? task.title}</h1>
-        {!issueId && <div className="flex flex-wrap gap-x-4 gap-y-2 items-center text-xs text-dim">
-          <span className="flex items-center gap-2">
-            <AgentIcon agentId={task.agentId} label={task.agentLabel} size={18} />
-            {task.agentLabel}
-          </span>
-          {task.model && <span className="[overflow-wrap:anywhere]">{task.model}</span>}
-          {task.branchName && (
-            <span className="flex min-w-0 items-center gap-2">
-              {task.baseBranch && <span className="truncate" title={task.baseBranch}>{task.baseBranch} ←</span>}
-              <CopyableText label="branch name" value={task.branchName} />
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-5 gap-y-1 text-[11.5px] text-dim">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate" title={workspaceName} aria-label="Task workspace">{workspaceName}</span>
+              <span aria-hidden="true">/</span>
+              <span className="truncate" title={project?.path}>{project?.name ?? 'Tasks'}</span>
             </span>
-          )}
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0">Task ID</span>
-            <CopyableText label="task ID" value={task.id} />
-          </span>
-        </div>}
+            {issue ? <>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span>Subtask of</span>
+                <button className="min-w-0 max-w-72 truncate text-accent hover:underline" aria-label="Open owning task" title="Open owning task" onClick={() => void openTask(task.id)}>{task.title}</button>
+              </span>
+              <div aria-label="Subtask timing" role="group" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <StatBlock label="Started" detail="First recorded start, preserved across retries." value={issueStartedAt
+                  ? <time dateTime={issueStartedAt.toISOString()}>{issueStartedAt.toLocaleString()}</time>
+                  : 'Not recorded'} />
+                <StatBlock label="Completed" detail="Developer approval time, including time waiting for review." value={issueCompletedAt
+                  ? <time dateTime={issueCompletedAt.toISOString()}>{issueCompletedAt.toLocaleString()}</time>
+                  : issue.status === 'complete' ? 'Not recorded' : 'Not completed'} />
+              </div>
+            </> : <>
+              <span className="flex items-center gap-1.5">
+                <AgentIcon agentId={task.agentId} label={task.agentLabel} size={14} />
+                {task.agentLabel}
+                {task.model && <span className="[overflow-wrap:anywhere]">· {task.model}</span>}
+              </span>
+              {task.branchName && (
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {task.baseBranch && <span className="truncate" title={task.baseBranch}>{task.baseBranch} ←</span>}
+                  <CopyableText label="branch name" value={task.branchName} />
+                </span>
+              )}
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="shrink-0">ID</span>
+                <CopyableText label="task ID" value={task.id} />
+              </span>
+            </>}
+          </div>
+          {!issueId && <div aria-label="Task statistics" role="group" className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <StatBlock label="Elapsed" value={formatDuration(task, now)} />
+            <StatBlock label="Tokens" detail={tokenBreakdown(task)} value={
+              <span className="flex gap-x-1.5">
+                <span>{formatTokens(task.inputTokens)} <span className="text-dim">in</span></span>
+                <span className="text-dim">/</span>
+                <span>{formatTokens(task.outputTokens)} <span className="text-dim">out</span></span>
+              </span>
+            } />
+            <StatBlock label="Cached" value={formatTokens(task.cachedTokens)} detail={`${formatTokens(task.cachedTokens)} cached input`} />
+            <StatBlock label="Cost" value={formatCost(task.costUsd)} />
+          </div>}
+        </div>
       </header>
 
-      {issue && <div aria-label="Subtask timing" role="group" className="flex shrink-0 flex-wrap items-center gap-x-7 gap-y-2 px-6 py-3 bg-raised border-y border-line @max-[760px]:px-4 [@media(max-height:600px)]:py-2">
-        <StatBlock label="Started" detail="First recorded start, preserved across retries." value={issueStartedAt
-          ? <time dateTime={issueStartedAt.toISOString()}>{issueStartedAt.toLocaleString()}</time>
-          : 'Not recorded'} />
-        <StatBlock label="Completed" detail="Developer approval time, including time waiting for review." value={issueCompletedAt
-          ? <time dateTime={issueCompletedAt.toISOString()}>{issueCompletedAt.toLocaleString()}</time>
-          : issue.status === 'complete' ? 'Not recorded' : 'Not completed'} />
-      </div>}
+      {issue && issueError && <Notice>Could not refresh subtask. Showing last known data. <button className={btn.text} onClick={refresh}>Retry</button></Notice>}
+      {!issueId && (task.error || task.deliveryError) && <Notice>{task.error || task.deliveryError}</Notice>}
+      {reviewError && <Notice>{reviewError}</Notice>}
+      {reviewable && commentError && <Notice>{commentError}</Notice>}
 
-      {!issueId && <div aria-label="Task statistics" role="group" className="flex shrink-0 flex-wrap items-center gap-x-7 gap-y-2 px-6 py-3 bg-raised border-y border-line @max-[760px]:px-4 [@media(max-height:600px)]:py-2">
-        <StatBlock label="Elapsed" value={formatDuration(task, now)} />
-        <StatBlock label="Tokens" detail={tokenBreakdown(task)} value={
-          <span className="flex flex-wrap gap-x-2">
-            <span>{formatTokens(task.inputTokens)} <span className="text-dim">in</span></span>
-            <span className="text-dim">/</span>
-            <span>{formatTokens(task.outputTokens)} <span className="text-dim">out</span></span>
-          </span>
-        } />
-        <StatBlock label="Cached" value={formatTokens(task.cachedTokens)} detail={`${formatTokens(task.cachedTokens)} cached input`} />
-        <StatBlock label="Cost" value={formatCost(task.costUsd)} />
-      </div>}
-
-      {issue && issueError && <div role="alert" className="px-6 py-2 text-danger">Could not refresh subtask. Showing last known data. <button className={btn.text} onClick={refresh}>Retry</button></div>}
-      {!issueId && (task.error || task.deliveryError) && <div role="alert" className="shrink-0 max-h-20 overflow-auto px-6 py-2.5 text-danger bg-danger/8">{task.error || task.deliveryError}</div>}
-
-      <div className="flex shrink-0 items-end gap-1 px-5 pt-2 bg-canvas border-b border-line" role="tablist" aria-label="Task panels">
-        {(issueId ? ['output', 'changes'] as const : ['output', 'changes', 'issues'] as const).map((panel) => {
+      <div className="flex shrink-0 items-stretch gap-1 px-3 border-b border-line" role="tablist" aria-label="Task panels">
+        {panels.map((panel) => {
           const selected = activePanel === panel
           return (
             <button
@@ -575,57 +708,45 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
               aria-controls={`task-panel-${panel}`}
               aria-selected={selected}
               className={cn(
-                PANEL_TAB,
-                selected ? 'text-fg bg-raised border-line' : 'text-dim border-transparent hover:text-fg hover:bg-hover'
+                'relative flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-accent',
+                selected ? 'text-fg' : 'text-dim hover:text-fg'
               )}
-              onClick={() => {
-                setActivePanel(panel)
-                setFocused(false)
-              }}
+              onClick={() => setActivePanel(panel)}
             >
-              {selected && <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-accent" />}
+              {selected && <span aria-hidden="true" className="absolute inset-x-0 -bottom-px h-0.5 bg-accent" />}
               {panel === 'output' && 'Output'}
               {panel === 'issues' && 'Issues'}
-              {panel === 'changes' && (issueId ? 'Changes' : <>Changes <span className="ml-1 font-mono normal-case tracking-normal text-dim">{task.filesChanged}</span></>)}
+              {panel === 'changes' && (issueId ? 'Changes' : <>
+                Changes{' '}
+                <span className="font-mono font-normal tabular-nums text-dim">{task.filesChanged}</span>
+                {task.filesChanged > 0 && <>{' '}<span className="font-mono font-normal tabular-nums">
+                  <span className="text-ok">+{task.additions}</span> <span className="text-danger">−{task.deletions}</span>
+                </span></>}
+              </>)}
             </button>
           )
         })}
       </div>
 
-      <div className={cn('grid flex-1 min-h-0 min-w-0 @max-[760px]:flex', activePanel !== 'changes' || focused ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_320px]')}>
+      <div className="flex flex-1 min-h-0 min-w-0">
         {!issueId && <TaskIssues taskId={task.id} active={activePanel === 'issues'} />}
-        {issueId && issue && <section id="task-panel-changes" aria-label="Subtask code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-line">
-            <h2 className="font-medium text-accent">Changes</h2>
-            {issue.status === 'review' && <div className="flex flex-wrap items-center gap-2">
-              {reviewError && <p role="alert" className="text-xs text-danger">{reviewError}</p>}
-              <button className={btn.ghost} disabled={!!reviewBusy} onClick={() => void reviewIssue('reject')}>
-                {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
-              </button>
-              <button className={cn(btn.primary, 'bg-ok disabled:opacity-45')} disabled={!!reviewBusy} onClick={() => void reviewIssue('approve')}>
-                {reviewBusy === 'approve' ? 'Approving…' : 'Approve'}
-              </button>
-            </div>}
-            {issue.status === 'complete' && <span className="text-xs text-ok">Approved</span>}
-          </div>
-          {issue.status === 'review' && <>
-            <div role="status" className="shrink-0 px-5 py-2 text-xs text-warn border-b border-line">
-              Waiting for your review. The agent pauses until you approve this sub-task or request changes.
-            </div>
-            <div className="shrink-0 px-5 py-3 border-b border-line">
-              <label className={cn(field.label, 'mb-1')} htmlFor="rework-comment">Rework feedback</label>
+
+        {issue && <section id="task-panel-changes" aria-label="Subtask code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
+          {issue.status === 'review' && <div className="shrink-0 px-4 py-2 border-b border-line bg-warn/5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <p role="status" className="shrink-0 text-xs text-warn">Waiting for your review. The agent pauses until you approve or request changes.</p>
               <textarea
-                id="rework-comment"
-                className={field.textarea}
-                rows={2}
-                placeholder="Optional notes sent to the agent when you request changes…"
+                aria-label="Rework feedback"
+                className={cn(field.control, 'min-w-56 flex-1 resize-none px-2.5 py-1.5 text-xs')}
+                rows={1}
+                placeholder="Optional note sent to the agent with a rework request…"
                 value={reworkComment}
                 onChange={(event) => setReworkComment(event.target.value)}
               />
-              {pending.length > 0 && <p className="mt-1.5 text-[11px] text-dim">{pending.length} line comment{pending.length === 1 ? '' : 's'} will be sent with the rework request.</p>}
             </div>
-          </>}
-          {issue.status === 'review' || issue.status === 'complete' ? <>
+            {pending.length > 0 && <p className="mt-1.5 text-[11px] text-dim">{pending.length} line comment{pending.length === 1 ? '' : 's'} will be sent with the rework request.</p>}
+          </div>}
+          {issueHasDiff ? <>
             {!issueDiff && !issueDiffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {issueDiffError && <div role="alert" className="p-5 text-sm text-danger">
               <p>{issueDiffError}</p>
@@ -637,6 +758,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
                 patch={issueDiff.patch}
                 comments={comments ?? []}
                 draft={draft}
+                trailing={issue.status === 'review' && pending.length === 0 && <span>Select a line to comment</span>}
                 onSelectLine={issue.status === 'review' ? setDraft : () => {}}
                 onSubmit={(target, body) => {
                   void addComment({ taskId: task.id, ...target, body })
@@ -645,60 +767,14 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
                 onRemove={(id) => void removeComment(task.id, id)}
               />
             </Suspense>}
-          </> : <div className="grid flex-1 place-content-center gap-2 p-6 text-center text-sm text-dim">
+          </> : <div className={EMPTY_PANEL}>
             <p>{issue.status === 'queued' ? 'This sub-task has not started yet.' : issue.status === 'blocked' ? 'This sub-task is blocked.' : 'The agent is working on this sub-task.'}</p>
             <p className="text-xs">Its diff will appear here when the sub-task is submitted for review.</p>
           </div>}
         </section>}
+
         {!issueId && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-line">
-            <div className="flex gap-3 items-center text-sm">
-              <h2 className="font-medium text-accent">Changes <span className="ml-1 text-dim">{task.filesChanged}</span></h2>
-              <span className="text-xs"><span className="text-ok">+{task.additions}</span> <span className="text-danger">−{task.deletions}</span></span>
-            </div>
-            <button className={cn(btn.ghost, 'text-xs @max-[760px]:hidden')} aria-pressed={focused} onClick={() => setFocused((value) => !value)}>
-              {focused ? 'Show output' : 'Focus diff'}
-            </button>
-          </div>
           {reviewable ? <>
-            <div className="shrink-0 max-h-[40%] overflow-auto px-5 py-3 border-b border-line">
-              <div className="flex flex-wrap gap-2 items-center justify-between text-xs">
-                <span className="text-dim">{approved ? 'Approved' : pending.length ? `${pending.length} comments pending` : 'Select a line to comment'}</span>
-                <div className="flex gap-2">
-                  <button className={btn.ghost} disabled={approved || !pending.length || sending} onClick={() => void sendComments(task.id)}>
-                    {sending ? 'Sending…' : 'Send comments'}
-                  </button>
-                  <button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
-                    Open PR
-                  </button>
-                  <button className={cn(btn.primary, 'bg-ok disabled:opacity-45')} disabled={approved || !diff || rebasing || sending} onClick={() => setApprovalTaskId(task.id)}>
-                    {approved ? 'Approved' : 'Approve'}
-                  </button>
-                </div>
-              </div>
-              {commentError && <p role="alert" className="mt-2 text-xs text-danger">{commentError}</p>}
-              {diff && <details className="mt-2 text-xs">
-                <summary className="cursor-pointer text-dim">{diff.commits.length} commit{diff.commits.length === 1 ? '' : 's'}</summary>
-                <div className="flex justify-end my-2">
-                  <button
-                    className={btn.ghost}
-                    disabled={approved || diff.commits.length < 2 || rebasing}
-                    title={diff.commits.length < 2 ? 'Nothing to rebase: this branch has a single commit' : 'Rewrite these commits'}
-                    onClick={() => {
-                      if (settings?.rebaseMode !== 'agent') openRebase(task.id)
-                      else if (settings.confirmRebase === false) void rebaseWithAgent(task.id)
-                      else openRebase(task.id)
-                    }}
-                  >
-                    {rebasing ? 'Rebasing…' : 'Rebase'}
-                  </button>
-                </div>
-                {diff.commits.map((commit) => <div key={commit.sha} className="flex gap-2 py-1.5 border-t border-line">
-                  <code className="text-accent">{commit.sha.slice(0, 8)}</code>
-                  <span className="min-w-0 break-words">{commit.subject}</span>
-                </div>)}
-              </details>}
-            </div>
             {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {diffError && <div role="alert" className="p-5 text-sm text-danger">
               <p>{diffError}</p>
@@ -710,6 +786,10 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
                 patch={diff.patch}
                 comments={comments ?? []}
                 draft={draft}
+                trailing={<>
+                  {!approved && <span>{pending.length ? `${pending.length} comment${pending.length === 1 ? '' : 's'} pending` : 'Select a line to comment'}</span>}
+                  <CommitsMenu diff={diff} disabled={approved} rebasing={rebasing} onRebase={rebase} />
+                </>}
                 onSelectLine={approved ? () => {} : setDraft}
                 onSubmit={(target, body) => {
                   void addComment({ taskId: task.id, ...target, body })
@@ -718,25 +798,16 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
                 onRemove={(id) => void removeComment(task.id, id)}
               />
             </Suspense>}
-          </> : <div className="grid flex-1 place-content-center gap-2 p-6 text-center text-sm text-dim">
+          </> : <div className={EMPTY_PANEL}>
             <p>{task.status === 'running' ? 'The agent is working on this task.' : DELIVERY_LABEL[task.deliveryStatus]}</p>
             <p className="text-xs">{task.status === 'running' ? 'The final task diff will appear here when it is ready for review.' : 'There is no final diff available for review.'}</p>
           </div>}
         </section>}
 
-        <aside id="task-panel-output" aria-label="Prompt and output" className={cn('flex flex-col flex-1 min-h-0 min-w-0 bg-raised', activePanel === 'issues' && 'hidden', activePanel === 'changes' && 'border-l border-line @max-[760px]:hidden', activePanel === 'changes' && focused && 'hidden')}>
-          <div className="shrink-0 px-5 pt-4 pb-3 border-b border-line [@media(max-height:600px)]:py-2">
-            <h2 className="mb-2 text-xs font-medium [@media(max-height:600px)]:mb-1">{issue ? 'Description' : 'Original prompt'}</h2>
-            <div role="region" aria-label="Task prompt" tabIndex={0} className="max-h-24 overflow-y-auto overscroll-contain text-[13px] leading-relaxed text-dim whitespace-pre-wrap [overflow-wrap:anywhere] @max-[760px]:max-h-12 [@media(max-height:600px)]:max-h-6">
-              {issue?.description ?? task.prompt}
-            </div>
-          </div>
-          <div className="grid shrink-0 grid-cols-[96px_minmax(0,1fr)] gap-4 px-5 py-2 border-b border-line text-[11px] text-dim">
-            <span>Event type</span>
-            <span>Result · {events?.length ?? 0} events</span>
-          </div>
+        <section id="task-panel-output" aria-label="Output" className={cn('flex flex-col flex-1 min-h-0 min-w-0', activePanel !== 'output' && 'hidden')}>
           <div className="relative flex-1 min-h-0 min-w-0">
             <div ref={outputRef} role="log" aria-label="Task output" className="h-full min-w-0 px-5 pb-3 overflow-y-auto overscroll-contain font-mono text-[12.5px] leading-[1.55]" onScroll={onScroll}>
+              <PromptBlock label={issue ? 'Description' : 'Prompt'} text={issue?.description ?? task.prompt} />
               {!events && <p className={PLACEHOLDER}>Loading output…</p>}
               {childOutput.error && issue && <p role="alert" className={PLACEHOLDER}>{childOutput.error} <button className={btn.text} onClick={childOutput.retry}>Retry</button></p>}
               {!childOutput.error && events?.length === 0 && (issue || task.status !== 'running') && <p className={PLACEHOLDER}>{issue?.status === 'queued' ? 'Queued. Execution has not started.' : 'No output recorded.'}</p>}
@@ -749,7 +820,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
             </button>}
           </div>
           {!issueId && !isTaskSettled(task) && <TaskSteeringComposer key={task.id} task={task} hidden={activePanel !== 'output'} />}
-        </aside>
+        </section>
       </div>
     </div>
   )

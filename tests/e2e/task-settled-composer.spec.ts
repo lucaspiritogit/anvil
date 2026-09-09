@@ -6,7 +6,7 @@ async function openOutputTask(page: Page, task: string, extra = ''): Promise<voi
 
 test('a settled task mounts no steering composer in either panel', async ({ page }, testInfo) => {
   await openOutputTask(page, 'settled')
-  const aside = page.getByRole('complementary', { name: 'Prompt and output' })
+  const aside = page.getByRole('region', { name: 'Output', exact: true })
   await expect(page.getByRole('heading', { name: 'Clean up old logs' })).toBeVisible()
   await expect(page.getByRole('form', { name: 'Steer task' })).toHaveCount(0)
   await page.getByRole('tab', { name: 'Changes' }).click()

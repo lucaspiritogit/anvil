@@ -93,12 +93,12 @@ test('a newly created task discovers planning children and keeps execution and r
     await expect(review.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
     if (index === 0) {
       // Approving lets the agent continue with the next queued issue.
-      await review.getByRole('button', { name: 'Approve', exact: true }).click()
+      await page.getByRole('button', { name: 'Approve', exact: true }).click()
       await expect.poll(reviewCalls).toEqual([{ kind: 'fixture:issue-approval', detail: { taskId: task.id } }])
     } else {
       // Requesting changes sends the optional note and restarts the same issue.
       await review.getByLabel('Rework feedback').fill('Tighten the row spacing')
-      await review.getByRole('button', { name: 'Request changes', exact: true }).click()
+      await page.getByRole('button', { name: 'Request changes', exact: true }).click()
       await expect.poll(reviewCalls).toEqual([
         { kind: 'fixture:issue-approval', detail: { taskId: task.id } },
         { kind: 'fixture:issue-rejection', detail: { taskId: task.id, comment: 'Tighten the row spacing' } }
@@ -109,7 +109,7 @@ test('a newly created task discovers planning children and keeps execution and r
       child.status = 'review'
       await publish()
       await expect(page.getByLabel('Valence status')).toHaveText('Review')
-      await review.getByRole('button', { name: 'Approve', exact: true }).click()
+      await page.getByRole('button', { name: 'Approve', exact: true }).click()
       await expect.poll(() => reviewCalls().then((calls) => calls.length)).toBe(3)
     }
     child.status = 'complete'
@@ -129,6 +129,7 @@ test('a newly created task discovers planning children and keeps execution and r
   await page.evaluate(() => { window.anvil.tasks.issues = async () => { throw new Error('Tracker unavailable') } })
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(page.getByRole('alert')).toContainText('Could not refresh subtask')
+  await page.getByRole('tab', { name: 'Output', exact: true }).click()
   await expect(page.getByRole('log')).toContainText('Result for Validate navigation')
   await page.evaluate(({ taskId, snapshot }) => {
     window.anvil.tasks.issues = async (id) => id === taskId ? snapshot : null
@@ -155,7 +156,7 @@ test('a newly created task discovers planning children and keeps execution and r
   await page.getByRole('tab', { name: 'Changes', exact: true }).click()
   // A finished sub-task keeps its own recorded diff; the task-level diff stays on the owner.
   await expect(page.getByRole('region', { name: 'Subtask code changes' }).getByRole('combobox', { name: 'Changed file' })).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Subtask code changes' }).getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
   await parent.click()
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()

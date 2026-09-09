@@ -69,26 +69,33 @@ test('rejected steering preserves the draft and allows retry', async ({ page }) 
 })
 
 for (const viewport of [{ width: 900, height: 500 }, { width: 1100, height: 700 }]) {
-  test(`long prompt scrolls below visible statistics at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+  test(`long prompt is clamped inside the transcript at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport)
     await page.goto('/tests/e2e/fixture/?scenario=output&steering=1&longPrompt=1&taskUsage=1')
     const statistics = page.getByRole('group', { name: 'Task statistics' })
-    const prompt = page.getByRole('region', { name: 'Task prompt' })
+    const log = page.getByRole('log', { name: 'Task output' })
+    const prompt = log.getByRole('region', { name: 'Task prompt' })
     const composer = page.getByRole('form', { name: 'Steer task' })
     await expect(statistics).toBeInViewport({ ratio: 1 })
     await expect(composer).toBeInViewport({ ratio: 1 })
     for (const label of ['Elapsed', 'Tokens', 'Cost']) await expect(statistics.getByText(label, { exact: true })).toBeVisible()
     const statisticsBounds = (await statistics.boundingBox())!
-    const promptBounds = (await prompt.boundingBox())!
-    expect(promptBounds.y).toBeGreaterThanOrEqual(statisticsBounds.y + statisticsBounds.height)
-    expect(promptBounds.height).toBeGreaterThan(15)
-    expect((await page.getByRole('log').boundingBox())!.height).toBeGreaterThan(100)
-    expect(await prompt.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
-    await prompt.hover()
-    await page.mouse.wheel(0, 10000)
-    await expect.poll(() => prompt.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+    const logBounds = (await log.boundingBox())!
+    expect(logBounds.height).toBeGreaterThan(100)
+    // The prompt scrolls with the output rather than reserving its own band.
+    await log.hover()
+    await page.mouse.wheel(0, -100000)
+    await expect(prompt).toBeInViewport()
+    const clampedHeight = (await prompt.boundingBox())!.height
+    expect(clampedHeight).toBeLessThan(200)
+    await expect(prompt.getByRole('button', { name: 'Show less' })).toHaveCount(0)
+    await prompt.getByRole('button', { name: 'Show more' }).click()
+    expect((await prompt.boundingBox())!.height).toBeGreaterThan(clampedHeight * 3)
+    expect(await log.boundingBox()).toEqual(logBounds)
     expect(await statistics.boundingBox()).toEqual(statisticsBounds)
     await expect(composer.getByRole('textbox')).toBeInViewport({ ratio: 1 })
+    await prompt.getByRole('button', { name: 'Show less' }).click()
+    expect((await prompt.boundingBox())!.height).toBeLessThan(200)
     await page.screenshot({ path: testInfo.outputPath('task-layout.png') })
   })
 }

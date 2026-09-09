@@ -4,10 +4,10 @@ const fixture = '/tests/e2e/fixture/?scenario=review'
 
 test('Open PR previews the remote, drafts editable fields, and shows created PR details', async ({ page }, testInfo) => {
   await page.goto(fixture)
-  await page.getByRole('tab', { name: /^Changes/ }).click()
-  const review = page.getByRole('region', { name: 'Code changes' })
-  const open = review.getByRole('button', { name: 'Open PR', exact: true })
-  const approve = review.getByRole('button', { name: 'Approve', exact: true })
+  // Review actions live in the task header, so they are reachable from any panel.
+  const open = page.getByRole('button', { name: 'Open PR', exact: true })
+  const approve = page.getByRole('button', { name: 'Approve', exact: true })
+  await expect(open).toBeEnabled()
   expect((await open.boundingBox())!.x).toBeLessThan((await approve.boundingBox())!.x)
   await open.click()
   const dialog = page.getByRole('dialog', { name: 'Open PR', exact: true })

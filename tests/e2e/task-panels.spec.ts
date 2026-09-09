@@ -65,7 +65,8 @@ test('shared child view isolates status, history and controls and recovers from 
     await page.getByRole('button', { name: `Open subtask: Child ${status}`, exact: true }).click()
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(`Child ${status}`)
     await expect(page.getByLabel('Valence status')).toHaveText(STATUS_LABEL[status])
-    await expect(page.getByRole('region', { name: 'Task prompt' })).toHaveText(`Description for ${status}`)
+    await expect(page.getByRole('region', { name: 'Task prompt' })).toContainText(`Description for ${status}`)
+    await expect(page.getByRole('region', { name: 'Task prompt' })).not.toContainText('Keyboard shortcuts')
     await expect(page.getByRole('group', { name: 'Task statistics' })).toHaveCount(0)
     // Sub-task views expose their own Changes panel; only finished children have a diff.
     await page.getByRole('tab', { name: 'Changes', exact: true }).click()
