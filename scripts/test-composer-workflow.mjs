@@ -66,7 +66,23 @@ try {
     model = catalogue.models.includes('gpt-5.6-sol') ? 'gpt-5.6-sol' : catalogue.models[0]
     console.log(`Live model: ${model}`)
   }
-  clipboardBackup = await application.evaluate(({ clipboard }) => clipboard.availableFormats().map((format) => [format, Array.from(clipboard.readBuffer(format))]))
+  clipboardBackup = await application.evaluate(async ({ clipboard }) => {
+    const items = await clipboard.read()
+    const saved = []
+    for (const item of items) {
+      const entries = {}
+      for (const type of item.types) {
+        const value = await item.getType(type)
+        if (value && typeof value.arrayBuffer === 'function') {
+          entries[type] = Array.from(new Uint8Array(await value.arrayBuffer()))
+        } else {
+          entries[type] = value
+        }
+      }
+      saved.push(entries)
+    }
+    return saved
+  })
   const png = await sharp({ create: { width: 48, height: 32, channels: 4, background: '#6789ab' } }).png().toBuffer()
   const entries = async () => (await readFile(transcript, 'utf8')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
   {
@@ -94,9 +110,13 @@ try {
         resolve(Array.from(new Uint8Array(await file.arrayBuffer())))
       }, { once: true }))
     })
-    await application.evaluate(({ clipboard, nativeImage }, bytes) => {
-      clipboard.writeImage(nativeImage.createFromBuffer(Buffer.from(bytes)))
-      return Array.from(clipboard.readImage().toPNG())
+    await application.evaluate(async ({ clipboard, ClipboardItem }, bytes) => {
+      const pngBytes = Uint8Array.from(bytes)
+      await clipboard.write([new ClipboardItem({ 'image/png': new Blob([pngBytes], { type: 'image/png' }) })])
+      const items = await clipboard.read()
+      const image = items.find((item) => item.types.includes('image/png'))
+      if (!image) throw new Error('clipboard missing image/png after write')
+      return Array.from(new Uint8Array(await (await image.getType('image/png')).arrayBuffer()))
     }, Array.from(png))
     await prompt.press('ControlOrMeta+V')
     const expectedBytes = await page.evaluate(() => window.smokePastedImage)
@@ -139,9 +159,16 @@ try {
     process.stdin.pause()
   }
 } finally {
-  if (application && clipboardBackup) await application.evaluate(({ clipboard }, saved) => {
-    clipboard.clear()
-    for (const [format, bytes] of saved) clipboard.writeBuffer(format, Buffer.from(bytes))
+  if (application && clipboardBackup) await application.evaluate(async ({ clipboard, ClipboardItem }, saved) => {
+    await clipboard.clear()
+    if (!saved.length) return
+    await clipboard.write(saved.map((entries) => {
+      const payload = {}
+      for (const [type, value] of Object.entries(entries)) {
+        payload[type] = Array.isArray(value) ? new Blob([Uint8Array.from(value)], { type }) : value
+      }
+      return new ClipboardItem(payload)
+    }))
   }, clipboardBackup)
   await application?.close()
   await rm(directory, { recursive: true, force: true })
