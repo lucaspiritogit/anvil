@@ -55,7 +55,7 @@ export class AgentProcessManager extends EventEmitter {
     this.starts.push(options)
   }
   createPlan(taskId: string, inputs: Omit<BatchIssue, 'parentId'>[]): Issue[] {
-    const tracker = openIssueTracker(this.starts.findLast((start) => start.taskId === taskId).projectPath, this.databasePath)
+    const tracker = openIssueTracker(this.starts.findLast((start) => start.taskId === taskId).projectPath, this.starts.findLast((start) => start.taskId === taskId).workspace?.environment.ANVIL_DATABASE_PATH ?? this.databasePath)
     try {
       const prompt = this.starts.findLast((start) => start.taskId === taskId).prompt as string
       const parentId = /Create issues under parent "([^"]+)"/.exec(prompt)?.[1]
@@ -70,7 +70,7 @@ export class AgentProcessManager extends EventEmitter {
     this.finishTurn(taskId, 'Plan created in Valence.')
   }
   completeIssue(taskId: string, issueId: string, completion: Completion): void {
-    const tracker = openIssueTracker(this.starts.findLast((start) => start.taskId === taskId).projectPath, this.databasePath)
+    const tracker = openIssueTracker(this.starts.findLast((start) => start.taskId === taskId).projectPath, this.starts.findLast((start) => start.taskId === taskId).workspace?.environment.ANVIL_DATABASE_PATH ?? this.databasePath)
     try {
       tracker.submitForReview(issueId, completion)
       tracker.approve(issueId)

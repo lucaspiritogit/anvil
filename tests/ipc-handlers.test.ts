@@ -36,7 +36,7 @@ import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome, shell, dialog } from './issue-tracker-doubles'
 
 function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise<string>) {
-  const databaseFile = join(testHome, `ipc-${randomUUID()}.db`)
+  const databaseFile = join(testHome, `ipc-${randomUUID()}`, 'anvil.db')
   const store = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') })
   onTestCleanup(() => store.close())
   const tasks = { get: (id: string) => store.getTask(id), has: (id: string) => !!store.getTask(id) }
@@ -150,6 +150,7 @@ test('persists task ownership before preparation and retains it when selection c
   })
   const work = store.createWorkspace('Work')
   const personal = store.createWorkspace('Personal')
+  store.addProject(project, work.id)
   store.selectWorkspace(work.id)
   const pending = call('tasks:start', { workspaceId: work.id, projectId: project.id, agentId: 'codex', prompt: 'Work task' })
   expect(store.getTasks(work.id)).toHaveLength(1)
@@ -166,6 +167,7 @@ test('persists task ownership before preparation and retains it when selection c
   agentProcesses.emit('usage', { taskId: task.id, inputTokens: 2, outputTokens: 1, cachedTokens: 0, totalTokens: 3, costUsd: null })
   expect(store.getTask(task.id)?.totalTokens).toBe(3)
   expect(call('tasks:list')).toEqual([])
+  store.addProject(project, work.id)
   store.selectWorkspace(work.id)
   expect(call('tasks:list').map((entry: Task) => entry.id)).toEqual([task.id])
 })
@@ -635,6 +637,7 @@ test('keeps the original task workspace when selection changes during image vali
   const original = store.getActiveWorkspace()
   const work = store.createWorkspace('Work')
   const images = await taskImages()
+  store.addProject(project, work.id)
   store.selectWorkspace(work.id)
   const starting: Promise<Task> = call('tasks:start', {
     projectId: project.id, agentId: 'codex', prompt: 'Inspect image', images

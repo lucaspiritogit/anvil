@@ -38,6 +38,19 @@ test('loads settings defaults', () => {
   expect(store.getSettings().overviewWallpaperId).toBe(null)
 })
 
+test('wallpaper IPC reads the requested workspace even when another workspace is selected', async () => {
+  const work = store.createWorkspace('Work')
+  registerSettingsHandlers(rendererIpc, store, (workspaceId) => new WallpaperLibrary(store.getWorkspaceDirectory(workspaceId)))
+  const directory = call('wallpapers:directory', work.id)
+  expect(directory).toContain('/workspaces/Work/wallpaper')
+  writeFileSync(join(directory, 'private.png'), await sharp({ create: { width: 1, height: 1, channels: 3, background: 'red' } }).png().toBuffer())
+  expect(await call('wallpapers:list', work.id)).toHaveLength(1)
+  expect(await call('wallpapers:list', 'default')).toEqual([])
+  expect(await call('wallpapers:read', { workspaceId: work.id, id: 'private.png' })).toMatch(/^data:image\/webp;base64,/)
+  expect(await call('wallpapers:read', { workspaceId: 'default', id: 'private.png' })).toBe(null)
+  expect(() => call('wallpapers:read', { workspaceId: work.id, id: '../secret.png' })).toThrow(/Invalid IPC request/)
+})
+
 test('rejects unauthorized wallpaper senders and invalid settings payloads', () => {
   for (const channel of ['wallpapers:directory', 'wallpapers:list', 'wallpapers:read']) {
     expect(() => handlers.get(channel)!({ sender: {}, senderFrame: null })).toThrow(/Unauthorized IPC sender/)
@@ -89,7 +102,7 @@ test('persists settings and wallpaper selection across restarts', async () => {
 test('recovers corrupt and legacy settings while preserving other preferences', async () => {
   store.setSettings({ caffeineMode: true })
   store.close()
-  const raw = new Database(database)
+  const raw = new Database(join(root, 'workspaces', 'Default', 'anvil.db'))
   for (const [key, value] of Object.entries({ fontSize: 'garbage', overviewBackgroundMode: 'garbage', overviewBackgroundColor: 'url(file:///secret)', overviewWallpaperId: '../secret.png' })) {
     raw.prepare('UPDATE workspace_settings SET value = ? WHERE key = ?').run(value, key)
   }
@@ -101,7 +114,7 @@ test('recovers corrupt and legacy settings while preserving other preferences', 
   expect(store.getSettings().caffeineMode).toBe(true)
   expect(store.getSettings().fontSize, 'Invalid font size falls back').toBe(14)
   store.close()
-  const legacy = new Database(database)
+  const legacy = new Database(join(root, 'workspaces', 'Default', 'anvil.db'))
   legacy.prepare("DELETE FROM workspace_settings WHERE key LIKE 'overview%'").run()
   legacy.close()
   store = new Store(database, options)

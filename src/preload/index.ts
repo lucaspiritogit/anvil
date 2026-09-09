@@ -53,9 +53,9 @@ const api = {
   /** Drives the platform-dependent half of the keyboard shortcuts. */
   platform: process.platform,
   wallpapers: {
-    directory: (): Promise<string> => invoke('wallpapers:directory'),
-    list: (): Promise<Wallpaper[]> => invoke('wallpapers:list'),
-    read: (id: string): Promise<string | null> => invoke('wallpapers:read', id)
+    directory: (workspaceId?: string): Promise<string> => invoke('wallpapers:directory', workspaceId),
+    list: (workspaceId?: string): Promise<Wallpaper[]> => invoke('wallpapers:list', workspaceId),
+    read: (id: string, workspaceId?: string): Promise<string | null> => invoke('wallpapers:read', workspaceId ? { id, workspaceId } : id)
   },
   settings: {
     onOpenRequested: (handler: () => void): (() => void) => {

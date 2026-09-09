@@ -53,6 +53,7 @@ test('serializes steering and comments through resume, completion and recovery',
     expect(() => call('tasks:steer', { taskId: 'task', message: 42 })).toThrow(/Invalid IPC request/)
     await expect(steer('missing')).rejects.toThrow(/Task not found/)
     const work = store.createWorkspace('Work')
+    store.addProject(store.getProjects('default')[0], work.id)
     store.selectWorkspace(work.id)
     const task: Task = await call('tasks:start', {
       projectId: 'project', agentId: 'codex', prompt: 'Original task', model: 'original-model', reasoningEffort: 'high'
@@ -175,7 +176,7 @@ test('serializes steering and comments through resume, completion and recovery',
 
     store.addTask({ ...finished, id: 'unfinished', prompt: 'Preserve current issue', status: 'pending', deliveryStatus: 'agent_failed' })
     const unfinished = new TaskIssues(store).initialize('unfinished', testHome)
-    const tracker = store.issueTracker('project')
+    const tracker = store.issueTracker('project', work.id)
     const [completed, interrupted] = tracker.createMany(['completed', 'interrupted'].map((key) => ({
       key, parentId: unfinished.parentIssueId, title: key, description: key, checklist: ['Check'], validation: 'Test'
     })))

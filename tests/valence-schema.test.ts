@@ -20,8 +20,10 @@ function fixture(existing = false): { db: Database.Database; path: string } {
       originalTasks = old.prepare<[], Record<string, unknown>>('SELECT * FROM tasks ORDER BY id').all()
     } finally { old.close() }
   }
-  new Store(path, { migrationsFolder }).close()
-  const db = new Database(path)
+  const store = new Store(path, { migrationsFolder })
+  const workspacePath = store.getWorkspaceDatabasePath('default')
+  store.close()
+  const db = new Database(workspacePath)
   db.pragma('foreign_keys = ON')
   onTestCleanup(() => { db.close() })
   if (!existing) seedTasks(db)
@@ -111,10 +113,12 @@ test('adds a nullable issue start timestamp without inventing history or changin
 
   const migrated = new Store(path, { migrationsFolder })
   onTestCleanup(() => migrated.close())
-  expect(db.prepare('SELECT * FROM issues ORDER BY sequence').all())
+  const workspaceDb = new Database(migrated.getWorkspaceDatabasePath('default'))
+  onTestCleanup(() => { workspaceDb.close() })
+  expect(workspaceDb.prepare('SELECT * FROM issues ORDER BY sequence').all())
     .toEqual(before.map((row) => ({ ...row, started_at: null })))
   expect(migrated.issueTracker('project').list().every((entry) => entry.startedAt === undefined)).toBe(true)
-  expect(db.prepare('SELECT * FROM issue_dependencies').all())
+  expect(workspaceDb.prepare('SELECT * FROM issue_dependencies').all())
     .toEqual([{ issue_id: 'queued', dependency_id: 'complete', position: 0 }])
   expect(db.pragma('foreign_key_check')).toEqual([])
 })

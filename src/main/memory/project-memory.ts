@@ -24,6 +24,7 @@ export interface ProjectMemory {
 }
 
 export interface ProjectMemoryOptions {
+  workspaceId?: string
   dataDirectory: string
   migrationsFolder: string
   settings?: Pick<Settings, 'memoryEmbeddingModel' | 'ollamaBaseUrl'>
@@ -46,7 +47,7 @@ export function createProjectMemory(options: ProjectMemoryOptions): ProjectMemor
       console.warn('PostgreSQL project memory requires ANVIL_MEMORY_DATABASE_URL.')
       return undefined
     }
-    return new PostgresProjectMemory(databaseUrl, embeddingOptions)
+    return new PostgresProjectMemory(databaseUrl, embeddingOptions, options.workspaceId)
   }
   if (backend === 'pglite') {
     return new PgliteProjectMemory(

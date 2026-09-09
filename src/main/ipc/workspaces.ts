@@ -16,7 +16,8 @@ export function workspaceSnapshot(store: Store): WorkspaceSnapshot {
 export function registerWorkspaceHandlers(
   ipc: RendererIpc,
   store: Store,
-  broadcast: (channel: string, payload: unknown) => void
+  broadcast: (channel: string, payload: unknown) => void,
+  rename: (workspaceId: string, name: string) => ReturnType<Store['renameWorkspace']> | Promise<ReturnType<Store['renameWorkspace']>> = (workspaceId, name) => store.renameWorkspace(workspaceId, name)
 ): void {
   ipc.handle('workspaces:list', () => store.getWorkspaces())
   ipc.handle('workspaces:snapshot', () => workspaceSnapshot(store))
@@ -25,8 +26,8 @@ export function registerWorkspaceHandlers(
     broadcast('workspaces:changed', store.getWorkspaces())
     return workspace
   })
-  ipc.handle('workspaces:rename', (_event, { workspaceId, name }) => {
-    const workspace = store.renameWorkspace(workspaceId, name)
+  ipc.handle('workspaces:rename', async (_event, { workspaceId, name }) => {
+    const workspace = await rename(workspaceId, name)
     broadcast('workspaces:changed', store.getWorkspaces())
     return workspace
   })
@@ -38,7 +39,7 @@ export function registerWorkspaceHandlers(
   })
   ipc.handle('workspaces:preferences:get', (_event, workspaceId) => store.getWorkspacePreferences(workspaceId))
   ipc.handle('workspaces:preferences:set', (_event, { workspaceId, patch }) => {
-    if (patch.lastProjectId && !store.getProjects().some((project) => project.id === patch.lastProjectId)) throw new Error('Project not found')
+    if (patch.lastProjectId && !store.getProjects(workspaceId).some((project) => project.id === patch.lastProjectId)) throw new Error('Project not found')
     const preferences = store.setWorkspacePreferences(patch, workspaceId)
     broadcast('workspaces:preferences:changed', { workspaceId, preferences })
     return preferences

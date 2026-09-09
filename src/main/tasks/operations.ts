@@ -32,7 +32,7 @@ export async function withTaskOperation<T>(
     : `This task is already busy with ${active.operation}`)
   const original = store.getTask(taskId)
   if (!original) throw new Error('Task not found')
-  const projectPath = store.getProjects().find((project) => project.id === original.projectId)?.path
+  const projectPath = store.getProjects(original.workspaceId).find((project) => project.id === original.projectId)?.path
   const reservation = { operation, cancelled: false }
   entries.set(taskId, reservation)
   const check = (expected = original): Task => {
@@ -43,7 +43,7 @@ export async function withTaskOperation<T>(
     const keys = ['workspaceId', 'startedAt', 'projectId', 'agentId', 'branchName', 'baseCommit', 'headCommit',
       'status', 'deliveryStatus', 'settledAt', 'cwd'] as const
     if (keys.some((key) => task[key] !== expected[key]) ||
-      store.getProjects().find((project) => project.id === task.projectId)?.path !== projectPath) {
+      store.getProjects(task?.workspaceId).find((project) => project.id === task.projectId)?.path !== projectPath) {
       throw new Error('Task changed while the operation was waiting. Try again.')
     }
     return task

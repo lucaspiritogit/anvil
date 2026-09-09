@@ -11,10 +11,13 @@ export function availableSettings(settings: Settings): Settings {
   return { ...settings, defaultAgentId: fallback.id, defaultModel: fallback.defaultModel ?? '' }
 }
 
-export function registerSettingsHandlers(ipc: RendererIpc, store: Store, wallpapers: WallpaperLibrary, changed: (change: WorkspaceSettingsChange) => void = () => {}): void {
-  ipc.handle('wallpapers:directory', () => wallpapers.directory)
-  ipc.handle('wallpapers:list', () => wallpapers.list())
-  ipc.handle('wallpapers:read', (_event, id) => wallpapers.read(id))
+export function registerSettingsHandlers(ipc: RendererIpc, store: Store, wallpapers: WallpaperLibrary | ((workspaceId: string) => WallpaperLibrary), changed: (change: WorkspaceSettingsChange) => void = () => {}): void {
+  const library = (workspaceId?: string): WallpaperLibrary => typeof wallpapers === 'function'
+    ? wallpapers(workspaceId ?? store.getActiveWorkspace().id) : wallpapers
+  ipc.handle('wallpapers:directory', (_event, workspaceId) => library(workspaceId).directory)
+  ipc.handle('wallpapers:list', (_event, workspaceId) => library(workspaceId).list())
+  ipc.handle('wallpapers:read', (_event, input) => typeof input === 'string'
+    ? library().read(input) : library(input.workspaceId).read(input.id))
   ipc.handle('settings:get', (_event, workspaceId) => availableSettings(store.getSettings(workspaceId)))
   ipc.handle('settings:set', (_event, { workspaceId, patch }) => {
     if (patch.defaultAgentId !== undefined && !getAgent(patch.defaultAgentId)) throw new Error('Unknown agent')

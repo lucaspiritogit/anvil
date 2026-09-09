@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { realpathSync } from 'node:fs'
-import { isAbsolute, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { validateWorkspaceFolderName } from '../workspace-directories'
 import { IssueTracker } from './tracker'
 
 /** Existing storage only. No Store recovery, migration, import, or image cleanup. */
@@ -10,6 +11,15 @@ export function openCliTracker(projectPath: string, databasePath = process.env.A
   }
   const connection = new Database(databasePath, { fileMustExist: true })
   try {
+    const registry = connection.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_state'").get()
+    if (registry && connection.prepare("SELECT 1 FROM app_state WHERE key = 'workspaceStorageVersion'").get()) {
+      const workspace = connection.prepare(`SELECT name FROM workspaces WHERE id =
+        COALESCE((SELECT value FROM app_state WHERE key = 'activeWorkspaceId'), 'default')`).get() as { name: string } | undefined
+      if (!workspace) throw new Error('Selected workspace not found')
+      validateWorkspaceFolderName(workspace.name)
+      connection.close()
+      return openCliTracker(projectPath, join(dirname(databasePath), 'workspaces', workspace.name, 'anvil.db'))
+    }
     const canonical = realpathSync(resolve(projectPath))
     const projects = connection.prepare('SELECT id, path FROM projects').all() as { id: string; path: string }[]
     const matches = projects.filter((project) => {
@@ -21,7 +31,7 @@ export function openCliTracker(projectPath: string, databasePath = process.env.A
     }
     return new IssueTracker(connection, matches[0].id, 'owned')
   } catch (error) {
-    connection.close()
+    if (connection.open) connection.close()
     throw error
   }
 }

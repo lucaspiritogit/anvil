@@ -103,9 +103,11 @@ const stringRecord: Check<Record<string, string>> = (value, field) => {
 const composer = object({ agentId: text(128, false), modelsByAgent: stringRecord, reasoningByAgentModel: stringRecord })
 
 const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
-  'wallpapers:directory': none,
-  'wallpapers:list': none,
-  'wallpapers:read': text(255, true, WALLPAPER_ID_PATTERN),
+  'wallpapers:directory': optional(workspaceId),
+  'wallpapers:list': optional(workspaceId),
+  'wallpapers:read': (value, field) => typeof value === 'string'
+    ? text(255, true, WALLPAPER_ID_PATTERN)(value, field)
+    : object({ workspaceId, id: text(255, true, WALLPAPER_ID_PATTERN) })(value, field),
   'workspaces:list': none,
   'workspaces:snapshot': none,
   'workspaces:create': workspaceName,

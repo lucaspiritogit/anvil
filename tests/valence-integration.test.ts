@@ -139,7 +139,7 @@ test.each(['missing', 'changed'] as const)('recovers embedded plans with %s stan
   const receipt = connection.prepare('SELECT * FROM valence_imports').all()
   store.close()
 
-  const reopened = new Store(tracker.databasePath, { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') })
+  const reopened = new Store(join(testHome, '.anvil-composer/anvil.db'), { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') })
   onTestCleanup(() => reopened.close())
   const recovered = new TaskIssues(reopened)
   expect(recovered.snapshot(taskId)?.children[0].id).toBe(child.id)

@@ -23,7 +23,7 @@ export function createTaskCompletion(
     if (task && status === 'pending') {
       recordSystemEvent(task.id, `Task paused: ${info.error ?? 'Agent failed.'}`, 'delivery', 'error')
     }
-    const project = store.getProjects().find((item) => item.id === task?.projectId)
+    const project = store.getProjects(task?.workspaceId).find((item) => item.id === task?.projectId)
     if (!project || !task) return
     if (!managed || !task.baseCommit) {
       await rememberCompletedTask(task, project.path)

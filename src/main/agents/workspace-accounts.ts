@@ -82,6 +82,14 @@ export class WorkspaceAccounts {
   private closed = false
   private closing?: Promise<void>
   private readonly reads = new Map<string, Promise<WorkspaceAgentAccount>>()
+  private readonly paused = new Set<string>()
+
+  async pauseWorkspace(workspaceId: string): Promise<() => void> {
+    this.paused.add(workspaceId)
+    const reads = [...this.reads].filter(([key]) => JSON.parse(key)[0] === workspaceId).map(([, read]) => read)
+    await Promise.allSettled(reads)
+    return () => { this.paused.delete(workspaceId) }
+  }
 
   constructor(private readonly store: Pick<Store, 'getWorkspaceDirectory' | 'getWorkspaces'>, private readonly dependencies: AccountDependencies) {
     this.terminals = new TerminalManager({
@@ -99,6 +107,7 @@ export class WorkspaceAccounts {
 
   private workspace(target: AgentAccountTarget): WorkspaceExecutionContext {
     if (this.closed) throw new Error('Account management is shutting down')
+    if (this.paused.has(target.workspaceId)) throw new Error('Workspace is being renamed. Retry shortly.')
     if (!this.store.getWorkspaces().some((workspace) => workspace.id === target.workspaceId)) throw new Error('Workspace not found')
     return resolveWorkspaceExecution(this.store, target.workspaceId)
   }

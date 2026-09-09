@@ -8,7 +8,7 @@ import type { Store } from '../src/main/store'
 export function taskState(store: Store, taskId: string) {
   const state = store.getTaskExecution(taskId)
   if (!state) return undefined
-  const tracker = store.issueTracker(store.getTask(taskId)!.projectId)
+  const tracker = store.issueTracker(store.getTask(taskId)!.projectId, store.getTask(taskId)!.workspaceId)
   try {
     return { ...state, items: state.issueIds.map((id) => tracker.get(id)) }
   } finally {
@@ -17,7 +17,7 @@ export function taskState(store: Store, taskId: string) {
 }
 
 /** Agent-side connection: never constructs Store or runs startup recovery. */
-export function openTaskTracker(projectPath: string, databasePath = join(testHome, '.anvil-composer/anvil.db')): IssueTracker {
+export function openTaskTracker(projectPath: string, databasePath = join(testHome, '.anvil-composer/workspaces/Default/anvil.db')): IssueTracker {
   const connection = new Database(databasePath, { fileMustExist: true })
   try {
     const project = connection.prepare('SELECT id FROM projects WHERE path = ?').get(projectPath) as { id: string } | undefined

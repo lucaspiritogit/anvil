@@ -19,7 +19,7 @@ export async function run(): Promise<void> {
     const path = join(home, 'anvil.db')
     const store = new Store(path, { migrationsFolder: resolve('src/main/db/migrations') })
     onTestCleanup(() => store.close())
-    const db = new Database(path)
+    const db = new Database(store.getWorkspaceDatabasePath('default'))
     onTestCleanup(() => { db.close() })
     db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, 1)').run('project', 'Project', project)
     db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, 1)').run('other', 'Other', worktree)
@@ -53,7 +53,7 @@ export async function run(): Promise<void> {
       assert.ok(JSON.parse(result.stderr).error)
     }
     assert.ok(cli('--help').help.includes('--anvil-task-id'))
-    assert.equal(cli('status').database, path)
+    assert.equal(cli('status').database, store.getWorkspaceDatabasePath('default'))
     assert.equal(cli('init').initialized, true)
     fail('init', '--local')
     fail('init', '--config')
@@ -113,7 +113,7 @@ export async function run(): Promise<void> {
       assert.equal(result.status, command === '--help' ? 0 : 1)
       assert.equal(existsSync(missing), false)
     }
-    const otherPath = join(home, 'other-profile.db')
+    const otherPath = join(home, 'other-profile', 'anvil.db')
     const otherStore = new Store(otherPath, { migrationsFolder: resolve('src/main/db/migrations') })
     onTestCleanup(() => otherStore.close())
     const mismatch = spawnSync(process.execPath, [cliPath, '--project', project, 'status', '--json'], {

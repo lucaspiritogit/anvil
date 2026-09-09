@@ -17,7 +17,22 @@ const MAX_OUTPUT_BYTES = 32 * 1024 * 1024
 const cache = new Map<string, ProviderModelList>()
 const generations = new Map<string, number>()
 const discoveries = new Map<AbortController, Promise<ProviderModelList>>()
+const discoveryWorkspaces = new Map<AbortController, string>()
+const pausedWorkspaces = new Set<string>()
 let closing = false
+
+export async function pauseWorkspaceModelDiscovery(workspaceId: string): Promise<() => void> {
+  pausedWorkspaces.add(workspaceId)
+  const pending: Promise<ProviderModelList>[] = []
+  for (const [controller, discovery] of discoveries) {
+    if (discoveryWorkspaces.get(controller) !== workspaceId) continue
+    controller.abort()
+    pending.push(discovery)
+  }
+  await Promise.allSettled(pending)
+  invalidateWorkspaceModels(workspaceId)
+  return () => { pausedWorkspaces.delete(workspaceId) }
+}
 
 export async function closeModelDiscovery(): Promise<void> {
   closing = true
@@ -75,8 +90,13 @@ async function fromCommand(source: Extract<ModelSource, { kind: 'command' }>, wo
  */
 export function listModels(agent: AgentDefinition, workspace: WorkspaceExecutionContext): Promise<ProviderModelList> {
   if (closing) return Promise.resolve({ agentId: agent.id, models: [], error: 'Model discovery is shutting down' })
+  if (pausedWorkspaces.has(workspace.workspaceId)) return Promise.resolve({ agentId: agent.id, models: [], error: 'Workspace is being renamed. Retry shortly.' })
   const controller = new AbortController()
-  const discovery = discoverModels(agent, workspace, controller.signal).finally(() => discoveries.delete(controller))
+  const discovery = discoverModels(agent, workspace, controller.signal).finally(() => {
+    discoveries.delete(controller)
+    discoveryWorkspaces.delete(controller)
+  })
+  discoveryWorkspaces.set(controller, workspace.workspaceId)
   discoveries.set(controller, discovery)
   return discovery
 }

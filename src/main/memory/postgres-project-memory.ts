@@ -17,7 +17,7 @@ export class PostgresProjectMemory extends EmbeddingProjectMemory {
   private readonly pool: Pool
   private readonly db: NodePgDatabase<typeof schema>
 
-  constructor(databaseUrl: string, embeddingOptions: EmbeddingOptions) {
+  constructor(databaseUrl: string, embeddingOptions: EmbeddingOptions, private readonly workspaceId = 'default') {
     super(embeddingOptions)
     this.pool = new Pool({ connectionString: databaseUrl, max: 4 })
     this.db = drizzle(this.pool, { schema })
@@ -39,10 +39,14 @@ export class PostgresProjectMemory extends EmbeddingProjectMemory {
     }
   }
 
+  private projectKey(projectId: string): string {
+    return this.workspaceId === 'default' ? projectId : `${this.workspaceId}:${projectId}`
+  }
+
   protected async upsert(memory: IndexedProjectMemory): Promise<void> {
     await this.db
       .insert(projectMemories)
-      .values({ id: randomUUID(), kind: 'task_result', ...memory })
+      .values({ id: randomUUID(), kind: 'task_result', ...memory, projectId: this.projectKey(memory.projectId) })
       .onConflictDoUpdate({
         target: [projectMemories.projectId, projectMemories.sourceTaskId],
         set: {
@@ -66,7 +70,7 @@ export class PostgresProjectMemory extends EmbeddingProjectMemory {
       .select({ content: projectMemories.content, similarity })
       .from(projectMemories)
       .where(and(
-        eq(projectMemories.projectId, projectId),
+        eq(projectMemories.projectId, this.projectKey(projectId)),
         sql`${projectMemories.metadata}->>'embeddingModel' = ${this.embeddingModelId}`,
         gt(similarity, 0.5)
       ))
@@ -76,7 +80,7 @@ export class PostgresProjectMemory extends EmbeddingProjectMemory {
   }
 
   async forgetProject(projectId: string): Promise<void> {
-    await this.db.delete(projectMemories).where(eq(projectMemories.projectId, projectId))
+    await this.db.delete(projectMemories).where(eq(projectMemories.projectId, this.projectKey(projectId)))
   }
 
   async close(): Promise<void> {

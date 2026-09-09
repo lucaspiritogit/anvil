@@ -62,14 +62,15 @@ export function registerTaskHandlers(ipc: RendererIpc, {
   ipc.handle('tasks:diff', async (_event, taskId: string): Promise<TaskDiff> => {
     const task = store.getTask(taskId)
     if (!task?.baseCommit || !task.headCommit) throw new Error('This task has no delivered code')
-    const project = store.getProjects().find((item) => item.id === task.projectId)
+    const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
     return gitDelivery.getDiff(project.path, task.baseCommit, task.headCommit)
   })
 
   ipc.handle('tasks:issue-diff', async (_event, input): Promise<TaskDiff> => {
-    if (!store.getTask(input.taskId)) throw new Error('Task not found')
-    const project = store.getProjects().find((item) => item.id === store.getTask(input.taskId)!.projectId)
+    const task = store.getTask(input.taskId)
+    if (!task) throw new Error('Task not found')
+    const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
     const source = issues.issueDiffSource(input.taskId, input.issueId)
     const diff = await gitDelivery.getIssueDiff(project.path, source)
@@ -82,16 +83,16 @@ export function registerTaskHandlers(ipc: RendererIpc, {
     async (_event, input) => {
       const workspaceId = store.getActiveWorkspace().id
       if (input.workspaceId !== undefined && input.workspaceId !== workspaceId) throw new Error('Workspace changed before task creation. Retry.')
-      const workspace = resolveWorkspaceExecution(store, workspaceId)
       // Decode before task/Valence/worktree creation. Text-only calls keep their synchronous preparation.
       const images = input.images?.length ? await validateTaskImages(input.images) : undefined
-      const project = store.getProjects().find((project) => project.id === input.projectId)
+      const project = store.getProjects(workspaceId).find((project) => project.id === input.projectId)
       if (!project) throw new Error('Project not found')
 
       if (input.fileReferences?.length) {
         await validateTaskFileReferences(project.path, input.fileReferences)
-        if (!store.getProjects().some((item) => item.id === project.id && item.path === project.path)) throw new Error('Project changed')
+        if (!store.getProjects(workspaceId).some((item) => item.id === project.id && item.path === project.path)) throw new Error('Project changed')
       }
+      const workspace = resolveWorkspaceExecution(store, workspaceId)
       const taskPrompt = promptWithFileReferences(input.prompt, project.path, input.fileReferences ?? [])
       const agent = getAgent(input.agentId)
       if (!agent) throw new Error(`Unknown agent: ${input.agentId}`)

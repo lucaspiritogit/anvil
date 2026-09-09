@@ -1,3 +1,4 @@
+import { useStore } from '../state/store'
 import { useEffect, useState } from 'react'
 import type { JSX } from 'react'
 import type { Settings, Wallpaper } from '@shared/types'
@@ -7,16 +8,16 @@ import { btn, cn, field, modal } from '../ui'
 export type OverviewAppearance = Pick<Settings, 'overviewBackgroundMode' | 'overviewBackgroundColor' | 'overviewWallpaperId'>
 const PAGE_SIZE = 3
 
-function Thumbnail({ wallpaper, refresh }: { wallpaper: Wallpaper; refresh?: boolean }): JSX.Element {
+function Thumbnail({ wallpaper, refresh, workspaceId }: { wallpaper: Wallpaper; refresh?: boolean; workspaceId?: string }): JSX.Element {
   const [url, setUrl] = useState<string | null | undefined>(undefined)
   useEffect(() => {
     let cancelled = false
-    void loadWallpaper(wallpaper.id, refresh ? { refresh: true } : {}).then(
+    void loadWallpaper(wallpaper.id, { refresh, workspaceId }).then(
       (entry) => { if (!cancelled) setUrl(entry?.dataUrl ?? null) },
       () => { if (!cancelled) setUrl(null) }
     )
     return () => { cancelled = true }
-  }, [wallpaper.id, refresh])
+  }, [wallpaper.id, refresh, workspaceId])
   return url
     ? <img src={url} alt="" className="h-16 w-full object-cover" />
     : <span className="flex h-16 items-center justify-center text-xs text-dim">{url === undefined ? 'Loading…' : 'Unavailable. Refresh to retry.'}</span>
@@ -26,6 +27,8 @@ export function OverviewBackgroundPicker({ value, onChange }: {
   value: OverviewAppearance
   onChange: (value: OverviewAppearance) => void
 }): JSX.Element {
+  const workspaceId = useStore((state) => state.activeWorkspaceId) ?? undefined
+  const workspaceName = useStore((state) => state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId)?.name)
   const [library, setLibrary] = useState<Wallpaper[]>([])
   const [directory, setDirectory] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -34,16 +37,16 @@ export function OverviewBackgroundPicker({ value, onChange }: {
   const [page, setPage] = useState(0)
   useEffect(() => {
     let cancelled = false
-    void window.anvil.wallpapers.directory().then((path) => {
+    void window.anvil.wallpapers.directory(workspaceId).then((path) => {
       if (!cancelled) setDirectory(path)
     }, () => { if (!cancelled) setDirectory(null) })
     return () => { cancelled = true }
-  }, [])
+  }, [workspaceId, workspaceName])
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(false)
-    void window.anvil.wallpapers.list().then((items) => {
+    void window.anvil.wallpapers.list(workspaceId).then((items) => {
       if (cancelled) return
       setLibrary(items)
       setPage(0)
@@ -51,7 +54,7 @@ export function OverviewBackgroundPicker({ value, onChange }: {
       if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
-  }, [revision])
+  }, [revision, workspaceId])
   const pages = Math.ceil(library.length / PAGE_SIZE)
   return (
     <fieldset className={cn(modal.section, 'min-w-0')}>
@@ -90,7 +93,7 @@ export function OverviewBackgroundPicker({ value, onChange }: {
               <button key={`${revision}:${wallpaper.id}`} type="button" aria-pressed={value.overviewWallpaperId === wallpaper.id}
                 className={cn('min-w-0 overflow-hidden border p-1 text-left focus-visible:outline-2 focus-visible:outline-accent', value.overviewWallpaperId === wallpaper.id ? 'border-accent bg-accent/10' : 'border-line')}
                 onClick={() => onChange({ ...value, overviewWallpaperId: wallpaper.id })}>
-                <Thumbnail wallpaper={wallpaper} refresh={revision > 0} />
+                <Thumbnail workspaceId={workspaceId} wallpaper={wallpaper} refresh={revision > 0} />
                 <span className="block truncate text-xs" title={wallpaper.name}>{wallpaper.name}</span>
                 {value.overviewWallpaperId === wallpaper.id && <span className="text-xs text-accent">Selected</span>}
               </button>

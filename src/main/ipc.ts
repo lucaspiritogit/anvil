@@ -1,11 +1,12 @@
 import { WorkspaceAccounts } from './agents/workspace-accounts'
 import { registerAccountHandlers } from './ipc/agent-accounts'
 import { openExternalCodexLogin } from './renderer-security'
-import { invalidateWorkspaceModels, closeModelDiscovery } from './agents/models'
+import { invalidateWorkspaceModels, closeModelDiscovery, pauseWorkspaceModelDiscovery } from './agents/models'
 import { watchWorkspaceAuthChanges } from './agents/workspace-auth-changes'
 import { resolveTaskWorkspace } from './agents/workspace-execution'
 import { WallpaperLibrary } from './wallpapers'
 import { app, BrowserWindow, powerSaveBlocker } from 'electron'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerCaffeineMode } from './caffeine-mode'
 import { AgentProcessManager } from './agents/process-manager'
@@ -44,7 +45,7 @@ export function registerIpc(
   agentProcesses: AgentProcessManager
   terminals: TerminalManager
   projectMemory?: ProjectMemory
-  githubPolling: GitHubPRPolling
+  githubPolling: Pick<GitHubPRPolling, 'refreshIfStale' | 'close'>
   stopCaffeineMode(): void
   closeAgentDiscovery(): Promise<void>
   closeStore(): void
@@ -60,9 +61,24 @@ export function registerIpc(
   })
   const agentProcesses = new AgentProcessManager(undefined, undefined, undefined, (taskId) => resolveTaskWorkspace(store, taskId))
   const stopCaffeineMode = registerCaffeineMode(store, powerSaveBlocker)
-  const gitDelivery = new GitDeliveryManager(join(dataDirectory, 'worktrees'))
+  const worktreeOwners = new Map<string, string>()
+  const rememberWorktreeOwners = (): void => {
+    for (const task of store.getTasks()) worktreeOwners.set(task.id, task.workspaceId)
+  }
+  rememberWorktreeOwners()
+  const stopRememberingWorktreeOwners = store.subscribeActivity(rememberWorktreeOwners)
+  const gitDelivery = new GitDeliveryManager((taskId) => {
+    const legacyRoot = join(dataDirectory, 'worktrees')
+    if (existsSync(join(legacyRoot, taskId))) return legacyRoot
+    const task = store.getTask(taskId)
+    const workspaceId = task?.workspaceId ?? worktreeOwners.get(taskId)
+    if (!workspaceId) throw new Error('Task workspace not found')
+    worktreeOwners.set(taskId, workspaceId)
+    return join(store.getWorkspaceDirectory(workspaceId), 'worktrees')
+  })
   const projectMemory = new WorkspaceProjectMemory(store, (workspaceId, settings) => createProjectMemory({
-    dataDirectory: workspaceId === 'default' ? join(dataDirectory, 'memory') : join(store.getWorkspaceDirectory(workspaceId), 'memory'),
+    dataDirectory: join(store.getWorkspaceDirectory(workspaceId), 'memory'),
+    workspaceId,
     migrationsFolder: join(app.getAppPath(), 'src', 'main', 'memory', 'migrations'),
     settings
   }))
@@ -81,11 +97,40 @@ export function registerIpc(
   const finishTask = createTaskCompletion(context, taskEvents.recordSystemEvent, taskMemory)
   const execution = registerTaskExecution({ ...context, recordSystemEvent: taskEvents.recordSystemEvent }, finishTask)
 
-  registerSettingsHandlers(ipc, store, new WallpaperLibrary(dataDirectory), (change) => {
+  const wallpaperLibraries = new Map<string, WallpaperLibrary>()
+  registerSettingsHandlers(ipc, store, (workspaceId) => {
+    let library = wallpaperLibraries.get(workspaceId)
+    if (!library) {
+      library = new WallpaperLibrary(store.getWorkspaceDirectory(workspaceId))
+      wallpaperLibraries.set(workspaceId, library)
+    }
+    return library
+  }, (change) => {
     projectMemory.settingsChanged(change.workspaceId)
     broadcast('settings:changed', change)
   })
-  registerWorkspaceHandlers(ipc, store, broadcast)
+  registerWorkspaceHandlers(ipc, store, broadcast, async (workspaceId, name) => {
+    const release = agentProcesses.acquireAccountChange(workspaceId)
+    let resumeAccounts: (() => void) | undefined
+    let resumeModels: (() => void) | undefined
+    try {
+      resumeAccounts = await accounts.pauseWorkspace(workspaceId)
+      resumeModels = await pauseWorkspaceModelDiscovery(workspaceId)
+      await agentProcesses.invalidateWorkspaceClients(workspaceId)
+      await projectMemory.closeWorkspace(workspaceId)
+      const polling = polls.get(workspaceId)
+      polls.delete(workspaceId)
+      await polling?.close()
+      const workspace = store.renameWorkspace(workspaceId, name)
+      wallpaperLibraries.delete(workspaceId)
+      invalidateWorkspaceModels(workspaceId)
+      return workspace
+    } finally {
+      resumeModels?.()
+      resumeAccounts?.()
+      release()
+    }
+  })
   registerAgentHandlers(ipc, store)
   const accounts = new WorkspaceAccounts(store, {
     acquire: (workspaceId) => agentProcesses.acquireAccountChange(workspaceId),
@@ -103,7 +148,9 @@ export function registerIpc(
     invalidateWorkspaceModels(workspaceId)
     broadcast('agents:models:changed', workspaceId)
   })
-  registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask, terminals, projectMemory, getWindow, projectsChanged: () => broadcast('projects:changed', store.getProjects()) })
+  registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask, terminals, projectMemory, getWindow, projectsChanged: (workspaceId) => {
+    if (workspaceId === store.getActiveWorkspace().id) broadcast('projects:changed', store.getProjects(workspaceId))
+  } })
   registerTaskHandlers(ipc, {
     ...context,
     ...taskEvents,
@@ -118,17 +165,39 @@ export function registerIpc(
   }
   registerSteeringHandlers(ipc, { ...context, ...taskEvents, resumeTask: execution.resumeTask })
   registerReviewHandlers(ipc, reviewContext)
-  const credentials = new GitHubCredentials(join(dataDirectory, 'github-token.enc'))
+  const credentials = (workspaceId: string): GitHubCredentials => new GitHubCredentials(join(store.getWorkspaceDirectory(workspaceId), 'github-token.enc'))
   const githubClient = new GitHubClient()
-  const githubPolling = new GitHubPRPolling(store, credentials, githubClient, (task, merge) => {
-    taskEvents.recordSystemEvent(task.id, `GitHub merged ${merge.repository}#${merge.number} into ${merge.targetBranch}. Task approved.`)
-    send('task:updated', task)
-  }, (message) => console.warn(`GitHub PR refresh: ${message}`))
-  githubPolling.start()
+  const polls = new Map<string, GitHubPRPolling>()
+  const workspacePolling = (workspaceId: string): GitHubPRPolling => {
+    let polling = polls.get(workspaceId)
+    if (!polling) {
+      polling = new GitHubPRPolling({
+        getPullRequestsToRefresh: () => store.getPullRequestsToRefresh(workspaceId),
+        approveMergedPullRequest: (merge) => store.approveMergedPullRequest(merge, workspaceId)
+      }, credentials(workspaceId), githubClient, (task, merge) => {
+        taskEvents.recordSystemEvent(task.id, `GitHub merged ${merge.repository}#${merge.number} into ${merge.targetBranch}. Task approved.`)
+        send('task:updated', task)
+      }, (message) => console.warn(`GitHub PR refresh: ${message}`))
+      polls.set(workspaceId, polling)
+      polling.start()
+    }
+    return polling
+  }
+  const githubPolling = {
+    refreshIfStale: (): void => {
+      for (const workspace of store.getWorkspaces()) workspacePolling(workspace.id).refreshIfStale()
+    },
+    close: async (): Promise<void> => {
+      stopPollingUpdates()
+      await Promise.all([...polls.values()].map((polling) => polling.close()))
+    }
+  }
+  const stopPollingUpdates = store.subscribeActivity(() => githubPolling.refreshIfStale())
+  githubPolling.refreshIfStale()
   registerGitHubHandlers(ipc, {
     ...reviewContext, credentials, client: githubClient,
-    refreshPullRequests: () => { void githubPolling.refresh() },
-    githubCredentialsChanged: () => { void githubPolling.credentialsChanged() }
+    refreshPullRequests: (workspaceId) => { void workspacePolling(workspaceId).refresh() },
+    githubCredentialsChanged: (workspaceId) => { void workspacePolling(workspaceId).credentialsChanged() }
   })
   registerRebaseHandlers(ipc, reviewContext)
   registerTerminalHandlers(ipc, terminals, store)
@@ -137,6 +206,7 @@ export function registerIpc(
     agentProcesses, closeAgentDiscovery: async () => { await accounts.close(); await closeModelDiscovery() }, terminals, githubPolling, stopCaffeineMode,
     closeStore: () => {
       stopAuthWatcher()
+      stopRememberingWorktreeOwners()
       store.close()
     },
     ...(projectMemory ? { projectMemory } : {})

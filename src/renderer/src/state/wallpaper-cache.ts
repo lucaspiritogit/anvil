@@ -3,7 +3,7 @@ export interface WallpaperCacheEntry {
   image: HTMLImageElement
 }
 
-export type WallpaperReader = (wallpaperId: string) => Promise<string | null>
+export type WallpaperReader = (wallpaperId: string, workspaceId?: string) => Promise<string | null>
 
 interface WallpaperCacheSource {
   read: WallpaperReader
@@ -17,7 +17,7 @@ const desktopApi = (): WallpaperReader => {
 }
 
 const defaultSource: WallpaperCacheSource = {
-  read: (wallpaperId) => desktopApi()(wallpaperId)
+  read: (wallpaperId, workspaceId) => desktopApi()(wallpaperId, workspaceId)
 }
 
 const entries = new Map<string, WallpaperCacheEntry>()
@@ -36,36 +36,38 @@ const decode = (dataUrl: string): Promise<HTMLImageElement | null> =>
 /** Module-level cache so decoded wallpapers survive overview unmount/remount. */
 export function loadWallpaper(
   wallpaperId: string,
-  options: { refresh?: boolean } = {}
+  options: { refresh?: boolean; workspaceId?: string } = {}
 ): Promise<WallpaperCacheEntry | null> {
-  const cached = entries.get(wallpaperId)
+  const key = JSON.stringify([options.workspaceId ?? 'default', wallpaperId])
+  const cached = entries.get(key)
   if (cached && !options.refresh) return Promise.resolve(cached)
-  const pending = inFlight.get(wallpaperId)
+  const pending = inFlight.get(key)
   if (pending && !options.refresh) return pending
-  const request = source.read(wallpaperId)
+  const request = source.read(wallpaperId, options.workspaceId)
     .then(async (dataUrl) => {
       if (!dataUrl) {
-        entries.delete(wallpaperId)
+        entries.delete(key)
         return null
       }
       if (cached && cached.dataUrl === dataUrl) return cached
       const image = await decode(dataUrl)
       if (!image) return null
       const entry: WallpaperCacheEntry = { dataUrl, image }
-      entries.set(wallpaperId, entry)
+      entries.set(key, entry)
       return entry
     })
     .finally(() => {
-      if (inFlight.get(wallpaperId) === request) inFlight.delete(wallpaperId)
+      if (inFlight.get(key) === request) inFlight.delete(key)
     })
-  inFlight.set(wallpaperId, request)
+  inFlight.set(key, request)
   return request
 }
 
 /** Drop the cached entry so the next load re-reads and re-decodes the wallpaper. */
-export function invalidateWallpaper(wallpaperId: string): void {
-  entries.delete(wallpaperId)
-  inFlight.delete(wallpaperId)
+export function invalidateWallpaper(wallpaperId: string, workspaceId = 'default'): void {
+  const key = JSON.stringify([workspaceId, wallpaperId])
+  entries.delete(key)
+  inFlight.delete(key)
 }
 
 /** Test hook: swap the underlying reader. */

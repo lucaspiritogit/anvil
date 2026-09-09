@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, relative } from 'node:path'
+import { dirname, isAbsolute, join, relative } from 'node:path'
 import { promisify } from 'node:util'
 import { githubRepository } from './github-repository'
 import type {
@@ -128,7 +128,7 @@ function parseNumstat(output: string): Pick<FinalizedCheckout, 'filesChanged' | 
 export class GitDeliveryManager {
   private readonly repoLocks = new Map<string, Promise<void>>()
 
-  constructor(private readonly worktreesRoot: string, private readonly remoteGit: typeof git = git) {}
+  constructor(private readonly worktreesRoot: string | ((taskId: string) => string), private readonly remoteGit: typeof git = git) {}
 
   /**
    * Resolves whether a project folder is inside a Git work tree. Never throws:
@@ -186,7 +186,8 @@ export class GitDeliveryManager {
 
   private taskWorktree(taskId: string): string {
     if (!/^[a-zA-Z0-9_-]+$/.test(taskId)) throw new Error('Invalid task ID')
-    return join(this.worktreesRoot, taskId)
+    const root = typeof this.worktreesRoot === 'string' ? this.worktreesRoot : this.worktreesRoot(taskId)
+    return join(root, taskId)
   }
 
   /** Called only after deletion or settlement, once the agent has stopped. */
@@ -235,7 +236,7 @@ export class GitDeliveryManager {
       const branchName = `${slug(title)}-${taskId}`
       check()
       const worktree = this.taskWorktree(taskId)
-      await mkdir(this.worktreesRoot, { recursive: true })
+      await mkdir(dirname(this.taskWorktree(taskId)), { recursive: true })
       await git(repoRoot, ['worktree', 'add', '-b', branchName, worktree, baseCommit])
       return { cwd: await this.taskCwd(projectPath, repoRoot, worktree), baseCommit, baseBranch, branchName, initializedRepository }
     })
@@ -257,7 +258,7 @@ export class GitDeliveryManager {
           check()
           await git(repoRoot, ['checkout', baseBranch])
         }
-        await mkdir(this.worktreesRoot, { recursive: true })
+        await mkdir(dirname(this.taskWorktree(taskId)), { recursive: true })
         await git(repoRoot, ['worktree', 'prune'])
         check()
         await git(repoRoot, ['worktree', 'add', worktree, branchName])
@@ -326,7 +327,7 @@ export class GitDeliveryManager {
       }
       return worktreePath
     }
-    await mkdir(this.worktreesRoot, { recursive: true })
+    await mkdir(dirname(this.taskWorktree(taskId)), { recursive: true })
     check()
     await git(projectPath, ['worktree', 'prune'], [0, 1, 128])
     check()

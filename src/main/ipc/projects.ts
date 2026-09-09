@@ -14,7 +14,7 @@ interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDel
   terminals: TerminalManager
   projectMemory?: ProjectMemory
   getWindow(): BrowserWindow | null
-  projectsChanged?(): void
+  projectsChanged?(workspaceId: string): void
 }
 
 export function registerProjectHandlers(ipc: RendererIpc, {
@@ -34,6 +34,7 @@ export function registerProjectHandlers(ipc: RendererIpc, {
   })
 
   ipc.handle('projects:add', async () => {
+    const workspaceId = store.getActiveWorkspace().id
     const window = getWindow()
     const result = window
       ? await dialog.showOpenDialog(window, { properties: ['openDirectory'] })
@@ -52,38 +53,42 @@ export function registerProjectHandlers(ipc: RendererIpc, {
       finishOnPush: false,
       gitPlatform: 'github'
     }
-    const added = store.addProject(project)
-    projectsChanged?.()
+    const added = store.addProject(project, workspaceId)
+    projectsChanged?.(workspaceId)
     return added
   })
 
   ipc.handle('projects:remove', async (_event, id: string) => {
-    const projectTasks = store.getTasks().filter((task) => task.projectId === id)
+    const workspaceId = store.getActiveWorkspace().id
+    const memory = projectMemory && 'forWorkspace' in projectMemory
+      ? (projectMemory as import('../memory/workspace-project-memory').WorkspaceProjectMemory).forWorkspace(workspaceId) : projectMemory
+    const projectTasks = store.getTasks(workspaceId).filter((task) => task.projectId === id)
     terminals.dispose(id)
     for (const task of projectTasks) stopTask(task.id, 'Anvil project removed.')
-    store.removeProject(id)
+    store.removeProject(id, workspaceId)
     for (const task of projectTasks) {
       if (agentProcesses.isRunning(task.id)) agentProcesses.cancel(task.id)
       else void gitDelivery.releaseWorktree(task.id)
     }
-    if (projectMemory) {
+    if (memory) {
       try {
-        await projectMemory.forgetProject(id)
+        await memory.forgetProject(id)
       } catch (error) {
         console.warn(`Could not remove project memory for project ${id}:`, error)
       }
     }
-    projectsChanged?.()
-    return store.getProjects()
+    projectsChanged?.(workspaceId)
+    return store.getProjects(workspaceId)
   })
 
   ipc.handle('projects:update', (_event, input) => {
+    const workspaceId = store.getActiveWorkspace().id
     const project = store.updateProject(input.id, {
       monthlyTokenLimit: input.monthlyTokenLimit,
       monthlyCostLimitUsd: input.monthlyCostLimitUsd,
       finishOnPush: input.finishOnPush
     })
-    projectsChanged?.()
+    projectsChanged?.(workspaceId)
     return project
   })
 
@@ -112,10 +117,11 @@ export function registerProjectHandlers(ipc: RendererIpc, {
   })
 
   ipc.handle('projects:checkout', async (_event, { projectId, branchName }) => {
+    const workspaceId = store.getActiveWorkspace().id
     const project = store.getProjects().find((item) => item.id === projectId)
     if (!project) throw new Error('Project not found')
     const result = await gitDelivery.switchProjectBranch(project.path, branchName)
-    projectsChanged?.()
+    projectsChanged?.(workspaceId)
     return result
   })
 }

@@ -12,7 +12,7 @@ import type { Task } from '../src/shared/types'
 import { testHome } from './issue-tracker-doubles'
 
 function setupCaffeine() {
-  const database = join(testHome, `caffeine-${randomUUID()}.db`)
+  const database = join(testHome, `caffeine-${randomUUID()}`, 'anvil.db')
   const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
   const store = new Store(database, options)
   onTestCleanup(() => store.close())
@@ -132,6 +132,7 @@ test('sleep prevention follows running task owners across workspace selection', 
   const work = store.createWorkspace('Work')
   store.setSettings({ caffeineMode: true }, 'default')
   store.addTask(task)
+  store.addProject(store.getProjects('default')[0], work.id)
   store.selectWorkspace(work.id)
   expect(active.size).toBe(1)
   store.setSettings({ caffeineMode: false }, work.id)

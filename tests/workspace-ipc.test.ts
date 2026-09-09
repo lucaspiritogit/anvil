@@ -27,7 +27,7 @@ function call(channel: string, value?: unknown): any {
 function snapshot(): WorkspaceSnapshot { return call('workspaces:snapshot') }
 
 beforeEach(() => {
-  database = join(testHome, `workspace-ipc-${randomUUID()}.db`)
+  database = join(testHome, `workspace-ipc-${randomUUID()}`, 'anvil.db')
   store = new Store(database, options)
   onTestCleanup(() => store.close())
   broadcast.mockClear()
@@ -35,12 +35,12 @@ beforeEach(() => {
   registerWorkspaceHandlers(rendererIpc, store, broadcast)
 })
 
-test('workspace IPC validates representation and existence before mutation', () => {
+test('workspace IPC validates representation and existence before mutation', async () => {
   for (const id of ['', '../personal', '/tmp', 'DEFAULT', null, {}, 'a'.repeat(100), '00000000-0000-0000-0000-000000000000']) {
     for (const channel of ['workspaces:select', 'workspaces:preferences:get']) expect(() => call(channel, id)).toThrow()
     expect(() => call('settings:set', { workspaceId: id, patch: { fontSize: 18 } })).toThrow()
     expect(() => call('workspaces:preferences:set', { workspaceId: id, patch: { composer } })).toThrow()
-    expect(() => call('workspaces:rename', { workspaceId: id, name: 'Name' })).toThrow()
+    await expect(async () => call('workspaces:rename', { workspaceId: id, name: 'Name' })).rejects.toThrow()
   }
   expect(() => call('settings:set', { fontSize: 18 })).toThrow()
   expect(() => call('settings:set', { workspaceId: 'default', patch: { fontSize: '18' } })).toThrow()
@@ -51,7 +51,7 @@ test('workspace IPC validates representation and existence before mutation', () 
   expect(snapshot().settings.fontSize).toBe(14)
 })
 
-test('independent settings and composer choices survive selection, rename and SQLite restart', () => {
+test('independent settings and composer choices survive selection, rename and SQLite restart', async () => {
   const original = snapshot()
   const work = call('workspaces:create', ' Work ')
   const patch: Partial<Settings> = {
@@ -69,7 +69,7 @@ test('independent settings and composer choices survive selection, rename and SQ
   expect(selected.settings).toMatchObject(patch)
   expect(selected.preferences.composer).toEqual(composer)
   expect(broadcast).toHaveBeenCalledWith('workspaces:selected', selected)
-  call('workspaces:rename', { workspaceId: work.id, name: 'Office' })
+  await call('workspaces:rename', { workspaceId: work.id, name: 'Office' })
   store.close()
   store = new Store(database, options)
   expect(store.getActiveWorkspace()).toMatchObject({ id: work.id, name: 'Office' })
@@ -212,6 +212,7 @@ test('last selected projects are independent and restored with the workspace sna
   await useStore.getState().load()
   useStore.getState().selectProject('second')
   const work = store.createWorkspace('Work')
+  store.addProject(store.getProjects('default').find((project) => project.id === 'first')!, work.id)
   await useStore.getState().selectWorkspace(work.id)
   useStore.getState().selectProject('first')
   await useStore.getState().selectWorkspace('default')

@@ -14,11 +14,11 @@ export class TaskIssues {
     return this.store.transaction(() => {
       const task = this.store.getTask(taskId)
       if (!task) throw new Error('Task not found')
-      const project = this.store.getProjects().find((entry) => entry.id === task.projectId)
+      const project = this.store.getProjects(task?.workspaceId).find((entry) => entry.id === task.projectId)
       if (project?.path !== projectPath) throw new Error('Task project does not match execution project')
       const existing = this.store.getTaskExecution(taskId)
       if (existing) return this.withTracker(existing, () => existing)
-      const tracker = this.store.issueTracker(task.projectId)
+      const tracker = this.store.issueTracker(task.projectId, task.workspaceId)
       try {
         const parent = tracker.listParents().find((entry) => entry.anvilTaskId === taskId)
           ?? tracker.createParent({ anvilTaskId: taskId, title: task.title, description: task.prompt })
@@ -29,7 +29,7 @@ export class TaskIssues {
       } finally {
         tracker.close()
       }
-    })
+    }, this.store.getTask(taskId)?.workspaceId)
   }
 
   finishPlanning(taskId: string): void {
@@ -61,7 +61,7 @@ export class TaskIssues {
         }
         return issue
       })
-    })
+    }, this.store.getTask(taskId)?.workspaceId)
     if (claimed) this.ownedClaims.set(taskId, claimed.id)
     return claimed
   }
@@ -219,9 +219,9 @@ export class TaskIssues {
     return this.store.transaction(() => {
       const task = this.store.getTask(state.taskId)
       if (!task) throw new Error('Task not found')
-      const project = this.store.getProjects().find((entry) => entry.id === task.projectId)
+      const project = this.store.getProjects(task?.workspaceId).find((entry) => entry.id === task.projectId)
       if (project?.path !== state.projectPath) throw new Error('Task project does not match execution project')
-      const tracker = this.store.issueTracker(task.projectId)
+      const tracker = this.store.issueTracker(task.projectId, task.workspaceId)
       try {
         if (tracker.getParent(state.parentIssueId).anvilTaskId !== task.id) {
           throw new Error('Parent issue belongs to another task')
@@ -234,6 +234,6 @@ export class TaskIssues {
       } finally {
         tracker.close()
       }
-    })
+    }, this.store.getTask(state.taskId)?.workspaceId)
   }
 }

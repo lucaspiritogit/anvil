@@ -50,6 +50,7 @@ export function resolveWorkspaceExecution(
     if (RUNTIME_VARIABLE.test(key) && value !== undefined) environment[key] = value
   }
   Object.assign(environment, {
+    ANVIL_DATABASE_PATH: join(directory, 'anvil.db'),
     HOME: home,
     USERPROFILE: home,
     CODEX_HOME: codexHome,

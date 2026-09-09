@@ -8,7 +8,7 @@ export function internalTrackerFixture(project: string) {
   const databasePath = join(project, 'anvil.db')
   const store = new Store(databasePath, { migrationsFolder: resolve('src/main/db/migrations') })
   onTestCleanup(() => store.close())
-  const db = new Database(databasePath)
+  const db = new Database(store.getWorkspaceDatabasePath('default'))
   try {
     db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, 1)').run('project', 'Project', project)
     db.prepare(`INSERT INTO tasks (id, project_id, agent_id, agent_label, prompt, title, cwd, status, started_at)

@@ -32,11 +32,11 @@ function rawDatabase(path: string): Database.Database {
   return db
 }
 
-function addProject(store: Store, id = 'project'): void {
+function addProject(store: Store, id = 'project', workspaceId = store.getActiveWorkspace().id): void {
   store.addProject({
     id, name: id, path: `/test/${id}`, createdAt: 1, monthlyTokenLimit: null,
     monthlyCostLimitUsd: null, finishOnPush: true, gitPlatform: 'github'
-  })
+  }, workspaceId)
 }
 
 function taskInput(id: string): Omit<Task, 'workspaceId'> {
@@ -49,7 +49,7 @@ function taskInput(id: string): Omit<Task, 'workspaceId'> {
 }
 
 test('creates one Default workspace and starts new profiles with independent application defaults', () => {
-  const { open, directory, database } = fixture()
+  const { open, directory } = fixture()
   const store = open()
   const initial = store.getActiveWorkspace()
   expect(initial).toMatchObject({ id: DEFAULT_WORKSPACE_ID, name: 'Default' })
@@ -77,13 +77,14 @@ test('creates one Default workspace and starts new profiles with independent app
   expect(store.getWorkspacePreferences()).toEqual({
     composer: { agentId: '', modelsByAgent: {}, reasoningByAgentModel: {} }, lastProjectId: null
   })
-  expect(store.getProjects()).toHaveLength(1)
-  expect(store.getProjects()[0].finishOnPush).toBe(true)
-  expect(store.getWorkspaceDirectory(work.id)).toBe(join(directory, 'workspaces', work.id))
-  expect(existsSync(store.getWorkspaceDirectory(work.id)), 'Creating a profile never copies agent credentials').toBe(false)
+  expect(store.getProjects()).toEqual([])
+  expect(store.getProjects(initial.id)[0].finishOnPush).toBe(true)
+  expect(store.getWorkspaceDirectory(work.id)).toBe(join(directory, 'workspaces', work.name))
+  expect(existsSync(store.getWorkspaceDatabasePath(work.id))).toBe(true)
+  expect(existsSync(join(store.getWorkspaceDirectory(work.id), 'codex', 'auth.json'))).toBe(false)
   expect(store.getSettings(initial.id)).toEqual(custom)
   expect(store.getWorkspacePreferences(initial.id).lastProjectId).toBe('project')
-  const db = rawDatabase(database)
+  const db = rawDatabase(store.getWorkspaceDatabasePath(work.id))
   expect(db.prepare('SELECT count(*) AS count FROM workspace_settings WHERE workspace_id = ?').get(work.id))
     .toEqual({ count: Object.keys(defaults).length })
   expect(db.pragma('foreign_key_check')).toEqual([])
@@ -99,6 +100,7 @@ test('persists every settings field, composer selections and selected project in
   addProject(store)
   const initial = store.getActiveWorkspace()
   const work = store.createWorkspace('Work')
+  addProject(store, 'project', work.id)
   const workTask = store.addTask({ ...taskInput('work-task'), workspaceId: work.id })
   store.setSettings({ defaultAgentId: 'codex', caffeineMode: true }, work.id)
   store.setWorkspacePreferences({
@@ -125,7 +127,7 @@ test('persists every settings field, composer selections and selected project in
 })
 
 test('does not share mutable defaults, returned preferences or caller-owned objects', () => {
-  const { open, database } = fixture()
+  const { open } = fixture()
   const store = open()
   const work = store.createWorkspace('Work')
   const settings = store.getSettings()
@@ -138,7 +140,7 @@ test('does not share mutable defaults, returned preferences or caller-owned obje
   store.setWorkspacePreferences(preferences, work.id)
   preferences.composer.modelsByAgent.codex = 'Changed again'
   expect(store.getWorkspacePreferences(work.id).composer.modelsByAgent.codex).toBe('Mutated')
-  const db = rawDatabase(database)
+  const db = rawDatabase(store.getWorkspaceDatabasePath('default'))
   db.prepare("UPDATE workspace_settings SET value = 'broken json' WHERE key = 'keybindings'").run()
   store.getSettings().keybindings.toggleSidebar = 'Changed fallback'
   expect(store.getSettings(work.id).keybindings.toggleSidebar).toBe('Mod+B')
@@ -171,7 +173,7 @@ test('validates bounded normalized names, duplicates and unknown workspace IDs',
   expect(store.getActiveWorkspace().id).toBe(DEFAULT_WORKSPACE_ID)
 })
 
-test('renaming keeps credential paths and Default identity stable', () => {
+test('renaming moves credentials to the named folder and keeps workspace identity stable', () => {
   const { open } = fixture()
   let store = open()
   const initial = store.getActiveWorkspace()
@@ -181,14 +183,15 @@ test('renaming keeps credential paths and Default identity stable', () => {
   store.renameWorkspace(initial.id, 'Personal')
   const replacement = store.createWorkspace('Default')
   store.selectWorkspace(replacement.id)
-  expect(store.getWorkspaceDirectory(initial.id)).toBe(directory)
+  expect(store.getWorkspaceDirectory(initial.id)).toBe(join(directory, '..', 'Personal'))
   store.close()
   store = open()
   expect(store.getWorkspaces()).toHaveLength(2)
   expect(store.getActiveWorkspace()).toEqual(replacement)
   expect(store.getWorkspaces().find((entry) => entry.id === initial.id)?.name).toBe('Personal')
-  expect(readFileSync(join(directory, 'auth.json'), 'utf8')).toBe('test credential marker')
-  expect(existsSync(store.getWorkspaceDirectory(replacement.id))).toBe(false)
+  expect(readFileSync(join(store.getWorkspaceDirectory(initial.id), 'auth.json'), 'utf8')).toBe('test credential marker')
+  expect(existsSync(store.getWorkspaceDatabasePath(replacement.id))).toBe(true)
+  expect(existsSync(join(store.getWorkspaceDirectory(replacement.id), 'auth.json'))).toBe(false)
 })
 
 test('recovers missing or invalid active selections deterministically and persists the recovery', () => {
@@ -209,13 +212,14 @@ test('recovers missing or invalid active selections deterministically and persis
   expect(store.getActiveWorkspace().id).toBe(DEFAULT_WORKSPACE_ID)
 })
 
-test('enforces foreign keys, immutable task ownership and shared project selection', () => {
-  const { open, database } = fixture()
+test('enforces foreign keys, immutable task ownership and independent project selection', () => {
+  const { open } = fixture()
   const store = open()
   addProject(store)
   const defaultTask = store.addTask(taskInput('default-task'))
   const work = store.createWorkspace('Work')
   store.selectWorkspace(work.id)
+  addProject(store)
   const workTask = store.addTask(taskInput('work-task'))
   expect(defaultTask.workspaceId).toBe(DEFAULT_WORKSPACE_ID)
   expect(workTask.workspaceId).toBe(work.id)
@@ -226,7 +230,7 @@ test('enforces foreign keys, immutable task ownership and shared project selecti
   expect(() => store.updateTask(defaultTask.id, patch)).toThrow(/ownership cannot change/)
   expect(store.updateTask(defaultTask.id, { title: 'Updated' })?.workspaceId).toBe(DEFAULT_WORKSPACE_ID)
   expect(() => store.addTask({ ...taskInput('invalid'), workspaceId: 'missing' })).toThrow(/not found/)
-  const db = rawDatabase(database)
+  const db = rawDatabase(store.getWorkspaceDatabasePath(work.id))
   expect(() => db.prepare("UPDATE tasks SET workspace_id = 'missing' WHERE id = ?").run(workTask.id)).toThrow(/FOREIGN KEY/)
   expect(() => db.prepare('UPDATE tasks SET workspace_id = NULL WHERE id = ?').run(workTask.id)).toThrow(/NOT NULL/)
   expect(() => db.prepare('DELETE FROM workspaces WHERE id = ?').run(work.id)).toThrow(/FOREIGN KEY/)
@@ -237,9 +241,9 @@ test('enforces foreign keys, immutable task ownership and shared project selecti
   store.setWorkspacePreferences({ lastProjectId: 'project' }, DEFAULT_WORKSPACE_ID)
   store.removeProject('project')
   expect(store.getWorkspacePreferences().lastProjectId).toBe(null)
-  expect(store.getWorkspacePreferences(DEFAULT_WORKSPACE_ID).lastProjectId).toBe(null)
+  expect(store.getWorkspacePreferences(DEFAULT_WORKSPACE_ID).lastProjectId).toBe('project')
   expect(store.getWorkspaces()).toHaveLength(2)
-  expect(store.getTasks()).toEqual([])
+  expect(store.getTasks().map((task) => task.id)).toEqual([defaultTask.id])
   expect(db.pragma('foreign_key_check')).toEqual([])
 })
 
@@ -272,9 +276,11 @@ test('upgrades a legacy database twice without losing settings, sessions, execut
     expect(store.getWorkspaces()).toHaveLength(1)
     expect(store.getActiveWorkspace().id).toBe(DEFAULT_WORKSPACE_ID)
     expect(store.getSettings()).toMatchObject({ defaultAgentId: 'codex', caffeineMode: true, fontSize: 18 })
-    expect(db.prepare('SELECT * FROM tasks').get()).toEqual({ ...originalTask, workspace_id: DEFAULT_WORKSPACE_ID })
+    const workspaceDb = rawDatabase(store.getWorkspaceDatabasePath('default'))
+    expect(db.prepare('SELECT * FROM tasks').all()).toEqual([])
+    expect(workspaceDb.prepare('SELECT * FROM tasks').get()).toEqual({ ...originalTask, workspace_id: DEFAULT_WORKSPACE_ID })
     expect(store.getTaskExecution('task')).toEqual(state)
-    expect(tables.map((table) => db.prepare(`SELECT * FROM ${table}`).all())).toEqual(preserved)
+    expect(tables.map((table) => workspaceDb.prepare(`SELECT * FROM ${table}`).all())).toEqual(preserved)
     expect(store.issueTracker('project').list().map((issue) => issue.id)).toEqual(['first', 'second'])
     expect(db.pragma('foreign_key_check')).toEqual([])
     store.close()

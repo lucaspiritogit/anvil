@@ -25,7 +25,7 @@ export function registerReviewHandlers(ipc: RendererIpc, {
     if (!task) throw new Error('Task not found')
     if (task.deliveryStatus !== 'reviewable') throw new Error('This task is not awaiting review')
     if (!task.branchName) throw new Error('This task has no branch to merge')
-    const project = store.getProjects().find((item) => item.id === task.projectId)
+    const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
     return { project, branchName: task.branchName }
   }

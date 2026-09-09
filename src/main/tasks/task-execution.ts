@@ -31,7 +31,7 @@ export function registerTaskExecution(
     const saved = store.transaction(() => {
       const state = issues.initialize(taskId, projectPath)
       return store.saveTaskExecution({ ...state, ...settings })
-    })
+    }, store.getTask(taskId)?.workspaceId)
     notify(taskId)
     return saved
   }
@@ -56,7 +56,7 @@ export function registerTaskExecution(
       const task = store.getTask(taskId)
       const state = store.getTaskExecution(taskId)
       if (!task || task.status !== 'running' || state?.phase !== 'working') return
-      const project = store.getProjects().find((entry) => entry.id === task.projectId)
+      const project = store.getProjects(task?.workspaceId).find((entry) => entry.id === task.projectId)
       if (!project) throw new Error('Project not found')
       const agent = getAgent(task.agentId)
       if (!agent) throw new Error('Agent not found')

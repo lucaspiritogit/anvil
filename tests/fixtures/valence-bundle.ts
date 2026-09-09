@@ -75,14 +75,14 @@ export async function run(): Promise<void> {
     assert.equal(run('--project', project, 'status', '--json').status, 1)
     assert.equal(existsSync(databasePath), false, 'Status must not create storage')
     const store = new Store(databasePath, { migrationsFolder: join(archive, 'src/main/db/migrations') })
-    const db = new Database(databasePath)
+    const db = new Database(store.getWorkspaceDatabasePath('default'))
     db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, 1)').run('project', 'Project', project)
     for (const id of ['task', 'other']) db.prepare(`INSERT INTO tasks
       (id, project_id, agent_id, agent_label, prompt, title, cwd, status, started_at)
       VALUES (?, 'project', 'codex', 'Codex', 'Prompt', 'Title', ?, 'running', 1)`).run(id, project)
     const tracker = store.issueTracker('project')
     try {
-      assert.equal(cli('init').database, databasePath)
+      assert.equal(cli('init').database, store.getWorkspaceDatabasePath('default'))
       assert.equal(cli('status').initialized, true)
       await writeFile(join(worktree, 'issue.json'), JSON.stringify({
         parentId: cli('parent', 'create', 'Bundled task', '--anvil-task-id', 'task').id, title: "Agent's bundled CLI issue", description: 'Use the original tracker',

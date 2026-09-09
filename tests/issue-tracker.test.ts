@@ -13,7 +13,8 @@ test('schedules dependencies and priorities sequentially and retains final task 
   const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
   const database = join(testHome, '.anvil-composer/anvil.db')
   const store = new Store(database, options)
-  const cli = await taskCli(database, testHome)
+  const workspaceDatabase = store.getWorkspaceDatabasePath('default')
+  const cli = await taskCli(workspaceDatabase, testHome)
   store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
   const { agentProcesses: processes } = registerTestIpc()
   const agentProcesses = processes as unknown as AgentProcessManager
@@ -39,8 +40,8 @@ test('schedules dependencies and priorities sequentially and retains final task 
 
   const taskId = await start('Build a feature')
   const tracker = store.issueTracker('project')
-  expect(tracker.databasePath).toBe(database)
-  expect(cli('status')).toMatchObject({ database })
+  expect(tracker.databasePath).toBe(workspaceDatabase)
+  expect(cli('status')).toMatchObject({ database: workspaceDatabase })
   expect(tracker.getParent(store.getTaskExecution(taskId)!.parentIssueId).anvilTaskId).toBe(taskId)
   expect(existsSync(join(testHome, '.valence')), 'Starting a task must not create project-local storage').toBe(false)
   expect(agentProcesses.starts[0].prompt).toMatch(/Leave the finished plan queued/)

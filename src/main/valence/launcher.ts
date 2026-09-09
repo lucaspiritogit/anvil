@@ -13,12 +13,13 @@ export function installValenceLauncher(directory: string, executable: string, cl
   const shellCliPath = process.platform === 'win32' ? cliPath.replaceAll('\\', '/') : cliPath
   writeFileSync(join(directory, 'vl'), [
     '#!/bin/sh',
-    `ANVIL_DATABASE_PATH=${shellQuote(databasePath)} ELECTRON_RUN_AS_NODE=1 exec ${shellQuote(shellExecutable)} ${shellQuote(shellCliPath)} "$@"`,
+    `if [ -z "\${ANVIL_DATABASE_PATH:-}" ]; then export ANVIL_DATABASE_PATH=${shellQuote(databasePath)}; fi`,
+    `ELECTRON_RUN_AS_NODE=1 exec ${shellQuote(shellExecutable)} ${shellQuote(shellCliPath)} "$@"`,
     ''
   ].join('\n'), { mode: 0o755 })
   writeFileSync(join(directory, 'vl.cmd'), [
     '@echo off', 'setlocal DisableDelayedExpansion', 'set "ELECTRON_RUN_AS_NODE=1"',
-    `set "ANVIL_DATABASE_PATH=${databasePath.replaceAll('%', '%%')}"`,
+    `if not defined ANVIL_DATABASE_PATH set "ANVIL_DATABASE_PATH=${databasePath.replaceAll('%', '%%')}"`,
     `"${executable.replaceAll('%', '%%')}" "${cliPath.replaceAll('%', '%%')}" %*`,
     'exit /b %errorlevel%', ''
   ].join('\r\n'))

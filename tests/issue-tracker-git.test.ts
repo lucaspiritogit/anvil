@@ -144,7 +144,7 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
   }
-  const delivery = new GitDeliveryManager(join(testHome, '.anvil-composer', 'worktrees'))
+  const delivery = new GitDeliveryManager(join(store.getWorkspaceDirectory('default'), 'worktrees'))
 
   const task = await call('tasks:start', { projectId: 'issue-ranges', agentId: 'codex', prompt: 'Two reviewed files' })
   expect(task.status, task.error).toBe('running')
@@ -201,7 +201,7 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   expect(secondDiff?.patch).not.toMatch(/first\.txt/)
   expect(secondDiff?.commits.map(({ subject }) => subject).sort()).toEqual(['feat: second attempt', 'fix: second rework'])
 
-  const connection = new Database(database, { fileMustExist: true })
+  const connection = new Database(store.getWorkspaceDatabasePath('default'), { fileMustExist: true })
   try {
     connection.prepare('UPDATE issues SET base_commit = NULL, head_commit = NULL WHERE id = ?').run(first.id)
   } finally {

@@ -24,7 +24,7 @@ import { GitDeliveryManager, testHome } from './issue-tracker-doubles'
 import { onTestCleanup } from './test-cleanup'
 
 function fixture(): { store: Store; work: string; personal: string; task: Task; database: string } {
-  const database = join(testHome, `${randomUUID()}.db`)
+  const database = join(testHome, randomUUID(), 'anvil.db')
   const store = new Store(database, { migrationsFolder: resolve('src/main/db/migrations') })
   onTestCleanup(() => store.close())
   const work = store.createWorkspace('Work').id
@@ -54,7 +54,7 @@ test('captures immutable profiles without inheriting provider credentials or glo
   inherited.OPENAI_API_KEY = 'changed-secret'
   expect(context.workspaceId).toBe(work)
   expect(context.environment).toMatchObject({ PATH: '/runtime/bin', HTTPS_PROXY: 'http://proxy:8080',
-    LANG: 'en_US.UTF-8', ANVIL_DATABASE_PATH: '/anvil.db', HOME: context.home, CODEX_HOME: context.codexHome })
+    LANG: 'en_US.UTF-8', ANVIL_DATABASE_PATH: store.getWorkspaceDatabasePath(work), HOME: context.home, CODEX_HOME: context.codexHome })
   for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AWS_PROFILE', 'AWS_ACCESS_KEY_ID',
     'GOOGLE_APPLICATION_CREDENTIALS', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_CONTENT', 'NODE_OPTIONS', 'GIT_CONFIG_GLOBAL']) {
     expect(context.environment[key], key).toBeUndefined()
@@ -100,6 +100,7 @@ test('keeps concurrent Work and Personal turns, steering and metadata on their o
   const agent = getAgent('codex')!
   const workspace = resolveTaskWorkspace(store, task.id)
   manager.start({ workspace, taskId: task.id, agent, cwd: testHome, prompt: 'Work' })
+  store.addProject(store.getProjects(work)[0], personal)
   store.selectWorkspace(personal)
   const personalTask = store.addTask({ ...task, id: 'personal-task', workspaceId: personal })
   manager.start({ workspace: resolveTaskWorkspace(store, personalTask.id), taskId: personalTask.id, agent, cwd: testHome, prompt: 'Personal' })

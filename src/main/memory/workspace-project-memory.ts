@@ -28,6 +28,12 @@ export class WorkspaceProjectMemory implements ProjectMemory {
     this.adapters.get(workspaceId)?.settingsChanged()
   }
 
+  async closeWorkspace(workspaceId: string): Promise<void> {
+    const adapter = this.adapters.get(workspaceId)
+    this.adapters.delete(workspaceId)
+    await adapter?.close()
+  }
+
   async connect(): Promise<void> {}
 
   recall(projectId: string, query: string, limit?: number): Promise<ProjectMemoryMatch[]> {
@@ -39,7 +45,7 @@ export class WorkspaceProjectMemory implements ProjectMemory {
   }
 
   async forgetProject(projectId: string): Promise<void> {
-    for (const workspace of this.store.getWorkspaces()) await this.forWorkspace(workspace.id).forgetProject(projectId)
+    await this.forWorkspace(this.store.getActiveWorkspace().id).forgetProject(projectId)
   }
 
   async close(): Promise<void> {

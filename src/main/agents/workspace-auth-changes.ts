@@ -13,8 +13,9 @@ export function watchWorkspaceAuthChanges(
     if (!filename) return
     const path = filename.toString()
     if (!['auth.json', 'config.toml', 'opencode.json', 'opencode.jsonc'].includes(basename(path))) return
-    const workspaceId = path.split(/[\\/]/)[0]
-    if (store.getWorkspaces().some((workspace) => workspace.id === workspaceId)) changed(workspaceId)
+    const folderName = path.split(/[\\/]/)[0]
+    const workspace = store.getWorkspaces().find((workspace) => workspace.name === folderName)
+    if (workspace) changed(workspace.id)
   })
   watcher.on('error', (error) => console.warn('Could not watch workspace authentication changes:', error.message))
   return () => watcher.close()

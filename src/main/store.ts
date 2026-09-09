@@ -1,11 +1,14 @@
 import { IssueTracker } from './valence/tracker'
 import Database from 'better-sqlite3'
+import { WorkspaceStorage, type WorkspaceConnection } from './workspace-storage'
+import { moveWorkspaceDirectory, validateWorkspaceFolderName } from './workspace-directories'
 import { TaskImageStorage } from './task-image-storage'
 import type { PullRequestMerged } from '../shared/github-pull-request-state'
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH } from '../shared/types'
@@ -181,8 +184,10 @@ export interface StoreOptions {
 
 export class Store {
   private readonly dataDirectory: string
+  private readonly temporaryDirectory: boolean
   private readonly sqlite: Database.Database
   private readonly db: BetterSQLite3Database<typeof schema>
+  private readonly storage: WorkspaceStorage
   private readonly activityListeners = new Set<() => void>()
 
   /** Observe task membership/status and the setting that controls keeping tasks awake. */
@@ -196,17 +201,19 @@ export class Store {
   }
 
   hasRunningTasks(workspaceId?: string): boolean {
-    return this.db.select({ id: tasks.id }).from(tasks).where(and(
-      eq(tasks.status, 'running'),
-      workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId)
-    )).limit(1).get() !== undefined
+    return this.getTasks(workspaceId).some((task) => task.status === 'running')
   }
 
   readonly taskImages: TaskImageStorage
 
   constructor(databaseFile: string, options: StoreOptions) {
-    this.dataDirectory = dirname(databaseFile)
-    this.taskImages = new TaskImageStorage(`${databaseFile}.images`)
+    this.temporaryDirectory = databaseFile === ':memory:'
+    this.dataDirectory = this.temporaryDirectory ? mkdtempSync(join(tmpdir(), 'anvil-store-')) : dirname(databaseFile)
+    this.taskImages = new TaskImageStorage((taskId) => {
+      const task = this.getTask(taskId)
+      const workspaceId = task?.workspaceId ?? this.getActiveWorkspace().id
+      return join(this.getWorkspaceDirectory(workspaceId), 'anvil.db.images')
+    })
     mkdirSync(dirname(databaseFile), { recursive: true })
     this.sqlite = new Database(databaseFile)
     this.sqlite.pragma('journal_mode = WAL')
@@ -222,10 +229,32 @@ export class Store {
     }
 
     this.bootstrapWorkspaces()
+    const migrateDirectories = !this.db.select().from(appState).where(eq(appState.key, 'workspaceDirectoryVersion')).get()
+    if (migrateDirectories) {
+      for (const workspace of this.getWorkspaces()) {
+        if (!/^(default|[0-9a-f-]{36})$/.test(workspace.id)) throw new Error('Invalid legacy workspace directory ID')
+        const previous = join(this.dataDirectory, 'workspaces', workspace.id)
+        const directory = this.getWorkspaceDirectory(workspace.id)
+        moveWorkspaceDirectory(previous, directory)
+        this.relocateTaskPaths(this.sqlite, previous, directory)
+      }
+    }
+    this.storage = new WorkspaceStorage(this.sqlite, this.dataDirectory, options.migrationsFolder, (id) => this.getWorkspaceDirectory(id))
+    this.storage.initialize()
+    for (const workspace of this.getWorkspaces()) {
+      const connection = this.storage.open(workspace.id)
+      this.seedWorkspace(workspace.id, connection.db)
+      if (migrateDirectories) this.relocateTaskPaths(connection.sqlite, join(this.dataDirectory, 'workspaces', workspace.id), this.getWorkspaceDirectory(workspace.id))
+    }
+    this.db.insert(appState).values({ key: 'workspaceDirectoryVersion', value: '1' }).onConflictDoNothing().run()
     this.recoverInterruptedTasks()
-    this.taskImages.prune(new Set(this.getTasks().filter((task) => task.status !== 'cancelled' && task.deliveryStatus !== 'failed').map((task) => task.id)))
+    for (const workspace of this.getWorkspaces()) {
+      new TaskImageStorage(join(this.getWorkspaceDirectory(workspace.id), 'anvil.db.images')).prune(
+        new Set(this.getTasks(workspace.id).filter((task) => task.status !== 'cancelled' && task.deliveryStatus !== 'failed').map((task) => task.id))
+      )
+    }
     // Restart stops Anvil execution, not other clients sharing Valence storage.
-    for (const row of this.db.select().from(schema.taskExecutions).all()) {
+    for (const row of this.getWorkspaces().flatMap((workspace) => this.storage.open(workspace.id).db.select().from(schema.taskExecutions).all())) {
       if (row.state.phase === 'planning' || row.state.phase === 'working' || row.state.phase === 'recovering') {
         this.saveTaskExecution({ ...row.state, phase: 'blocked', error: 'Interrupted by app restart. Inspect Valence work before requeueing.' })
       }
@@ -247,16 +276,18 @@ export class Store {
           }))).onConflictDoNothing().run()
         }
       }
-      for (const workspace of this.getWorkspaces()) this.seedWorkspace(workspace.id)
+      if (!this.db.select().from(appState).where(eq(appState.key, 'workspaceStorageVersion')).get()) {
+        for (const workspace of this.getWorkspaces()) this.seedWorkspace(workspace.id, this.db)
+      }
       this.getActiveWorkspace()
     })
   }
 
-  private seedWorkspace(workspaceId: string): void {
-    this.db.insert(settings).values(
+  private seedWorkspace(workspaceId: string, db: BetterSQLite3Database<typeof schema>): void {
+    db.insert(settings).values(
       SETTING_KEYS.map((key) => ({ workspaceId, key, value: encodeSetting(key, DEFAULT_SETTINGS[key]) }))
     ).onConflictDoNothing().run()
-    this.db.insert(workspacePreferences).values({
+    db.insert(workspacePreferences).values({
       workspaceId,
       composer: { agentId: '', modelsByAgent: {}, reasoningByAgentModel: {} },
       lastProjectId: null
@@ -280,6 +311,7 @@ export class Store {
     if (!name || name.length > MAX_WORKSPACE_NAME_LENGTH || /[\p{Cc}\p{Cf}]/u.test(value)) {
       throw new Error(`Workspace name must contain 1 to ${MAX_WORKSPACE_NAME_LENGTH} characters without control characters`)
     }
+    validateWorkspaceFolderName(name)
     return { name, nameKey: name.toLowerCase() }
   }
 
@@ -289,9 +321,10 @@ export class Store {
       if (this.db.select().from(workspaces).where(eq(workspaces.nameKey, normalized.nameKey)).get()) {
         throw new Error('A workspace with that name already exists')
       }
+      if (existsSync(join(this.dataDirectory, 'workspaces', normalized.name))) throw new Error('The workspace destination folder already exists')
       const workspace = { id: randomUUID(), name: normalized.name, createdAt: Date.now() }
       this.db.insert(workspaces).values({ ...workspace, nameKey: normalized.nameKey }).run()
-      this.seedWorkspace(workspace.id)
+      this.seedWorkspace(workspace.id, this.storage.open(workspace.id).db)
       return workspace
     })
   }
@@ -301,8 +334,20 @@ export class Store {
     const normalized = this.workspaceName(name)
     const duplicate = this.db.select().from(workspaces).where(eq(workspaces.nameKey, normalized.nameKey)).get()
     if (duplicate && duplicate.id !== id) throw new Error('A workspace with that name already exists')
+    if (this.hasRunningTasks(id)) throw new Error('Wait for running tasks in this workspace to finish before renaming it')
+    const previous = this.getWorkspaceDirectory(id)
+    const directory = join(this.dataDirectory, 'workspaces', normalized.name)
+    this.storage.closeWorkspace(id)
+    moveWorkspaceDirectory(previous, directory)
     this.db.update(workspaces).set(normalized).where(eq(workspaces.id, id)).run()
+    this.relocateTaskPaths(this.storage.open(id).sqlite, previous, directory)
     return this.requireWorkspace(id)
+  }
+
+  private relocateTaskPaths(sqlite: Database.Database, previous: string, directory: string): void {
+    if (previous === directory) return
+    sqlite.prepare(`UPDATE tasks SET cwd = ? || substr(cwd, ?) WHERE substr(cwd, 1, ?) = ?`)
+      .run(directory, previous.length + 1, previous.length + 1, previous + '/')
   }
 
   getActiveWorkspace(): Workspace {
@@ -320,33 +365,32 @@ export class Store {
     return workspace
   }
 
-  /** Profile paths remain stable across renames and never point at an agent's global home. */
+  /** Workspace IDs own records; the user-visible name owns the folder. */
   getWorkspaceDirectory(workspaceId: string): string {
-    this.requireWorkspace(workspaceId)
-    // Only fixed/generated IDs are allowed in filesystem paths, even for damaged databases.
-    if (!/^(default|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.test(workspaceId)) {
-      throw new Error('Invalid workspace directory ID')
-    }
-    return join(this.dataDirectory, 'workspaces', workspaceId)
+    const workspace = this.requireWorkspace(workspaceId)
+    const normalized = this.workspaceName(workspace.name)
+    return join(this.dataDirectory, 'workspaces', normalized.name)
   }
 
   getWorkspacePreferences(workspaceId = this.getActiveWorkspace().id): WorkspacePreferences {
+    const db = this.workspaceConnection(workspaceId).db
     this.requireWorkspace(workspaceId)
-    const row = this.db.select().from(workspacePreferences).where(eq(workspacePreferences.workspaceId, workspaceId)).get()!
+    const row = db.select().from(workspacePreferences).where(eq(workspacePreferences.workspaceId, workspaceId)).get()!
     return { composer: structuredClone(row.composer), lastProjectId: row.lastProjectId }
   }
 
   setWorkspacePreferences(next: Partial<WorkspacePreferences>, workspaceId = this.getActiveWorkspace().id): WorkspacePreferences {
+    const db = this.workspaceConnection(workspaceId).db
     this.requireWorkspace(workspaceId)
     if (next.composer !== undefined) this.validateComposerPreferences(next.composer)
     if (next.composer === undefined && next.lastProjectId === undefined) return this.getWorkspacePreferences(workspaceId)
-    return this.db.transaction(() => {
-      this.db.update(workspacePreferences).set({
+    return db.transaction(() => {
+      db.update(workspacePreferences).set({
         ...(next.composer === undefined ? {} : { composer: structuredClone(next.composer) }),
         ...(next.lastProjectId === undefined ? {} : { lastProjectId: next.lastProjectId })
       }).where(eq(workspacePreferences.workspaceId, workspaceId)).run()
       if (next.composer !== undefined && workspaceId === DEFAULT_WORKSPACE_ID) {
-        this.db.insert(appState).values({ key: 'legacyComposerImported', value: 'true' }).onConflictDoNothing().run()
+        db.insert(appState).values({ key: 'legacyComposerImported', value: 'true' }).onConflictDoNothing().run()
       }
       return this.getWorkspacePreferences(workspaceId)
     })
@@ -355,15 +399,16 @@ export class Store {
   /** Import and marker commit together; explicit SQLite choices always win. */
   importLegacyComposerPreferences(composer: ComposerPreferences): WorkspacePreferences {
     this.validateComposerPreferences(composer)
-    return this.db.transaction(() => {
+    const db = this.workspaceConnection(DEFAULT_WORKSPACE_ID).db
+    return db.transaction(() => {
       const key = 'legacyComposerImported'
-      const marker = this.db.select().from(appState).where(eq(appState.key, key)).get()
+      const marker = db.select().from(appState).where(eq(appState.key, key)).get()
       if (!marker) {
         const current = this.getWorkspacePreferences(DEFAULT_WORKSPACE_ID).composer
         if (!current.agentId && !Object.keys(current.modelsByAgent).length && !Object.keys(current.reasoningByAgentModel).length) {
           this.setWorkspacePreferences({ composer }, DEFAULT_WORKSPACE_ID)
         }
-        this.db.insert(appState).values({ key, value: 'true' }).onConflictDoNothing().run()
+        db.insert(appState).values({ key, value: 'true' }).onConflictDoNothing().run()
       }
       return this.getWorkspacePreferences(DEFAULT_WORKSPACE_ID)
     })
@@ -397,20 +442,25 @@ export class Store {
   }
 
   linkPullRequest(taskId: string, link: Omit<PullRequestMerged, 'mergedAt'>): void {
-    this.db.insert(schema.taskPullRequests).values({ ...link, taskId, repository: link.repository.toLowerCase() })
+    const db = this.taskConnection(taskId).db
+    db.insert(schema.taskPullRequests).values({ ...link, taskId, repository: link.repository.toLowerCase() })
       .onConflictDoUpdate({ target: schema.taskPullRequests.taskId, set: { ...link, repository: link.repository.toLowerCase() } }).run()
   }
 
-  getPullRequestsToRefresh(): (Omit<PullRequestMerged, 'mergedAt'> & { taskId: string })[] {
-    return this.db.select().from(schema.taskPullRequests).all().filter((link) => {
+  getPullRequestsToRefresh(workspaceId?: string): (Omit<PullRequestMerged, 'mergedAt'> & { taskId: string })[] {
+    if (workspaceId === undefined) return this.getWorkspaces().flatMap((workspace) => this.getPullRequestsToRefresh(workspace.id))
+    const db = this.workspaceConnection(workspaceId).db
+    return db.select().from(schema.taskPullRequests).all().filter((link) => {
       const task = this.getTask(link.taskId)
       return task?.status === 'succeeded' && task.deliveryStatus === 'reviewable' && task.headCommit === link.headSha
     })
   }
 
-  approveMergedPullRequest(event: PullRequestMerged): Task[] {
-    return this.db.transaction(() => {
-      const links = this.db.select().from(schema.taskPullRequests).where(and(
+  approveMergedPullRequest(event: PullRequestMerged, workspaceId?: string): Task[] {
+    if (workspaceId === undefined) return this.getWorkspaces().flatMap((workspace) => this.approveMergedPullRequest(event, workspace.id))
+    const db = this.workspaceConnection(workspaceId).db
+    return db.transaction(() => {
+      const links = db.select().from(schema.taskPullRequests).where(and(
         eq(schema.taskPullRequests.repository, event.repository.toLowerCase()),
         eq(schema.taskPullRequests.number, event.number)
       )).all()
@@ -428,8 +478,9 @@ export class Store {
   }
 
   getSettings(workspaceId = this.getActiveWorkspace().id): Settings {
+    const db = this.workspaceConnection(workspaceId).db
     this.requireWorkspace(workspaceId)
-    return this.db
+    return db
       .select()
       .from(settings)
       .where(eq(settings.workspaceId, workspaceId))
@@ -456,6 +507,7 @@ export class Store {
   }
 
   setSettings(next: Partial<Settings>, workspaceId = this.getActiveWorkspace().id): Settings {
+    const db = this.workspaceConnection(workspaceId).db
     this.requireWorkspace(workspaceId)
     const rows = SETTING_KEYS.filter((key) => next[key] !== undefined).map((key) => ({
       workspaceId,
@@ -463,7 +515,7 @@ export class Store {
       value: encodeSetting(key, next[key]!)
     }))
     if (rows.length) {
-      this.db.transaction((tx) => {
+      db.transaction((tx) => {
         for (const row of rows) {
           tx.insert(settings)
             .values(row)
@@ -476,62 +528,71 @@ export class Store {
     return this.getSettings(workspaceId)
   }
 
-  getProjects(): Project[] {
-    return this.db.select().from(projects).orderBy(asc(projects.createdAt)).all().map(toProject)
+  getProjects(workspaceId = this.getActiveWorkspace().id): Project[] {
+    const db = this.workspaceConnection(workspaceId).db
+    return db.select().from(projects).orderBy(asc(projects.createdAt)).all().map(toProject)
   }
 
-  addProject(project: Project): Project {
-    this.db.insert(projects).values(project).onConflictDoNothing().run()
+  addProject(project: Project, workspaceId = this.getActiveWorkspace().id): Project {
+    const db = this.workspaceConnection(workspaceId).db
+    db.insert(projects).values(project).onConflictDoNothing().run()
     // The insert is a no-op when the path is already tracked, so the stored row
     // is the answer either way.
-    const row = this.db.select().from(projects).where(eq(projects.path, project.path)).get()!
+    const row = db.select().from(projects).where(eq(projects.path, project.path)).get()!
     return toProject(row)
   }
 
-  removeProject(id: string): void {
-    for (const task of this.getTasks()) if (task.projectId === id) this.taskImages.remove(task.id)
-    this.db.delete(projects).where(eq(projects.id, id)).run()
+  removeProject(id: string, workspaceId = this.getActiveWorkspace().id): void {
+    const db = this.workspaceConnection(workspaceId).db
+    for (const task of this.getTasks(workspaceId)) if (task.projectId === id) this.taskImages.remove(task.id)
+    db.delete(projects).where(eq(projects.id, id)).run()
     this.activityChanged()
   }
 
   updateProject(
     id: string,
-    patch: Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush'>
+    patch: Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush'>,
+    workspaceId = this.getActiveWorkspace().id
   ): Project | undefined {
-    this.db.update(projects).set({
+    const db = this.workspaceConnection(workspaceId).db
+    db.update(projects).set({
       monthlyTokenLimit: patch.monthlyTokenLimit,
       monthlyCostLimitUsd: patch.monthlyCostLimitUsd,
       finishOnPush: patch.finishOnPush
     }).where(eq(projects.id, id)).run()
-    const row = this.db.select().from(projects).where(eq(projects.id, id)).get()
+    const row = db.select().from(projects).where(eq(projects.id, id)).get()
     return row ? toProject(row) : undefined
   }
 
   getTasks(workspaceId?: string): Task[] {
-    if (workspaceId !== undefined) this.requireWorkspace(workspaceId)
-    return this.db.select().from(tasks)
-      .where(workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId))
-      .orderBy(desc(tasks.startedAt)).all().map(toTask)
+    if (workspaceId === undefined) {
+      return this.getWorkspaces().flatMap((workspace) => this.getTasks(workspace.id)).sort((a, b) => b.startedAt - a.startedAt)
+    }
+    return this.workspaceConnection(workspaceId).db.select().from(tasks).orderBy(desc(tasks.startedAt)).all().map(toTask)
   }
 
   addTask(task: Omit<Task, 'workspaceId'> & { workspaceId?: string }): Task {
     const ownedTask: Task = { ...task, workspaceId: task.workspaceId ?? this.getActiveWorkspace().id }
     this.requireWorkspace(ownedTask.workspaceId)
-    this.db.insert(tasks).values(toTaskRow(ownedTask)).run()
+    if (this.getTask(ownedTask.id)) throw new Error('Task already exists')
+    this.workspaceConnection(ownedTask.workspaceId).db.insert(tasks).values(toTaskRow(ownedTask)).run()
     this.activityChanged()
     return ownedTask
   }
 
   /** Foreign keys cascade to task-owned Valence plans, execution metadata, output, and comments. */
   deleteTaskCascade(taskId: string): void {
+    if (!this.getTask(taskId)) return
+    const db = this.taskConnection(taskId).db
     this.taskImages.remove(taskId)
-    this.db.delete(tasks).where(eq(tasks.id, taskId)).run()
+    db.delete(tasks).where(eq(tasks.id, taskId)).run()
     this.activityChanged()
   }
 
   updateTask(id: string, patch: Partial<Omit<Task, 'workspaceId'>>): Task | undefined {
     const current = this.getTask(id)
     if (!current) return undefined
+    const db = this.workspaceConnection(current.workspaceId).db
     if ('workspaceId' in patch && patch.workspaceId !== current.workspaceId) {
       throw new Error('Task workspace ownership cannot change')
     }
@@ -539,7 +600,7 @@ export class Store {
       ...current, ...patch,
       ...(patch.status === 'running' ? { reviewedAt: undefined, settledAt: undefined } : {})
     }
-    this.db.update(tasks).set(toTaskRow(next)).where(eq(tasks.id, id)).run()
+    db.update(tasks).set(toTaskRow(next)).where(eq(tasks.id, id)).run()
     if (current.status !== next.status) this.activityChanged()
     return next
   }
@@ -554,20 +615,25 @@ export class Store {
 
   /** Also called on list/load, so time spent with the app closed counts toward the TTL. */
   settleDueTasks(now = Date.now()): Task[] {
-    return this.db.transaction(() => this.getTasks().flatMap((task) => {
+    return this.getTasks().flatMap((task) => {
       const deadline = settlementDeadline(task)
       return deadline !== undefined && deadline <= now ? [this.settleTask(task.id, deadline)] : []
-    }))
+    })
   }
 
   getTask(id: string): Task | undefined {
-    const row = this.db.select().from(tasks).where(eq(tasks.id, id)).get()
-    return row ? { ...toTask(row), } : undefined
+    for (const workspace of this.getWorkspaces()) {
+      const row = this.storage.open(workspace.id).db.select().from(tasks).where(eq(tasks.id, id)).get()
+      if (row) return toTask(row)
+    }
+    return undefined
   }
 
   /** Every note on a task, drafts and sent alike, oldest first. */
   getComments(taskId: string): TaskComment[] {
-    return this.db
+    if (!this.getTask(taskId)) return []
+    const db = this.taskConnection(taskId).db
+    return db
       .select()
       .from(taskComments)
       .where(eq(taskComments.taskId, taskId))
@@ -577,19 +643,23 @@ export class Store {
   }
 
   addComment(comment: TaskComment): TaskComment {
-    this.db.insert(taskComments).values(comment).run()
+    const db = this.taskConnection(comment.taskId).db
+    db.insert(taskComments).values(comment).run()
     return comment
   }
 
   removeComment(id: string): void {
-    this.db.delete(taskComments).where(eq(taskComments.id, id)).run()
+    for (const workspace of this.getWorkspaces()) {
+      this.workspaceConnection(workspace.id).db.delete(taskComments).where(eq(taskComments.id, id)).run()
+    }
   }
 
   /** Marks a task's drafts as sent; returns the comments that were pending. */
   markCommentsSent(taskId: string, sentAt: number, commentIds?: string[]): TaskComment[] {
+    const db = this.taskConnection(taskId).db
     const pending = this.getComments(taskId).filter((comment) => comment.sentAt === null && (!commentIds || commentIds.includes(comment.id)))
     if (!pending.length) return []
-    this.db
+    db
       .update(taskComments)
       .set({ sentAt })
       .where(
@@ -607,15 +677,18 @@ export class Store {
   }
 
   appendEvent(event: TaskEvent): void {
+    const db = this.taskConnection(event.taskId).db
     // Tool snapshots replace their prior row without changing insertion order.
-    this.db.insert(taskEvents).values(event).onConflictDoUpdate({
+    db.insert(taskEvents).values(event).onConflictDoUpdate({
       target: taskEvents.id,
       set: { text: event.text, category: event.category, stream: event.stream }
     }).run()
   }
 
   readEvents(taskId: string): TaskEvent[] {
-    return this.db
+    if (!this.getTask(taskId)) return []
+    const db = this.taskConnection(taskId).db
+    return db
       .select()
       .from(taskEvents)
       .where(eq(taskEvents.taskId, taskId))
@@ -625,25 +698,45 @@ export class Store {
   }
 
   /** The tracker borrows Store's migrated connection and cannot close it. */
-  issueTracker(projectId: string): IssueTracker {
-    return new IssueTracker(this.sqlite, projectId, 'borrowed')
+  issueTracker(projectId: string, workspaceId = this.getActiveWorkspace().id): IssueTracker {
+    return new IssueTracker(this.workspaceConnection(workspaceId).sqlite, projectId, 'borrowed')
   }
 
   /** Share one immediate transaction with the borrowed tracker and execution metadata. */
-  transaction<Result>(operation: () => Result): Result {
-    return this.sqlite.transaction(operation).immediate()
+  transaction<Result>(operation: () => Result, workspaceId = this.getActiveWorkspace().id): Result {
+    return this.workspaceConnection(workspaceId).sqlite.transaction(operation).immediate()
+  }
+
+  getWorkspaceDatabasePath(workspaceId: string): string {
+    return join(this.getWorkspaceDirectory(workspaceId), 'anvil.db')
+  }
+
+  private workspaceConnection(workspaceId: string): WorkspaceConnection {
+    this.requireWorkspace(workspaceId)
+    return this.storage.open(workspaceId)
+  }
+
+  private taskConnection(taskId: string): WorkspaceConnection {
+    const task = this.getTask(taskId)
+    if (!task) throw new Error('Task not found')
+    return this.workspaceConnection(task.workspaceId)
   }
 
   close(): void {
+    this.storage.close()
     this.sqlite.close()
+    if (this.temporaryDirectory) rmSync(this.dataDirectory, { recursive: true, force: true })
   }
 
   getTaskExecution(taskId: string): TaskExecutionState | undefined {
-    return this.db.select().from(schema.taskExecutions).where(eq(schema.taskExecutions.taskId, taskId)).get()?.state
+    if (!this.getTask(taskId)) return undefined
+    const db = this.taskConnection(taskId).db
+    return db.select().from(schema.taskExecutions).where(eq(schema.taskExecutions.taskId, taskId)).get()?.state
   }
 
   saveTaskExecution(state: TaskExecutionState): TaskExecutionState {
-    this.db.insert(schema.taskExecutions).values({ taskId: state.taskId, state })
+    const db = this.taskConnection(state.taskId).db
+    db.insert(schema.taskExecutions).values({ taskId: state.taskId, state })
       .onConflictDoUpdate({ target: schema.taskExecutions.taskId, set: { state } }).run()
     return state
   }

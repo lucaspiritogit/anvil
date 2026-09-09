@@ -23,7 +23,7 @@ export async function resumeTaskTurn(
   const agent = getAgent(task.agentId)
   if (!agent) throw new Error(`Unknown agent: ${task.agentId}`)
   if (task.sessionId && !agent.executionProtocol && !agent.resumeArgs) throw new Error('This agent cannot resume its saved session')
-  const project = store.getProjects().find((item) => item.id === task.projectId)
+  const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
   if (!project) throw new Error('Project not found')
   const guard = (): Task => {
     const current = check()

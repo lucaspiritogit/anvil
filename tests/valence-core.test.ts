@@ -13,9 +13,10 @@ import { onTestCleanup } from './test-cleanup'
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-valence-core-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
-  const path = join(directory, 'anvil.db')
-  const store = new Store(path, { migrationsFolder: resolve('src/main/db/migrations') })
+  const registryPath = join(directory, 'anvil.db')
+  const store = new Store(registryPath, { migrationsFolder: resolve('src/main/db/migrations') })
   onTestCleanup(() => store.close())
+  const path = store.getWorkspaceDatabasePath('default')
   const db = new Database(path)
   onTestCleanup(() => { db.close() })
   for (const project of ['a', 'b']) {
@@ -31,7 +32,7 @@ function fixture() {
   const input = (patch: Partial<CreateIssue> = {}): CreateIssue => ({
     parentId: pa.id, title: 'Issue', description: 'Description', checklist: ['Check'], validation: 'Run tests', ...patch
   })
-  return { directory, path, store, db, a, b, pa, pb, input }
+  return { directory, registryPath, path, store, db, a, b, pa, pb, input }
 }
 
 test('validates malformed issue and parent input without writes', () => {
@@ -119,7 +120,7 @@ test('priority then creation ordering, completion evidence, transitions and arra
 })
 
 test('records the first issue start in Unix milliseconds and preserves it through retries, review and restart', () => {
-  const { a, input, store, path } = fixture()
+  const { a, input, store, registryPath } = fixture()
   const firstStartedAt = 1_789_000_000_123
   const clock = vi.spyOn(Date, 'now').mockReturnValue(firstStartedAt)
   const issue = a.create(input())
@@ -147,7 +148,7 @@ test('records the first issue start in Unix milliseconds and preserves it throug
   expect(a.start(dependent.id).startedAt).toBe(completedAt + 1_000)
   a.close()
   store.close()
-  const reopened = new Store(path, { migrationsFolder: resolve('src/main/db/migrations') })
+  const reopened = new Store(registryPath, { migrationsFolder: resolve('src/main/db/migrations') })
   onTestCleanup(() => reopened.close())
   expect(reopened.issueTracker('a').get(issue.id)).toMatchObject({ startedAt: firstStartedAt, completedAt })
   expect(reopened.issueTracker('a').list().find((entry) => entry.id === dependent.id)?.startedAt).toBe(completedAt + 1_000)

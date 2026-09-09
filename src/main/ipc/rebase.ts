@@ -22,7 +22,7 @@ export function registerRebaseHandlers(ipc: RendererIpc, {
     if (agentProcesses.isRunning(input.taskId)) throw new Error('This task is already running')
     if (!task.branchName || !task.baseCommit) throw new Error('This task has no branch to rebase')
 
-    const project = store.getProjects().find((item) => item.id === task.projectId)
+    const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
 
     const result = await gitDelivery.rebase(

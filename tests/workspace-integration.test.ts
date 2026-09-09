@@ -49,6 +49,7 @@ test('upgrades a legacy plan, runs both agents in both profiles and resumes thei
   for (const [index, profile] of profiles.entries()) {
     expect(store.getSettings(profile.id).fontSize).toBe(14)
     expect(store.getTasks(profile.id)).toEqual([])
+    store.addProject(store.getProjects('default')[0], profile.id)
     store.selectWorkspace(profile.id)
     store.setSettings({ fontSize: 15 + index, defaultAgentId: index === 0 ? 'codex' : 'opencode' })
     store.setWorkspacePreferences({ lastProjectId: 'project', composer: {
@@ -111,7 +112,7 @@ test('upgrades a legacy plan, runs both agents in both profiles and resumes thei
     expect(await readFile(globalAuth, 'utf8')).toBe('{"fixtureAccount":"global-account"}')
     await fixture.assertGlobalUnchanged()
   }
-  const persisted = new Database(database)
+  const persisted = new Database(store.getWorkspaceDatabasePath('default'))
   try {
     expect(persisted.prepare('SELECT id, anvil_task_id, description FROM parent_issues').all()).toEqual([
       { id: 'legacy-plan', anvil_task_id: 'legacy-task', description: 'Keep this plan' }

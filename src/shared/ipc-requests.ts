@@ -2,9 +2,9 @@ import type { AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, Pull
 
 /** The renderer supplies identities, never paths for privileged project actions. */
 export interface IpcRequests {
-  'wallpapers:directory': undefined
-  'wallpapers:list': undefined
-  'wallpapers:read': string
+  'wallpapers:directory': string | undefined
+  'wallpapers:list': string | undefined
+  'wallpapers:read': string | { workspaceId: string; id: string }
   'settings:get': string | undefined
   'settings:set': { workspaceId: string; patch: Partial<Settings> }
   'workspaces:list': undefined
