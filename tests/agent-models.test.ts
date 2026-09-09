@@ -11,17 +11,17 @@ import type { AgentDefinition } from '../src/shared/types'
 const verboseOutput = [
   'openrouter/deepseek/deepseek-v4',
   JSON.stringify({ id: 'deepseek/deepseek-v4', variants: { high: {}, max: { reasoning: { effort: 'max' } } } }, null, 2),
-  'provider/plain',
+  'openai/plain',
   JSON.stringify({ id: 'plain' }, null, 2),
-  'provider/custom',
+  'openai/custom',
   JSON.stringify({ id: 'custom', variants: { default: {}, 'custom-effort': {} } }, null, 2)
 ].join('\n') + '\n'
 const expected = {
-  models: ['openrouter/deepseek/deepseek-v4', 'provider/plain', 'provider/custom'],
+  models: ['openrouter/deepseek/deepseek-v4', 'openai/plain', 'openai/custom'],
   reasoningByModel: {
     'openrouter/deepseek/deepseek-v4': { options: [{ id: 'high', label: 'high' }, { id: 'max', label: 'max' }] },
-    'provider/plain': { options: [] },
-    'provider/custom': { options: [{ id: 'default', label: 'default' }, { id: 'custom-effort', label: 'custom-effort' }] }
+    'openai/plain': { options: [] },
+    'openai/custom': { options: [{ id: 'default', label: 'default' }, { id: 'custom-effort', label: 'custom-effort' }] }
   }
 }
 
@@ -39,18 +39,19 @@ test('retains the complete catalogue and image capabilities when the CLI exits b
   onTestCleanup(() => rm(directory, { recursive: true, force: true }))
   const fixture = join(directory, 'models.cjs')
   await writeFile(fixture, `#!${process.execPath}
-const output = ['provider/large', JSON.stringify({ description: 'x'.repeat(2 * 1024 * 1024) }, null, 2),
-  'provider/reasoner', JSON.stringify({ variants: { high: {}, max: {} }, capabilities: { input: { image: true } } }, null, 2)].join('\\n') + '\\n'
+if (process.argv.includes('--version')) { console.log('1.18.25'); process.exit(0) }
+const output = ['openai/large', JSON.stringify({ description: 'x'.repeat(2 * 1024 * 1024) }, null, 2),
+  'openai/reasoner', JSON.stringify({ variants: { high: {}, max: {} }, capabilities: { input: { image: true } } }, null, 2)].join('\\n') + '\\n'
 process.stdout.write(output)
 process.exit(0)
 `, { mode: 0o755 })
   const agent: AgentDefinition = { id: 'large-catalogue', label: 'Fixture', description: '', command: fixture, args: [] }
   const catalogue = await openCodeAdapter.listModels(agent, testWorkspace())
-  expect(catalogue.models).toEqual(['provider/large', 'provider/reasoner'])
-  expect(catalogue.reasoningByModel?.['provider/reasoner'].options).toEqual([
+  expect(catalogue.models).toEqual(['openai/large', 'openai/reasoner'])
+  expect(catalogue.reasoningByModel?.['openai/reasoner'].options).toEqual([
     { id: 'high', label: 'high' }, { id: 'max', label: 'max' }
   ])
-  await expect(requireOpenCodeImageModel(fixture, ['models', '--verbose'], directory, 'provider/reasoner')).resolves.toBeUndefined()
+  await expect(requireOpenCodeImageModel(fixture, ['models', '--verbose'], directory, 'openai/reasoner')).resolves.toBeUndefined()
 })
 
 test('discovers adapter models, preserves cached effort metadata and reports failures', async () => {
@@ -61,7 +62,7 @@ test('discovers adapter models, preserves cached effort metadata and reports fai
   const directory = await mkdtemp(join(tmpdir(), 'anvil-models-'))
   try {
     const fixture = join(directory, 'models.cjs')
-    await writeFile(fixture, `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(verboseOutput)})`, { mode: 0o755 })
+    await writeFile(fixture, `#!${process.execPath}\nif (process.argv.includes('--version')) { console.log('1.18.25'); process.exit(0) }\nprocess.stdout.write(${JSON.stringify(verboseOutput)})`, { mode: 0o755 })
     const agent: AgentDefinition = {
       id: 'verbose-fixture', label: 'Fixture', description: '', command: fixture, args: [],
       models: { kind: 'adapter', adapterId: 'opencode' }
@@ -83,7 +84,7 @@ test('discovers adapter models, preserves cached effort metadata and reports fai
     expect(failed.error).toBeTruthy()
     expect(failed.models).toStrictEqual([])
     expect(failed.reasoningByModel).toBe(undefined)
-    await writeFile(fixture, `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(verboseOutput)})`, { mode: 0o755 })
+    await writeFile(fixture, `#!${process.execPath}\nif (process.argv.includes('--version')) { console.log('1.18.25'); process.exit(0) }\nprocess.stdout.write(${JSON.stringify(verboseOutput)})`, { mode: 0o755 })
     expect(await listModels({ ...agent, id: 'failure-fixture' }, testWorkspace()), 'Failures are not cached').toStrictEqual({ agentId: 'failure-fixture', ...expected })
     expect(await listModels({ ...agent, id: 'static-fixture', models: { kind: 'static', models: ['gpt-5'] } }, testWorkspace())).toStrictEqual({
       agentId: 'static-fixture', models: ['gpt-5']

@@ -4,7 +4,8 @@ import type { AgentExecutor } from './agent-executor'
 import { CodexAppServerClient } from './codex-app-server'
 import { OpenCodeAcpClient } from './opencode-acp'
 import { parseOpenCodeModels } from './opencode-models'
-import { readOpenCodeModelOutput } from './opencode-model-output'
+import { readOpenCodeModelOutput, verifyWorkspaceOpenCode } from './opencode-model-output'
+import { isWorkspaceOpenCodeModel, openCodeWorkspaceCommand } from './opencode-workspace'
 
 export type AgentModelCatalogue = Pick<ProviderModelList, 'models' | 'reasoningByModel'>
 
@@ -32,10 +33,15 @@ export class AgentAdapterRegistry {
 
 export const openCodeAdapter: AgentAdapter = {
   id: 'opencode',
-  createExecutor: (workspace) => new OpenCodeAcpClient({ args: ['acp', '--port', '0'], environment: workspace.environment, serverCwd: workspace.home }),
+  createExecutor: (workspace) => new OpenCodeAcpClient({ workspace }),
   async listModels(agent, workspace, signal) {
-    const stdout = await readOpenCodeModelOutput(agent.command, ['models', '--verbose'], workspace.home, signal, workspace.environment)
-    return parseOpenCodeModels(stdout)
+    const launch = openCodeWorkspaceCommand(workspace, ['models', '--verbose'])
+    await verifyWorkspaceOpenCode(agent.command, launch.cwd, launch.environment, signal)
+    const stdout = await readOpenCodeModelOutput(agent.command, launch.args, launch.cwd, signal, launch.environment)
+    const catalogue = parseOpenCodeModels(stdout)
+    catalogue.models = catalogue.models.filter(isWorkspaceOpenCodeModel)
+    catalogue.reasoningByModel = Object.fromEntries(Object.entries(catalogue.reasoningByModel ?? {}).filter(([model]) => isWorkspaceOpenCodeModel(model)))
+    return catalogue
   }
 }
 
