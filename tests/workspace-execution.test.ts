@@ -167,7 +167,7 @@ test('launches separate real protocol processes using each profile environment',
       transcripts.set(workspace.workspaceId, transcript)
       const options = { command: process.execPath, args: [resolve('tests/fixtures/agent-server-lifecycle.cjs'), protocol, transcript],
         serverCwd: workspace.home, environment: workspace.environment, cancelTimeoutMs: 100 }
-      return protocol === 'codex' ? new CodexAppServerClient(options) : new OpenCodeAcpClient(options)
+      return protocol === 'codex' ? new CodexAppServerClient({ ...options, workspace }) : new OpenCodeAcpClient(options)
     })
     onTestCleanup(() => manager.close())
     const agent = getAgent(protocol === 'codex' ? 'codex' : 'opencode')!

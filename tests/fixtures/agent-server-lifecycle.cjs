@@ -46,6 +46,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       : { userAgent: 'lifecycle-fixture' }), 40)
   }
   if (method === 'initialized') return
+  if (method === 'config/read') return respond(id, { config: { cli_auth_credentials_store: 'file' } })
+  if (method === 'account/read') return respond(id, { account: { type: 'apiKey' }, requiresOpenaiAuth: true })
   if (method === 'session/new' || method === 'thread/start') {
     const sessionId = `session-${process.pid}-${++nextSession}`
     sessions.set(sessionId, { id: sessionId, cwd: params.cwd })

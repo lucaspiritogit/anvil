@@ -41,9 +41,9 @@ export const openCodeAdapter: AgentAdapter = {
 
 export const codexAdapter: AgentAdapter = {
   id: 'codex',
-  createExecutor: (workspace) => new CodexAppServerClient({ environment: workspace.environment, serverCwd: workspace.home }),
+  createExecutor: (workspace) => new CodexAppServerClient({ workspace }),
   async listModels(agent, workspace, signal) {
-    const client = new CodexAppServerClient({ command: agent.command, args: agent.args, requestTimeoutMs: 20_000, environment: workspace.environment, serverCwd: workspace.home })
+    const client = new CodexAppServerClient({ command: agent.command, args: agent.args, requestTimeoutMs: 20_000, workspace })
     const cancel = (): void => { void client.close() }
     signal?.addEventListener('abort', cancel, { once: true })
     try {

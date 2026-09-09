@@ -46,7 +46,7 @@ test('reuses and recovers protocol servers and awaits descendant shutdown', asyn
       const create = () => {
         const transcript = join(directory, `${protocol}-${++nextClient}.jsonl`)
         const options = { command: process.execPath, args: [fixture, protocol, transcript], cancelTimeoutMs: 50 }
-        const client = protocol === 'acp' ? new OpenCodeAcpClient(options) : new CodexAppServerClient(options)
+        const client = protocol === 'acp' ? new OpenCodeAcpClient(options) : new CodexAppServerClient({ ...options, workspace: testWorkspace() })
         onTestCleanup(() => client.close())
         clients.push(client)
         const entries = async (): Promise<TranscriptEntry[]> => (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))

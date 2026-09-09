@@ -28,7 +28,20 @@ export interface CodexTurn {
   error?: { message: string } | null
 }
 
+export type CodexAccount =
+  | { type: 'apiKey' }
+  | { type: 'chatgpt'; email: string | null; planType: string }
+  | { type: 'amazonBedrock'; usesCodexManagedCredentials: boolean }
+
 export interface CodexAppServerRequests {
+  'config/read': {
+    params: { includeLayers: boolean }
+    result: { config: CodexObject }
+  }
+  'account/read': {
+    params: { refreshToken: boolean }
+    result: { account: CodexAccount | null; requiresOpenaiAuth: boolean }
+  }
   'model/list': {
     params: { cursor?: string | null; limit?: number | null; includeHidden?: boolean | null }
     result: {
@@ -118,6 +131,21 @@ export function codexTurn(value: unknown): CodexTurn {
 
 export function validateCodexResponse(method: keyof CodexAppServerRequests, value: unknown): void {
   const result = codexObject(value)
+  if (method === 'config/read') codexObject(result.config)
+  if (method === 'account/read') {
+    if (typeof result.requiresOpenaiAuth !== 'boolean') throw new Error('Expected Codex authentication requirement')
+    if (result.account !== null) {
+      const account = codexObject(result.account)
+      if (account.type === 'chatgpt') {
+        if (account.email !== null) codexString(account.email)
+        codexString(account.planType)
+      } else if (account.type === 'amazonBedrock') {
+        if (typeof account.usesCodexManagedCredentials !== 'boolean') throw new Error('Expected Codex credential ownership')
+      } else if (account.type !== 'apiKey') {
+        throw new Error('Unsupported Codex account type. Update Anvil to support this authentication method.')
+      }
+    }
+  }
   if (method === 'model/list') {
     if (!Array.isArray(result.data)) throw new Error('Expected Codex model list')
     if (result.nextCursor !== null) codexString(result.nextCursor)
