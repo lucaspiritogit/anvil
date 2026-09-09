@@ -82,22 +82,55 @@ export class TaskIssues {
     }))
   }
 
-  finishIssue(taskId: string, headCommit?: string): void {
+  /**
+   * Close the claimed turn. The agent must have submitted the issue for review
+   * in Valence; the task then pauses until the developer approves or rejects.
+   * A developer approval that landed before turn end advances directly.
+   */
+  finishIssue(taskId: string, headCommit?: string): boolean {
     const state = this.requireState(taskId)
     if (!state.currentIssueId) throw new Error('No issue is currently running')
-    this.withTracker(state, (tracker) => {
+    const paused = this.withTracker(state, (tracker) => {
       const issue = tracker.get(state.currentIssueId!)
       this.recordReviewCommit(tracker, issue, headCommit)
-      if (issue.status !== 'complete') {
-        throw new Error(issue.status === 'review'
-          ? `Issue ${issue.id} is awaiting developer review in Valence. Approve it to continue the task.`
-          : `Issue ${issue.id} is ${issue.status} in Valence, not complete. The agent must complete it through vl.`)
+      if (issue.status === 'review') {
+        this.store.saveTaskExecution({ ...state, phase: 'reviewing', error: null })
+        return true
       }
-      // Valence already validated the checklist and evidence. Never infer success from text.
+      if (issue.status !== 'complete') {
+        throw new Error(issue.status === 'working'
+          ? `Issue ${issue.id} is still working in Valence. The agent must submit it for review through vl.`
+          : `Issue ${issue.id} is ${issue.status} in Valence, not submitted for review. The agent must submit it for review through vl.`)
+      }
       const complete = state.issueIds.every((id) => tracker.get(id).status === 'complete')
       this.store.saveTaskExecution({ ...state, currentIssueId: null, phase: complete ? 'complete' : 'working', error: null })
+      return false
     })
     this.ownedClaims.delete(taskId)
+    return paused
+  }
+
+  /** Developer approval completes the reviewed issue and unpauses the loop. */
+  approveIssue(taskId: string): TaskExecutionState {
+    const state = this.requireState(taskId)
+    if (state.phase !== 'reviewing' || !state.currentIssueId) throw new Error('This task is not waiting for an issue review')
+    return this.withTracker(state, (tracker) => {
+      tracker.approve(state.currentIssueId!)
+      const complete = state.issueIds.every((id) => tracker.get(id).status === 'complete')
+      return this.store.saveTaskExecution({
+        ...state, currentIssueId: null, phase: complete ? 'complete' : 'working', error: null
+      })
+    })
+  }
+
+  /** Developer rework returns the reviewed issue to work on the same turn slot. */
+  rejectIssue(taskId: string): TaskExecutionState {
+    const state = this.requireState(taskId)
+    if (state.phase !== 'reviewing' || !state.currentIssueId) throw new Error('This task is not waiting for an issue review')
+    return this.withTracker(state, (tracker) => {
+      tracker.reject(state.currentIssueId!)
+      return this.store.saveTaskExecution({ ...state, phase: 'working', error: null })
+    })
   }
 
   /** User follow-ups can recover a stopped turn without discarding its issue plan. */
@@ -118,10 +151,13 @@ export class TaskIssues {
       // based on an assistant's claim. Valence remains authoritative.
       const current = state.currentIssueId ? tracker.get(state.currentIssueId) : undefined
       if (current) this.recordReviewCommit(tracker, current, headCommit)
+      if (current && current.status === 'review') {
+        // An interrupted review stays in review; only the developer settles it.
+        this.store.saveTaskExecution({ ...state, phase: 'reviewing', error: null })
+        return
+      }
       if (current && current.status !== 'complete') {
-        throw new Error(current.status === 'review'
-          ? `Issue ${current.id} is awaiting developer review in Valence. Approve it to continue the task.`
-          : `Issue ${current.id} is not complete. The agent must unblock and complete it through vl.`)
+        throw new Error(`Issue ${current.id} is ${current.status} in Valence, not submitted for review. The agent must submit it for review or complete it through vl.`)
       }
       const complete = state.issueIds.every((id) => tracker.get(id).status === 'complete')
       this.store.saveTaskExecution({ ...state, currentIssueId: null, phase: complete ? 'complete' : 'working', error: null })
@@ -134,7 +170,12 @@ export class TaskIssues {
     if (!state || state.phase === 'complete') return
     try {
       // Only a claim recorded for this running Anvil turn can be released here.
-      if (state.currentIssueId && this.ownedClaims.get(taskId) === state.currentIssueId) this.withTracker(state, (tracker) => {
+      if (state.phase === 'reviewing' && state.currentIssueId) this.withTracker(state, (tracker) => {
+        // A pending review cannot survive a stopped task as claimable work:
+        // block it so a resumed task requeues and re-claims deterministically.
+        if (tracker.get(state.currentIssueId!).status === 'review') tracker.block(state.currentIssueId!)
+      })
+      else if (state.currentIssueId && this.ownedClaims.get(taskId) === state.currentIssueId) this.withTracker(state, (tracker) => {
         if (tracker.get(state.currentIssueId!).status === 'working') tracker.block(state.currentIssueId!)
       })
     } catch (storageError) {

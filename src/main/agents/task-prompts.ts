@@ -21,10 +21,10 @@ export function implementationPrompt(task: string, issue: Issue, projectPath: st
   return [
     'Implement this issue, validate it, and commit.',
     valenceIssueTrackerInstructionsPrompt(projectPath),
-    'Anvil already claimed your issue. Complete it through vl only after satisfying its checklist; record actual validation evidence. If unfinished, block it and explain why in plain text.',
-    'Do not claim or create other issues, or change issue ownership or dependencies.',
+    'Anvil already claimed your issue. Submit it for review through vl only after satisfying its checklist (vl submit-review with --confirm-checklist and real validation evidence). Anvil then pauses for developer review before any next issue.',
+    'Do not claim or create other issues, or change issue ownership or dependencies. If unfinished, block it and explain why in plain text.',
     'Install dependencies locally, without shared node_modules symlinks.',
-    'Anvil reads completion from Valence, not your response. Summarize the outcome in plain text.',
+    'Anvil reads review submission from Valence, not your response. Summarize the outcome in plain text.',
     `Task: ${task}`,
     `Issue: ${JSON.stringify({ id, parentId, title, description, checklist, validation })}`
   ].join('\n')
@@ -43,11 +43,25 @@ export function taskFollowupPrompt(task: Task, state: TaskExecutionState, messag
     `Original task: ${task.prompt}`,
     `Task issue IDs: ${state.issueIds.join(', ')}`,
     state.currentIssueId
-      ? `Resume issue ${state.currentIssueId}. Inspect its status, requeue and start it if blocked, then implement, validate, commit, and complete it through vl. If still working, verify it belongs to this interrupted task before requeueing. Do not take over another client's work.`
+      ? `Resume issue ${state.currentIssueId}. Inspect its status, requeue and start it if blocked, then implement, validate, commit, and submit it for review through vl. If still working, verify it belongs to this interrupted task before requeueing. Do not take over another client's work.`
       : 'Inspect and unblock the remaining task issues so Anvil can schedule them. Leave unfinished issues queued; do not claim new work.',
-    'Do not create a replacement plan or claim other issues. Anvil checks Valence completion and runs the remaining issues in order.',
+    'Do not create a replacement plan or claim other issues. Anvil checks Valence review submissions and pauses for developer review after each issue.',
     `Developer message: ${message}`
   ].join('\n\n')
+}
+
+export function issueReworkPrompt(projectPath: string, issueId: string, comments: TaskComment[]): string {
+  const notes = comments
+    .map((comment) => `${comment.file}:${comment.lineNumber} — ${comment.body}`)
+    .join('\n')
+  return [
+    valenceIssueTrackerInstructionsPrompt(projectPath),
+    `The developer reviewed issue ${JSON.stringify(issueId)} and requested changes. The issue is working again in Valence.`,
+    'Address the notes below in the code, then commit. Do not claim or create other issues, or change issue ownership or dependencies.',
+    'Submit the issue for review through vl again once its checklist is satisfied, with real validation evidence. Anvil pauses for developer review after every issue.',
+    '',
+    notes
+  ].join('\n')
 }
 
 export function agentRebasePrompt(baseCommit: string): string {

@@ -24,12 +24,14 @@ test('keeps planning concise and queues issues under the task parent', () => {
   expect(planning).toMatch(/Leave the finished plan queued/)
 })
 
-test('requires persisted implementation completion and failure evidence', () => {
-  expect(implementation.length < 1150, `Implementation prompt should stay concise: ${implementation.length} characters`).toBeTruthy()
+test('requires submitted review through vl and failure evidence', () => {
+  expect(implementation.length < 1200, `Implementation prompt should stay concise: ${implementation.length} characters`).toBeTruthy()
   expect(implementation).toMatch(/already claimed/)
-  expect(implementation).toMatch(/Complete it through vl/)
+  expect(implementation).toMatch(/Submit it for review through vl/)
+  expect(implementation).toMatch(/submit-review/)
   expect(implementation).toMatch(/block it/)
   expect(implementation).toMatch(/evidence/)
+  expect(implementation).toMatch(/developer review/)
 })
 
 test('routes both prompts through the project CLI and retains issue context', () => {

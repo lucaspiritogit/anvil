@@ -2,6 +2,7 @@ import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { implementationPrompt } from '../agents/task-prompts'
 import type { ExitInfo } from '../agents/process-manager'
 import type { TaskContext } from './context'
+import type { RecordSystemEvent } from './context'
 import { TaskIssues } from './task-issues'
 import type { TaskExecutionState } from '../../shared/types'
 
@@ -11,11 +12,13 @@ export interface TaskExecution {
   stopTask(taskId: string, error: string): void
   finishTaskTurn(info: ExitInfo): Promise<void>
   requireFinishedTask(taskId: string): void
+  approveIssue(taskId: string): Promise<TaskExecutionState>
+  rejectIssue(taskId: string): TaskExecutionState
 }
 
-/** Anvil runs one turn per claimed issue and delivers one final task diff. */
+/** Anvil runs one turn per claimed issue and pauses for developer review after each. */
 export function registerTaskExecution(
-  { store, agentProcesses, gitDelivery, send }: TaskContext,
+  { store, agentProcesses, gitDelivery, send, recordSystemEvent }: TaskContext & { recordSystemEvent: RecordSystemEvent },
   finishTask: (info: ExitInfo) => Promise<void>
 ): TaskExecution {
   const issues = new TaskIssues(store)
@@ -114,7 +117,13 @@ export function registerTaskExecution(
         issues.finishIssue(info.taskId, turnHeadCommit(info.taskId))
       }
       notify(info.taskId)
-      if (store.getTaskExecution(info.taskId)?.phase === 'complete') {
+      const next = store.getTaskExecution(info.taskId)
+      if (next?.phase === 'reviewing') {
+        // The gate: never hop to the next queued issue before developer review.
+        recordSystemEvent(info.taskId, `Issue ${next.currentIssueId} is awaiting developer review. Approve it or request changes to continue.`)
+        return
+      }
+      if (next?.phase === 'complete') {
         await finishTask(info)
       } else {
         setImmediate(() => { void startNextTurn(info.taskId) })
@@ -133,6 +142,35 @@ export function registerTaskExecution(
     void finishTaskTurn(info)
   })
 
+  const requireStoppedTurn = (taskId: string): void => {
+    if (starting.has(taskId) || finishing.has(taskId) || agentProcesses.isRunning(taskId)) {
+      throw new Error('This task has not finished stopping. Wait and try again.')
+    }
+  }
+
+  const approveIssue: TaskExecution['approveIssue'] = async (taskId) => {
+    requireStoppedTurn(taskId)
+    const issueId = store.getTaskExecution(taskId)?.currentIssueId
+    const state = issues.approveIssue(taskId)
+    notify(taskId)
+    recordSystemEvent(taskId, `Developer approved issue ${issueId}.`)
+    if (state.phase === 'complete') {
+      await finishTask({ taskId, code: 0, cancelled: false })
+    } else {
+      await startNextTurn(taskId)
+    }
+    return store.getTaskExecution(taskId) ?? state
+  }
+
+  const rejectIssue: TaskExecution['rejectIssue'] = (taskId) => {
+    requireStoppedTurn(taskId)
+    const issueId = store.getTaskExecution(taskId)?.currentIssueId
+    const state = issues.rejectIssue(taskId)
+    notify(taskId)
+    recordSystemEvent(taskId, `Developer requested changes on issue ${issueId}. Restarting its turn with the review feedback.`)
+    return state
+  }
+
   const requireFinishedTask = (taskId: string): void => {
     const task = store.getTask(taskId)
     if (task?.status === 'running' || agentProcesses.isRunning(taskId) ||
@@ -146,11 +184,9 @@ export function registerTaskExecution(
   }
 
   const resumeTask = (taskId: string): TaskExecutionState => {
-    if (starting.has(taskId) || finishing.has(taskId) || agentProcesses.isRunning(taskId)) {
-      throw new Error('This task has not finished stopping. Wait and try again.')
-    }
+    requireStoppedTurn(taskId)
     return issues.resume(taskId)
   }
 
-  return { initializeTask, resumeTask, stopTask, finishTaskTurn, requireFinishedTask }
+  return { initializeTask, resumeTask, stopTask, finishTaskTurn, requireFinishedTask, approveIssue, rejectIssue }
 }

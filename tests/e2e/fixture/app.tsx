@@ -374,6 +374,8 @@ window.anvil = {
       if (query.has('mergeFailure')) throw new Error('Merge failed. The task was not approved.')
       return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', reviewedAt: Date.now() })
     },
+    approveIssue: async (taskId: string) => tasks.find((task) => task.id === taskId)!,
+    rejectIssue: async (taskId: string) => tasks.find((task) => task.id === taskId)!,
     onEvent: (listener: (event: TaskEvent) => void) => {
       const receive = (event: Event) => listener((event as CustomEvent<TaskEvent>).detail)
       window.addEventListener('fixture:output', receive)

@@ -30,12 +30,15 @@ test('migrates interrupted tasks while retaining sessions, output and execution 
     legacy: { status: 'cancelled', deliveryStatus: 'finalizing' },
     stopped: { status: 'cancelled', deliveryStatus: 'finalizing' },
     finished: { status: 'succeeded', deliveryStatus: 'reviewable' },
-    cancelled: { status: 'cancelled', deliveryStatus: 'agent_failed' }
+    cancelled: { status: 'cancelled', deliveryStatus: 'agent_failed' },
+    review: { status: 'failed', deliveryStatus: 'agent_failed' }
   }) as [string, Partial<Task>][]) {
     old.addTask({ ...base, ...patch, id })
     legacyDb.prepare('INSERT INTO task_events (id, task_id, ts, stream, kind, category, text) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(`${id}-event`, id, 2, 'system', 'output', 'system', id === 'stopped' ? 'Stop requested by user.' : 'Saved output')
-    old.saveTaskExecution({ taskId: id, projectPath: testHome, parentIssueId: 'saved-parent', phase: id === 'running' ? 'working' : 'blocked', issueIds: ['saved-issue'], currentIssueId: 'saved-issue', error: null })
+    old.saveTaskExecution({ taskId: id, projectPath: testHome, parentIssueId: 'saved-parent',
+      phase: id === 'running' ? 'working' : id === 'review' ? 'reviewing' : 'blocked',
+      issueIds: ['saved-issue'], currentIssueId: 'saved-issue', error: null })
   }
   legacyDb.close()
   old.close()
@@ -50,7 +53,7 @@ test('migrates interrupted tasks while retaining sessions, output and execution 
     expect(store.getTask('cancelled')?.status).toBe('cancelled')
     expect(store.getTask('finished')?.status).toBe('succeeded')
     expect(store.getTask('finished')?.deliveryStatus).toBe('reviewable')
-    for (const task of store.getTasks()) {
+    for (const task of store.getTasks().filter((task) => task.id !== 'review')) {
       expect(task.sessionId).toBe('saved-session')
       expect(task.branchName).toBe('saved-branch')
       expect(task.totalTokens).toBe(15)
@@ -61,6 +64,9 @@ test('migrates interrupted tasks while retaining sessions, output and execution 
       expect(store.getTaskExecution(task.id)?.currentIssueId).toBe('saved-issue')
       expect(store.getTaskExecution(task.id)?.phase).toBe('blocked')
     }
+    expect(store.getTask('review')?.status).toBe('failed')
+    expect(store.getTaskExecution('review')?.currentIssueId).toBe('saved-issue')
+    expect(store.getTaskExecution('review')?.phase, 'An issue awaiting review survives a restart without being blocked').toBe('reviewing')
   } finally {
     store.close()
   }

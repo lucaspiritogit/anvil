@@ -38,7 +38,7 @@ test('serializes steering and comments through resume, completion and recovery',
     }
     const taskEvents = registerTaskEvents(context)
     const memory = createTaskMemory(context)
-    const execution = registerTaskExecution(context, createTaskCompletion(context, taskEvents.recordSystemEvent, memory))
+    const execution = registerTaskExecution({ ...context, recordSystemEvent: taskEvents.recordSystemEvent }, createTaskCompletion(context, taskEvents.recordSystemEvent, memory))
     registerTaskHandlers(rendererIpc, { ...context, ...taskEvents, ...execution, promptWithProjectMemory: memory.promptWithProjectMemory })
     registerSteeringHandlers(rendererIpc, { ...context, ...taskEvents, ...execution })
     registerReviewHandlers(rendererIpc, { ...context, ...taskEvents, ...execution })

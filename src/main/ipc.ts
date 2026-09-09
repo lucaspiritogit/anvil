@@ -71,7 +71,7 @@ export function registerIpc(
   const taskEvents = registerTaskEvents(context)
   const taskMemory = createTaskMemory(context, projectMemory)
   const finishTask = createTaskCompletion(context, taskEvents.recordSystemEvent, taskMemory)
-  const execution = registerTaskExecution(context, finishTask)
+  const execution = registerTaskExecution({ ...context, recordSystemEvent: taskEvents.recordSystemEvent }, finishTask)
 
   registerSettingsHandlers(ipc, store, new WallpaperLibrary(dataDirectory), (settings) => {
     projectMemory.settingsChanged()
@@ -87,6 +87,7 @@ export function registerIpc(
   })
   const reviewContext = {
     ...context,
+    ...execution,
     recordSystemEvent: taskEvents.recordSystemEvent,
     requireFinishedTask: execution.requireFinishedTask
   }

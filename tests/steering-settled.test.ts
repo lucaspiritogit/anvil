@@ -34,7 +34,7 @@ test('rejects settled steering and preserves stopped resume and live steering pa
     }
     const taskEvents = registerTaskEvents(context)
     const memory = createTaskMemory(context)
-    const execution = registerTaskExecution(context, createTaskCompletion(context, taskEvents.recordSystemEvent, memory))
+    const execution = registerTaskExecution({ ...context, recordSystemEvent: taskEvents.recordSystemEvent }, createTaskCompletion(context, taskEvents.recordSystemEvent, memory))
     registerSteeringHandlers(rendererIpc, { ...context, ...taskEvents, ...execution })
     const steer = (taskId: string, message = 'One more instruction'): Promise<void> =>
       handlers.get('tasks:steer')!(rendererEvent, { taskId, message })

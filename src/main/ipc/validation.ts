@@ -127,6 +127,8 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:rebase-agent': id,
   'tasks:merge-preview': id,
   'tasks:approve': object({ taskId: id, preview: object(mergePreview) }),
+  'tasks:approve-issue': id,
+  'tasks:reject-issue': id,
   'comments:list': id,
   'comments:add': object({ taskId: id, file, side: oneOf('additions', 'deletions'), lineNumber: number(1), body: text(20_000) }),
   'comments:remove': object({ taskId: id, id }),

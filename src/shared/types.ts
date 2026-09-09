@@ -14,7 +14,7 @@ export interface TaskExecutionState {
   taskId: string
   projectPath: string
   parentIssueId: string
-  phase: 'planning' | 'working' | 'recovering' | 'complete' | 'blocked'
+  phase: 'planning' | 'working' | 'reviewing' | 'recovering' | 'complete' | 'blocked'
   issueIds: string[]
   currentIssueId: string | null
   error: string | null

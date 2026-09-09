@@ -3,18 +3,21 @@ import { randomUUID } from 'node:crypto'
 import { getAgent } from '../agents/registry'
 import { withTaskOperation } from '../tasks/operations'
 import { resumeTaskTurn } from '../tasks/resume'
-import { reviewPrompt } from '../agents/task-prompts'
+import { issueReworkPrompt, reviewPrompt } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
 import type { Task, TaskMergePreview } from '../../shared/types'
+import { isTaskSettled } from '../../shared/task-settlement'
 
 interface ReviewHandlerDependencies extends TaskContext {
   recordSystemEvent: RecordSystemEvent
   requireFinishedTask: TaskExecution['requireFinishedTask']
+  approveIssue: TaskExecution['approveIssue']
+  rejectIssue: TaskExecution['rejectIssue']
 }
 
 export function registerReviewHandlers(ipc: RendererIpc, {
-  store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTask
+  store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTask, approveIssue, rejectIssue
 }: ReviewHandlerDependencies): void {
   const requireReviewableTask = (taskId: string) => {
     requireFinishedTask(taskId)
@@ -49,6 +52,33 @@ export function registerReviewHandlers(ipc: RendererIpc, {
       return approved
     })
   })
+
+  ipc.handle('tasks:approve-issue', (_event, taskId: string): Promise<Task> =>
+    withTaskOperation(store, taskId, 'review', async () => {
+      await approveIssue(taskId)
+      const approved = store.getTask(taskId)
+      if (!approved) throw new Error('Task was deleted')
+      return approved
+    })
+  )
+
+  ipc.handle('tasks:reject-issue', (_event, taskId: string): Promise<Task> =>
+    withTaskOperation(store, taskId, 'review', async (check) => {
+      const state = rejectIssue(taskId)
+      const pending = store.getComments(taskId).filter((comment) => comment.sentAt === null)
+      const running = await resumeTaskTurn({ store, agentProcesses, gitDelivery, send }, {
+        check,
+        validate: (task) => {
+          if (isTaskSettled(task)) throw new Error('This task is settled and cannot be reworked')
+          if (!state.currentIssueId) throw new Error('This task has no issue to rework')
+        },
+        prompt: () => issueReworkPrompt(state.projectPath, state.currentIssueId!, pending)
+      })
+      if (pending.length) store.markCommentsSent(taskId, Date.now(), pending.map((comment) => comment.id))
+      recordSystemEvent(taskId, `Sent ${pending.length} pending review ${pending.length === 1 ? 'comment' : 'comments'} back to ${getAgent(running.agentId)!.label}.`)
+      return store.getTask(taskId) ?? running
+    })
+  )
 
   ipc.handle('comments:list', (_event, taskId: string) => store.getComments(taskId))
 
