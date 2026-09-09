@@ -21,7 +21,7 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   writeFileSync(join(projectPath, '.gitignore'), '.anvil-composer/**\n.valence/**\n')
   git(projectPath, 'add', '.gitignore')
   git(projectPath, 'commit', '-m', 'Initial commit')
-  const database = join(testHome, '.anvil-composer/anvil.db')
+  const database = join(testHome, '.anvil-composer/config.json')
   const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
   const seed = new Store(database, options)
   const cli = await taskCli(database, projectPath)
@@ -128,7 +128,7 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   writeFileSync(join(projectPath, '.gitignore'), '.anvil-composer/**\n.valence/**\n')
   git(projectPath, 'add', '.gitignore')
   git(projectPath, 'commit', '-m', 'Initial commit')
-  const database = join(testHome, '.anvil-composer/anvil.db')
+  const database = join(testHome, '.anvil-composer/config.json')
   const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
   const store = new Store(database, options)
   const cli = await taskCli(database, projectPath)

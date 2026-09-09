@@ -10,7 +10,7 @@ import { createServer } from 'vite'
 // Run after npm run build. Requires sqlite3 on PATH. This diagnostic records
 // behavior; the expected-red assertions live in tests/e2e/caffeine-mode.spec.ts.
 const directory = await mkdtemp(join(tmpdir(), 'anvil-caffeine-persistence-'))
-const database = join(directory, '.anvil-composer', 'anvil.db')
+const database = join(directory, '.anvil-composer', 'workspaces', 'Default', 'anvil.db')
 const query = "SELECT key, value FROM settings WHERE key = 'caffeineMode'"
 let server
 let application

@@ -34,7 +34,7 @@ export async function run(): Promise<void> {
     assert.equal(entries.filter((entry) => entry.endsWith('/meta/_journal.json')).length, 1)
     await rm(application, { recursive: true, force: true })
     const binDirectory = join(directory, 'bin')
-    const databasePath = join(directory, 'anvil.db')
+    const databasePath = join(directory, 'config.json')
     installValenceLauncher(binDirectory, process.execPath, join(archive, 'out/main/valence-cli.js'), databasePath)
     const environment: NodeJS.ProcessEnv = { ...process.env, NODE_PATH: undefined, ELECTRON_RUN_AS_NODE: undefined, HOME: directory, USERPROFILE: directory, PATH: '' }
     for (const key of Object.keys(environment)) {

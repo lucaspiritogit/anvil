@@ -4,43 +4,32 @@ import { join } from 'node:path'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import * as schema from './db/schema'
+import type { Workspace } from '../shared/types'
 
 export interface WorkspaceConnection {
   sqlite: Database.Database
   db: BetterSQLite3Database<typeof schema>
 }
 
-/** The app database is a workspace registry. Each workspace owns its data connection. */
+/** Each workspace owns its SQLite data connection. */
 export class WorkspaceStorage {
   private readonly connections = new Map<string, WorkspaceConnection>()
 
   constructor(
-    private readonly registry: Database.Database,
     private readonly directory: string,
     private readonly migrationsFolder: string,
-    private readonly workspaceDirectory: (id: string) => string
+    private readonly workspaceDirectory: (id: string) => string,
+    private readonly getWorkspace: (id: string) => Workspace
   ) {}
 
-  initialize(): void {
-    const migrated = this.registry.prepare("SELECT value FROM app_state WHERE key = 'workspaceStorageVersion'").get()
-    const workspaces = this.registry.prepare<[], { id: string }>('SELECT id FROM workspaces').all()
-    if (!migrated) {
-      // Keep a consistent, standalone copy of the pre-split database for recovery.
-      const backup = join(this.directory, 'anvil.before-workspace-storage.db')
-      if (!existsSync(backup)) this.registry.prepare('VACUUM INTO ?').run(backup)
-      for (const workspace of workspaces) this.importWorkspace(workspace.id)
-      this.registry.transaction(() => {
-        this.registry.prepare('DELETE FROM projects').run()
-        this.registry.prepare('DELETE FROM workspace_settings').run()
-        this.registry.prepare('DELETE FROM workspace_preferences').run()
-        this.registry.prepare('DELETE FROM settings').run()
-        this.registry.prepare("INSERT INTO app_state (key, value) VALUES ('workspaceStorageVersion', '1')").run()
-      })()
-    }
-    for (const workspace of workspaces) this.open(workspace.id)
+  importLegacy(registry: Database.Database): void {
+    const migrated = registry.prepare("SELECT value FROM app_state WHERE key = 'workspaceStorageVersion'").get()
+    if (migrated) return
+    const workspaces = registry.prepare<[], { id: string }>('SELECT id FROM workspaces').all()
+    for (const workspace of workspaces) this.importWorkspace(registry, workspace.id)
   }
 
-  private importWorkspace(id: string): void {
+  private importWorkspace(registry: Database.Database, id: string): void {
     const directory = this.workspaceDirectory(id)
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const target = join(directory, 'anvil.db')
@@ -48,7 +37,7 @@ export class WorkspaceStorage {
     if (existsSync(target)) return
     const temporary = join(directory, 'anvil.migrating.db')
     rmSync(temporary, { force: true })
-    this.registry.prepare('VACUUM INTO ?').run(temporary)
+    registry.prepare('VACUUM INTO ?').run(temporary)
     const database = new Database(temporary)
     try {
       database.pragma('foreign_keys = ON')
@@ -98,9 +87,9 @@ export class WorkspaceStorage {
       sqlite.pragma('foreign_keys = OFF')
       try { migrate(db, { migrationsFolder: this.migrationsFolder }) }
       finally { sqlite.pragma('foreign_keys = ON') }
-      const workspace = this.registry.prepare('SELECT * FROM workspaces WHERE id = ?').get(id) as { id: string; name: string; name_key: string; created_at: number }
+      const workspace = this.getWorkspace(id)
       sqlite.prepare('INSERT INTO workspaces (id, name, name_key, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, name_key = excluded.name_key')
-        .run(workspace.id, workspace.name, workspace.name_key, workspace.created_at)
+        .run(workspace.id, workspace.name, workspace.name.toLowerCase(), workspace.createdAt)
       const connection = { sqlite, db }
       this.connections.set(id, connection)
       return connection

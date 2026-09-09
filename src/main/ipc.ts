@@ -56,7 +56,7 @@ export function registerIpc(
     if (window && !window.isDestroyed()) window.webContents.send(channel, payload)
   }
   // Migrations ship under the app root in development and packaged builds.
-  const store = new Store(join(dataDirectory, 'anvil.db'), {
+  const store = new Store(join(dataDirectory, 'config.json'), {
     migrationsFolder: join(app.getAppPath(), 'src', 'main', 'db', 'migrations')
   })
   const agentProcesses = new AgentProcessManager(undefined, undefined, undefined, (taskId) => resolveTaskWorkspace(store, taskId))

@@ -42,7 +42,7 @@ test.each([0, 7, null])('forwards Electron arguments and environment with child 
   expect(exitCode).toBe(status ?? 1)
 })
 
-test('delegates migrations to Kit and deletes only development database files', () => {
+test('delegates migrations to Kit and deletes only the selected development workspace database', () => {
   const launcherPath = resolve('scripts/drizzle.cjs')
   const launcherSource = readFileSync(launcherPath, 'utf8')
   const projectRequire = createRequire(launcherPath)
@@ -59,10 +59,11 @@ test('delegates migrations to Kit and deletes only development database files', 
     const productionFile = join(temporaryHome, '.anvil-composer', 'anvil.db')
     mkdirSync(dirname(productionFile), { recursive: true })
     writeFileSync(productionFile, 'production data')
+    const databaseFile = join(dataDirectory, 'workspaces', 'Work', 'anvil.db')
     const kitPath = join(dirname(projectRequire.resolve('drizzle-kit')), 'bin.cjs')
     let kitLoaded = false
     const launcherRequire = Object.assign((id: string) => {
-      if (id === './app-data.cjs') return dataDirectory
+      if (id === './workspace-database.cjs') return () => databaseFile
       if (id === kitPath) { kitLoaded = true; return {} }
       if (id === 'node:os') return { homedir: () => temporaryHome }
       expect(id.startsWith('node:'), 'Launcher must not patch database drivers').toBeTruthy()
@@ -73,7 +74,6 @@ test('delegates migrations to Kit and deletes only development database files', 
       process: { versions: { electron: 'test' }, argv: ['electron', launcherPath, 'migrate'] }
     })
     expect(kitLoaded, 'Launcher delegates to the installed Drizzle Kit CLI').toBeTruthy()
-    const databaseFile = join(dataDirectory, 'anvil.db')
     expect(existsSync(dirname(databaseFile)), 'Launcher creates the parent directory on first use').toBeTruthy()
     expect(existsSync(databaseFile), 'Only Kit should create the database').toBe(false)
 
@@ -83,7 +83,7 @@ test('delegates migrations to Kit and deletes only development database files', 
     const dropSource = readFileSync(resolve('scripts/db-drop.cjs'), 'utf8')
     for (let attempt = 0; attempt < 2; attempt++) {
       runInNewContext(dropSource, {
-        require: (id: string) => id === './app-data.cjs' ? dataDirectory : projectRequire(id),
+        require: (id: string) => id === './workspace-database.cjs' ? () => databaseFile : projectRequire(id),
         console: { log() {} }
       })
     }
@@ -92,5 +92,26 @@ test('delegates migrations to Kit and deletes only development database files', 
     expect(readFileSync(productionFile, 'utf8')).toBe('production data')
   } finally {
     rmSync(temporaryHome, { recursive: true, force: true })
+  }
+})
+
+test('maintenance paths follow JSON selection and reject paths outside workspace folders', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'anvil-db-selection-'))
+  try {
+    const filename = resolve('scripts/workspace-database.cjs')
+    const projectRequire = createRequire(filename)
+    const scriptModule = { exports: undefined as unknown as (directory: string) => string }
+    runInNewContext(readFileSync(filename, 'utf8'), { module: scriptModule, require: projectRequire, process: { env: {} } })
+    const databasePath = scriptModule.exports
+    expect(databasePath(directory)).toBe(join(directory, 'workspaces', 'Default', 'anvil.db'))
+    const configFile = join(directory, 'config.json')
+    const config = { version: 1, activeWorkspaceId: 'work', workspaces: [{ id: 'work', name: 'Work' }] }
+    writeFileSync(configFile, JSON.stringify(config))
+    expect(databasePath(directory)).toBe(join(directory, 'workspaces', 'Work', 'anvil.db'))
+    config.workspaces[0].name = '../outside'
+    writeFileSync(configFile, JSON.stringify(config))
+    expect(() => databasePath(directory)).toThrow(/Invalid workspace folder/)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
   }
 })

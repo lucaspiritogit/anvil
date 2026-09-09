@@ -1,17 +1,17 @@
 import { IssueTracker } from './valence/tracker'
-import Database from 'better-sqlite3'
 import { WorkspaceStorage, type WorkspaceConnection } from './workspace-storage'
-import { moveWorkspaceDirectory, validateWorkspaceFolderName } from './workspace-directories'
+import { moveWorkspaceDirectory } from './workspace-directories'
+import { normalizeWorkspaceName, readRootConfig, writeRootConfig, type RootConfig } from './root-config'
+import { archiveLegacyRoot, migrateLegacyRoot, relocateTaskPaths } from './legacy-root-storage'
 import { TaskImageStorage } from './task-image-storage'
 import type { PullRequestMerged } from '../shared/github-pull-request-state'
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm'
-import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH } from '../shared/types'
+import { DEFAULT_WORKSPACE_ID } from '../shared/types'
 import * as schema from './db/schema'
 import { canSettleTask, settlementDeadline } from '../shared/task-settlement'
 import { DEFAULT_KEYBINDINGS, normalizeKeybindings } from '../shared/keybindings'
@@ -67,7 +67,7 @@ function decodeKeybindings(value: string): Settings['keybindings'] {
   }
 }
 
-const { projects, taskComments, taskEvents, tasks, workspaceSettings: settings, workspaces, workspacePreferences, appState } = schema
+const { projects, taskComments, taskEvents, tasks, workspaceSettings: settings, workspacePreferences, appState } = schema
 
 type ProjectRow = typeof projects.$inferSelect
 type TaskRow = typeof tasks.$inferSelect
@@ -185,8 +185,8 @@ export interface StoreOptions {
 export class Store {
   private readonly dataDirectory: string
   private readonly temporaryDirectory: boolean
-  private readonly sqlite: Database.Database
-  private readonly db: BetterSQLite3Database<typeof schema>
+  private readonly configFile: string
+  private config: RootConfig
   private readonly storage: WorkspaceStorage
   private readonly activityListeners = new Set<() => void>()
 
@@ -214,39 +214,33 @@ export class Store {
       const workspaceId = task?.workspaceId ?? this.getActiveWorkspace().id
       return join(this.getWorkspaceDirectory(workspaceId), 'anvil.db.images')
     })
-    mkdirSync(dirname(databaseFile), { recursive: true })
-    this.sqlite = new Database(databaseFile)
-    this.sqlite.pragma('journal_mode = WAL')
-    this.sqlite.pragma('synchronous = NORMAL')
-    this.db = drizzle(this.sqlite, { schema })
-    // SQLite table rebuilds must disable foreign keys outside the migration
-    // transaction, or dropping tasks cascades into its events and execution state.
-    this.sqlite.pragma('foreign_keys = OFF')
-    try {
-      migrate(this.db, { migrationsFolder: options.migrationsFolder })
-    } finally {
-      this.sqlite.pragma('foreign_keys = ON')
-    }
-
-    this.bootstrapWorkspaces()
-    const migrateDirectories = !this.db.select().from(appState).where(eq(appState.key, 'workspaceDirectoryVersion')).get()
-    if (migrateDirectories) {
-      for (const workspace of this.getWorkspaces()) {
-        if (!/^(default|[0-9a-f-]{36})$/.test(workspace.id)) throw new Error('Invalid legacy workspace directory ID')
-        const previous = join(this.dataDirectory, 'workspaces', workspace.id)
-        const directory = this.getWorkspaceDirectory(workspace.id)
-        moveWorkspaceDirectory(previous, directory)
-        this.relocateTaskPaths(this.sqlite, previous, directory)
+    this.configFile = databaseFile.endsWith('.json') ? databaseFile : join(this.dataDirectory, 'config.json')
+    // Accept old Store callers while the on-disk root registry migrates to JSON.
+    const legacyDatabase = databaseFile.endsWith('.json') || this.temporaryDirectory
+      ? join(this.dataDirectory, 'anvil.db') : databaseFile
+    if (existsSync(this.configFile)) {
+      this.config = readRootConfig(this.configFile)
+    } else if (existsSync(legacyDatabase)) {
+      this.config = migrateLegacyRoot(legacyDatabase, options.migrationsFolder)
+    } else {
+      this.config = {
+        version: 1,
+        workspaces: [{ id: DEFAULT_WORKSPACE_ID, name: 'Default', createdAt: Date.now() }],
+        activeWorkspaceId: DEFAULT_WORKSPACE_ID
       }
     }
-    this.storage = new WorkspaceStorage(this.sqlite, this.dataDirectory, options.migrationsFolder, (id) => this.getWorkspaceDirectory(id))
-    this.storage.initialize()
-    for (const workspace of this.getWorkspaces()) {
-      const connection = this.storage.open(workspace.id)
-      this.seedWorkspace(workspace.id, connection.db)
-      if (migrateDirectories) this.relocateTaskPaths(connection.sqlite, join(this.dataDirectory, 'workspaces', workspace.id), this.getWorkspaceDirectory(workspace.id))
+    this.storage = new WorkspaceStorage(this.dataDirectory, options.migrationsFolder,
+      (id) => this.getWorkspaceDirectory(id), (id) => this.requireWorkspace(id))
+    try {
+      for (const workspace of this.getWorkspaces()) {
+        this.seedWorkspace(workspace.id, this.storage.open(workspace.id).db)
+      }
+      writeRootConfig(this.configFile, this.config)
+      archiveLegacyRoot(legacyDatabase)
+    } catch (error) {
+      this.storage.close()
+      throw error
     }
-    this.db.insert(appState).values({ key: 'workspaceDirectoryVersion', value: '1' }).onConflictDoNothing().run()
     this.recoverInterruptedTasks()
     for (const workspace of this.getWorkspaces()) {
       new TaskImageStorage(join(this.getWorkspaceDirectory(workspace.id), 'anvil.db.images')).prune(
@@ -261,28 +255,6 @@ export class Store {
     }
   }
 
-  private bootstrapWorkspaces(): void {
-    this.db.transaction(() => {
-      // Generated migrations assign legacy tasks to this stable ID.
-      // Insert it once, even when the user later renames the Default workspace.
-      if (!this.db.select().from(workspaces).where(eq(workspaces.id, DEFAULT_WORKSPACE_ID)).get()) {
-        this.db.insert(workspaces).values({
-          id: DEFAULT_WORKSPACE_ID, name: 'Default', nameKey: 'default', createdAt: Date.now()
-        }).run()
-        const legacySettings = this.db.select().from(schema.settings).all()
-        if (legacySettings.length) {
-          this.db.insert(settings).values(legacySettings.map((row) => ({
-            ...row, workspaceId: DEFAULT_WORKSPACE_ID
-          }))).onConflictDoNothing().run()
-        }
-      }
-      if (!this.db.select().from(appState).where(eq(appState.key, 'workspaceStorageVersion')).get()) {
-        for (const workspace of this.getWorkspaces()) this.seedWorkspace(workspace.id, this.db)
-      }
-      this.getActiveWorkspace()
-    })
-  }
-
   private seedWorkspace(workspaceId: string, db: BetterSQLite3Database<typeof schema>): void {
     db.insert(settings).values(
       SETTING_KEYS.map((key) => ({ workspaceId, key, value: encodeSetting(key, DEFAULT_SETTINGS[key]) }))
@@ -295,8 +267,7 @@ export class Store {
   }
 
   getWorkspaces(): Workspace[] {
-    return this.db.select({ id: workspaces.id, name: workspaces.name, createdAt: workspaces.createdAt })
-      .from(workspaces).orderBy(asc(workspaces.createdAt), asc(workspaces.id)).all()
+    return structuredClone(this.config.workspaces).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
   }
 
   private requireWorkspace(id: string): Workspace {
@@ -305,62 +276,61 @@ export class Store {
     return workspace
   }
 
-  private workspaceName(value: string): { name: string; nameKey: string } {
-    if (typeof value !== 'string') throw new Error('Workspace name must be a string')
-    const name = value.normalize('NFKC').trim().replace(/\s+/gu, ' ')
-    if (!name || name.length > MAX_WORKSPACE_NAME_LENGTH || /[\p{Cc}\p{Cf}]/u.test(value)) {
-      throw new Error(`Workspace name must contain 1 to ${MAX_WORKSPACE_NAME_LENGTH} characters without control characters`)
-    }
-    validateWorkspaceFolderName(name)
-    return { name, nameKey: name.toLowerCase() }
+  private saveConfig(config: RootConfig): void {
+    writeRootConfig(this.configFile, config)
+    this.config = config
   }
 
   createWorkspace(name: string): Workspace {
-    const normalized = this.workspaceName(name)
-    return this.db.transaction(() => {
-      if (this.db.select().from(workspaces).where(eq(workspaces.nameKey, normalized.nameKey)).get()) {
-        throw new Error('A workspace with that name already exists')
-      }
-      if (existsSync(join(this.dataDirectory, 'workspaces', normalized.name))) throw new Error('The workspace destination folder already exists')
-      const workspace = { id: randomUUID(), name: normalized.name, createdAt: Date.now() }
-      this.db.insert(workspaces).values({ ...workspace, nameKey: normalized.nameKey }).run()
+    const normalized = normalizeWorkspaceName(name)
+    if (this.getWorkspaces().some((workspace) => workspace.name.toLowerCase() === normalized.nameKey)) {
+      throw new Error('A workspace with that name already exists')
+    }
+    const directory = join(this.dataDirectory, 'workspaces', normalized.name)
+    if (existsSync(directory)) throw new Error('The workspace destination folder already exists')
+    const workspace = { id: randomUUID(), name: normalized.name, createdAt: Date.now() }
+    const previous = this.config
+    this.config = { ...previous, workspaces: [...previous.workspaces, workspace] }
+    try {
       this.seedWorkspace(workspace.id, this.storage.open(workspace.id).db)
-      return workspace
-    })
+      this.saveConfig(this.config)
+    } catch (error) {
+      this.config = previous
+      this.storage.closeWorkspace(workspace.id)
+      rmSync(directory, { recursive: true, force: true })
+      throw error
+    }
+    return { ...workspace }
   }
 
   renameWorkspace(id: string, name: string): Workspace {
     this.requireWorkspace(id)
-    const normalized = this.workspaceName(name)
-    const duplicate = this.db.select().from(workspaces).where(eq(workspaces.nameKey, normalized.nameKey)).get()
+    const normalized = normalizeWorkspaceName(name)
+    const duplicate = this.getWorkspaces().find((workspace) => workspace.name.toLowerCase() === normalized.nameKey)
     if (duplicate && duplicate.id !== id) throw new Error('A workspace with that name already exists')
     if (this.hasRunningTasks(id)) throw new Error('Wait for running tasks in this workspace to finish before renaming it')
     const previous = this.getWorkspaceDirectory(id)
     const directory = join(this.dataDirectory, 'workspaces', normalized.name)
     this.storage.closeWorkspace(id)
     moveWorkspaceDirectory(previous, directory)
-    this.db.update(workspaces).set(normalized).where(eq(workspaces.id, id)).run()
-    this.relocateTaskPaths(this.storage.open(id).sqlite, previous, directory)
+    try {
+      this.saveConfig({ ...this.config, workspaces: this.config.workspaces.map((workspace) =>
+        workspace.id === id ? { ...workspace, name: normalized.name } : workspace) })
+    } catch (error) {
+      moveWorkspaceDirectory(directory, previous)
+      throw error
+    }
+    relocateTaskPaths(this.storage.open(id).sqlite, previous, directory)
     return this.requireWorkspace(id)
   }
 
-  private relocateTaskPaths(sqlite: Database.Database, previous: string, directory: string): void {
-    if (previous === directory) return
-    sqlite.prepare(`UPDATE tasks SET cwd = ? || substr(cwd, ?) WHERE substr(cwd, 1, ?) = ?`)
-      .run(directory, previous.length + 1, previous.length + 1, previous + '/')
-  }
-
   getActiveWorkspace(): Workspace {
-    const selected = this.db.select().from(appState).where(eq(appState.key, 'activeWorkspaceId')).get()
-    const workspace = selected && this.getWorkspaces().find((entry) => entry.id === selected.value)
-    if (workspace) return workspace
-    return this.selectWorkspace(DEFAULT_WORKSPACE_ID)
+    return this.requireWorkspace(this.config.activeWorkspaceId)
   }
 
   selectWorkspace(id: string): Workspace {
     const workspace = this.requireWorkspace(id)
-    this.db.insert(appState).values({ key: 'activeWorkspaceId', value: id })
-      .onConflictDoUpdate({ target: appState.key, set: { value: id } }).run()
+    this.saveConfig({ ...this.config, activeWorkspaceId: id })
     this.activityChanged()
     return workspace
   }
@@ -368,7 +338,7 @@ export class Store {
   /** Workspace IDs own records; the user-visible name owns the folder. */
   getWorkspaceDirectory(workspaceId: string): string {
     const workspace = this.requireWorkspace(workspaceId)
-    const normalized = this.workspaceName(workspace.name)
+    const normalized = normalizeWorkspaceName(workspace.name)
     return join(this.dataDirectory, 'workspaces', normalized.name)
   }
 
@@ -724,7 +694,6 @@ export class Store {
 
   close(): void {
     this.storage.close()
-    this.sqlite.close()
     if (this.temporaryDirectory) rmSync(this.dataDirectory, { recursive: true, force: true })
   }
 

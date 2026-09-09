@@ -23,18 +23,18 @@ async function launch(executablePath, dataDirectory, extraEnv = {}) {
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('home'))), home)
   const page = await app.firstWindow()
   await page.getByRole('button', { name: 'Settings', exact: true }).waitFor()
-  assert.equal(await page.evaluate(() => window.anvil.wallpapers.directory()), join(dataDirectory, 'wallpaper'))
+  assert.equal(await page.evaluate(() => window.anvil.wallpapers.directory()), join(dataDirectory, 'workspaces', 'Default', 'wallpaper'))
   return { app, page }
 }
 
 function sql(directory, statement) {
-  return execFileSync('sqlite3', [join(directory, 'anvil.db'), statement], { encoding: 'utf8' }).trim()
+  return execFileSync('sqlite3', [join(directory, 'workspaces', 'Default', 'anvil.db'), statement], { encoding: 'utf8' }).trim()
 }
 
 function seedLiveTask(directory) {
   sql(directory, `INSERT INTO projects (id,name,path,created_at) VALUES ('project','Live project','/test',1);
-    INSERT INTO tasks (id,project_id,agent_id,agent_label,prompt,title,cwd,status,started_at,delivery_status)
-    VALUES ('live','project','codex','Codex','Work','Live task','/test','running',1,'working');`)
+    INSERT INTO tasks (id,project_id,agent_id,agent_label,prompt,title,cwd,status,started_at,delivery_status,workspace_id)
+    VALUES ('live','project','codex','Codex','Work','Live task','/test','running',1,'working','default');`)
 }
 
 try {
@@ -42,7 +42,7 @@ try {
   const developmentDirectory = join(home, '.anvil-composer-dev')
   const production = await launch(packagedPath, productionDirectory)
   assert.equal(await production.app.evaluate(({ app }) => app.isPackaged), true)
-  await production.page.evaluate(() => window.anvil.settings.set({ overviewBackgroundColor: '#123456' }))
+  await production.page.evaluate(() => window.anvil.settings.set('default', { overviewBackgroundColor: '#123456' }))
   seedLiveTask(productionDirectory)
 
   const development = await launch(undefined, developmentDirectory)
@@ -50,7 +50,7 @@ try {
   assert.notEqual(await development.app.evaluate(({ app }) => app.getPath('userData')),
     await production.app.evaluate(({ app }) => app.getPath('userData')))
   assert.deepEqual(await development.page.evaluate(() => window.anvil.projects.list()), [])
-  await development.page.evaluate(() => window.anvil.settings.set({ overviewBackgroundColor: '#abcdef' }))
+  await development.page.evaluate(() => window.anvil.settings.set('default', { overviewBackgroundColor: '#abcdef' }))
   assert.equal((await production.page.evaluate(() => window.anvil.settings.get())).overviewBackgroundColor, '#123456')
   assert.equal(sql(productionDirectory, "SELECT status FROM tasks WHERE id='live'"), 'running')
   seedLiveTask(developmentDirectory)
@@ -70,7 +70,7 @@ try {
   const isolated = await launch(packagedPath, isolatedDirectory, { ANVIL_DATA_DIR: isolatedDirectory })
   assert.deepEqual(await isolated.page.evaluate(() => window.anvil.projects.list()), [])
   await development.page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await expect(development.page.getByText(join(developmentDirectory, 'wallpaper'), { exact: true })).toBeVisible()
+  await expect(development.page.getByText(join(developmentDirectory, 'workspaces', 'Default', 'wallpaper'), { exact: true })).toBeVisible()
   await development.page.screenshot({ path: '/private/tmp/anvil-dev-data-settings.png' })
   assert.equal(sql(productionDirectory, "SELECT status FROM tasks WHERE id='live'"), 'running')
   console.log('App data Electron checks passed: concurrent packaged/development apps, live-task preservation, separate settings and profiles, duplicate-instance lock, isolated packaged tests, and actual wallpaper folder display.')
