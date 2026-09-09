@@ -1,21 +1,22 @@
 import { useEffect, useState } from 'react'
 import type { JSX } from 'react'
 import type { Settings, Wallpaper } from '@shared/types'
+import { loadWallpaper } from '../state/wallpaper-cache'
 import { btn, cn, field, modal } from '../ui'
 
 export type OverviewAppearance = Pick<Settings, 'overviewBackgroundMode' | 'overviewBackgroundColor' | 'overviewWallpaperId'>
 const PAGE_SIZE = 3
 
-function Thumbnail({ wallpaper }: { wallpaper: Wallpaper }): JSX.Element {
+function Thumbnail({ wallpaper, refresh }: { wallpaper: Wallpaper; refresh?: boolean }): JSX.Element {
   const [url, setUrl] = useState<string | null | undefined>(undefined)
   useEffect(() => {
     let cancelled = false
-    void window.anvil.wallpapers.read(wallpaper.id).then(
-      (value) => { if (!cancelled) setUrl(value) },
+    void loadWallpaper(wallpaper.id, refresh ? { refresh: true } : {}).then(
+      (entry) => { if (!cancelled) setUrl(entry?.dataUrl ?? null) },
       () => { if (!cancelled) setUrl(null) }
     )
     return () => { cancelled = true }
-  }, [wallpaper.id])
+  }, [wallpaper.id, refresh])
   return url
     ? <img src={url} alt="" className="h-16 w-full object-cover" />
     : <span className="flex h-16 items-center justify-center text-xs text-dim">{url === undefined ? 'Loading…' : 'Unavailable. Refresh to retry.'}</span>
@@ -89,7 +90,7 @@ export function OverviewBackgroundPicker({ value, onChange }: {
               <button key={`${revision}:${wallpaper.id}`} type="button" aria-pressed={value.overviewWallpaperId === wallpaper.id}
                 className={cn('min-w-0 overflow-hidden border p-1 text-left focus-visible:outline-2 focus-visible:outline-accent', value.overviewWallpaperId === wallpaper.id ? 'border-accent bg-accent/10' : 'border-line')}
                 onClick={() => onChange({ ...value, overviewWallpaperId: wallpaper.id })}>
-                <Thumbnail wallpaper={wallpaper} />
+                <Thumbnail wallpaper={wallpaper} refresh={revision > 0} />
                 <span className="block truncate text-xs" title={wallpaper.name}>{wallpaper.name}</span>
                 {value.overviewWallpaperId === wallpaper.id && <span className="text-xs text-accent">Selected</span>}
               </button>
