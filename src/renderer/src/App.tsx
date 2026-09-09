@@ -86,6 +86,12 @@ export function App(): JSX.Element {
     }
   }, [settingsOpen, ready])
 
+  useLayoutEffect(() => {
+    if (sidebarCollapsed && document.activeElement?.closest('[aria-label="Task sidebar"]')) {
+      workspaceRef.current?.focus()
+    }
+  }, [sidebarCollapsed])
+
   // Capture fields stop propagation so recording a shortcut never invokes it.
   useEffect(() => {
     const actions: Record<ShortcutId, () => void> = { toggleSidebar, focusTaskComposer }
@@ -135,14 +141,15 @@ export function App(): JSX.Element {
             : sidebarCollapsed ? 'grid-cols-[0_1fr]' : 'grid-cols-[304px_1fr]'
         )}
       >
-        <div className="contents" inert={switching}><Sidebar key={workspaceId} /></div>
-        <div ref={workspaceRef} className={cn('min-w-0 min-h-0', settingsOpen && 'hidden')} inert={settingsOpen || switching}>
+        <div className="contents" inert={switching}><Sidebar /></div>
+        <div ref={workspaceRef} tabIndex={-1} className={cn('min-w-0 min-h-0 outline-none', settingsOpen && 'hidden')} inert={settingsOpen || switching}>
           <Workspace key={workspaceId} />
           {newTaskOpen && <NewTaskModal />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
         {settingsOpen && <div className="contents" inert={switching}><SettingsPage key={workspaceId} /></div>}
       </div>
+      {switching && <div role="status" className="fixed bottom-4 right-4 z-50 border border-line bg-canvas p-3 text-sm shadow-lg">Switching workspace…</div>}
       {workspaceError && <div role="alert" className="fixed bottom-4 right-4 z-50 rounded border border-line bg-canvas p-3 text-sm shadow-lg">
         <p>{workspaceError}</p>
         <button className="mt-2 text-accent" onClick={() => { if (workspaceId) void useStore.getState().selectWorkspace(workspaceId) }}>Retry workspace</button>

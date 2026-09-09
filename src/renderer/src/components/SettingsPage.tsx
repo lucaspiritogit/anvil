@@ -75,6 +75,7 @@ function ShortcutField({
 
 export function SettingsPage(): JSX.Element {
   const workspaceId = useStore((s) => s.activeWorkspaceId)
+  const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === s.activeWorkspaceId)?.name)
   const section = useStore((s) => s.settingsSection)
   const [memoryEnabled, setMemoryEnabled] = useState(false)
   const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(DEFAULT_EMBEDDING_MODEL)
@@ -196,6 +197,7 @@ export function SettingsPage(): JSX.Element {
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-canvas" data-testid="settings-page">
       <main className="min-h-0 flex-1 overflow-y-auto px-8 py-7 max-[600px]:px-5" aria-labelledby="settings-section-title">
         <div className="mx-auto max-w-[720px]">
+          <p className="mb-3 break-words text-xs text-dim" aria-label="Settings workspace">Workspace: {workspaceName}</p>
           <h2 id="settings-section-title" className="text-2xl font-semibold tracking-tight">{currentSection.label}</h2>
           <p className="mb-7 mt-2 text-sm text-dim">{currentSection.description}</p>
           {!settings && <p role="status" className="mb-4 text-dim">Loading settings…</p>}

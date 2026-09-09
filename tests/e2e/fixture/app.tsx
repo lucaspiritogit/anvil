@@ -333,6 +333,8 @@ window.anvil = {
     list: async () => structuredClone(workspaceRows),
     snapshot: async () => { if (query.has('settingsLoading')) await settingsLoaded; return snapshot() },
     create: async (name) => {
+      if (query.has('workspaceDelay')) await new Promise((resolve) => setTimeout(resolve, 300))
+      if (query.has('workspaceCreateFailure')) throw new Error('Could not create workspace. Try again.')
       const workspace = { id: crypto.randomUUID(), name, createdAt: Date.now() }
       workspaceRows.push(workspace)
       workspaceSettings[workspace.id] = structuredClone(defaultSettings)
@@ -340,12 +342,16 @@ window.anvil = {
       return workspace
     },
     rename: async (id, name) => {
+      if (query.has('workspaceDelay')) await new Promise((resolve) => setTimeout(resolve, 300))
+      if (query.has('workspaceRenameFailure')) throw new Error('Could not rename workspace. Try again.')
       const workspace = workspaceRows.find((row) => row.id === id)!
       workspace.name = name
       persistWorkspaces()
       return workspace
     },
     select: async (id) => {
+      if (query.has('workspaceDelay')) await new Promise((resolve) => setTimeout(resolve, 300))
+      if (query.has('workspaceSelectFailure') && id !== 'default') throw new Error('Could not switch workspace. Try again.')
       if (!workspaceRows.some((row) => row.id === id)) throw new Error('Workspace not found')
       selectedWorkspace = id
       settings = workspaceSettings[id]
@@ -408,7 +414,7 @@ window.anvil = {
       }
       if (query.has('startFailure')) throw new Error('Task could not be started')
       const task: Task = {
-        ...base, ...input, workspaceId: selectedWorkspace, id: `started-${tasks.length}`, title: input.prompt || 'Image task',
+        ...base, ...input, workspaceId: input.workspaceId ?? selectedWorkspace, id: `started-${tasks.length}`, title: input.prompt || 'Image task',
         status: 'running', deliveryStatus: 'working', endedAt: undefined, reviewedAt: undefined,
         cwd: projects.find((project) => project.id === input.projectId)!.path
       }

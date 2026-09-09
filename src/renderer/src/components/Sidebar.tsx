@@ -12,10 +12,12 @@ import { cn } from '../ui'
 import { useSidebarIssueSnapshots } from '../hooks/use-task-issues'
 import { SidebarTask } from './SidebarTask'
 import { ProjectPicker } from './ProjectPicker'
+import { WorkspacePicker } from './WorkspacePicker'
 
 const ICON_BUTTON = 'grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent'
 
 export function Sidebar(): JSX.Element {
+  const workspaceId = useStore((state) => state.activeWorkspaceId)
   const projects = useStore((state) => state.projects)
   const tasks = useStore((state) => state.tasks)
   const activeProjectId = useStore((state) => state.activeProjectId)
@@ -41,6 +43,12 @@ export function Sidebar(): JSX.Element {
   useEffect(() => {
     if (projectFilter && !projects.some((project) => project.id === projectFilter)) setProjectFilter(null)
   }, [projectFilter, projects])
+
+  useEffect(() => {
+    setProjectFilter(null)
+    setSearch('')
+    setSettledOpen(false)
+  }, [workspaceId])
 
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
   const snapshots = useSidebarIssueSnapshots()
@@ -88,6 +96,7 @@ export function Sidebar(): JSX.Element {
         sidebarCollapsed && '-translate-x-full'
       )}
       inert={sidebarCollapsed}
+      aria-hidden={sidebarCollapsed || undefined}
     >
       <div className={cn('flex shrink-0 items-center h-11 px-4 text-[11px] font-semibold tracking-[0.12em] text-dim', IS_MAC && 'drag-region pl-[78px]')}>
         ANVIL
@@ -123,12 +132,13 @@ export function Sidebar(): JSX.Element {
 
       <div className="flex shrink-0 items-end gap-1.5 px-2.5 pb-3">
         <ProjectPicker
-          key={JSON.stringify(projects.map((project) => project.id))}
+          key={JSON.stringify([workspaceId, projects.map((project) => project.id)])}
           projects={projects}
           value={projectFilter}
           onChange={(id) => { setProjectFilter(id); if (id) selectProject(id) }}
         />
         <button className={ICON_BUTTON} aria-label="Add project" title="Add project" onClick={() => void addProject().then(() => {
+          if (useStore.getState().activeWorkspaceId !== workspaceId) return
           const nextProjectId = useStore.getState().activeProjectId
           if (nextProjectId !== activeProjectId) setProjectFilter(nextProjectId)
         })}>
@@ -177,6 +187,9 @@ export function Sidebar(): JSX.Element {
         <HugeiconsIcon icon={Settings01Icon} size={18} aria-hidden="true" />
         Settings
       </button>
+      <div className="shrink-0 px-2.5 pb-3">
+        <WorkspacePicker />
+      </div>
     </aside>
   )
 }
