@@ -2,12 +2,18 @@ import Database from 'better-sqlite3'
 import { realpathSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { validateWorkspaceFolderName } from '../workspace-directories'
+import { readRootConfig } from '../root-config'
 import { IssueTracker } from './tracker'
 
 /** Existing storage only. No Store recovery, migration, import, or image cleanup. */
 export function openCliTracker(projectPath: string, databasePath = process.env.ANVIL_DATABASE_PATH): IssueTracker {
   if (!databasePath || !isAbsolute(databasePath)) {
     throw new Error('Use the vl launcher supplied by Anvil, or set ANVIL_DATABASE_PATH to its existing absolute database path')
+  }
+  if (databasePath.endsWith('.json')) {
+    const config = readRootConfig(databasePath)
+    const workspace = config.workspaces.find((entry) => entry.id === config.activeWorkspaceId)!
+    return openCliTracker(projectPath, join(dirname(databasePath), 'workspaces', workspace.name, 'anvil.db'))
   }
   const connection = new Database(databasePath, { fileMustExist: true })
   try {

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import Database from 'better-sqlite3'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from '../src/main/store'
@@ -21,6 +21,8 @@ test('workspace switching separates projects and creates a database in each work
   for (const workspace of store.getWorkspaces()) {
     expect(existsSync(join(store.getWorkspaceDirectory(workspace.id), 'anvil.db'))).toBe(true)
   }
+  for (const suffix of ['', '-wal', '-shm']) expect(existsSync(join(directory, 'anvil.db' + suffix))).toBe(false)
+  expect(JSON.parse(readFileSync(join(directory, 'config.json'), 'utf8')).activeWorkspaceId).toBe(work.id)
   store.selectWorkspace('default')
   expect(store.getProjects().map((project) => project.id)).toEqual(['personal'])
 })
@@ -71,7 +73,7 @@ test('splits existing profiles without copying unrelated projects or credentials
   const database = join(directory, 'anvil.db')
   migrateBefore(database, 12)
   const registry = new Database(database)
-  onTestCleanup(() => { registry.close() })
+  onTestCleanup(() => { if (registry.open) registry.close() })
   const work = '00000000-0000-0000-0000-000000000001'
   registry.prepare('INSERT INTO workspaces VALUES (?, ?, ?, 1)').run('default', 'Default', 'default')
   registry.prepare('INSERT INTO workspaces VALUES (?, ?, ?, 2)').run(work, 'Work', 'work')
@@ -84,6 +86,7 @@ test('splits existing profiles without copying unrelated projects or credentials
   writeFileSync(join(directory, 'memory', 'marker'), 'memory marker')
   writeFileSync(join(directory, 'github-token.enc'), 'credential marker')
 
+  registry.close()
   for (let pass = 0; pass < 2; pass++) {
     const store = new Store(database, { migrationsFolder })
     try {
@@ -96,10 +99,84 @@ test('splits existing profiles without copying unrelated projects or credentials
       expect(readFileSync(join(defaultDirectory, 'memory', 'marker'), 'utf8')).toBe('memory marker')
       expect(readFileSync(join(defaultDirectory, 'github-token.enc'), 'utf8')).toBe('credential marker')
       expect(existsSync(join(store.getWorkspaceDirectory(work), 'github-token.enc'))).toBe(false)
-      expect(registry.prepare('SELECT * FROM projects').all()).toEqual([])
-      expect(registry.prepare('SELECT * FROM tasks').all()).toEqual([])
+      expect(existsSync(database)).toBe(false)
+      expect(existsSync(join(directory, 'backups', 'anvil.before-root-json.db'))).toBe(true)
     } finally {
       store.close()
     }
   }
+})
+
+test('migrates an already split registry to JSON without replacing workspace databases', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'anvil-root-json-upgrade-'))
+  onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
+  const configFile = join(directory, 'config.json')
+  let store = new Store(configFile, { migrationsFolder })
+  onTestCleanup(() => store.close())
+  const workspace = store.createWorkspace('Work')
+  store.selectWorkspace(workspace.id)
+  store.setSettings({ fontSize: 18 })
+  const workspaces = store.getWorkspaces()
+  store.close()
+  const databaseFile = join(directory, 'anvil.db')
+  migrateBefore(databaseFile, 1000)
+  const registry = new Database(databaseFile)
+  registry.pragma('journal_mode = WAL')
+  for (const entry of workspaces) {
+    registry.prepare('INSERT INTO workspaces VALUES (?, ?, ?, ?)').run(entry.id, entry.name, entry.name.toLowerCase(), entry.createdAt)
+  }
+  registry.prepare("INSERT INTO app_state VALUES ('workspaceStorageVersion', '1'), ('workspaceDirectoryVersion', '1'), ('activeWorkspaceId', ?)")
+    .run(workspace.id)
+  registry.close()
+  rmSync(configFile)
+  for (let pass = 0; pass < 2; pass++) {
+    store = new Store(configFile, { migrationsFolder })
+    expect(store.getWorkspaces()).toEqual(workspaces)
+    expect(store.getActiveWorkspace()).toEqual(workspace)
+    expect(store.getSettings().fontSize).toBe(18)
+    expect(JSON.parse(readFileSync(configFile, 'utf8'))).toEqual({ version: 1, workspaces, activeWorkspaceId: workspace.id })
+    for (const suffix of ['', '-wal', '-shm']) expect(existsSync(databaseFile + suffix)).toBe(false)
+    store.close()
+  }
+})
+
+test('rejects corrupt JSON without replacing config or creating a root database', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'anvil-root-json-invalid-'))
+  onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
+  const filename = join(directory, 'config.json')
+  for (const source of ['{broken', JSON.stringify({ version: 2, workspaces: [] }), JSON.stringify({
+    version: 1, workspaces: [{ id: 'default', name: '../escape', createdAt: 1 }], activeWorkspaceId: 'default'
+  })]) {
+    writeFileSync(filename, source)
+    expect(() => new Store(filename, { migrationsFolder })).toThrow()
+    expect(readFileSync(filename, 'utf8')).toBe(source)
+    expect(existsSync(join(directory, 'anvil.db'))).toBe(false)
+  }
+})
+
+test('failed JSON writes preserve workspace selection and roll back created or renamed folders', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'anvil-root-json-write-'))
+  onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
+  const filename = join(directory, 'config.json')
+  let store = new Store(filename, { migrationsFolder })
+  onTestCleanup(() => store.close())
+  const work = store.createWorkspace('Work')
+  const original = store.getWorkspaces()
+  const savedConfig = join(directory, 'saved-config.json')
+  renameSync(filename, savedConfig)
+  mkdirSync(filename)
+  expect(() => store.selectWorkspace(work.id)).toThrow()
+  expect(() => store.createWorkspace('Failed')).toThrow()
+  expect(() => store.renameWorkspace(work.id, 'Renamed')).toThrow()
+  expect(store.getWorkspaces()).toEqual(original)
+  expect(store.getActiveWorkspace().id).toBe('default')
+  expect(existsSync(join(directory, 'workspaces', 'Work', 'anvil.db'))).toBe(true)
+  expect(existsSync(join(directory, 'workspaces', 'Failed'))).toBe(false)
+  expect(existsSync(join(directory, 'workspaces', 'Renamed'))).toBe(false)
+  rmSync(filename, { recursive: true })
+  renameSync(savedConfig, filename)
+  store.close()
+  store = new Store(filename, { migrationsFolder })
+  expect(store.getWorkspaces()).toEqual(original)
+  expect(store.getActiveWorkspace().id).toBe('default')
 })

@@ -16,7 +16,7 @@ export async function run(): Promise<void> {
     const worktree = join(home, 'worktree')
     mkdirSync(project)
     mkdirSync(worktree)
-    const path = join(home, 'anvil.db')
+    const path = join(home, 'config.json')
     const store = new Store(path, { migrationsFolder: resolve('src/main/db/migrations') })
     onTestCleanup(() => store.close())
     const db = new Database(store.getWorkspaceDatabasePath('default'))
@@ -27,7 +27,7 @@ export async function run(): Promise<void> {
       db.prepare(`INSERT INTO tasks (id, project_id, agent_id, agent_label, prompt, title, cwd, status, started_at)
         VALUES (?, ?, 'codex', 'Codex', 'Prompt', 'Title', ?, 'running', 1)`).run(id, projectId, project)
     }
-    const imageDirectory = `${path}.images/orphan-task`
+    const imageDirectory = join(store.getWorkspaceDirectory('default'), 'anvil.db.images', 'orphan-task')
     mkdirSync(imageDirectory, { recursive: true })
     writeFileSync(join(imageDirectory, 'keep.png'), 'sentinel')
     const core = store.issueTracker('project')
@@ -113,7 +113,7 @@ export async function run(): Promise<void> {
       assert.equal(result.status, command === '--help' ? 0 : 1)
       assert.equal(existsSync(missing), false)
     }
-    const otherPath = join(home, 'other-profile', 'anvil.db')
+    const otherPath = join(home, 'other-profile', 'config.json')
     const otherStore = new Store(otherPath, { migrationsFolder: resolve('src/main/db/migrations') })
     onTestCleanup(() => otherStore.close())
     const mismatch = spawnSync(process.execPath, [cliPath, '--project', project, 'status', '--json'], {

@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-// Quit Anvil before deleting its SQLite database and WAL sidecar files.
+// Quit Anvil before deleting the selected workspace database and WAL sidecar files.
 const { existsSync, rmSync } = require('node:fs')
-const { join } = require('node:path')
 
-const databaseFile = join(require('./app-data.cjs'), 'anvil.db')
+const databaseFile = require('./workspace-database.cjs')()
 for (const suffix of ['', '-wal', '-shm']) {
   const filename = databaseFile + suffix
   if (!existsSync(filename)) continue

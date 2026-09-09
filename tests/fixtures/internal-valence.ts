@@ -5,7 +5,7 @@ import { openCliTracker } from '../../src/main/valence/connection'
 import { onTestCleanup } from '../test-cleanup'
 
 export function internalTrackerFixture(project: string) {
-  const databasePath = join(project, 'anvil.db')
+  const databasePath = join(project, 'config.json')
   const store = new Store(databasePath, { migrationsFolder: resolve('src/main/db/migrations') })
   onTestCleanup(() => store.close())
   const db = new Database(store.getWorkspaceDatabasePath('default'))

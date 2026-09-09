@@ -195,19 +195,22 @@ test('renaming moves credentials to the named folder and keeps workspace identit
 })
 
 test('recovers missing or invalid active selections deterministically and persists the recovery', () => {
-  const { open, database } = fixture()
+  const { open, directory } = fixture()
   let store = open()
   const work = store.createWorkspace('Work')
   store.selectWorkspace(work.id)
   store.close()
-  const db = rawDatabase(database)
-  db.prepare("UPDATE app_state SET value = 'missing' WHERE key = 'activeWorkspaceId'").run()
+  const configFile = join(directory, 'config.json')
+  const config = JSON.parse(readFileSync(configFile, 'utf8'))
+  config.activeWorkspaceId = 'missing'
+  writeFileSync(configFile, JSON.stringify(config))
   store = open()
   expect(store.getActiveWorkspace().id).toBe(DEFAULT_WORKSPACE_ID)
-  expect(db.prepare("SELECT value FROM app_state WHERE key = 'activeWorkspaceId'").get()).toEqual({ value: DEFAULT_WORKSPACE_ID })
+  expect(JSON.parse(readFileSync(configFile, 'utf8')).activeWorkspaceId).toBe(DEFAULT_WORKSPACE_ID)
   store.selectWorkspace(work.id)
   store.close()
-  db.prepare("DELETE FROM app_state WHERE key = 'activeWorkspaceId'").run()
+  delete config.activeWorkspaceId
+  writeFileSync(configFile, JSON.stringify(config))
   store = open()
   expect(store.getActiveWorkspace().id).toBe(DEFAULT_WORKSPACE_ID)
 })
@@ -271,18 +274,18 @@ test('upgrades a legacy database twice without losing settings, sessions, execut
   const tables = ['projects', 'parent_issues', 'issues', 'issue_dependencies', 'task_executions', 'task_events', 'task_comments', 'task_pull_requests']
   const preserved = tables.map((table) => db.prepare(`SELECT * FROM ${table}`).all())
   const originalTask = db.prepare<[], Record<string, unknown>>('SELECT * FROM tasks').get()!
+  db.close()
   for (let attempt = 0; attempt < 2; attempt++) {
     const store = open()
     expect(store.getWorkspaces()).toHaveLength(1)
     expect(store.getActiveWorkspace().id).toBe(DEFAULT_WORKSPACE_ID)
     expect(store.getSettings()).toMatchObject({ defaultAgentId: 'codex', caffeineMode: true, fontSize: 18 })
     const workspaceDb = rawDatabase(store.getWorkspaceDatabasePath('default'))
-    expect(db.prepare('SELECT * FROM tasks').all()).toEqual([])
     expect(workspaceDb.prepare('SELECT * FROM tasks').get()).toEqual({ ...originalTask, workspace_id: DEFAULT_WORKSPACE_ID })
     expect(store.getTaskExecution('task')).toEqual(state)
     expect(tables.map((table) => workspaceDb.prepare(`SELECT * FROM ${table}`).all())).toEqual(preserved)
     expect(store.issueTracker('project').list().map((issue) => issue.id)).toEqual(['first', 'second'])
-    expect(db.pragma('foreign_key_check')).toEqual([])
+    expect(workspaceDb.pragma('foreign_key_check')).toEqual([])
     store.close()
   }
   const store = open()

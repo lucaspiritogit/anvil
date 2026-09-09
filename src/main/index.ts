@@ -108,7 +108,7 @@ app.on('second-instance', () => {
 if (ownsInstance) app.whenReady().then(async () => {
   await restoreShellPath()
   const cliDirectory = join(app.getPath('userData'), 'bin')
-  installValenceLauncher(cliDirectory, process.execPath, join(__dirname, 'valence-cli.js'), join(dataDirectory, 'anvil.db'))
+  installValenceLauncher(cliDirectory, process.execPath, join(__dirname, 'valence-cli.js'), join(dataDirectory, 'config.json'))
   exposeValenceLauncher(cliDirectory)
   const services = registerIpc(() => mainWindow, rendererUrl, dataDirectory)
   app.on('browser-window-focus', () => services.githubPolling.refreshIfStale())

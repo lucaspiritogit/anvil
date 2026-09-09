@@ -14,7 +14,7 @@ if (!process.versions.electron) {
 }
 
 if (process.argv[2] === 'migrate') {
-  mkdirSync(require('./app-data.cjs'), { recursive: true })
+  mkdirSync(dirname(require('./workspace-database.cjs')()), { recursive: true })
 }
 
 require(join(dirname(require.resolve('drizzle-kit')), 'bin.cjs'))

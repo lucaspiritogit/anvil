@@ -372,3 +372,30 @@ test('reuses an existing task parent and recovers a persisted interrupted claim'
   expect(reopened.getTaskExecution(taskId)?.phase).toBe('complete')
   expect(recovered.initialize(taskId, directory).parentIssueId).toBe(parent.id)
 })
+
+test('CLI follows the JSON workspace selection and still accepts a direct workspace database', () => {
+  const directory = mkdtempSync(join(testHome, 'json-cli-'))
+  onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
+  const configFile = join(directory, 'config.json')
+  const store = new Store(configFile, { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') })
+  onTestCleanup(() => store.close())
+  const work = store.createWorkspace('Work')
+  for (const workspace of store.getWorkspaces()) {
+    store.addProject({ id: 'project', name: workspace.name, path: directory, createdAt: 1,
+      monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' }, workspace.id)
+    store.selectWorkspace(workspace.id)
+    const client = openCliTracker(directory, configFile)
+    try {
+      expect(client.databasePath).toBe(store.getWorkspaceDatabasePath(workspace.id))
+    } finally {
+      client.close()
+    }
+  }
+  store.selectWorkspace('default')
+  const direct = openCliTracker(directory, store.getWorkspaceDatabasePath(work.id))
+  try {
+    expect(direct.databasePath).toBe(store.getWorkspaceDatabasePath(work.id))
+  } finally {
+    direct.close()
+  }
+})

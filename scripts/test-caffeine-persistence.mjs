@@ -9,7 +9,7 @@ import { _electron as electron, expect } from 'playwright/test'
 // Run after npm run build. Uses the built renderer, real preload/IPC and SQLite.
 // Requires sqlite3 on PATH. --inspect leaves an isolated window for manual checks.
 const directory = await mkdtemp(join(tmpdir(), 'anvil-caffeine-check-'))
-const database = join(directory, '.anvil-composer', 'anvil.db')
+const database = join(directory, '.anvil-composer', 'workspaces', 'Default', 'anvil.db')
 const artifacts = resolve('docs/validation/caffeine-persistence')
 const query = "SELECT key, value, typeof(value) AS storageType FROM settings WHERE key = 'caffeineMode'"
 const executablePath = process.argv.find((arg) => arg.startsWith('--executable='))?.slice('--executable='.length)

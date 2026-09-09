@@ -8,7 +8,8 @@ import { join, resolve } from 'node:path'
 
 const directory = realpathSync(mkdtempSync(join(tmpdir(), 'anvil-tracker-ui-')))
 const project = join(directory, 'project')
-const database = join(directory, 'anvil.db')
+const configFile = join(directory, 'config.json')
+const database = join(directory, 'workspaces', 'Default', 'anvil.db')
 const screenshots = resolve(process.argv[2] ?? 'test-results/integrated-tracker')
 mkdirSync(project)
 mkdirSync(screenshots, { recursive: true })
@@ -43,7 +44,7 @@ try {
   const runNode = (code, ...args) => execFileSync(executable, ['-e', code, ...args], {
     encoding: 'utf8', env: { ...env, ELECTRON_RUN_AS_NODE: '1' }
   })
-  const parentId = JSON.parse(runNode('console.log(JSON.stringify(require(process.argv[1]).seed(...process.argv.slice(2))))', seed, database, project, resolve('src/main/db/migrations')))
+  const parentId = JSON.parse(runNode('console.log(JSON.stringify(require(process.argv[1]).seed(...process.argv.slice(2))))', seed, configFile, project, resolve('src/main/db/migrations')))
   const cli = (...args) => JSON.parse(execFileSync(executable, [resolve('out/main/valence-cli.js'), '--project', project, ...args, '--json'], {
     encoding: 'utf8', env: { ...env, ELECTRON_RUN_AS_NODE: '1', ANVIL_DATABASE_PATH: database }
   }))
