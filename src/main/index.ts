@@ -120,6 +120,7 @@ if (ownsInstance) app.whenReady().then(async () => {
       () => services.stopCaffeineMode(),
       () => services.terminals.close(),
       () => services.agentProcesses.close(),
+      () => services.closeAgentDiscovery(),
       () => services.githubPolling.close(),
       () => services.projectMemory?.close()
     ],

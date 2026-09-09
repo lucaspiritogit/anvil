@@ -1,14 +1,27 @@
-import type { TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, TaskComment, TaskMergePreview } from './types'
+import type { AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, ComposerPreferences, WorkspacePreferences, TaskComment, TaskMergePreview } from './types'
 
 /** The renderer supplies identities, never paths for privileged project actions. */
 export interface IpcRequests {
   'wallpapers:directory': undefined
   'wallpapers:list': undefined
   'wallpapers:read': string
-  'settings:get': undefined
-  'settings:set': Partial<Settings>
+  'settings:get': string | undefined
+  'settings:set': { workspaceId: string; patch: Partial<Settings> }
+  'workspaces:list': undefined
+  'workspaces:snapshot': undefined
+  'workspaces:create': string
+  'workspaces:rename': { workspaceId: string; name: string }
+  'workspaces:select': string
+  'workspaces:preferences:get': string
+  'workspaces:preferences:set': { workspaceId: string; patch: Partial<WorkspacePreferences> }
+  'workspaces:composer:import': ComposerPreferences
+  'accounts:status': AgentAccountTarget
+  'accounts:connect': AgentAccountConnect
+  'accounts:disconnect': AgentAccountTarget
+  'accounts:cancel': AgentAccountTarget & { sessionId: string }
+  'accounts:terminal': AgentAccountTarget & { sessionId: string; data?: string; cols?: number; rows?: number }
   'agents:list': undefined
-  'agents:models': string
+  'agents:models': { agentId: string; workspaceId?: string }
   'projects:list': undefined
   'projects:add': undefined
   'projects:update': { id: string; monthlyTokenLimit: number | null; monthlyCostLimitUsd: number | null; finishOnPush: boolean }
@@ -24,7 +37,7 @@ export interface IpcRequests {
   'tasks:events': string
   'tasks:diff': string
   'tasks:issue-diff': { taskId: string; issueId: string }
-  'tasks:start': { projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
+  'tasks:start': { workspaceId?: string; projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
   'tasks:steer': { taskId: string; message: string }
   'tasks:cancel': string
   'tasks:delete': string
@@ -54,4 +67,4 @@ export interface IpcRequests {
 export type IpcChannel = keyof IpcRequests
 export type IpcSendChannel = 'terminal:write' | 'terminal:resize'
 export type IpcInvokeChannel = Exclude<IpcChannel, IpcSendChannel>
-export type IpcArgs<C extends IpcChannel> = IpcRequests[C] extends undefined ? [] : [IpcRequests[C]]
+export type IpcArgs<C extends IpcChannel> = undefined extends IpcRequests[C] ? [input?: IpcRequests[C]] : [IpcRequests[C]]

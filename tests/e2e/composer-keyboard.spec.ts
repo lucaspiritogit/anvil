@@ -154,9 +154,9 @@ test.describe(() => {
   })
 
   test('Enter stays guarded until a valid provider and model are selected', async ({ page }) => {
-    await page.evaluate(() => localStorage.setItem('anvil-composer-preferences-v2', JSON.stringify({
-      state: { agentId: 'removed-provider', modelsByAgent: { codex: '   ' }, reasoningByAgentModel: {} }, version: 0
-    })))
+    await page.evaluate(() => window.anvil.workspaces.setPreferences('default', {
+      composer: { agentId: 'removed-provider', modelsByAgent: { codex: '   ' }, reasoningByAgentModel: {} }
+    }))
     await page.reload()
     await prompt(page).fill('Choose my provider first')
     await prompt(page).press('Enter')

@@ -3,20 +3,22 @@ import type { TaskContext } from '../tasks/context'
 import type { ProjectMemory } from './project-memory'
 
 export interface TaskMemory {
-  promptWithProjectMemory(projectId: string, prompt: string): Promise<string>
+  promptWithProjectMemory(projectId: string, prompt: string, workspaceId?: string): Promise<string>
   rememberCompletedTask(task: Task, projectPath: string): Promise<void>
 }
 
 /** Memory failures must not prevent a task from starting or finishing. */
 export function createTaskMemory(
   { store, gitDelivery }: Pick<TaskContext, 'store' | 'gitDelivery'>,
-  projectMemory?: ProjectMemory
+  projectMemory?: ProjectMemory,
+  memoryForWorkspace?: (workspaceId: string) => ProjectMemory
 ): TaskMemory {
-  const promptWithProjectMemory = async (projectId: string, prompt: string): Promise<string> => {
-    if (!store.getSettings().memoryEnabled || !projectMemory) return prompt
+  const promptWithProjectMemory = async (projectId: string, prompt: string, workspaceId = store.getActiveWorkspace().id): Promise<string> => {
+    const memory = memoryForWorkspace?.(workspaceId) ?? projectMemory
+    if (!store.getSettings(workspaceId).memoryEnabled || !memory) return prompt
     try {
-      const memories = await projectMemory.recall(projectId, prompt, 3)
-      if (!store.getSettings().memoryEnabled || !memories.length) return prompt
+      const memories = await memory.recall(projectId, prompt, 3)
+      if (!store.getSettings(workspaceId).memoryEnabled || !memories.length) return prompt
       const context = memories
         .map((memory, index) => `[Prior task ${index + 1}]\n${memory.content.slice(0, 3_000)}`)
         .join('\n\n')
@@ -33,7 +35,8 @@ export function createTaskMemory(
   }
 
   const rememberCompletedTask = async (task: Task, projectPath: string): Promise<void> => {
-    if (!store.getSettings().memoryEnabled || !projectMemory || task.status !== 'succeeded') return
+    const memory = memoryForWorkspace?.(task.workspaceId) ?? projectMemory
+    if (!store.getSettings(task.workspaceId).memoryEnabled || !memory || task.status !== 'succeeded') return
     const execution = store.getTaskExecution(task.id)
     if (execution && execution.phase !== 'complete') return
     try {
@@ -41,8 +44,8 @@ export function createTaskMemory(
         task.baseCommit && task.headCommit
           ? await gitDelivery.getDiff(projectPath, task.baseCommit, task.headCommit)
           : undefined
-      if (!store.getSettings().memoryEnabled) return
-      await projectMemory.rememberCompletedTask({
+      if (!store.getSettings(task.workspaceId).memoryEnabled) return
+      await memory.rememberCompletedTask({
         task,
         events: store.readEvents(task.id),
         ...(diff ? { diff } : {})

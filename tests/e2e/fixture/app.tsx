@@ -1,7 +1,8 @@
+import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
 import { useTaskIssues } from '../../../src/renderer/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
-import type { Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergePreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList } from '../../../src/shared/types'
+import type { Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergePreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList } from '../../../src/shared/types'
 import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import type { IpcRequests } from '../../../src/shared/ipc-requests'
@@ -19,6 +20,7 @@ let projects: Project[] = ['Anvil', 'Workbench'].map((name, index) => ({
   monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
 }))
 const base: Task = {
+  workspaceId: 'default',
   id: 'approved', projectId: projects[0].id, title: 'Polish task cards', prompt: 'Polish task cards',
   agentId: 'codex', agentLabel: 'Codex', status: 'succeeded', deliveryStatus: 'approved',
   startedAt: now - 60 * 60 * 1000, endedAt: now - 30 * 60 * 1000, reviewedAt: now,
@@ -123,6 +125,7 @@ let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-em
 
 declare global {
   interface Window {
+    workspaceTest: { select: (id: string) => Promise<void>; create: (name: string) => Promise<void> }
     fileMentionTest: { paths: Record<string, string[]>; delay: Record<string, number>; error: string | null; calls: string[] }
     composerTest: {
       starts: IpcRequests['tasks:start'][]
@@ -155,7 +158,7 @@ let releaseSettings: ((reject?: boolean) => void) | undefined
 let finishLoading: () => void = noop
 const settingsLoaded = new Promise<void>((resolve) => { finishLoading = resolve })
 window.settingsTest = {
-  apply: (patch) => { settings = { ...settings, ...patch }; useStore.setState({ settings }) },
+  apply: (patch) => { settings = { ...settings, ...patch }; workspaceSettings[selectedWorkspace] = settings; persistWorkspaces(); useStore.setState({ settings }) },
   calls: [],
   release: (reject) => {
     if (!releaseSettings) throw new Error('No settings write is pending')
@@ -168,8 +171,29 @@ window.settingsTest = {
 if (query.has('settingsLoading')) {
   settings.caffeineMode = true
   // Exercise a Settings modal mounted before the initial settings read finishes.
-  useStore.setState({ ready: true, settingsOpen: true })
+  useStore.setState({ ready: true, activeWorkspaceId: 'default', settingsOpen: true })
 }
+
+const defaultSettings = structuredClone(settings)
+let selectedWorkspace = localStorage.getItem('fixture:workspace') ?? 'default'
+const workspaceRows: Workspace[] = JSON.parse(localStorage.getItem('fixture:workspaces') ?? 'null') ?? [{ id: 'default', name: 'Default', createdAt: 0 }]
+const workspacePreferences: Record<string, WorkspacePreferences> = JSON.parse(localStorage.getItem('fixture:preferences') ?? '{}')
+const workspaceSettings: Record<string, Settings> = JSON.parse(localStorage.getItem('fixture:settings') ?? '{}')
+workspaceSettings.default ??= settings
+settings = workspaceSettings[selectedWorkspace] ?? settings
+const preferencesFor = (id: string): WorkspacePreferences => workspacePreferences[id] ??= { composer: { agentId: '', modelsByAgent: {}, reasoningByAgentModel: {} }, lastProjectId: null }
+const persistWorkspaces = (): void => {
+  localStorage.setItem('fixture:workspaces', JSON.stringify(workspaceRows))
+  localStorage.setItem('fixture:workspace', selectedWorkspace)
+  localStorage.setItem('fixture:preferences', JSON.stringify(workspacePreferences))
+  localStorage.setItem('fixture:settings', JSON.stringify(workspaceSettings))
+}
+const snapshot = (): WorkspaceSnapshot => ({
+  workspaces: structuredClone(workspaceRows), workspace: workspaceRows.find((row) => row.id === selectedWorkspace)!,
+  preferences: structuredClone(preferencesFor(selectedWorkspace)), settings: structuredClone(settings),
+  projects, tasks: tasks.filter((task) => task.workspaceId === selectedWorkspace)
+})
+window.workspaceTest = { select: (id) => useStore.getState().selectWorkspace(id), create: (name) => useStore.getState().createWorkspace(name) }
 
 const projectBranches: Record<string, string> = Object.fromEntries(projects.map((project) => [project.id, 'main']))
 
@@ -230,7 +254,9 @@ window.anvil = {
     },
     update: async ({ id, ...patch }: Partial<Project> & { id: string }) => Object.assign(projects.find((project) => project.id === id)!, patch)
   },
+  accounts: fixtureAccounts((id) => workspaceRows.find((workspace) => workspace.id === id)?.name ?? id, query.has('accountBusy')),
   agents: {
+    onModelsChanged: () => () => {},
     list: async () => [
       { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5', supportsSteering: true },
       { id: 'opencode', label: 'OpenCode', description: 'OpenCode agent', command: 'opencode', args: [], defaultModel: 'provider/model' }
@@ -301,17 +327,63 @@ window.anvil = {
         ? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==' : null
     }
   },
+  workspaces: {
+    list: async () => structuredClone(workspaceRows),
+    snapshot: async () => { if (query.has('settingsLoading')) await settingsLoaded; return snapshot() },
+    create: async (name) => {
+      if (query.has('workspaceDelay')) await new Promise((resolve) => setTimeout(resolve, 300))
+      if (query.has('workspaceCreateFailure')) throw new Error('Could not create workspace. Try again.')
+      const workspace = { id: crypto.randomUUID(), name, createdAt: Date.now() }
+      workspaceRows.push(workspace)
+      workspaceSettings[workspace.id] = structuredClone(defaultSettings)
+      persistWorkspaces()
+      return workspace
+    },
+    rename: async (id, name) => {
+      if (query.has('workspaceDelay')) await new Promise((resolve) => setTimeout(resolve, 300))
+      if (query.has('workspaceRenameFailure')) throw new Error('Could not rename workspace. Try again.')
+      const workspace = workspaceRows.find((row) => row.id === id)!
+      workspace.name = name
+      persistWorkspaces()
+      return workspace
+    },
+    select: async (id) => {
+      if (query.has('workspaceDelay')) await new Promise((resolve) => setTimeout(resolve, 300))
+      if (query.has('workspaceSelectFailure') && id !== 'default') throw new Error('Could not switch workspace. Try again.')
+      if (!workspaceRows.some((row) => row.id === id)) throw new Error('Workspace not found')
+      selectedWorkspace = id
+      settings = workspaceSettings[id]
+      persistWorkspaces()
+      return snapshot()
+    },
+    getPreferences: async (id) => structuredClone(preferencesFor(id)),
+    setPreferences: async (id, patch) => {
+      workspacePreferences[id] = { ...preferencesFor(id), ...structuredClone(patch) }
+      if (id === 'default' && patch.composer) localStorage.setItem('fixture:imported', 'true')
+      persistWorkspaces()
+      return structuredClone(workspacePreferences[id])
+    },
+    importComposer: async (composer) => {
+      if (!localStorage.getItem('fixture:imported')) {
+        preferencesFor('default').composer = structuredClone(composer)
+        localStorage.setItem('fixture:imported', 'true')
+        persistWorkspaces()
+      }
+      return structuredClone(preferencesFor('default'))
+    },
+    onChanged: subscribe, onSelected: subscribe, onPreferencesChanged: subscribe
+  },
   settings: {
     onChanged: () => noop,
     onOpenRequested: (listener: () => void) => {
       window.addEventListener('fixture:open-settings', listener)
       return () => window.removeEventListener('fixture:open-settings', listener)
     },
-    get: async () => {
+    get: async (workspaceId = selectedWorkspace) => {
       if (query.has('settingsLoading')) await settingsLoaded
-      return settings
+      return workspaceSettings[workspaceId]
     },
-    set: async (patch: Partial<Settings>) => {
+    set: async (workspaceId: string, patch: Partial<Settings>) => {
       window.settingsTest.calls.push(patch)
       if (query.has('settingsControlled')) {
         await new Promise<void>((resolve, reject) => {
@@ -319,8 +391,10 @@ window.anvil = {
           releaseSettings = (fail) => fail ? reject(new Error('Settings write rejected')) : resolve()
         })
       }
-      settings = { ...settings, ...patch }
-      return settings
+      workspaceSettings[workspaceId] = { ...workspaceSettings[workspaceId], ...patch }
+      if (selectedWorkspace === workspaceId) settings = workspaceSettings[workspaceId]
+      persistWorkspaces()
+      return workspaceSettings[workspaceId]
     }
   },
   tasks: {
@@ -338,7 +412,7 @@ window.anvil = {
       }
       if (query.has('startFailure')) throw new Error('Task could not be started')
       const task: Task = {
-        ...base, ...input, id: `started-${tasks.length}`, title: input.prompt || 'Image task',
+        ...base, ...input, workspaceId: input.workspaceId ?? selectedWorkspace, id: `started-${tasks.length}`, title: input.prompt || 'Image task',
         status: 'running', deliveryStatus: 'working', endedAt: undefined, reviewedAt: undefined,
         cwd: projects.find((project) => project.id === input.projectId)!.path
       }
@@ -432,11 +506,15 @@ window.anvil = {
 
 const outputTaskId = query.get('task') ?? 'output'
 const outputTask = tasks.find((task) => task.id === outputTaskId) ?? tasks.find((task) => task.id === 'output')!
-if (query.get('scenario') === 'output') {
-  useStore.setState({ activeProjectId: outputTask.projectId, view: { kind: 'task', taskId: outputTask.id } })
-} else if (query.get('scenario') === 'review') {
-  useStore.setState({ activeProjectId: projects[0].id, view: { kind: 'task', taskId: 'review' } })
-}
+const stopInitialView = useStore.subscribe((state) => {
+  if (!state.ready) return
+  stopInitialView()
+  if (query.get('scenario') === 'output') {
+    useStore.setState({ activeProjectId: outputTask.projectId, view: { kind: 'task', taskId: outputTask.id } })
+  } else if (query.get('scenario') === 'review') {
+    useStore.setState({ activeProjectId: projects[0].id, view: { kind: 'task', taskId: 'review' } })
+  }
+})
 const { App } = await import('../../../src/renderer/src/App')
 // Opt-in hook harness until the Issues panel is added. Existing scenarios use App.
 function IssuesRefreshFixture(): React.JSX.Element {
@@ -451,4 +529,16 @@ function IssuesRefreshFixture(): React.JSX.Element {
   </>
 }
 if (query.has('issuesRefresh')) useStore.setState({ tasks })
-createRoot(document.getElementById('root')!).render(query.has('issuesRefresh') ? <IssuesRefreshFixture /> : <App />)
+function WorkspaceControls(): React.JSX.Element {
+  const workspaces = useStore((state) => state.workspaces)
+  const active = useStore((state) => state.activeWorkspaceId)
+  const [name, setName] = useState('Work')
+  return <div style={{ position: 'fixed', right: 12, top: 12, zIndex: 1000, background: '#20242b', padding: 8 }}>
+    <label>Test workspace <select aria-label="Test workspace" value={active ?? ''} onChange={(event) => void window.workspaceTest.select(event.target.value)}>
+      {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+    </select></label>
+    <input aria-label="Test workspace name" value={name} onChange={(event) => setName(event.target.value)} />
+    <button onClick={() => void window.workspaceTest.create(name)}>Create test workspace</button>
+  </div>
+}
+createRoot(document.getElementById('root')!).render(query.has('issuesRefresh') ? <IssuesRefreshFixture /> : <><App />{query.has('workspaces') && <WorkspaceControls />}</>)

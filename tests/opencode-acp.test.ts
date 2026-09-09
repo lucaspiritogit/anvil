@@ -1,9 +1,16 @@
+import { testWorkspace } from './workspace-fixture'
 import { taskImages } from './task-image-fixture'
 import { onTestCleanup } from './test-cleanup'
-import { expect, test } from 'vitest'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { expect, test, vi } from 'vitest'
+import { createServer } from 'node:net'
+import { existsSync } from 'node:fs'
+import { openCodeWorkspaceFixture } from './opencode-workspace-fixture'
+import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceCommand, requireOpenCodeProjectIsolation } from '../src/main/agents/opencode-workspace'
+import { readOpenCodeModelOutput } from '../src/main/agents/opencode-model-output'
+import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../src/main/agents/workspace-execution'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { once } from 'node:events'
 import { setTimeout as delay } from 'node:timers/promises'
 import { OpenCodeAcpClient } from '../src/main/agents/opencode-acp'
@@ -17,6 +24,7 @@ test('handles ACP sessions, output, permissions, recovery and cancellation', asy
   const fixture = resolve('tests/fixtures/opencode-acp.cjs')
   const transcript = join(directory, 'requests.jsonl')
   const input: TaskInput = {
+    workspace: testWorkspace(),
     taskId: 'task-test', issueId: 'issue-test', prompt: 'Implement the issue',
     cwd: directory, model: 'provider/model'
   }
@@ -230,6 +238,7 @@ test('sends exact inline image data to ACP with server and model capability chec
     const controller = new AbortController()
     const events: TaskEvent[] = []
     const result = await client.execute({
+      workspace: testWorkspace(),
       taskId: scenario, cwd: directory, prompt: 'Implement the issue', images, model: 'provider/model', signal: controller.signal,
       ...(scenario === 'image-resume' ? { resumeSessionId: 'session-test' } : {}),
       onStarted: () => { if (scenario === 'image-cancel') controller.abort() }
@@ -252,4 +261,160 @@ test('sends exact inline image data to ACP with server and model capability chec
     expect(JSON.stringify(events)).not.toContain(Buffer.from(images[0].bytes).toString('base64'))
     await client.close()
   }
+})
+
+test('keeps workspace credentials and sessions across concurrent ACP ports and restart', async () => {
+  const fixture = await openCodeWorkspaceFixture()
+  const occupied = createServer()
+  onTestCleanup(() => new Promise<void>((resolve, reject) => {
+    if (!occupied.listening) return resolve()
+    occupied.close((error) => error ? reject(error) : resolve())
+  }))
+  await new Promise<void>((resolve, reject) => {
+    occupied.once('error', (error: NodeJS.ErrnoException) => error.code === 'EADDRINUSE' ? resolve() : reject(error))
+    occupied.listen(4096, '127.0.0.1', resolve)
+  })
+  const client = (workspace: WorkspaceExecutionContext, args?: string[]): OpenCodeAcpClient => {
+    const executor = new OpenCodeAcpClient({ workspace, command: fixture.command, args, startupTimeoutMs: 3_000 })
+    onTestCleanup(() => executor.close())
+    return executor
+  }
+  const input = (workspace: WorkspaceExecutionContext, prompt: string): TaskInput => ({ workspace,
+    taskId: prompt, cwd: fixture.project, prompt, model: `openai/${workspace.workspaceId}-key` })
+  for (const workspace of [fixture.work, fixture.personal]) {
+    const launch = openCodeWorkspaceCommand(workspace, ['auth', 'login', `${workspace.workspaceId}-key`])
+    await readOpenCodeModelOutput(fixture.command, launch.args, launch.cwd, undefined, launch.environment)
+  }
+  const work = client(fixture.work)
+  const personal = client(fixture.personal)
+  const [workResult, personalResult] = await Promise.all([
+    work.execute({ ...input(fixture.work, 'work'), images: await taskImages() }, () => {}),
+    personal.execute(input(fixture.personal, 'personal'), () => {})
+  ])
+  expect(workResult.status, workResult.error).toBe('succeeded')
+  expect(personalResult.status, personalResult.error).toBe('succeeded')
+  expect(workResult.output).toBe('work-key')
+  expect(personalResult.output).toBe('personal-key')
+  const workListener = (await fixture.entries(fixture.work)).find((entry) => entry.event === 'listening')!
+  const personalListener = (await fixture.entries(fixture.personal)).find((entry) => entry.event === 'listening')!
+  expect(workListener.port).not.toBe(personalListener.port)
+  expect(workListener.port).not.toBe(4096)
+  expect(personalListener.port).not.toBe(4096)
+  expect(workListener.hostname).toBe('127.0.0.1')
+  expect(personalListener.hostname).toBe('127.0.0.1')
+  await work.close()
+  await assertPortReleased(workListener.port!)
+  const restarted = client(fixture.work)
+  const resumed = await restarted.execute({ ...input(fixture.work, 'resume'), resumeSessionId: workResult.sessionId }, () => {})
+  expect(resumed.status, resumed.error).toBe('succeeded')
+  expect(resumed.sessionId).toBe(workResult.sessionId)
+  const crossed = await personal.execute({ ...input(fixture.personal, 'crossed'), resumeSessionId: workResult.sessionId }, () => {})
+  expect(crossed.status).toBe('failed')
+  expect(crossed.error).toContain('Session not found in workspace')
+  expect((await restarted.execute(input(fixture.work, 'crash'), () => {})).status).toBe('failed')
+  expect((await restarted.execute({ ...input(fixture.work, 'recover'), resumeSessionId: workResult.sessionId }, () => {})).status).toBe('succeeded')
+  await restarted.close()
+  await personal.close()
+  for (const workspace of [fixture.work, fixture.personal]) {
+    for (const entry of (await fixture.entries(workspace)).filter((entry) => entry.event === 'listening')) {
+      await assertPortReleased(entry.port!)
+    }
+  }
+  await fixture.assertGlobalUnchanged()
+})
+
+async function assertPortReleased(port: number): Promise<void> {
+  const server = createServer()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(port, '127.0.0.1', resolve)
+    })
+  } finally {
+    if (server.listening) await new Promise<void>((resolve) => { server.close(() => resolve()) })
+  }
+}
+
+test('cancels or fails workspace ACP startup and releases the child port', async () => {
+  const fixture = await openCodeWorkspaceFixture()
+  for (const action of ['cancel', 'cancel-peers', 'timeout', 'shutdown'] as const) {
+    const workspace = resolveWorkspaceExecution({ getWorkspaceDirectory: (id) => join(fixture.directory, id) }, action)
+    const client = new OpenCodeAcpClient({ workspace, command: fixture.command,
+      args: [...OPEN_CODE_ACP_ARGS, '--hang-startup'], startupTimeoutMs: action === 'timeout' ? 300 : 5_000 })
+    onTestCleanup(() => client.close())
+    const controller = new AbortController()
+    const task: TaskInput = { workspace, taskId: action, prompt: action, cwd: fixture.project, model: 'openai/model', signal: controller.signal }
+    const result = client.execute(task, () => {})
+    const peer = action === 'cancel-peers' ? client.execute({ ...task, taskId: 'peer' }, () => {}) : undefined
+    let port: number | undefined
+    await vi.waitFor(async () => {
+      port = (await fixture.entries(workspace)).find((entry) => entry.event === 'listening')?.port
+      expect(port).toBeTypeOf('number')
+    })
+    if (action.startsWith('cancel')) controller.abort()
+    if (action === 'shutdown') await client.close()
+    expect((await result).status).toBe(action.startsWith('cancel') ? 'cancelled' : 'failed')
+    if (peer) expect((await peer).status).toBe('cancelled')
+    if (action.startsWith('cancel')) await assertPortReleased(port!)
+    await client.close()
+    await assertPortReleased(port!)
+  }
+  await fixture.assertGlobalUnchanged()
+})
+
+test('rejects project credential sources and unsupported providers without losing repository instructions', async () => {
+  const fixture = await openCodeWorkspaceFixture()
+  const client = new OpenCodeAcpClient({ workspace: fixture.work, command: fixture.command })
+  onTestCleanup(() => client.close())
+  const input: TaskInput = { workspace: fixture.work, taskId: 'policy', prompt: 'test', cwd: fixture.project, model: 'openai/model' }
+  for (const name of ['.env', '.env.local', 'opencode.json', 'opencode.jsonc', '.opencode/opencode.json']) {
+    const path = join(fixture.project, name)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, name.includes('env') ? 'OPENAI_API_KEY=project-secret' : '{"provider":{"openai":{"options":{"apiKey":"project-secret"}}}}')
+    const result = await client.execute(input, () => {})
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('OpenCode workspace isolation cannot be guaranteed')
+    expect(result.error).not.toContain('project-secret')
+    await rm(path)
+  }
+  await writeFile(join(fixture.project, '.env.example'), 'OPENAI_API_KEY=example')
+  expect(() => requireOpenCodeProjectIsolation(fixture.project)).not.toThrow()
+  const unsupported = await client.execute({ ...input, model: 'amazon-bedrock/model' }, () => {})
+  expect(unsupported.error).toContain('credential chains have not been verified')
+  const crossed = await client.execute({ ...input, workspace: fixture.personal }, () => {})
+  expect(crossed.error).toContain('different workspace')
+  expect(existsSync(join(fixture.work.home, 'opencode.jsonl'))).toBe(false)
+  await fixture.assertGlobalUnchanged()
+})
+
+test('cancels the version probe before ACP startup and permits a later retry', async () => {
+  const fixture = await openCodeWorkspaceFixture()
+  const command = join(fixture.directory, process.platform === 'win32' ? 'slow-version.cmd' : 'slow-version')
+  const script = join(fixture.directory, 'slow-version.cjs')
+  const marker = join(fixture.work.home, 'version-started')
+  await writeFile(script, `
+const fs = require('node:fs')
+if (process.argv.includes('--version') && !fs.existsSync(${JSON.stringify(marker)})) {
+  fs.writeFileSync(${JSON.stringify(marker)}, String(process.pid))
+  setInterval(() => {}, 1000)
+} else {
+  require(${JSON.stringify(resolve('tests/fixtures/opencode-workspace.cjs'))})
+}
+`)
+  await writeFile(command, process.platform === 'win32'
+    ? `@echo off\n"${process.execPath}" "${script}" %*\n`
+    : `#!${process.execPath}\nrequire(${JSON.stringify(script)})\n`, { mode: 0o755 })
+  const client = new OpenCodeAcpClient({ workspace: fixture.work, command })
+  onTestCleanup(() => client.close())
+  const controller = new AbortController()
+  const input: TaskInput = { workspace: fixture.work, taskId: 'version-cancel', prompt: 'test', cwd: fixture.project, model: 'openai/model' }
+  const result = client.execute({ ...input, signal: controller.signal }, () => {})
+  await vi.waitFor(() => expect(existsSync(marker)).toBe(true))
+  const pid = Number(await readFile(marker, 'utf8'))
+  controller.abort()
+  expect((await result).status).toBe('cancelled')
+  expect(() => process.kill(pid, 0)).toThrow()
+  expect(existsSync(join(fixture.work.home, 'opencode.jsonl'))).toBe(false)
+  expect((await client.execute(input, () => {})).status).toBe('succeeded')
+  await fixture.assertGlobalUnchanged()
 })

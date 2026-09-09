@@ -1,9 +1,8 @@
 import { isAbsolute } from 'node:path'
-import { homedir } from 'node:os'
 import type { AgentExecutor, TaskEvent, TaskInput, TaskResult, TaskSteeringInput } from './agent-executor'
 import { CodexAppServerConnection, CodexRpcError, type CodexAppServerOptions, type ConnectionHandlers } from './codex-app-server-connection'
 import { CodexAppServerOutput } from './codex-app-server-output'
-import { codexTurn, type CodexObject, type CodexThreadOptions, type CodexTurn } from './codex-app-server-protocol'
+import { codexTurn, type CodexAppServerRequests, type CodexObject, type CodexThreadOptions, type CodexTurn } from './codex-app-server-protocol'
 import { LazyAgentServer } from './lazy-agent-server'
 import { codexSandboxPolicy } from './codex-sandbox'
 import type { ProviderModelList, ModelReasoningCapabilities } from '../../shared/types'
@@ -20,7 +19,7 @@ export class CodexAppServerClient implements AgentExecutor {
   private readonly server = new LazyAgentServer<CodexAppServerConnection>()
   private readonly executions = new Set<CodexExecution>()
 
-  constructor(private readonly options: CodexAppServerOptions = {}) {}
+  constructor(private readonly options: CodexAppServerOptions) {}
 
   close(): Promise<void> {
     return this.server.close()
@@ -37,7 +36,7 @@ export class CodexAppServerClient implements AgentExecutor {
     return this.server.get(() => {
       // A shared server outlives task worktrees. Recreating a deleted path does
       // not repair a process whose OS cwd still points to the removed directory.
-      const server: CodexAppServerConnection = new CodexAppServerConnection(homedir(), this.options, {
+      const server: CodexAppServerConnection = new CodexAppServerConnection(this.options.workspace.home, this.options, {
         notification: (method, params) => {
           for (const active of this.executions) if (active.server() === server) active.notification(method, params)
         },
@@ -60,13 +59,48 @@ export class CodexAppServerClient implements AgentExecutor {
       onCreate?.(server)
       return server
     }, async (server) => {
-      await server.request('initialize', { clientInfo: { name: 'anvil', title: 'Anvil', version: '0.1.0' } })
-      server.initialized()
+      try {
+        await server.request('initialize', { clientInfo: { name: 'anvil', title: 'Anvil', version: '0.1.0' } })
+        server.initialized()
+        const response = await server.request('config/read', { includeLayers: false })
+        if (response.config.cli_auth_credentials_store !== 'file') {
+          throw new Error('Codex did not confirm cli_auth_credentials_store="file"')
+        }
+      } catch (failure) {
+        throw new Error(`Could not initialize isolated Codex for workspace ${this.options.workspace.workspaceId}. Anvil requires cli_auth_credentials_store="file". Update Codex if this setting or config/read is unsupported; if an administrator enforces another credential store, ask them to allow file storage. ${failure instanceof Error ? failure.message : String(failure)}`)
+      }
     })
+  }
+
+  async readAccount(): Promise<CodexAppServerRequests['account/read']['result']> {
+    const connection = await this.connection()
+    return this.readConnectionAccount(connection)
+  }
+
+  private authenticationError(): Error {
+    return new Error(`Codex is not authenticated for workspace ${this.options.workspace.workspaceId}. Sign in to Codex for this workspace using CODEX_HOME=${this.options.workspace.codexHome} and cli_auth_credentials_store="file", then retry.`)
+  }
+
+  private async readConnectionAccount(connection: CodexAppServerConnection): Promise<CodexAppServerRequests['account/read']['result']> {
+    const response = await connection.request('account/read', { refreshToken: false })
+    if (response.requiresOpenaiAuth && response.account === null) {
+      // Codex caches authentication in the process. A retry after an external
+      // profile login must load the newly saved credentials in a fresh server.
+      connection.fail(this.authenticationError())
+    }
+    return response
+  }
+
+  private async requireAuthentication(connection: CodexAppServerConnection): Promise<void> {
+    const response = await this.readConnectionAccount(connection)
+    if (response.requiresOpenaiAuth && response.account === null) {
+      throw this.authenticationError()
+    }
   }
 
   async listModels(_cwd: string): Promise<Pick<ProviderModelList, 'models' | 'reasoningByModel'>> {
     const connection = await this.connection()
+    await this.requireAuthentication(connection)
     const reasoning = new Map<string, ModelReasoningCapabilities>()
     const cursors = new Set<string>()
     let cursor: string | undefined
@@ -193,6 +227,9 @@ export class CodexAppServerClient implements AgentExecutor {
     this.executions.add(execution)
     try {
       input.signal?.throwIfAborted()
+      if (input.workspace.workspaceId !== this.options.workspace.workspaceId || input.workspace.codexHome !== this.options.workspace.codexHome) {
+        throw new Error('This Codex client belongs to a different workspace. Use the originating workspace client for this task.')
+      }
       if (!isAbsolute(input.cwd)) throw new Error('Codex app-server requires an absolute working directory')
       input.signal?.addEventListener('abort', cancel, { once: true })
       const sandboxPolicy = input.readOnly ? { type: 'readOnly' as const } : codexSandboxPolicy()
@@ -201,6 +238,7 @@ export class CodexAppServerClient implements AgentExecutor {
         connection = server
         output.line(`$ ${this.options.command ?? 'codex'} ${(this.options.args ?? ['app-server', '--listen', 'stdio://']).join(' ')}`, 'system', 'system')
       }))
+      await request(this.requireAuthentication(connection))
       input.signal?.throwIfAborted()
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
       if (input.reasoningEffort !== undefined) {
@@ -238,7 +276,7 @@ export class CodexAppServerClient implements AgentExecutor {
           'features.recommended_plugins': false,
           tool_output_token_limit: 3000,
           // Shell tools must retain Anvil's bundled vl launcher on PATH.
-          'shell_environment_policy.set.PATH': process.env.PATH ?? ''
+          'shell_environment_policy.set.PATH': this.options.workspace.environment.PATH ?? ''
         }
       }
       let prompt = input.prompt

@@ -1,7 +1,23 @@
 const { createInterface } = require('node:readline')
-const { appendFileSync, realpathSync } = require('node:fs')
+const { appendFileSync, existsSync, readFileSync, realpathSync, writeFileSync } = require('node:fs')
+const { join } = require('node:path')
 const [scenario, transcript] = process.argv.slice(2)
-const threadId = 'thread-test'
+const profileScenario = scenario.startsWith('profile-')
+// Match Codex's process-local auth cache, including a cached missing account.
+const selectedAccount = (() => {
+  if (!profileScenario) return 'fixture'
+  const path = join(process.env.CODEX_HOME, 'auth.json')
+  return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).fixtureAccount : null
+})()
+const account = () => selectedAccount
+const credentialStore = process.argv.at(-1) === 'cli_auth_credentials_store="file"' && process.argv.at(-2) === '-c' ? 'file' : 'inherited'
+// Synthetic identity and presence flags only. Never write credential values.
+appendFileSync(transcript + '.profiles', JSON.stringify({
+  pid: process.pid, home: process.env.HOME, codexHome: process.env.CODEX_HOME,
+  credentialStore, account: account(),
+  inheritedCredentials: ['OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_ACCESS_TOKEN', 'CODEX_ACCESS_TOKEN', 'CODEX_AUTH_JSON', 'CODEX_THREAD_ID'].filter((key) => process.env[key] !== undefined)
+}) + '\n')
+let threadId = 'thread-test'
 const turnId = 'turn-test'
 let initialized = false
 let resumed = false
@@ -20,6 +36,10 @@ const delta = (text, extra = {}) => notify('item/agentMessage/delta', { itemId: 
 const resultText = 'Done ✓\nCompleted issue-test through vl. Tests passed.'
 
 if (scenario === 'cancel-hang') process.on('SIGTERM', () => {})
+if (scenario === 'profile-startup-rejected') {
+  process.stderr.write('cli_auth_credentials_store=file is rejected by administrator policy\n')
+  process.exit(2)
+}
 
 function finish() {
   if (scenario === 'failure' || scenario === 'interrupted' || scenario === 'invalid-status') {
@@ -90,7 +110,16 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     return
   }
   if (!initialized) process.exit(23)
+  if (message.method === 'config/read') {
+    if (scenario === 'profile-config-unsupported') return send({ id: message.id, error: { code: -32601, message: 'Unknown method config/read' } })
+    if (scenario === 'profile-config-rejected') return send({ id: message.id, error: { code: -32600, message: 'cli_auth_credentials_store is enforced by administrator policy' } })
+    return respond(message.id, { config: { cli_auth_credentials_store: scenario === 'profile-keyring' ? 'keyring' : scenario === 'profile-config-missing' ? undefined : credentialStore } })
+  }
+  if (message.method === 'account/read') {
+    return respond(message.id, { account: account() ? { type: 'chatgpt', email: account() + '@example.invalid', planType: 'plus' } : null, requiresOpenaiAuth: true })
+  }
   if (message.method === 'model/list') {
+    if (profileScenario) return respond(message.id, { data: [{ id: account(), model: account(), supportedReasoningEfforts: [], defaultReasoningEffort: 'none' }], nextCursor: null })
     if (scenario.startsWith('image-')) return respond(message.id, { data: [{ id: 'vision', model: 'test-model', isDefault: true, inputModalities: scenario === 'image-unsupported' ? ['text'] : ['text', 'image'], supportedReasoningEfforts: [], defaultReasoningEffort: 'none' }], nextCursor: null })
     if (scenario === 'models-error') return send({ id: message.id, error: { code: -32000, message: 'Discovery unavailable' } })
     if (scenario === 'models-malformed') return respond(message.id, { data: [{ model: 'broken' }], nextCursor: null })
@@ -106,6 +135,18 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     return respond(message.id, { data, nextCursor: message.params.cursor && scenario !== 'models-cycle' ? null : 'page-2' })
   }
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
+    if (profileScenario) {
+      const path = join(process.env.CODEX_HOME, 'fixture-sessions.json')
+      const sessions = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
+      if (message.method === 'thread/resume') {
+        if (!sessions[message.params.threadId]) return send({ id: message.id, error: { code: -32600, message: `no rollout found for thread id ${message.params.threadId}` } })
+        threadId = message.params.threadId
+      } else {
+        threadId = `${account()}-${process.pid}`
+        sessions[threadId] = true
+        writeFileSync(path, JSON.stringify(sessions))
+      }
+    }
     if (scenario === 'missing-rollout' && message.method === 'thread/resume') {
       return send({ id: message.id, error: { code: -32600, message: `no rollout found for thread id ${message.params.threadId}` } })
     }
@@ -130,11 +171,18 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     return respond(message.id, { thread: { id: threadId, sessionId: 'session-tree', turns: [{ id: 'old-turn', items: [{ type: 'agentMessage', id: 'old', text: 'old history' }] }] } })
   }
   if (message.method === 'turn/start') {
-    const expectedPrompt = scenario === 'missing-rollout' ? 'Recover the saved plan and branch' : 'Implement the issue'
+    const expectedPrompt = scenario === 'missing-rollout' || scenario === 'profile-recovery' ? 'Recover the saved plan and branch' : 'Implement the issue'
     if (message.params.threadId !== threadId || message.params.input[0].text !== expectedPrompt) process.exit(27)
     if (JSON.stringify(message.params.sandboxPolicy) !== JSON.stringify({ type: scenario === 'read-only' ? 'readOnly' : 'dangerFullAccess' })) process.exit(29)
     if (scenario === 'rpc-error') return send({ id: message.id, error: { code: -32603, message: 'Authenticate with codex login' } })
     if (scenario === 'exit') return process.exit(3)
+    if (scenario === 'profile-restart') {
+      const marker = join(process.env.CODEX_HOME, 'fixture-crashed')
+      if (!existsSync(marker)) {
+        writeFileSync(marker, '')
+        return process.exit(3)
+      }
+    }
     if (scenario === 'orphan') {
       require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'inherit', 'inherit'] })
       return process.exit(3)

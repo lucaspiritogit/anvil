@@ -5,6 +5,8 @@ import { requireOpenCodeImageModel } from './opencode-models'
 import { AcpOutput } from './acp-output'
 import { OpenCodeAcpConnection, type OpenCodeAcpOptions } from './opencode-acp-connection'
 import { LazyAgentServer } from './lazy-agent-server'
+import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceEnvironment, requireOpenCodeProjectIsolation, requireWorkspaceOpenCodeModel } from './opencode-workspace'
+import { verifyWorkspaceOpenCode } from './opencode-model-output'
 
 interface AcpExecution {
   server(): OpenCodeAcpConnection | undefined
@@ -17,11 +19,18 @@ interface AcpExecution {
 export class OpenCodeAcpClient implements AgentClientProtocol {
   private readonly server = new LazyAgentServer<OpenCodeAcpConnection>()
   private readonly executions = new Set<AcpExecution>()
+  private verifiedVersion?: Promise<void>
+  private versionAbort?: AbortController
+  private closing?: Promise<void>
+  private startingConnection?: OpenCodeAcpConnection
 
   constructor(private readonly options: OpenCodeAcpOptions = {}) {}
 
   close(): Promise<void> {
-    return this.server.close()
+    if (this.closing) return this.closing
+    this.versionAbort?.abort()
+    this.closing = Promise.all([this.server.close(), this.verifiedVersion?.catch(() => {})]).then(() => {})
+    return this.closing
   }
 
   async execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult> {
@@ -34,6 +43,7 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
     let startupTimer: ReturnType<typeof setTimeout> | undefined
     let cancelTimer: ReturnType<typeof setTimeout> | undefined
     let acceptingUpdates = false
+    let sessionReady = false
     let rejectExecution: (error: Error) => void = () => {}
     const interrupted = new Promise<never>((_, reject) => { rejectExecution = reject })
     void interrupted.catch(() => {})
@@ -73,12 +83,28 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
     this.executions.add(execution)
     try {
       input.signal?.throwIfAborted()
+      if (this.closing) throw new Error('OpenCode server is shutting down')
       if (!isAbsolute(input.cwd)) throw new Error('ACP requires an absolute working directory')
       input.signal?.addEventListener('abort', cancel, { once: true })
+      if (this.options.workspace) {
+        if (input.workspace.workspaceId !== this.options.workspace.workspaceId) throw new Error('OpenCode task belongs to a different workspace')
+        requireOpenCodeProjectIsolation(input.cwd)
+        requireOpenCodeProjectIsolation(this.options.workspace.home)
+        requireWorkspaceOpenCodeModel(input.model)
+        if (!this.verifiedVersion) {
+          this.versionAbort = new AbortController()
+          this.verifiedVersion = verifyWorkspaceOpenCode(this.options.command ?? 'opencode', this.options.workspace.home, openCodeWorkspaceEnvironment(this.options.workspace), this.versionAbort.signal).catch((error) => {
+            this.verifiedVersion = undefined
+            throw error
+          })
+        }
+        await Promise.race([this.verifiedVersion, interrupted])
+        input.signal?.throwIfAborted()
+      }
       const ready = this.server.get(() => {
         const command = this.options.command ?? 'opencode'
-        output.line(`$ ${command} ${(this.options.args ?? ['acp']).join(' ')}`, 'system', 'system')
-        const server: OpenCodeAcpConnection = new OpenCodeAcpConnection(input.cwd, this.options, {
+        output.line(`$ ${command} ${(this.options.args ?? OPEN_CODE_ACP_ARGS).join(' ')}`, 'system', 'system')
+        const server: OpenCodeAcpConnection = new OpenCodeAcpConnection(this.options.workspace?.home ?? this.options.serverCwd ?? input.cwd, this.options, {
           sessionUpdate: async (notification) => {
             for (const active of this.executions) {
               if (active.server() === server && active.session() === notification.sessionId) {
@@ -94,14 +120,21 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
           for (const active of this.executions) if (active.server() === server) active.diagnostic(text)
         })
         connection = server
+        this.startingConnection = server
         return server
-      }, (server) => server.initialize())
+      }, async (server) => {
+        try {
+          await server.initialize()
+        } finally {
+          if (this.startingConnection === server) this.startingConnection = undefined
+        }
+      })
       connection = await Promise.race([ready, interrupted])
       input.signal?.throwIfAborted()
       const request = <Response>(promise: Promise<Response>): Promise<Response> => Promise.race([promise, connection!.failure, interrupted])
       if (input.images?.length) {
         if (!connection.supportsImages) throw new Error('This OpenCode server does not support image prompts. Update OpenCode or remove the images.')
-        await request(requireOpenCodeImageModel(this.options.command ?? 'opencode', this.options.modelArgs ?? ['models', '--verbose'], input.cwd, input.model, input.signal))
+        await request(requireOpenCodeImageModel(this.options.command ?? 'opencode', this.options.modelArgs ?? ['models', '--verbose'], input.cwd, input.model, input.signal, this.options.workspace ? openCodeWorkspaceEnvironment(this.options.workspace) : this.options.environment))
       }
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
       startupTimer = setTimeout(() => connection?.fail(new Error('OpenCode ACP session startup timed out.')), this.options.startupTimeoutMs ?? 60_000)
@@ -149,6 +182,7 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       clearTimeout(startupTimer)
       input.signal?.throwIfAborted()
       input.beforeDispatch?.()
+      sessionReady = true
       acceptingUpdates = true
       const response = await request(connection.rpc.prompt({ sessionId, prompt: [
         { type: 'text', text: input.prompt },
@@ -170,6 +204,14 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       connection?.flushDiagnostic()
       await connection?.drainDiagnostic()
       this.executions.delete(execution)
+      if (input.signal?.aborted && this.executions.size === 0 && !sessionReady) {
+        const verification = this.verifiedVersion
+        this.versionAbort?.abort()
+        await verification?.catch(() => {})
+        const abandoned = connection ?? this.startingConnection
+        abandoned?.fail(new Error('OpenCode startup cancelled'))
+        await abandoned?.close()
+      }
       output.flush()
     }
     if (error) output.line(error, 'error', 'system')

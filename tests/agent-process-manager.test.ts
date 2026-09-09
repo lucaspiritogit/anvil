@@ -1,3 +1,4 @@
+import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test } from 'vitest'
 import { once } from 'node:events'
@@ -25,7 +26,7 @@ test('captures process output, cancels tasks and awaits shutdown', async () => {
   }
   try {
     const exited = once(agentProcesses, 'exit')
-    agentProcesses.start({ taskId: 'output', agent, prompt: 'Capture output', cwd: process.cwd() })
+    agentProcesses.start({ workspace: testWorkspace(), taskId: 'output', agent, prompt: 'Capture output', cwd: process.cwd() })
     expect(agentProcesses.isRunning('output')).toBe(true)
     const [exit] = await exited as [ExitInfo]
     expect(exit).toStrictEqual({ taskId: 'output', code: 0, cancelled: false })
@@ -42,6 +43,7 @@ test('captures process output, cancels tasks and awaits shutdown', async () => {
 
     const cancelled = once(agentProcesses, 'exit')
     agentProcesses.start({
+      workspace: testWorkspace(),
       taskId: 'cancelled', agent: { ...agent, args: ['-e', 'setInterval(() => {}, 1000)'] },
       prompt: 'Wait for cancellation', cwd: process.cwd()
     })
@@ -64,7 +66,7 @@ test('captures process output, cancels tasks and awaits shutdown', async () => {
         server.removeAllListeners()
       })
       const exited = once(server, 'exit')
-      server.start({ taskId: mode, agent: { ...agent, executionProtocol: 'acp' }, prompt: 'Wait', cwd: process.cwd() })
+      server.start({ workspace: testWorkspace(), taskId: mode, agent: { ...agent, executionProtocol: 'acp' }, prompt: 'Wait', cwd: process.cwd() })
       if (mode === 'stop') server.cancel(mode)
       if (mode === 'shutdown') await server.close()
       const [result] = await exited as [ExitInfo]
@@ -75,6 +77,7 @@ test('captures process output, cancels tasks and awaits shutdown', async () => {
 
     const missing = once(agentProcesses, 'exit')
     agentProcesses.start({
+      workspace: testWorkspace(),
       taskId: 'missing', agent: { ...agent, command: '/anvil-test-missing-agent' },
       prompt: 'Missing command', cwd: process.cwd()
     })
@@ -87,6 +90,7 @@ test('captures process output, cancels tasks and awaits shutdown', async () => {
     })
     const shutdownExit = once(agentProcesses, 'exit')
     agentProcesses.start({
+      workspace: testWorkspace(),
       taskId: 'shutdown', agent: { ...agent, args: ['-e', 'process.on("SIGTERM", () => {}); console.log("Ready to close"); setInterval(() => {}, 1000)'] },
       prompt: 'Wait for shutdown', cwd: process.cwd()
     })
@@ -94,7 +98,7 @@ test('captures process output, cancels tasks and awaits shutdown', async () => {
     await agentProcesses.close()
     expect(((await shutdownExit) as [ExitInfo])[0].cancelled, 'App shutdown is an interruption, not a user cancellation').toBe(false)
     expect(agentProcesses.isRunning('shutdown')).toBe(false)
-    expect(() => agentProcesses.start({ taskId: 'late', agent, prompt: 'Too late', cwd: process.cwd() })).toThrow(/shutting down/)
+    expect(() => agentProcesses.start({ workspace: testWorkspace(), taskId: 'late', agent, prompt: 'Too late', cwd: process.cwd() })).toThrow(/shutting down/)
 
   } finally {
     await agentProcesses.close()
@@ -125,7 +129,7 @@ test('captures immutable issue ownership for sequential CLI and server turns', a
     }
     for (const issueId of ['first', 'second', undefined]) {
       const offset = events.length
-      const options = { taskId: 'shared-task', issueId, agent, prompt: 'run', cwd: process.cwd() }
+      const options = { workspace: testWorkspace(), taskId: 'shared-task', issueId, agent, prompt: 'run', cwd: process.cwd() }
       const exited = once(manager, 'exit')
       manager.start(options)
       options.issueId = 'changed-after-start'
@@ -142,7 +146,7 @@ test('captures immutable issue ownership for sequential CLI and server turns', a
     }
     const offset = events.length
     const exited = once(manager, 'exit')
-    manager.start({ taskId: 'shared-task', issueId: 'failed-issue', agent: { ...agent, command: '/missing-anvil-agent' }, prompt: 'fail', cwd: process.cwd() })
+    manager.start({ workspace: testWorkspace(), taskId: 'shared-task', issueId: 'failed-issue', agent: { ...agent, command: '/missing-anvil-agent' }, prompt: 'fail', cwd: process.cwd() })
     await exited
     expect(events.slice(offset).some(event => event.category === 'error')).toBe(true)
     expect(events.slice(offset).every(event => event.issueId === 'failed-issue')).toBe(true)
@@ -166,13 +170,13 @@ test('passes images intact to both server adapters and rejects text-only executo
   const agent: AgentDefinition = { id: 'fixture', label: 'Fixture', description: '', command: process.execPath, args: [] }
   for (const executionProtocol of ['acp', 'codex-app-server'] as const) {
     const exit = once(manager, 'exit')
-    manager.start({ taskId: executionProtocol, agent: { ...agent, executionProtocol }, prompt: 'Image task', images, cwd: process.cwd() })
+    manager.start({ workspace: testWorkspace(), taskId: executionProtocol, agent: { ...agent, executionProtocol }, prompt: 'Image task', images, cwd: process.cwd() })
     await exit
     expect(received.at(-1)?.images).toEqual(images)
     expect(received.at(-1)?.prompt).toBe('Image task')
     expect(manager.isRunning(executionProtocol)).toBe(false)
   }
-  expect(() => manager.start({ taskId: 'unsupported', agent, prompt: 'Image task', images, cwd: process.cwd() })).toThrow(/does not support image attachments/)
+  expect(() => manager.start({ workspace: testWorkspace(), taskId: 'unsupported', agent, prompt: 'Image task', images, cwd: process.cwd() })).toThrow(/does not support image attachments/)
   expect(received).toHaveLength(2)
   expect(events).toHaveLength(0)
 })

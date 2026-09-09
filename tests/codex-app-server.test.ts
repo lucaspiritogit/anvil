@@ -1,7 +1,8 @@
+import { testWorkspace } from './workspace-fixture'
 import { taskImages } from './task-image-fixture'
 import { onTestCleanup } from './test-cleanup'
-import { expect, test } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { expect, test, vi } from 'vitest'
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
@@ -9,6 +10,170 @@ import { CodexAppServerClient } from '../src/main/agents/codex-app-server'
 import { AgentProcessManager, type ExitInfo } from '../src/main/agents/process-manager'
 import { getAgent } from '../src/main/agents/registry'
 import type { TaskEvent, TaskInput } from '../src/main/agents/agent-executor'
+import { codexAdapter } from '../src/main/agents/adapters'
+import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../src/main/agents/workspace-execution'
+
+interface ProfileLaunch {
+  pid: number
+  home: string
+  codexHome: string
+  credentialStore: string
+  account: string | null
+  inheritedCredentials: string[]
+}
+
+async function profileFixture() {
+  const directory = await mkdtemp(join(tmpdir(), 'anvil-codex-profiles-'))
+  onTestCleanup(() => rm(directory, { recursive: true, force: true }))
+  const profile = (id: string): WorkspaceExecutionContext => resolveWorkspaceExecution({
+    getWorkspaceDirectory: (workspaceId) => join(directory, workspaceId)
+  }, id)
+  let nextClient = 0
+  const client = (workspace: WorkspaceExecutionContext, scenario = 'profile-success') => {
+    const transcript = join(directory, `client-${++nextClient}.jsonl`)
+    const args = [resolve('tests/fixtures/codex-app-server.cjs'), scenario, transcript]
+    const executor = new CodexAppServerClient({ workspace, command: process.execPath, args, requestTimeoutMs: 2000 })
+    onTestCleanup(() => executor.close())
+    const launches = async (): Promise<ProfileLaunch[]> => (await readFile(transcript + '.profiles', 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
+    const requests = async (): Promise<Array<{ method: string; params: Record<string, unknown> }>> =>
+      (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
+    return { executor, args, launches, requests }
+  }
+  const input = (workspace: WorkspaceExecutionContext): TaskInput => ({
+    workspace, taskId: workspace.workspaceId, cwd: directory, prompt: 'Implement the issue', model: 'test-model'
+  })
+  const authenticate = (workspace: WorkspaceExecutionContext, account: string) =>
+    writeFile(join(workspace.codexHome, 'auth.json'), JSON.stringify({ fixtureAccount: account }))
+  return { directory, profile, client, input, authenticate }
+}
+
+test('isolates simultaneous Codex tasks, accounts and model discovery without touching global files', async () => {
+  const fixture = await profileFixture()
+  const globalHome = join(fixture.directory, 'global-home')
+  const globalCodex = join(globalHome, '.codex')
+  await mkdir(join(globalCodex, 'sessions'), { recursive: true })
+  const sentinels = [join(globalCodex, 'auth.json'), join(globalCodex, 'config.toml'), join(globalCodex, 'sessions', 'global-session.jsonl')]
+  for (const path of sentinels) await writeFile(path, 'global sentinel: ' + path)
+  const originalStats = await Promise.all(sentinels.map((path) => lstat(path)))
+  vi.stubEnv('HOME', globalHome)
+  vi.stubEnv('CODEX_HOME', globalCodex)
+  for (const key of ['OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_ACCESS_TOKEN', 'CODEX_ACCESS_TOKEN', 'CODEX_AUTH_JSON', 'CODEX_THREAD_ID']) vi.stubEnv(key, 'synthetic-inherited-value')
+  onTestCleanup(() => { vi.unstubAllEnvs() })
+  const work = fixture.profile('work')
+  const personal = fixture.profile('personal')
+  await fixture.authenticate(work, 'work-account')
+  await fixture.authenticate(personal, 'personal-account')
+  const workClient = fixture.client(work)
+  const personalClient = fixture.client(personal)
+  const accounts = await Promise.all([workClient.executor.readAccount(), personalClient.executor.readAccount()])
+  expect(accounts.map((result) => result.account)).toEqual([
+    { type: 'chatgpt', email: 'work-account@example.invalid', planType: 'plus' },
+    { type: 'chatgpt', email: 'personal-account@example.invalid', planType: 'plus' }
+  ])
+  const results = await Promise.all([
+    workClient.executor.execute(fixture.input(work), () => {}),
+    personalClient.executor.execute(fixture.input(personal), () => {})
+  ])
+  expect(results.map((result) => result.status)).toEqual(['succeeded', 'succeeded'])
+  expect(results[0].sessionId).not.toBe(results[1].sessionId)
+  const launches = [...await workClient.launches(), ...await personalClient.launches()]
+  expect(new Set(launches.map((launch) => launch.pid)).size).toBe(2)
+  for (const [index, workspace] of [work, personal].entries()) {
+    expect(launches[index]).toMatchObject({ home: workspace.home, codexHome: workspace.codexHome, credentialStore: 'file', inheritedCredentials: [] })
+    expect((await lstat(join(workspace.codexHome, 'auth.json'))).isSymbolicLink()).toBe(false)
+    expect(await readFile(join(workspace.codexHome, 'fixture-sessions.json'), 'utf8')).not.toContain(results[1 - index].sessionId)
+    const discovery = fixture.client(workspace)
+    const catalogue = await codexAdapter.listModels({ ...getAgent('codex')!, command: process.execPath, args: discovery.args }, workspace)
+    expect(catalogue.models).toEqual([launches[index].account])
+    const [discoveryLaunch] = await discovery.launches()
+    expect(discoveryLaunch).toMatchObject({ codexHome: workspace.codexHome, account: launches[index].account, credentialStore: 'file', inheritedCredentials: [] })
+    expect(discoveryLaunch.pid).not.toBe(launches[index].pid)
+    expect(() => process.kill(discoveryLaunch.pid, 0)).toThrow()
+    expect((await discovery.requests()).some((entry) => entry.method === 'thread/start')).toBe(false)
+  }
+  const wrongWorkspace = await workClient.executor.execute(fixture.input(personal), () => {})
+  expect(wrongWorkspace.error).toMatch(/different workspace/)
+  expect((await workClient.requests()).filter((entry) => entry.method === 'thread/start')).toHaveLength(1)
+  await workClient.executor.close()
+  expect(() => process.kill(launches[0].pid, 0)).toThrow()
+  expect((await personalClient.executor.readAccount()).account).toEqual(accounts[1].account)
+  await personalClient.executor.close()
+  expect(() => process.kill(launches[1].pid, 0)).toThrow()
+  for (const [index, path] of sentinels.entries()) {
+    expect(await readFile(path, 'utf8')).toBe('global sentinel: ' + path)
+    const stat = await lstat(path)
+    expect(stat.ino).toBe(originalStats[index].ino)
+    expect(stat.mtimeMs).toBe(originalStats[index].mtimeMs)
+  }
+})
+
+test('restarts Codex in its original profile and resumes only that profile’s saved thread', async () => {
+  const fixture = await profileFixture()
+  const work = fixture.profile('work')
+  await fixture.authenticate(work, 'work-account')
+  const client = fixture.client(work, 'profile-restart')
+  const interrupted = await client.executor.execute(fixture.input(work), () => {})
+  expect(interrupted.status).toBe('failed')
+  expect(interrupted.sessionId).toMatch(/^work-account-/)
+  const resumed = await client.executor.execute({ ...fixture.input(work), resumeSessionId: interrupted.sessionId }, () => {})
+  expect(resumed.status, resumed.error).toBe('succeeded')
+  expect(resumed.sessionId).toBe(interrupted.sessionId)
+  const launches = await client.launches()
+  expect(launches).toHaveLength(2)
+  expect(launches[0].pid).not.toBe(launches[1].pid)
+  for (const launch of launches) expect(launch).toMatchObject({ codexHome: work.codexHome, account: 'work-account', credentialStore: 'file', inheritedCredentials: [] })
+  const requests = await client.requests()
+  expect(requests.filter((entry) => entry.method === 'config/read')).toHaveLength(2)
+  expect(requests.filter((entry) => entry.method === 'thread/resume').map((entry) => entry.params.threadId)).toEqual([interrupted.sessionId])
+  const personal = fixture.profile('personal')
+  await fixture.authenticate(personal, 'personal-account')
+  const personalClient = fixture.client(personal)
+  const unavailable = await personalClient.executor.execute({ ...fixture.input(personal), resumeSessionId: interrupted.sessionId }, () => {})
+  expect(unavailable.error).toBe(`no rollout found for thread id ${interrupted.sessionId}`)
+  expect((await personalClient.requests()).some((entry) => entry.method === 'thread/start')).toBe(false)
+})
+
+test('requires workspace authentication before migrated-session recovery or model discovery', async () => {
+  const fixture = await profileFixture()
+  const workspace = fixture.profile('migrated')
+  const client = fixture.client(workspace, 'profile-recovery')
+  const input = { ...fixture.input(workspace), resumeSessionId: 'global-session', resumeFallbackPrompt: 'Recover the saved plan and branch' }
+  expect(await client.executor.readAccount()).toEqual({ account: null, requiresOpenaiAuth: true })
+  const unauthenticated = await client.executor.execute(input, () => {})
+  expect(unauthenticated.error).toContain(`CODEX_HOME=${workspace.codexHome}`)
+  await expect(client.executor.listModels(fixture.directory)).rejects.toThrow(/not authenticated/)
+  expect((await client.requests()).some((entry) => ['thread/resume', 'thread/start', 'model/list'].includes(entry.method))).toBe(false)
+  await fixture.authenticate(workspace, 'new-work-account')
+  const events: TaskEvent[] = []
+  const recovered = await client.executor.execute(input, (event) => events.push(event))
+  expect(recovered.status, recovered.error).toBe('succeeded')
+  expect(recovered.sessionId).toMatch(/^new-work-account-/)
+  const requests = await client.requests()
+  expect(requests.filter((entry) => entry.method.startsWith('thread/')).map((entry) => entry.method)).toEqual(['thread/resume', 'thread/start'])
+  expect(requests.find((entry) => entry.method === 'turn/start')?.params.input).toEqual([{ type: 'text', text: input.resumeFallbackPrompt, text_elements: [] }])
+  expect(events.some((event) => event.type === 'output' && event.event.text.includes('previous conversation history was not restored'))).toBe(true)
+  expect((await client.launches()).map((launch) => launch.account)).toEqual([null, null, null, 'new-work-account'])
+  expect(await client.executor.listModels(fixture.directory)).toEqual({ models: ['new-work-account'], reasoningByModel: { 'new-work-account': { options: [], default: 'none' } } })
+})
+
+test('rejects unsupported or enforced credential stores before account access and cleans up failed servers', async () => {
+  const fixture = await profileFixture()
+  const workspace = fixture.profile('restricted')
+  for (const scenario of ['profile-config-unsupported', 'profile-config-rejected', 'profile-keyring', 'profile-config-missing']) {
+    const client = fixture.client(workspace, scenario)
+    await expect(client.executor.readAccount()).rejects.toThrow(/requires cli_auth_credentials_store="file".*Update Codex.*administrator/)
+    expect((await client.requests()).map((entry) => entry.method)).toEqual(['initialize', 'initialized', 'config/read'])
+    await client.executor.close()
+    for (const launch of await client.launches()) expect(() => process.kill(launch.pid, 0)).toThrow()
+  }
+  const startup = fixture.client(workspace, 'profile-startup-rejected')
+  const events: TaskEvent[] = []
+  const result = await startup.executor.execute(fixture.input(workspace), (event) => events.push(event))
+  expect(result.error).toMatch(/requires cli_auth_credentials_store="file".*administrator/)
+  expect(events.some((event) => event.type === 'output' && event.event.stream === 'stderr' && event.event.text.includes('rejected by administrator policy'))).toBe(true)
+  await startup.executor.close()
+  for (const launch of await startup.launches()) expect(() => process.kill(launch.pid, 0)).toThrow()
+})
 
 test('handles Codex threads, turns, permissions, steering and recovery', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'anvil-codex-server-'))
@@ -16,12 +181,13 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
   const fixture = resolve('tests/fixtures/codex-app-server.cjs')
   const transcript = join(directory, 'requests.jsonl')
   const input: TaskInput = {
+    workspace: testWorkspace(),
     taskId: 'task-test', issueId: 'issue-test', prompt: 'Implement the issue',
     cwd: directory, model: 'test-model'
   }
   const clients: CodexAppServerClient[] = []
   const client = (scenario: string): CodexAppServerClient => {
-    const executor = new CodexAppServerClient({
+    const executor = new CodexAppServerClient({ workspace: testWorkspace(),
       command: process.execPath, args: [fixture, scenario, transcript], requestTimeoutMs: 5_000,
       cancelTimeoutMs: scenario === 'cancel-before-ack' ? 500 : 30
     })
@@ -74,23 +240,23 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
     expect(outputEvents().every((event) => event.id && event.ts && event.taskId === input.taskId && event.issueId === input.issueId)).toBeTruthy()
     expect(events.filter((event) => event.type === 'session').length).toBe(1)
     const initial = await requests()
-    expect(initial.map((request) => request.method)).toStrictEqual(['initialize', 'initialized', 'thread/start', 'turn/start'])
+    expect(initial.map((request) => request.method)).toStrictEqual(['initialize', 'initialized', 'config/read', 'account/read', 'thread/start', 'turn/start'])
     expect(initial.every((request) => !('jsonrpc' in request))).toBeTruthy()
     expect(initial[0].params).toStrictEqual({ clientInfo: { name: 'anvil', title: 'Anvil', version: '0.1.0' } })
-    expect(initial[2].params.approvalPolicy).toBe('never')
-    expect(initial[2].params.sandbox).toBe('danger-full-access')
-    expect(initial[2].params.cwd).toBe(directory)
-    expect(initial[2].params.model).toBe('test-model')
-    expect(initial[2].params.config, 'Anvil tasks use project memory, not unrelated Codex personal context').toStrictEqual({
+    expect(initial[4].params.approvalPolicy).toBe('never')
+    expect(initial[4].params.sandbox).toBe('danger-full-access')
+    expect(initial[4].params.cwd).toBe(directory)
+    expect(initial[4].params.model).toBe('test-model')
+    expect(initial[4].params.config, 'Anvil tasks use project memory, not unrelated Codex personal context').toStrictEqual({
       'memories.use_memories': false,
       'memories.generate_memories': false,
       'features.recommended_plugins': false,
       tool_output_token_limit: 3000,
       'shell_environment_policy.set.PATH': process.env.PATH ?? ''
     })
-    expect(initial[3].params.input, 'Only the task prompt is sent, not the persisted event log').toStrictEqual([{ type: 'text', text: input.prompt, text_elements: [] }])
-    expect(initial[3].params.cwd).toBe(directory)
-    expect(initial[3].params.sandboxPolicy, 'Browser validation must run without the Codex OS sandbox').toStrictEqual({
+    expect(initial[5].params.input, 'Only the task prompt is sent, not the persisted event log').toStrictEqual([{ type: 'text', text: input.prompt, text_elements: [] }])
+    expect(initial[5].params.cwd).toBe(directory)
+    expect(initial[5].params.sandboxPolicy, 'Browser validation must run without the Codex OS sandbox').toStrictEqual({
       type: 'dangerFullAccess'
     })
 
@@ -172,7 +338,7 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
     expect(resumeRequest.params.threadId).toBe('thread-test')
     expect(resumeRequest.params.sandbox).toBe('danger-full-access')
     expect(resumeRequest.params.approvalPolicy).toBe('never')
-    expect(resumeRequest.params.config).toStrictEqual(initial[2].params.config)
+    expect(resumeRequest.params.config).toStrictEqual(initial[4].params.config)
     const unknownUsage = await client('no-baseline').execute({ ...input, resumeSessionId: 'thread-test' }, () => {})
     expect(unknownUsage.usage, 'Never charge resumed history when Codex supplies no baseline').toBe(undefined)
 
@@ -189,7 +355,7 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
     }
     if (process.platform !== 'win32') expect((await client('orphan').execute(input, () => {})).status).toBe('failed')
     expect((await client('interrupted').execute(input, () => {})).status).toBe('cancelled')
-    const startup = await new CodexAppServerClient({
+    const startup = await new CodexAppServerClient({ workspace: testWorkspace(),
       command: process.execPath, args: [fixture, 'startup-hang', transcript], requestTimeoutMs: 30
     }).execute(input, () => {})
     expect(startup.error!).toMatch(/initialize request timed out/)
@@ -272,7 +438,7 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
     const pendingStartup = client('startup-hang').execute({ ...input, signal: duringStartup.signal }, () => {})
     duringStartup.abort()
     expect((await pendingStartup).status).toBe('cancelled')
-    expect((await new CodexAppServerClient({ command: '/missing-codex' }).execute(input, () => {})).error!).toMatch(/not installed/)
+    expect((await new CodexAppServerClient({ workspace: testWorkspace(), command: '/missing-codex' }).execute(input, () => {})).error!).toMatch(/not installed/)
     expect((await client('success').execute({ ...input, cwd: join(directory, 'missing') }, () => {})).status).toBe('failed')
     expect((await client('success').execute({ ...input, cwd: '.' }, () => {})).error!).toMatch(/absolute/)
 
@@ -342,10 +508,11 @@ test('sends exact inline image data to Codex and rejects models without vision',
   const fixture = resolve('tests/fixtures/codex-app-server.cjs')
   for (const scenario of ['image-success', 'image-unsupported', 'missing-rollout']) {
     const transcript = join(directory, `${scenario}.jsonl`)
-    const client = new CodexAppServerClient({ command: process.execPath, args: [fixture, scenario, transcript], requestTimeoutMs: 5000 })
+    const client = new CodexAppServerClient({ workspace: testWorkspace(), command: process.execPath, args: [fixture, scenario, transcript], requestTimeoutMs: 5000 })
     onTestCleanup(() => client.close())
     const events: TaskEvent[] = []
     const result = await client.execute({
+      workspace: testWorkspace(),
       taskId: scenario, cwd: directory, prompt: 'Implement the issue', images,
       model: scenario === 'missing-rollout' ? 'reasoner' : 'test-model',
       ...(scenario === 'missing-rollout' ? { resumeSessionId: 'old', resumeFallbackPrompt: 'Recover the saved plan and branch' } : {})
@@ -365,4 +532,39 @@ test('sends exact inline image data to Codex and rejects models without vision',
     expect(JSON.stringify(events)).not.toContain(Buffer.from(images[0].bytes).toString('base64'))
     await client.close()
   }
+})
+
+test('native account RPC stores only in the selected profile and supports subscription cancellation and logout', async () => {
+  const { CodexAppServerConnection } = await import('../src/main/agents/codex-app-server-connection')
+  const work = testWorkspace('native-auth-work')
+  const personal = testWorkspace('native-auth-personal')
+  const global = testWorkspace('native-auth-global')
+  await writeFile(join(global.codexHome, 'auth.json'), 'global sentinel')
+  const notification = vi.fn()
+  const connect = async (workspace: WorkspaceExecutionContext) => {
+    const connection = new CodexAppServerConnection(workspace.home, {
+      workspace, command: process.execPath, args: [resolve('tests/fixtures/workspace-codex.cjs')], requestTimeoutMs: 2000
+    }, { notification, diagnostic: vi.fn(), serverRequest: () => ({}) })
+    onTestCleanup(() => connection.close())
+    await connection.request('initialize', { clientInfo: { name: 'fixture', title: 'Fixture', version: '1' } })
+    connection.initialized()
+    return connection
+  }
+  const workConnection = await connect(work)
+  const personalConnection = await connect(personal)
+  await workConnection.request('account/login/start', { type: 'apiKey', apiKey: 'synthetic-work-key' })
+  expect((await workConnection.request('account/read', { refreshToken: false })).account).toEqual({ type: 'apiKey' })
+  expect((await personalConnection.request('account/read', { refreshToken: false })).account).toBeNull()
+  expect((await readFile(join(work.codexHome, 'auth.json'), 'utf8'))).toContain('synthetic-work-key')
+  const pending = await personalConnection.request('account/login/start', { type: 'chatgpt' })
+  expect(pending.type).toBe('chatgpt')
+  await personalConnection.request('account/login/cancel', { loginId: 'fixture-login' })
+  expect((await personalConnection.request('account/read', { refreshToken: false })).account).toBeNull()
+  await personalConnection.request('account/login/start', { type: 'chatgpt' })
+  await expect.poll(() => notification.mock.calls.some(([method, params]) => method === 'account/login/completed' && params.success === true)).toBe(true)
+  expect((await personalConnection.request('account/read', { refreshToken: false })).account).toMatchObject({ type: 'chatgpt', email: 'fixture@example.test' })
+  await workConnection.request('account/logout', {})
+  expect((await workConnection.request('account/read', { refreshToken: false })).account).toBeNull()
+  expect(await readFile(join(global.codexHome, 'auth.json'), 'utf8')).toBe('global sentinel')
+  expect(JSON.stringify(notification.mock.calls)).not.toContain('synthetic-work-key')
 })

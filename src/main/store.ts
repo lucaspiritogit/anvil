@@ -6,11 +6,13 @@ import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH } from '../shared/types'
 import * as schema from './db/schema'
 import { canSettleTask, settlementDeadline } from '../shared/task-settlement'
 import { DEFAULT_KEYBINDINGS, normalizeKeybindings } from '../shared/keybindings'
-import type { Project, Task, TaskComment, TaskEvent, Settings, TaskExecutionState } from '../shared/types'
+import type { Project, Task, TaskComment, TaskEvent, Settings, TaskExecutionState, Workspace, WorkspacePreferences, ComposerPreferences } from '../shared/types'
 import { DEFAULT_FONT_SIZE, normalizeFontSize, DEFAULT_OVERVIEW_COLOR, OVERVIEW_COLOR_PATTERN, isWallpaperId } from '../shared/appearance'
 import { DEFAULT_OLLAMA_BASE_URL, DEFAULT_EMBEDDING_MODEL, isOllamaBaseUrl } from '../shared/memory-settings'
 
@@ -58,11 +60,11 @@ function decodeKeybindings(value: string): Settings['keybindings'] {
   try {
     return normalizeKeybindings(JSON.parse(value))
   } catch {
-    return DEFAULT_KEYBINDINGS
+    return structuredClone(DEFAULT_KEYBINDINGS)
   }
 }
 
-const { projects, taskComments, taskEvents, tasks, settings } = schema
+const { projects, taskComments, taskEvents, tasks, workspaceSettings: settings, workspaces, workspacePreferences, appState } = schema
 
 type ProjectRow = typeof projects.$inferSelect
 type TaskRow = typeof tasks.$inferSelect
@@ -91,6 +93,7 @@ function toTask(row: TaskRow): Task {
   return {
     id: row.id,
     projectId: row.projectId,
+    workspaceId: row.workspaceId,
     agentId: row.agentId,
     agentLabel: row.agentLabel,
     ...(row.model === null ? {} : { model: row.model }),
@@ -177,6 +180,7 @@ export interface StoreOptions {
 }
 
 export class Store {
+  private readonly dataDirectory: string
   private readonly sqlite: Database.Database
   private readonly db: BetterSQLite3Database<typeof schema>
   private readonly activityListeners = new Set<() => void>()
@@ -191,13 +195,17 @@ export class Store {
     for (const listener of this.activityListeners) listener()
   }
 
-  hasRunningTasks(): boolean {
-    return this.db.select({ id: tasks.id }).from(tasks).where(eq(tasks.status, 'running')).limit(1).get() !== undefined
+  hasRunningTasks(workspaceId?: string): boolean {
+    return this.db.select({ id: tasks.id }).from(tasks).where(and(
+      eq(tasks.status, 'running'),
+      workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId)
+    )).limit(1).get() !== undefined
   }
 
   readonly taskImages: TaskImageStorage
 
   constructor(databaseFile: string, options: StoreOptions) {
+    this.dataDirectory = dirname(databaseFile)
     this.taskImages = new TaskImageStorage(`${databaseFile}.images`)
     mkdirSync(dirname(databaseFile), { recursive: true })
     this.sqlite = new Database(databaseFile)
@@ -213,7 +221,7 @@ export class Store {
       this.sqlite.pragma('foreign_keys = ON')
     }
 
-    this.seedSettings()
+    this.bootstrapWorkspaces()
     this.recoverInterruptedTasks()
     this.taskImages.prune(new Set(this.getTasks().filter((task) => task.status !== 'cancelled' && task.deliveryStatus !== 'failed').map((task) => task.id)))
     // Restart stops Anvil execution, not other clients sharing Valence storage.
@@ -224,14 +232,150 @@ export class Store {
     }
   }
 
-  private seedSettings(): void {
-    this.db
-      .insert(settings)
-      .values(
-        SETTING_KEYS.map((key) => ({ key, value: encodeSetting(key, DEFAULT_SETTINGS[key]) }))
-      )
-      .onConflictDoNothing()
-      .run()
+  private bootstrapWorkspaces(): void {
+    this.db.transaction(() => {
+      // Generated migrations assign legacy tasks to this stable ID.
+      // Insert it once, even when the user later renames the Default workspace.
+      if (!this.db.select().from(workspaces).where(eq(workspaces.id, DEFAULT_WORKSPACE_ID)).get()) {
+        this.db.insert(workspaces).values({
+          id: DEFAULT_WORKSPACE_ID, name: 'Default', nameKey: 'default', createdAt: Date.now()
+        }).run()
+        const legacySettings = this.db.select().from(schema.settings).all()
+        if (legacySettings.length) {
+          this.db.insert(settings).values(legacySettings.map((row) => ({
+            ...row, workspaceId: DEFAULT_WORKSPACE_ID
+          }))).onConflictDoNothing().run()
+        }
+      }
+      for (const workspace of this.getWorkspaces()) this.seedWorkspace(workspace.id)
+      this.getActiveWorkspace()
+    })
+  }
+
+  private seedWorkspace(workspaceId: string): void {
+    this.db.insert(settings).values(
+      SETTING_KEYS.map((key) => ({ workspaceId, key, value: encodeSetting(key, DEFAULT_SETTINGS[key]) }))
+    ).onConflictDoNothing().run()
+    this.db.insert(workspacePreferences).values({
+      workspaceId,
+      composer: { agentId: '', modelsByAgent: {}, reasoningByAgentModel: {} },
+      lastProjectId: null
+    }).onConflictDoNothing().run()
+  }
+
+  getWorkspaces(): Workspace[] {
+    return this.db.select({ id: workspaces.id, name: workspaces.name, createdAt: workspaces.createdAt })
+      .from(workspaces).orderBy(asc(workspaces.createdAt), asc(workspaces.id)).all()
+  }
+
+  private requireWorkspace(id: string): Workspace {
+    const workspace = this.getWorkspaces().find((entry) => entry.id === id)
+    if (!workspace) throw new Error('Workspace not found')
+    return workspace
+  }
+
+  private workspaceName(value: string): { name: string; nameKey: string } {
+    if (typeof value !== 'string') throw new Error('Workspace name must be a string')
+    const name = value.normalize('NFKC').trim().replace(/\s+/gu, ' ')
+    if (!name || name.length > MAX_WORKSPACE_NAME_LENGTH || /[\p{Cc}\p{Cf}]/u.test(value)) {
+      throw new Error(`Workspace name must contain 1 to ${MAX_WORKSPACE_NAME_LENGTH} characters without control characters`)
+    }
+    return { name, nameKey: name.toLowerCase() }
+  }
+
+  createWorkspace(name: string): Workspace {
+    const normalized = this.workspaceName(name)
+    return this.db.transaction(() => {
+      if (this.db.select().from(workspaces).where(eq(workspaces.nameKey, normalized.nameKey)).get()) {
+        throw new Error('A workspace with that name already exists')
+      }
+      const workspace = { id: randomUUID(), name: normalized.name, createdAt: Date.now() }
+      this.db.insert(workspaces).values({ ...workspace, nameKey: normalized.nameKey }).run()
+      this.seedWorkspace(workspace.id)
+      return workspace
+    })
+  }
+
+  renameWorkspace(id: string, name: string): Workspace {
+    this.requireWorkspace(id)
+    const normalized = this.workspaceName(name)
+    const duplicate = this.db.select().from(workspaces).where(eq(workspaces.nameKey, normalized.nameKey)).get()
+    if (duplicate && duplicate.id !== id) throw new Error('A workspace with that name already exists')
+    this.db.update(workspaces).set(normalized).where(eq(workspaces.id, id)).run()
+    return this.requireWorkspace(id)
+  }
+
+  getActiveWorkspace(): Workspace {
+    const selected = this.db.select().from(appState).where(eq(appState.key, 'activeWorkspaceId')).get()
+    const workspace = selected && this.getWorkspaces().find((entry) => entry.id === selected.value)
+    if (workspace) return workspace
+    return this.selectWorkspace(DEFAULT_WORKSPACE_ID)
+  }
+
+  selectWorkspace(id: string): Workspace {
+    const workspace = this.requireWorkspace(id)
+    this.db.insert(appState).values({ key: 'activeWorkspaceId', value: id })
+      .onConflictDoUpdate({ target: appState.key, set: { value: id } }).run()
+    this.activityChanged()
+    return workspace
+  }
+
+  /** Profile paths remain stable across renames and never point at an agent's global home. */
+  getWorkspaceDirectory(workspaceId: string): string {
+    this.requireWorkspace(workspaceId)
+    // Only fixed/generated IDs are allowed in filesystem paths, even for damaged databases.
+    if (!/^(default|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.test(workspaceId)) {
+      throw new Error('Invalid workspace directory ID')
+    }
+    return join(this.dataDirectory, 'workspaces', workspaceId)
+  }
+
+  getWorkspacePreferences(workspaceId = this.getActiveWorkspace().id): WorkspacePreferences {
+    this.requireWorkspace(workspaceId)
+    const row = this.db.select().from(workspacePreferences).where(eq(workspacePreferences.workspaceId, workspaceId)).get()!
+    return { composer: structuredClone(row.composer), lastProjectId: row.lastProjectId }
+  }
+
+  setWorkspacePreferences(next: Partial<WorkspacePreferences>, workspaceId = this.getActiveWorkspace().id): WorkspacePreferences {
+    this.requireWorkspace(workspaceId)
+    if (next.composer !== undefined) this.validateComposerPreferences(next.composer)
+    if (next.composer === undefined && next.lastProjectId === undefined) return this.getWorkspacePreferences(workspaceId)
+    return this.db.transaction(() => {
+      this.db.update(workspacePreferences).set({
+        ...(next.composer === undefined ? {} : { composer: structuredClone(next.composer) }),
+        ...(next.lastProjectId === undefined ? {} : { lastProjectId: next.lastProjectId })
+      }).where(eq(workspacePreferences.workspaceId, workspaceId)).run()
+      if (next.composer !== undefined && workspaceId === DEFAULT_WORKSPACE_ID) {
+        this.db.insert(appState).values({ key: 'legacyComposerImported', value: 'true' }).onConflictDoNothing().run()
+      }
+      return this.getWorkspacePreferences(workspaceId)
+    })
+  }
+
+  /** Import and marker commit together; explicit SQLite choices always win. */
+  importLegacyComposerPreferences(composer: ComposerPreferences): WorkspacePreferences {
+    this.validateComposerPreferences(composer)
+    return this.db.transaction(() => {
+      const key = 'legacyComposerImported'
+      const marker = this.db.select().from(appState).where(eq(appState.key, key)).get()
+      if (!marker) {
+        const current = this.getWorkspacePreferences(DEFAULT_WORKSPACE_ID).composer
+        if (!current.agentId && !Object.keys(current.modelsByAgent).length && !Object.keys(current.reasoningByAgentModel).length) {
+          this.setWorkspacePreferences({ composer }, DEFAULT_WORKSPACE_ID)
+        }
+        this.db.insert(appState).values({ key, value: 'true' }).onConflictDoNothing().run()
+      }
+      return this.getWorkspacePreferences(DEFAULT_WORKSPACE_ID)
+    })
+  }
+
+  private validateComposerPreferences(composer: ComposerPreferences): void {
+    const stringRecord = (value: unknown): boolean => Boolean(value && typeof value === 'object' &&
+      !Array.isArray(value) && Object.values(value).every((entry) => typeof entry === 'string'))
+    if (!composer || typeof composer.agentId !== 'string' || !stringRecord(composer.modelsByAgent) ||
+        !stringRecord(composer.reasoningByAgentModel)) {
+      throw new Error('Invalid composer preferences')
+    }
   }
 
   /** A task cannot outlive the app, so anything still 'running' died with it. */
@@ -283,10 +427,12 @@ export class Store {
     })
   }
 
-  getSettings(): Settings {
+  getSettings(workspaceId = this.getActiveWorkspace().id): Settings {
+    this.requireWorkspace(workspaceId)
     return this.db
       .select()
       .from(settings)
+      .where(eq(settings.workspaceId, workspaceId))
       .all()
       .reduce<Settings>(
         (current, row) => {
@@ -305,12 +451,14 @@ export class Store {
           }
           return current
         },
-        { ...DEFAULT_SETTINGS }
+        structuredClone(DEFAULT_SETTINGS)
       )
   }
 
-  setSettings(next: Partial<Settings>): Settings {
+  setSettings(next: Partial<Settings>, workspaceId = this.getActiveWorkspace().id): Settings {
+    this.requireWorkspace(workspaceId)
     const rows = SETTING_KEYS.filter((key) => next[key] !== undefined).map((key) => ({
+      workspaceId,
       key,
       value: encodeSetting(key, next[key]!)
     }))
@@ -319,13 +467,13 @@ export class Store {
         for (const row of rows) {
           tx.insert(settings)
             .values(row)
-            .onConflictDoUpdate({ target: settings.key, set: { value: row.value } })
+            .onConflictDoUpdate({ target: [settings.workspaceId, settings.key], set: { value: row.value } })
             .run()
         }
       })
     }
     if (next.caffeineMode !== undefined) this.activityChanged()
-    return this.getSettings()
+    return this.getSettings(workspaceId)
   }
 
   getProjects(): Project[] {
@@ -359,14 +507,19 @@ export class Store {
     return row ? toProject(row) : undefined
   }
 
-  getTasks(): Task[] {
-    return this.db.select().from(tasks).orderBy(desc(tasks.startedAt)).all().map(toTask)
+  getTasks(workspaceId?: string): Task[] {
+    if (workspaceId !== undefined) this.requireWorkspace(workspaceId)
+    return this.db.select().from(tasks)
+      .where(workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId))
+      .orderBy(desc(tasks.startedAt)).all().map(toTask)
   }
 
-  addTask(task: Task): Task {
-    this.db.insert(tasks).values(toTaskRow(task)).run()
+  addTask(task: Omit<Task, 'workspaceId'> & { workspaceId?: string }): Task {
+    const ownedTask: Task = { ...task, workspaceId: task.workspaceId ?? this.getActiveWorkspace().id }
+    this.requireWorkspace(ownedTask.workspaceId)
+    this.db.insert(tasks).values(toTaskRow(ownedTask)).run()
     this.activityChanged()
-    return task
+    return ownedTask
   }
 
   /** Foreign keys cascade to task-owned Valence plans, execution metadata, output, and comments. */
@@ -376,9 +529,12 @@ export class Store {
     this.activityChanged()
   }
 
-  updateTask(id: string, patch: Partial<Task>): Task | undefined {
+  updateTask(id: string, patch: Partial<Omit<Task, 'workspaceId'>>): Task | undefined {
     const current = this.getTask(id)
     if (!current) return undefined
+    if ('workspaceId' in patch && patch.workspaceId !== current.workspaceId) {
+      throw new Error('Task workspace ownership cannot change')
+    }
     const next = {
       ...current, ...patch,
       ...(patch.status === 'running' ? { reviewedAt: undefined, settledAt: undefined } : {})

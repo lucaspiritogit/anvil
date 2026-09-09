@@ -1,3 +1,4 @@
+import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { implementationPrompt } from '../agents/task-prompts'
 import type { ExitInfo } from '../agents/process-manager'
@@ -59,6 +60,7 @@ export function registerTaskExecution(
       if (!project) throw new Error('Project not found')
       const agent = getAgent(task.agentId)
       if (!agent) throw new Error('Agent not found')
+      const workspace = resolveTaskWorkspace(store, task.id)
       let cwd = task.cwd
       let baseCommit: string | undefined
       if (task.branchName) {
@@ -82,6 +84,7 @@ export function registerTaskExecution(
       })!
       send('task:updated', running)
       agentProcesses.start({
+        workspace,
         taskId, issueId: issue.id, agent, cwd, projectPath: project.path, model: task.model,
         reasoningEffort: state.reasoningEffort,
         images,

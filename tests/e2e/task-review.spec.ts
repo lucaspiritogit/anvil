@@ -26,7 +26,7 @@ test('sub-task review pauses on the per-issue diff with approve and request-chan
   await publish(snapshot)
   const sidebar = page.getByRole('complementary', { name: 'Task sidebar' })
   const subtask = sidebar.getByRole('button', { name: 'Open subtask: Extract review actions', exact: true })
-  await sidebar.getByRole('button', { name: 'Expand subtasks: Review sidebar changes' }).click()
+  await sidebar.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
   // The sidebar and the parent run both surface the waiting-for-review state.
   await expect(subtask).toContainText('Review')
   await expect(page.getByRole('status', { name: 'Review gate' })).toBeVisible()

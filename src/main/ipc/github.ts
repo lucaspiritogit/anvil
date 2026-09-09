@@ -1,3 +1,4 @@
+import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { openExternalPullRequest, type RendererIpc } from '../renderer-security'
 import type { GitHubCredentialStatus, PullRequestInfo, PullRequestPreview } from '../../shared/types'
 import { draftPullRequestField } from '../agents/pull-request-draft'
@@ -76,10 +77,11 @@ export function registerGitHubHandlers(ipc: RendererIpc, {
     const { taskId, field, title, description } = input
     return withTaskOperation(store, taskId, 'draft', async (check) => {
       const { task, project, baseCommit, headCommit } = requireTask(taskId)
+      const workspace = resolveTaskWorkspace(store, task.id)
       const diff = await gitDelivery.getDiff(project.path, baseCommit, headCommit)
       check()
       requireTask(taskId)
-      return await draftPullRequestField(agentProcesses, task, diff, field, title, description, store.getTaskExecution(taskId)?.reasoningEffort)
+      return await draftPullRequestField(agentProcesses, workspace, task, diff, field, title, description, store.getTaskExecution(taskId)?.reasoningEffort)
     })
   })
   ipc.handle('github:open-pr-url', async (_event, url: string): Promise<void> => {

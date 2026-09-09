@@ -5,7 +5,7 @@ const { spawn } = require('node:child_process')
 const [protocol, transcript] = process.argv.slice(2)
 const isAcp = protocol === 'acp'
 const record = (entry) => appendFileSync(transcript, JSON.stringify({ pid: process.pid, ...entry }) + '\n')
-record({ event: 'spawn' })
+record({ event: 'spawn', home: process.env.HOME, codexHome: process.env.CODEX_HOME, dataHome: process.env.XDG_DATA_HOME, inheritedKey: process.env.OPENAI_API_KEY })
 const send = (message) => process.stdout.write(JSON.stringify(isAcp ? { jsonrpc: '2.0', ...message } : message) + '\n')
 const respond = (id, result) => send({ id, result })
 const sessions = new Map()
@@ -46,6 +46,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       : { userAgent: 'lifecycle-fixture' }), 40)
   }
   if (method === 'initialized') return
+  if (method === 'config/read') return respond(id, { config: { cli_auth_credentials_store: 'file' } })
+  if (method === 'account/read') return respond(id, { account: { type: 'apiKey' }, requiresOpenaiAuth: true })
   if (method === 'session/new' || method === 'thread/start') {
     const sessionId = `session-${process.pid}-${++nextSession}`
     sessions.set(sessionId, { id: sessionId, cwd: params.cwd })

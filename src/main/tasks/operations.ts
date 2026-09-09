@@ -40,7 +40,7 @@ export async function withTaskOperation<T>(
     if (!task) throw new Error('Task was deleted')
     if (reservation.cancelled) throw new Error('Task operation was cancelled')
     // Session and usage updates may arrive while waiting. Identity and lifecycle must stay put.
-    const keys = ['startedAt', 'projectId', 'agentId', 'branchName', 'baseCommit', 'headCommit',
+    const keys = ['workspaceId', 'startedAt', 'projectId', 'agentId', 'branchName', 'baseCommit', 'headCommit',
       'status', 'deliveryStatus', 'settledAt', 'cwd'] as const
     if (keys.some((key) => task[key] !== expected[key]) ||
       store.getProjects().find((project) => project.id === task.projectId)?.path !== projectPath) {

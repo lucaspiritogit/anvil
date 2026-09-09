@@ -78,6 +78,13 @@
       "when": 1788974497970,
       "tag": "0010_tiresome_lilith",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1788978676373,
+      "tag": "0011_medical_power_pack",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,8 @@
   "extends": "./tsconfig.node.json",
   "include": [
     "vitest.config.ts",
-    "tests/**/*.ts"
+    "tests/**/*.ts",
+    "src/renderer/src/env.d.ts"
   ],
   "exclude": [
     "tests/e2e/**"
@@ -17,6 +18,11 @@
     "types": [
       "node",
       "vitest/importMeta"
-    ]
+    ],
+    "paths": {
+      "@shared/*": [
+        "./src/shared/*"
+      ]
+    }
   }
 }

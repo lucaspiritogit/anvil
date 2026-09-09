@@ -1,3 +1,4 @@
+import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test } from 'vitest'
 import { AgentProcessManager } from '../src/main/agents/process-manager'
@@ -37,6 +38,7 @@ test('forwards explicit and omitted reasoning effort to both protocols', async (
     const run = (taskId: string, reasoningEffort?: TaskInput['reasoningEffort'], protocol?: AgentDefinition['executionProtocol']): void => {
       exits.push(new Promise<void>((resolve) => agentProcesses.once('exit', resolve)))
       agentProcesses.start({
+        workspace: testWorkspace(),
         taskId,
         agent: { ...agent, executionProtocol: protocol },
         prompt: 'prompt',

@@ -1,3 +1,9 @@
+import { WorkspaceAccounts } from './agents/workspace-accounts'
+import { registerAccountHandlers } from './ipc/agent-accounts'
+import { openExternalCodexLogin } from './renderer-security'
+import { invalidateWorkspaceModels, closeModelDiscovery } from './agents/models'
+import { watchWorkspaceAuthChanges } from './agents/workspace-auth-changes'
+import { resolveTaskWorkspace } from './agents/workspace-execution'
 import { WallpaperLibrary } from './wallpapers'
 import { app, BrowserWindow, powerSaveBlocker } from 'electron'
 import { join } from 'node:path'
@@ -14,10 +20,11 @@ import { registerRebaseHandlers } from './ipc/rebase'
 import { registerReviewHandlers } from './ipc/review'
 import { registerTaskHandlers } from './ipc/tasks'
 import { registerSteeringHandlers } from './ipc/steering'
+import { registerWorkspaceHandlers } from './ipc/workspaces'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerTerminalHandlers } from './ipc/terminals'
 import { createProjectMemory, type ProjectMemory } from './memory/project-memory'
-import { SettingsProjectMemory } from './memory/settings-project-memory'
+import { WorkspaceProjectMemory } from './memory/workspace-project-memory'
 import { createTaskMemory } from './memory/task-memory'
 import { createTaskCompletion } from './tasks/completion'
 import type { SendToRenderer } from './tasks/context'
@@ -39,6 +46,7 @@ export function registerIpc(
   projectMemory?: ProjectMemory
   githubPolling: GitHubPRPolling
   stopCaffeineMode(): void
+  closeAgentDiscovery(): Promise<void>
   closeStore(): void
 } {
   const ipc = createRendererIpc(getWindow, rendererUrl)
@@ -50,11 +58,11 @@ export function registerIpc(
   const store = new Store(join(dataDirectory, 'anvil.db'), {
     migrationsFolder: join(app.getAppPath(), 'src', 'main', 'db', 'migrations')
   })
-  const agentProcesses = new AgentProcessManager()
+  const agentProcesses = new AgentProcessManager(undefined, undefined, undefined, (taskId) => resolveTaskWorkspace(store, taskId))
   const stopCaffeineMode = registerCaffeineMode(store, powerSaveBlocker)
   const gitDelivery = new GitDeliveryManager(join(dataDirectory, 'worktrees'))
-  const projectMemory = new SettingsProjectMemory(() => store.getSettings(), (settings) => createProjectMemory({
-    dataDirectory: join(dataDirectory, 'memory'),
+  const projectMemory = new WorkspaceProjectMemory(store, (workspaceId, settings) => createProjectMemory({
+    dataDirectory: workspaceId === 'default' ? join(dataDirectory, 'memory') : join(store.getWorkspaceDirectory(workspaceId), 'memory'),
     migrationsFolder: join(app.getAppPath(), 'src', 'main', 'memory', 'migrations'),
     settings
   }))
@@ -69,15 +77,32 @@ export function registerIpc(
 
   const context = { store, agentProcesses, gitDelivery, send }
   const taskEvents = registerTaskEvents(context)
-  const taskMemory = createTaskMemory(context, projectMemory)
+  const taskMemory = createTaskMemory(context, projectMemory, (workspaceId) => projectMemory.forWorkspace(workspaceId))
   const finishTask = createTaskCompletion(context, taskEvents.recordSystemEvent, taskMemory)
   const execution = registerTaskExecution({ ...context, recordSystemEvent: taskEvents.recordSystemEvent }, finishTask)
 
-  registerSettingsHandlers(ipc, store, new WallpaperLibrary(dataDirectory), (settings) => {
-    projectMemory.settingsChanged()
-    broadcast('settings:changed', settings)
+  registerSettingsHandlers(ipc, store, new WallpaperLibrary(dataDirectory), (change) => {
+    projectMemory.settingsChanged(change.workspaceId)
+    broadcast('settings:changed', change)
   })
-  registerAgentHandlers(ipc)
+  registerWorkspaceHandlers(ipc, store, broadcast)
+  registerAgentHandlers(ipc, store)
+  const accounts = new WorkspaceAccounts(store, {
+    acquire: (workspaceId) => agentProcesses.acquireAccountChange(workspaceId),
+    busy: (workspaceId) => agentProcesses.isWorkspaceBusy(workspaceId),
+    invalidate: async (workspaceId) => {
+      await agentProcesses.invalidateWorkspaceClients(workspaceId)
+      invalidateWorkspaceModels(workspaceId)
+      broadcast('agents:models:changed', workspaceId)
+    },
+    openBrowser: openExternalCodexLogin,
+    changed: (state) => broadcast('accounts:changed', state)
+  })
+  registerAccountHandlers(ipc, accounts)
+  const stopAuthWatcher = watchWorkspaceAuthChanges(store, (workspaceId) => {
+    invalidateWorkspaceModels(workspaceId)
+    broadcast('agents:models:changed', workspaceId)
+  })
   registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask, terminals, projectMemory, getWindow, projectsChanged: () => broadcast('projects:changed', store.getProjects()) })
   registerTaskHandlers(ipc, {
     ...context,
@@ -108,5 +133,12 @@ export function registerIpc(
   registerRebaseHandlers(ipc, reviewContext)
   registerTerminalHandlers(ipc, terminals, store)
 
-  return { agentProcesses, terminals, githubPolling, stopCaffeineMode, closeStore: () => store.close(), ...(projectMemory ? { projectMemory } : {}) }
+  return {
+    agentProcesses, closeAgentDiscovery: async () => { await accounts.close(); await closeModelDiscovery() }, terminals, githubPolling, stopCaffeineMode,
+    closeStore: () => {
+      stopAuthWatcher()
+      store.close()
+    },
+    ...(projectMemory ? { projectMemory } : {})
+  }
 }

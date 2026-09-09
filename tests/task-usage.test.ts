@@ -1,3 +1,4 @@
+import { testWorkspace } from './workspace-fixture'
 import { expect, test } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -37,7 +38,7 @@ test('replays cumulative usage without double counting and preserves totals on r
     const agentProcesses = new EventEmitter() as TaskContext['agentProcesses']
     registerTaskEvents({ store, agentProcesses, send: () => {} })
     for (const snapshots of [planning, implementation]) {
-      const output = new CodexAppServerOutput({ taskId: 'task', cwd: directory, prompt: 'Fix icon' }, (event) => {
+      const output = new CodexAppServerOutput({ workspace: testWorkspace(), taskId: 'task', cwd: directory, prompt: 'Fix icon' }, (event) => {
         if (event.type === 'usage') agentProcesses.emit('usage', { taskId: event.taskId, ...event.usage })
       })
       for (const [inputTokens, cachedInputTokens, outputTokens] of snapshots) {

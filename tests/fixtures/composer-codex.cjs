@@ -36,6 +36,8 @@ if (process.env.ANVIL_SMOKE_LIVE_CODEX) {
     record({ ...message, processCwd: process.cwd() })
     const respond = (result) => send({ id: message.id, result })
     if (message.method === 'initialize') respond({ userAgent: 'anvil-composer-smoke' })
+    if (message.method === 'config/read') respond({ config: { cli_auth_credentials_store: 'file' } })
+    if (message.method === 'account/read') respond({ account: { type: 'apiKey' }, requiresOpenaiAuth: true })
     if (message.method === 'model/list') respond({ data: [{
       id: 'smoke-vision', model: 'smoke-vision', isDefault: true, inputModalities: ['text', 'image'],
       supportedReasoningEfforts: [], defaultReasoningEffort: 'none'

@@ -8,7 +8,7 @@ export default defineConfig({
     resolveId(source, importer) {
       // Only orchestration imports used these doubles in the legacy runner.
       // Direct tests of src/main/agents/{process-manager,models} stay real.
-      if (importer && /^(\.{1,2}\/agents\/(process-manager|models)|\.{1,2}\/terminal|\.{1,2}\/memory\/project-memory)$/.test(source)) {
+      if (importer && !importer.endsWith('/agents/workspace-accounts.ts') && /^(\.{1,2}\/agents\/(process-manager|models)|\.{1,2}\/terminal|\.{1,2}\/memory\/project-memory)$/.test(source)) {
         return resolve('tests/issue-tracker-doubles.ts')
       }
     }

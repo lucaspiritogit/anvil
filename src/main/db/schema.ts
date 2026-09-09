@@ -8,6 +8,8 @@
  * `npm run db:generate`.
  */
 import { sql, type SQL } from 'drizzle-orm'
+import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH } from '../../shared/types'
+import type { ComposerPreferences } from '../../shared/types'
 import type { Issue } from '../../shared/valence'
 import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
@@ -56,6 +58,22 @@ const EVENT_CATEGORIES: TaskEventCategory[] = [
 ]
 const COMMENT_SIDES: TaskComment['side'][] = ['additions', 'deletions']
 
+export const workspaces = sqliteTable('workspaces', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  nameKey: text('name_key').notNull(),
+  createdAt: integer('created_at').notNull()
+}, (table) => [
+  uniqueIndex('workspaces_name_key_unique').on(table.nameKey),
+  check('workspaces_name_length', sql`length(${table.name}) BETWEEN 1 AND ${sql.raw(String(MAX_WORKSPACE_NAME_LENGTH))}`)
+])
+
+// Global application state contains only the selected profile, never its preferences.
+export const appState = sqliteTable('app_state', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull()
+})
+
 export const projects = sqliteTable(
   'projects',
   {
@@ -80,6 +98,8 @@ export const tasks = sqliteTable(
   'tasks',
   {
     id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull().default(DEFAULT_WORKSPACE_ID)
+      .references(() => workspaces.id, { onDelete: 'restrict' }),
     projectId: text('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
@@ -120,6 +140,7 @@ export const tasks = sqliteTable(
     // expression as a quoted identifier when it rebuilds the table, producing a
     // migration that cannot run. SQLite reads an index in either direction, so
     // this still serves `ORDER BY started_at DESC`.
+    index('tasks_workspace_started_idx').on(table.workspaceId, table.startedAt),
     index('tasks_project_started_idx').on(table.projectId, table.startedAt),
     check('tasks_status_valid', oneOf(table.status, TASK_STATUSES)),
     check('tasks_delivery_status_valid', oneOf(table.deliveryStatus, DELIVERY_STATUSES))
@@ -171,10 +192,24 @@ export const taskEvents = sqliteTable(
   ]
 )
 
+// Retained only as the source for the one-time Default workspace bootstrap.
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull()
 })
+
+export const workspaceSettings = sqliteTable('workspace_settings', {
+  workspaceId: text('workspace_id').notNull()
+    .references(() => workspaces.id, { onDelete: 'restrict' }),
+  key: text('key').notNull(),
+  value: text('value').notNull()
+}, (table) => [primaryKey({ columns: [table.workspaceId, table.key] })])
+
+export const workspacePreferences = sqliteTable('workspace_preferences', {
+  workspaceId: text('workspace_id').primaryKey().references(() => workspaces.id, { onDelete: 'restrict' }),
+  composer: text('composer', { mode: 'json' }).$type<ComposerPreferences>().notNull(),
+  lastProjectId: text('last_project_id').references(() => projects.id, { onDelete: 'set null' })
+}, (table) => [index('workspace_preferences_project_idx').on(table.lastProjectId)])
 
 export const taskExecutions = sqliteTable('task_executions', {
   taskId: text('task_id').primaryKey().references(() => tasks.id, { onDelete: 'cascade' }),

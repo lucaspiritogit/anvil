@@ -2,7 +2,7 @@ import { onTestCleanup } from './test-cleanup'
 import { test, expect } from 'vitest'
 import { EventEmitter } from 'node:events'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
-import { createRendererIpc, isRendererSender, isRendererUrl, openExternalPullRequest, protectRendererWindow } from '../src/main/renderer-security'
+import { isCodexLoginUrl, openExternalCodexLogin, createRendererIpc, isRendererSender, isRendererUrl, openExternalPullRequest, protectRendererWindow } from '../src/main/renderer-security'
 import { handlers, shell } from './issue-tracker-doubles'
 import { rendererContents, rendererEvent, rendererFrame, rendererUrl, rendererWindow } from './renderer-fixture'
 
@@ -92,4 +92,33 @@ test('validates PR URLs and blocks navigation, subframes and popups', async () =
   } finally {
     console.warn = warn
   }
+})
+
+
+test('Codex browser login allows only canonical HTTPS native account hosts', async () => {
+  const opened: string[] = []
+  Object.assign(shell, { openExternal: async (url: string) => { opened.push(url) } })
+  for (const url of ['https://auth.openai.com/authorize?state=fixture', 'https://chatgpt.com/auth/login']) {
+    expect(isCodexLoginUrl(url)).toBe(true)
+    await openExternalCodexLogin(url)
+  }
+  expect(opened).toHaveLength(2)
+  for (const url of ['javascript:alert(1)', 'file:///tmp/auth', 'http://auth.openai.com/login', 'https://auth.openai.com.evil.test/', 'https://evil.test/?next=https://auth.openai.com', 'https://user:secret@auth.openai.com/', 'https://auth.openai.com:444/', ' https://auth.openai.com/']) {
+    expect(isCodexLoginUrl(url)).toBe(false)
+    await expect(openExternalCodexLogin(url)).rejects.toThrow('Invalid Codex sign-in URL')
+  }
+})
+
+test('account IPC requires explicit workspace, supported methods and no injected credential paths', () => {
+  const ipc = createRendererIpc(() => rendererWindow, rendererUrl)
+  ipc.handle('accounts:connect', (_event, input) => ({ workspaceId: input.workspaceId }))
+  const handle = handlers.get('accounts:connect')!
+  const input = { workspaceId: 'default', agentId: 'codex', method: 'apiKey', apiKey: 'fixture-secret' }
+  expect(handle(rendererEvent, input)).toEqual({ workspaceId: 'default' })
+  for (const bad of [
+    { ...input, workspaceId: undefined }, { ...input, workspaceId: '../global' },
+    { ...input, method: 'chatgpt' }, { ...input, agentId: 'opencode' },
+    { ...input, CODEX_HOME: '/global' }, { ...input, apiKey: undefined }
+  ]) expect(() => handle(rendererEvent, bad)).toThrow('Invalid IPC request')
+  expect(() => handle({ ...rendererEvent, senderFrame: null }, input)).toThrow('Unauthorized IPC sender')
 })

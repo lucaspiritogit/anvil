@@ -366,6 +366,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
   const childOutput = useIssueEvents(task.id, issue?.id)
   const parentEvents = useStore((s) => s.eventsByTask[task.id])
   const events = issueId ? childOutput.events : parentEvents
+  const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? task.workspaceId)
   const project = useStore((s) => s.projects.find((item) => item.id === task.projectId))
   const openTask = useStore((s) => s.openTask)
   const cancelTask = useStore((s) => s.cancelTask)
@@ -499,6 +500,8 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
       <header className="shrink-0 max-h-[35%] overflow-y-auto px-6 py-4 @max-[760px]:px-4 [@media(max-height:600px)]:py-2">
         <div className="flex flex-wrap gap-2 items-center justify-between text-xs">
           <span className="flex min-w-0 items-center gap-2 text-dim">
+            <span className="truncate" title={workspaceName} aria-label="Task workspace">{workspaceName}</span>
+            <span aria-hidden="true">/</span>
             <span className="truncate" title={project?.path}>{project?.name ?? 'Tasks'}</span>
             <span aria-hidden="true">/</span>
             <span>{issue ? 'Valence subtask' : 'Agent run'}</span>

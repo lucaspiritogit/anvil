@@ -1,3 +1,4 @@
+import { resolveWorkspaceExecution } from '../agents/workspace-execution'
 import { promptWithFileReferences, validateTaskFileReferences } from '../task-file-references'
 import { validateTaskImages } from '../task-images'
 import type { RendererIpc } from '../renderer-security'
@@ -36,7 +37,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
 
   ipc.handle('tasks:list', () => {
     settleDueTasks()
-    return store.getTasks()
+    return store.getTasks(store.getActiveWorkspace().id)
   })
   ipc.handle('tasks:settle', (_event, taskId: string): Task => {
     requireFinishedTask(taskId)
@@ -79,6 +80,9 @@ export function registerTaskHandlers(ipc: RendererIpc, {
   ipc.handle(
     'tasks:start',
     async (_event, input) => {
+      const workspaceId = store.getActiveWorkspace().id
+      if (input.workspaceId !== undefined && input.workspaceId !== workspaceId) throw new Error('Workspace changed before task creation. Retry.')
+      const workspace = resolveWorkspaceExecution(store, workspaceId)
       // Decode before task/Valence/worktree creation. Text-only calls keep their synchronous preparation.
       const images = input.images?.length ? await validateTaskImages(input.images) : undefined
       const project = store.getProjects().find((project) => project.id === input.projectId)
@@ -99,6 +103,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
 
       const task: Task = {
         id: randomUUID(),
+        workspaceId,
         projectId: project.id,
         agentId: agent.id,
         agentLabel: agent.label,
@@ -128,7 +133,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
       try {
         if (images?.length) store.taskImages.save(task.id, images)
         const state = initializeTask(task.id, project.path, { reasoningEffort: input.reasoningEffort, ...(images?.length ? { hasImages: true } : {}) })
-        const prompt = planningPrompt(await promptWithProjectMemory(project.id, taskPrompt), state)
+        const prompt = planningPrompt(await promptWithProjectMemory(project.id, taskPrompt, task.workspaceId), state)
         requireRunningTask()
 
         // Without Git there is no task branch or diff. Run directly in the project folder.
@@ -142,6 +147,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
           setImmediate(() => {
             if (store.getTask(task.id)?.status !== 'running') return
             agentProcesses.start({
+              workspace,
               taskId: task.id,
               agent,
               prompt,
@@ -171,6 +177,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
         setImmediate(() => {
           if (store.getTask(task.id)?.status !== 'running') return
           agentProcesses.start({
+            workspace,
             taskId: task.id,
             agent,
             prompt,

@@ -1,3 +1,4 @@
+import type { WorkspaceExecutionContext } from './workspace-execution'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
@@ -19,6 +20,7 @@ const ANSI = /\u001b\[[0-9;?]*[ -\/]*[@-~]/g
 
 export interface StartOptions {
   taskId: string
+  workspace: WorkspaceExecutionContext
   issueId?: string
   agent: AgentDefinition
   prompt: string
@@ -131,21 +133,67 @@ export class AgentProcessManager extends EventEmitter {
   private completions = new Set<Promise<void>>()
   private shutdown?: Promise<void>
 
+  private readonly executionWorkspaces = new Map<string, string>()
+  private readonly accountChanges = new Set<string>()
+
+  isWorkspaceBusy(workspaceId: string): boolean {
+    return [...this.executionWorkspaces].some(([taskId, owner]) => owner === workspaceId && this.isRunning(taskId))
+  }
+
+  acquireAccountChange(workspaceId: string): () => void {
+    if (this.accountChanges.has(workspaceId) || this.isWorkspaceBusy(workspaceId)) {
+      throw new Error('Wait for active work or the pending account change in this workspace to finish.')
+    }
+    this.accountChanges.add(workspaceId)
+    return () => { this.accountChanges.delete(workspaceId) }
+  }
+
+  async invalidateWorkspaceClients(workspaceId: string): Promise<void> {
+    if (this.isWorkspaceBusy(workspaceId)) throw new Error('Workspace has active work')
+    const closing: Promise<void>[] = []
+    for (const [key, client] of this.clients) {
+      if (JSON.parse(key)[0] !== workspaceId) continue
+      this.clients.delete(key)
+      if (client.close) closing.push(client.close())
+    }
+    await Promise.all(closing)
+  }
+
+  private requireAccountReady(workspaceId: string): void {
+    if (this.accountChanges.has(workspaceId)) throw new Error('Finish or cancel the pending account change in this workspace before starting work.')
+  }
+
+  private readonly clients = new Map<string, AgentExecutor>()
+
   constructor(
-    private readonly openCodeClient: AgentExecutor = getAgentAdapter('opencode').createExecutor(),
-    private readonly codexClient: AgentExecutor = getAgentAdapter('codex').createExecutor()
+    private readonly openCodeClient?: AgentExecutor,
+    private readonly codexClient?: AgentExecutor,
+    private readonly createExecutor = (agentId: string, workspace: WorkspaceExecutionContext): AgentExecutor => getAgentAdapter(agentId).createExecutor(workspace),
+    private readonly taskWorkspace?: (taskId: string) => WorkspaceExecutionContext
   ) {
     super()
   }
 
+  private executor(agentId: string, workspace: WorkspaceExecutionContext): AgentExecutor {
+    const key = JSON.stringify([workspace.workspaceId, agentId])
+    let client = this.clients.get(key)
+    if (!client) {
+      client = (agentId === 'codex' ? this.codexClient : this.openCodeClient) ?? this.createExecutor(agentId, workspace)
+      this.clients.set(key, client)
+    }
+    return client
+  }
+
   /** A fresh, read-only turn for metadata, separate from the task's session and lifecycle. */
-  async generateText(options: Pick<StartOptions, 'agent' | 'prompt' | 'cwd' | 'model' | 'reasoningEffort'>): Promise<string> {
+  async generateText(options: Pick<StartOptions, 'agent' | 'prompt' | 'cwd' | 'model' | 'reasoningEffort' | 'workspace'>): Promise<string> {
     if (this.shutdown) throw new Error('Agent processes are shutting down')
-    const client = options.agent.id === 'codex' ? this.codexClient : options.agent.id === 'opencode' ? this.openCodeClient : undefined
+    this.requireAccountReady(options.workspace.workspaceId)
+    const client = ['codex', 'opencode'].includes(options.agent.id) ? this.executor(options.agent.id, options.workspace) : undefined
     if (!client) throw new Error('This agent does not support PR drafting')
     const taskId = `pr-draft-${randomUUID()}`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 120_000)
+    this.executionWorkspaces.set(taskId, options.workspace.workspaceId)
     this.serverExecutions.set(taskId, controller)
     const { agent: _agent, ...input } = options
     const execution = Promise.resolve().then(() => client.execute({ ...input, taskId, readOnly: true, signal: controller.signal }, () => {}))
@@ -160,6 +208,7 @@ export class AgentProcessManager extends EventEmitter {
     } finally {
       clearTimeout(timer)
       this.serverExecutions.delete(taskId)
+      this.executionWorkspaces.delete(taskId)
       this.completions.delete(completion)
     }
   }
@@ -185,6 +234,7 @@ export class AgentProcessManager extends EventEmitter {
   private startServer(opts: StartOptions, client: AgentExecutor): void {
     const { issueId } = opts
     const controller = new AbortController()
+    this.executionWorkspaces.set(opts.taskId, opts.workspace.workspaceId)
     this.serverExecutions.set(opts.taskId, controller)
     if (opts.agent.supportsSteering && client.steer) this.steeringExecutors.set(opts.taskId, client)
     let started = false
@@ -194,7 +244,7 @@ export class AgentProcessManager extends EventEmitter {
       opts.onStarted?.()
     }
     const { agent: _agent, onStartFailed: _onStartFailed, ...input } = opts
-    const completion = client.execute({ ...input, onStarted, signal: controller.signal }, (event) => {
+    const completion = (async () => client.execute({ ...input, onStarted, signal: controller.signal }, (event) => {
       switch (event.type) {
         case 'output':
           this.emit('event', { ...event.event, issueId } satisfies TaskEvent)
@@ -206,9 +256,10 @@ export class AgentProcessManager extends EventEmitter {
           this.emit('usage', { taskId: event.taskId, ...event.usage } satisfies UsageInfo)
           break
       }
-    }).then((result) => {
+    }))().then((result) => {
       this.steeringExecutors.delete(opts.taskId)
       this.serverExecutions.delete(opts.taskId)
+      this.executionWorkspaces.delete(opts.taskId)
       const cancelled = this.cancelled.delete(opts.taskId)
       if (!started && opts.onStartFailed) {
         opts.onStartFailed(new Error(result.error ?? 'Agent stopped before accepting the turn'))
@@ -222,6 +273,7 @@ export class AgentProcessManager extends EventEmitter {
     }, (failure: unknown) => {
       this.steeringExecutors.delete(opts.taskId)
       this.serverExecutions.delete(opts.taskId)
+      this.executionWorkspaces.delete(opts.taskId)
       const error = failure instanceof Error ? failure.message : String(failure)
       this.emitSystem(opts.taskId, error, true, issueId)
       const cancelled = this.cancelled.delete(opts.taskId)
@@ -322,17 +374,22 @@ export class AgentProcessManager extends EventEmitter {
     if (this.shutdown) throw new Error('Agent processes are shutting down')
     // Copy the turn options before callbacks or later issue transitions can mutate them.
     opts = { ...opts }
+    if (this.taskWorkspace) {
+      const owner = this.taskWorkspace(opts.taskId)
+      if (owner.workspaceId !== opts.workspace.workspaceId) throw new Error('Task workspace does not match its persisted owner')
+    }
     if (opts.images?.length && !['acp', 'codex-app-server'].includes(opts.agent.executionProtocol ?? '')) {
       throw new Error(`${opts.agent.label} does not support image attachments. Choose Codex or OpenCode with an image-capable model.`)
     }
+    this.requireAccountReady(opts.workspace.workspaceId)
     opts.beforeDispatch?.()
     if (this.isRunning(opts.taskId)) throw new Error('This task is already running')
     if (opts.agent.executionProtocol === 'acp') {
-      this.startServer(opts, this.openCodeClient)
+      this.startServer(opts, this.executor('opencode', opts.workspace))
       return
     }
     if (opts.agent.executionProtocol === 'codex-app-server') {
-      this.startServer(opts, this.codexClient)
+      this.startServer(opts, this.executor('codex', opts.workspace))
       return
     }
     const { taskId, issueId, agent, prompt, model, reasoningEffort, cwd, resumeSessionId } = opts
@@ -380,7 +437,7 @@ export class AgentProcessManager extends EventEmitter {
         // spawn() chdirs the child but leaves PWD pointing at Anvil's own launch
         // directory. An agent that trusts $PWD over getcwd() would write its
         // files there instead of into the task directory.
-        env: { ...process.env, PWD: cwd, NO_COLOR: '1', FORCE_COLOR: '0' }
+        env: { ...opts.workspace.environment, PWD: cwd, NO_COLOR: '1', FORCE_COLOR: '0' }
       })
     } catch (err) {
       this.usage.delete(taskId)
@@ -400,6 +457,7 @@ export class AgentProcessManager extends EventEmitter {
       started = true
       opts.onStarted?.()
     })
+    this.executionWorkspaces.set(taskId, opts.workspace.workspaceId)
     this.procs.set(taskId, child)
 
     const flushOut = this.pipe(taskId, agent, 'stdout', child.stdout!, issueId)
@@ -414,6 +472,7 @@ export class AgentProcessManager extends EventEmitter {
       flushOut()
       flushErr()
       this.procs.delete(taskId)
+      this.executionWorkspaces.delete(taskId)
       this.usage.delete(taskId)
       this.sessions.delete(taskId)
       const cancelled = this.cancelled.delete(taskId)
@@ -456,7 +515,7 @@ export class AgentProcessManager extends EventEmitter {
       for (const execution of this.serverExecutions.values()) execution.abort()
       await Promise.all([
         ...processes, ...this.completions,
-        this.openCodeClient.close?.(), this.codexClient.close?.()
+        ...[...new Set([...this.clients.values(), this.openCodeClient, this.codexClient])].map((client) => client?.close?.())
       ])
     })
     return this.shutdown

@@ -9,6 +9,7 @@ const issue: Issue = {
   labels: ['frontend'], priority: 'medium', dependencies: [], status: 'working'
 }
 const savedTask: Task = {
+  workspaceId: 'default',
   id: 'task-one', projectId: 'project-one', agentId: 'opencode', agentLabel: 'OpenCode',
   prompt: task, title: task, cwd: '/projects/example', status: 'pending', startedAt: 0,
   inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,

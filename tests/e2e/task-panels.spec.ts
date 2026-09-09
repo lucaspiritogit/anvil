@@ -60,7 +60,7 @@ test('shared child view isolates status, history and controls and recovers from 
       category: 'message' as const, text: `Saved ${issueId} result`
     }))]
   }, children)
-  await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes' }).click()
+  await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
   for (const status of ['queued', 'working', 'blocked', 'complete']) {
     await page.getByRole('button', { name: `Open subtask: Child ${status}`, exact: true }).click()
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(`Child ${status}`)
@@ -116,7 +116,7 @@ test('rapid sibling and parent switches discard delayed reads and restore Output
     }
   }, children)
   await setup()
-  await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes' }).click()
+  await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await page.getByRole('button', { name: 'Open subtask: Child working', exact: true }).click()
   await page.getByRole('button', { name: 'Open subtask: Child blocked', exact: true }).click()
@@ -132,7 +132,7 @@ test('rapid sibling and parent switches discard delayed reads and restore Output
   await expect(page.getByRole('tab', { name: 'Output', exact: true })).toHaveAttribute('aria-selected', 'true')
   await page.reload()
   await setup()
-  await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes' }).click()
+  await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
   await page.getByRole('button', { name: 'Open subtask: Child working', exact: true }).click()
   await expect(page.getByRole('log')).toContainText('History working')
   await expect(page.getByRole('log')).not.toContainText('History blocked')
@@ -146,7 +146,7 @@ test('foreign children never expose output and failed child reads can retry', as
         children: children.map((child) => ({ ...child, parentId: 'foreign-parent' })) }
     } }))
   }, children)
-  await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes' }).click()
+  await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
   await page.getByRole('button', { name: 'Open subtask: Child queued', exact: true }).click()
   await expect(page.getByText('This subtask is no longer available in this task.')).toBeVisible()
   await expect(page.getByRole('log')).toHaveCount(0)

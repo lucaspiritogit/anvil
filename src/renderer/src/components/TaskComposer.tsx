@@ -99,6 +99,7 @@ function TaskComposerDraft({ projectId }: { projectId: string | null }): JSX.Ele
 
   return (
     <div>
+      {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Choose the model again to retry saving.</p>}
       {projectId && <ProjectBranchSelector key={projectId} projectId={projectId} disabled={busy} onSwitching={setSwitchingBranch} />}
       <form
         ref={composerRef}

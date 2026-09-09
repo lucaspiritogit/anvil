@@ -1,3 +1,4 @@
+import type { WorkspaceExecutionContext } from './workspace-execution'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +8,7 @@ import { getAgent } from './registry'
 
 export async function draftPullRequestField(
   agentProcesses: Pick<AgentProcessManager, 'generateText'>,
+  workspace: WorkspaceExecutionContext,
   task: Task,
   diff: TaskDiff,
   field: PullRequestField,
@@ -14,6 +16,7 @@ export async function draftPullRequestField(
   description: string,
   reasoningEffort?: string
 ): Promise<string> {
+  if (workspace.workspaceId !== task.workspaceId) throw new Error('PR draft workspace does not match its task')
   const agent = getAgent(task.agentId)
   if (!agent) throw new Error('The task agent is no longer available.')
   const prompt = [
@@ -26,7 +29,7 @@ export async function draftPullRequestField(
   ].join('\n\n')
   const directory = await mkdtemp(join(tmpdir(), 'anvil-pr-draft-'))
   try {
-    const draft = await agentProcesses.generateText({ agent, prompt, cwd: directory, model: task.model, reasoningEffort })
+    const draft = await agentProcesses.generateText({ workspace, agent, prompt, cwd: directory, model: task.model, reasoningEffort })
     if (!draft.trim() || (field === 'title' && (draft.length > 256 || /[\r\n]/.test(draft))) || draft.length > 65_536) {
       throw new Error('The agent returned an invalid PR draft. Try again or enter the text yourself.')
     }

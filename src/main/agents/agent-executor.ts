@@ -1,8 +1,10 @@
+import type { WorkspaceExecutionContext } from './workspace-execution'
 import type { TaskEvent as OutputTaskEvent, TaskStatus, TaskUsage, TaskImageAttachment } from '../../shared/types'
 
 /** One Anvil agent turn. Issue persistence and validation belong to Valence. */
 export interface TaskInput {
   taskId: string
+  workspace: WorkspaceExecutionContext
   issueId?: string
   prompt: string
   images?: TaskImageAttachment[]

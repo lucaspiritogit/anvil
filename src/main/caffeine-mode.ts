@@ -3,7 +3,7 @@ import type { Store } from './store'
 
 /** One blocker covers all running tasks, including preparation and gaps between agent turns. */
 export function registerCaffeineMode(
-  store: Pick<Store, 'getSettings' | 'hasRunningTasks' | 'subscribeActivity'>,
+  store: Pick<Store, 'getSettings' | 'getWorkspaces' | 'hasRunningTasks' | 'subscribeActivity'>,
   blocker: Pick<typeof powerSaveBlocker, 'start' | 'stop'>
 ): () => void {
   let blockerId: number | undefined
@@ -14,7 +14,7 @@ export function registerCaffeineMode(
   }
   const sync = (): void => {
     try {
-      if (store.getSettings().caffeineMode && store.hasRunningTasks()) {
+      if (store.getWorkspaces().some((workspace) => store.getSettings(workspace.id).caffeineMode && store.hasRunningTasks(workspace.id))) {
         if (blockerId === undefined) blockerId = blocker.start('prevent-display-sleep')
       } else {
         stop()

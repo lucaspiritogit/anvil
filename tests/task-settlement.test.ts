@@ -21,6 +21,7 @@ test('settles eligible tasks at the review TTL and persists manual settlement', 
   vi.spyOn(Date, 'now').mockImplementation(() => now)
   const addTask = (id: string, patch: Partial<Task> = {}): Task => {
     const task: Task = {
+      workspaceId: 'default',
       id, projectId: 'project', title: id, prompt: id, agentId: 'codex', agentLabel: 'Codex',
       cwd: testHome, status: 'succeeded', deliveryStatus: 'reviewable', branchName: 'task',
       startedAt: now - 24 * 60 * 60 * 1000, endedAt: now - 3 * 24 * 60 * 60 * 1000,

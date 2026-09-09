@@ -24,6 +24,8 @@ export const shell = {}
 export class BrowserWindow {}
 export const createProjectMemory = () => undefined
 export const listModels = () => []
+export const invalidateWorkspaceModels = () => {}
+export const closeModelDiscovery = async () => {}
 export class TerminalManager {
   dispose(): void {}
   disposeAll(): void {}

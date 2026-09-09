@@ -52,10 +52,16 @@ test('serializes steering and comments through resume, completion and recovery',
     expect(() => call('tasks:steer', null)).toThrow(/Invalid IPC request/)
     expect(() => call('tasks:steer', { taskId: 'task', message: 42 })).toThrow(/Invalid IPC request/)
     await expect(steer('missing')).rejects.toThrow(/Task not found/)
+    const work = store.createWorkspace('Work')
+    store.selectWorkspace(work.id)
     const task: Task = await call('tasks:start', {
       projectId: 'project', agentId: 'codex', prompt: 'Original task', model: 'original-model', reasoningEffort: 'high'
     })
     await tick()
+    const personal = store.createWorkspace('Personal')
+    store.selectWorkspace(personal.id)
+    expect(call('tasks:list')).toEqual([])
+    expect(agentProcesses.starts[0].workspace.workspaceId).toBe(work.id)
     expect(() => steer(task.id, '  ')).toThrow(/Invalid IPC request/)
     await expect(steer(task.id)).rejects.toThrow(/session yet/)
     agentProcesses.emit('session', { taskId: task.id, sessionId: 'old-session' })
@@ -182,6 +188,7 @@ test('serializes steering and comments through resume, completion and recovery',
     })
     await steer('unfinished', 'Keep going')
     const recovery = agentProcesses.starts.at(-1)
+    expect(recovery.workspace.workspaceId).toBe(work.id)
     expect(recovery.resumeSessionId, 'Always attempt the original conversation first').toBe(finished.sessionId)
     expect(recovery.resumeFallbackPrompt).toMatch(/Original task: Preserve current issue/)
     expect(recovery.resumeFallbackPrompt).toContain(`Resume issue ${interrupted.id}`)
@@ -234,6 +241,7 @@ test('serializes steering and comments through resume, completion and recovery',
   const restarted = new Store(databasePath, options)
   try {
     const task = restarted.getTasks().find((task) => task.prompt === 'Original task' && task.id !== 'unsupported' && task.id !== 'unmanaged')!
+    expect(task.workspaceId).not.toBe(restarted.getActiveWorkspace().id)
     expect(task.model).toBe('original-model')
     expect(task.sessionId).toBe('newest-session')
     expect(restarted.getTaskExecution(task.id)?.reasoningEffort, 'Reasoning settings survive restart').toBe('high')

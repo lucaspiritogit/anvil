@@ -3,12 +3,13 @@ import { mkdtemp, open, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveCommand } from './resolve'
+import { OPEN_CODE_SUPPORTED_VERSION } from './opencode-workspace'
 
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024
 const MAX_ERROR_BYTES = 64 * 1024
 
 /** OpenCode can exit before piped stdout drains. A regular file preserves the full catalogue. */
-export async function readOpenCodeModelOutput(command: string, args: string[], cwd?: string, signal?: AbortSignal): Promise<string> {
+export async function readOpenCodeModelOutput(command: string, args: string[], cwd?: string, signal?: AbortSignal, environment?: Readonly<NodeJS.ProcessEnv>): Promise<string> {
   const resolved = resolveCommand(command)
   if (!resolved) throw new Error(`"${command}" is not installed or not on PATH`)
   signal?.throwIfAborted()
@@ -22,7 +23,7 @@ export async function readOpenCodeModelOutput(command: string, args: string[], c
           cwd, signal, timeout: 20_000, killSignal: 'SIGKILL',
           shell: resolved.viaShell, windowsHide: true,
           stdio: ['ignore', output.fd, 'pipe'],
-          env: { ...process.env, ...(cwd ? { PWD: cwd } : {}), NO_COLOR: '1', FORCE_COLOR: '0' }
+          env: { ...(environment ?? process.env), ...(cwd ? { PWD: cwd } : {}), NO_COLOR: '1', FORCE_COLOR: '0' }
         })
         let failure: Error | undefined
         const errors: Buffer[] = []
@@ -46,5 +47,13 @@ export async function readOpenCodeModelOutput(command: string, args: string[], c
     return await readFile(path, 'utf8')
   } finally {
     await rm(directory, { recursive: true, force: true })
+  }
+}
+
+/** Refuse unverified CLI releases before they can load a workspace account. */
+export async function verifyWorkspaceOpenCode(command: string, cwd: string, environment: Readonly<NodeJS.ProcessEnv>, signal?: AbortSignal): Promise<void> {
+  const version = (await readOpenCodeModelOutput(command, ['--version'], cwd, signal, environment)).trim()
+  if (version !== OPEN_CODE_SUPPORTED_VERSION) {
+    throw new Error(`OpenCode ${version || 'unknown'} has not been verified for workspace isolation. Anvil currently supports OpenCode ${OPEN_CODE_SUPPORTED_VERSION}.`)
   }
 }

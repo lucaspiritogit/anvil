@@ -1,29 +1,25 @@
 import { expect, test } from 'vitest'
 import Database from 'better-sqlite3'
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Store } from '../src/main/store'
 import type { Task } from '../src/shared/types'
+import { migrateBefore, migrationsFolder } from './migration-fixture'
+import { onTestCleanup } from './test-cleanup'
 import { testHome } from './issue-tracker-doubles'
 
 test('migrates interrupted tasks while retaining sessions, output and execution state', () => {
-  const migrationsFolder = join(process.cwd(), 'src/main/db/migrations')
-  const oldMigrations = join(testHome, 'old-migrations')
-  mkdirSync(join(oldMigrations, 'meta'), { recursive: true })
-  const journal = JSON.parse(readFileSync(join(migrationsFolder, 'meta/_journal.json'), 'utf8'))
-  journal.entries = journal.entries.slice(0, 1)
-  writeFileSync(join(oldMigrations, 'meta/_journal.json'), JSON.stringify(journal))
-  copyFileSync(join(migrationsFolder, `${journal.entries[0].tag}.sql`), join(oldMigrations, `${journal.entries[0].tag}.sql`))
   const database = join(testHome, 'recovery.db')
-  const old = new Store(database, { migrationsFolder: oldMigrations })
-  old.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  migrateBefore(database, 1)
+  const legacyDb = new Database(database)
+  onTestCleanup(() => { if (legacyDb.open) legacyDb.close() })
+  legacyDb.prepare("INSERT INTO projects (id, name, path, created_at) VALUES ('project', 'Test', ?, 0)").run(testHome)
   const base: Task = {
+    workspaceId: 'default',
     id: 'running', projectId: 'project', title: 'Task', prompt: 'Task', agentId: 'codex', agentLabel: 'Codex',
     cwd: testHome, status: 'running', deliveryStatus: 'working', startedAt: 1,
     inputTokens: 10, outputTokens: 5, cachedTokens: 0, totalTokens: 15, costUsd: null,
     filesChanged: 0, additions: 0, deletions: 0, sessionId: 'saved-session', branchName: 'saved-branch'
   }
-  const legacyDb = new Database(database)
   for (const [id, patch] of Object.entries({
     running: {},
     finalizing: { status: 'succeeded', deliveryStatus: 'finalizing' },
@@ -33,15 +29,20 @@ test('migrates interrupted tasks while retaining sessions, output and execution 
     cancelled: { status: 'cancelled', deliveryStatus: 'agent_failed' },
     review: { status: 'failed', deliveryStatus: 'agent_failed' }
   }) as [string, Partial<Task>][]) {
-    old.addTask({ ...base, ...patch, id })
+    legacyDb.prepare(`INSERT INTO tasks (id, project_id, title, prompt, agent_id, agent_label,
+      cwd, status, delivery_status, started_at, input_tokens, output_tokens, cached_tokens,
+      total_tokens, cost_usd, files_changed, additions, deletions, session_id, branch_name)
+      VALUES (@id, @projectId, @title, @prompt, @agentId, @agentLabel, @cwd, @status,
+      @deliveryStatus, @startedAt, @inputTokens, @outputTokens, @cachedTokens, @totalTokens,
+      @costUsd, @filesChanged, @additions, @deletions, @sessionId, @branchName)`)
+      .run({ ...base, ...patch, id })
     legacyDb.prepare('INSERT INTO task_events (id, task_id, ts, stream, kind, category, text) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(`${id}-event`, id, 2, 'system', 'output', 'system', id === 'stopped' ? 'Stop requested by user.' : 'Saved output')
-    old.saveTaskExecution({ taskId: id, projectPath: testHome, parentIssueId: 'saved-parent',
+    legacyDb.prepare('INSERT INTO task_executions (task_id, state) VALUES (?, ?)').run(id, JSON.stringify({ taskId: id, projectPath: testHome, parentIssueId: 'saved-parent',
       phase: id === 'running' ? 'working' : id === 'review' ? 'reviewing' : 'blocked',
-      issueIds: ['saved-issue'], currentIssueId: 'saved-issue', error: null })
+      issueIds: ['saved-issue'], currentIssueId: 'saved-issue', error: null }))
   }
   legacyDb.close()
-  old.close()
   const store = new Store(database, { migrationsFolder })
   try {
     for (const id of ['running', 'finalizing', 'legacy']) {

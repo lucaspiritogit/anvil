@@ -1,6 +1,12 @@
+import type { WorkspaceAgentAccount } from '../shared/types'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { IpcArgs, IpcInvokeChannel, IpcRequests, IpcSendChannel } from '../shared/ipc-requests'
 import type {
+  Workspace,
+  WorkspaceSnapshot,
+  WorkspacePreferences,
+  ComposerPreferences,
+  WorkspaceSettingsChange,
   AgentDefinition,
   GitHubCredentialStatus,
   PullRequestInfo,
@@ -60,9 +66,22 @@ const api = {
       }
       return () => { if (settingsOpenHandler === handler) settingsOpenHandler = undefined }
     },
-    onChanged: (handler: (settings: Settings) => void): (() => void) => subscribe('settings:changed', handler),
-    get: (): Promise<Settings> => invoke('settings:get'),
-    set: (patch: IpcRequests['settings:set']): Promise<Settings> => invoke('settings:set', patch)
+    onChanged: (handler: (change: WorkspaceSettingsChange) => void): (() => void) => subscribe('settings:changed', handler),
+    get: (workspaceId?: string): Promise<Settings> => invoke('settings:get', workspaceId),
+    set: (workspaceId: string, patch: Partial<Settings>): Promise<Settings> => invoke('settings:set', { workspaceId, patch })
+  },
+  workspaces: {
+    list: (): Promise<Workspace[]> => invoke('workspaces:list'),
+    snapshot: (): Promise<WorkspaceSnapshot> => invoke('workspaces:snapshot'),
+    create: (name: string): Promise<Workspace> => invoke('workspaces:create', name),
+    rename: (workspaceId: string, name: string): Promise<Workspace> => invoke('workspaces:rename', { workspaceId, name }),
+    select: (workspaceId: string): Promise<WorkspaceSnapshot> => invoke('workspaces:select', workspaceId),
+    getPreferences: (workspaceId: string): Promise<WorkspacePreferences> => invoke('workspaces:preferences:get', workspaceId),
+    setPreferences: (workspaceId: string, patch: Partial<WorkspacePreferences>): Promise<WorkspacePreferences> => invoke('workspaces:preferences:set', { workspaceId, patch }),
+    importComposer: (composer: ComposerPreferences): Promise<WorkspacePreferences> => invoke('workspaces:composer:import', composer),
+    onChanged: (handler: (workspaces: Workspace[]) => void): (() => void) => subscribe('workspaces:changed', handler),
+    onSelected: (handler: (snapshot: WorkspaceSnapshot) => void): (() => void) => subscribe('workspaces:selected', handler),
+    onPreferencesChanged: (handler: (change: { workspaceId: string; preferences: WorkspacePreferences }) => void): (() => void) => subscribe('workspaces:preferences:changed', handler)
   },
   github: {
     credentialStatus: (): Promise<GitHubCredentialStatus> => invoke('github:credential-status'),
@@ -75,10 +94,19 @@ const api = {
       invoke('github:draft-pr-field', input),
     openUrl: (url: string): Promise<void> => invoke('github:open-pr-url', url)
   },
+  accounts: {
+    status: (input: IpcRequests['accounts:status']): Promise<WorkspaceAgentAccount> => invoke('accounts:status', input),
+    connect: (input: IpcRequests['accounts:connect']): Promise<WorkspaceAgentAccount> => invoke('accounts:connect', input),
+    disconnect: (input: IpcRequests['accounts:disconnect']): Promise<WorkspaceAgentAccount> => invoke('accounts:disconnect', input),
+    cancel: (input: IpcRequests['accounts:cancel']): Promise<WorkspaceAgentAccount> => invoke('accounts:cancel', input),
+    terminal: (input: IpcRequests['accounts:terminal']): Promise<TerminalSnapshot> => invoke('accounts:terminal', input),
+    onChanged: (handler: (state: WorkspaceAgentAccount) => void): (() => void) => subscribe('accounts:changed', handler)
+  },
   agents: {
     list: (): Promise<AgentDefinition[]> => invoke('agents:list'),
-    models: (agentId: string): Promise<ProviderModelList> =>
-      invoke('agents:models', agentId)
+    models: (agentId: string, workspaceId?: string): Promise<ProviderModelList> =>
+      invoke('agents:models', { agentId, workspaceId }),
+    onModelsChanged: (handler: (workspaceId: string) => void): (() => void) => subscribe('agents:models:changed', handler)
   },
   projects: {
     onChanged: (handler: (projects: Project[]) => void): (() => void) => subscribe('projects:changed', handler),

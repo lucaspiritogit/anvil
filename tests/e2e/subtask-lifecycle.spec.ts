@@ -46,7 +46,7 @@ test('a newly created task discovers planning children and keeps execution and r
       dependencies: snapshot.children.length ? ['Implement rows'] : [] })
     await publish()
     if (snapshot.children.length === 1) {
-      await sidebar.getByRole('button', { name: `Expand subtasks: ${task.title}` }).click()
+      await sidebar.getByRole('button', { name: `Expand subtasks: ${task.title}`, exact: true }).click()
     }
     await expect(rows.getByRole('listitem')).toHaveCount(snapshot.children.length)
   }

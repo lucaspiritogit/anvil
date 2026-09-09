@@ -16,7 +16,7 @@ let database: string
 let store: Store
 let wallpapers: WallpaperLibrary
 const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
-const call = (channel: string, value?: unknown): any => handlers.get(channel)!(rendererEvent, value)
+const call = (channel: string, value?: unknown): any => handlers.get(channel)!(rendererEvent, channel === 'settings:set' ? { workspaceId: 'default', patch: value } : value)
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'anvil-overview-settings-'))
@@ -91,7 +91,7 @@ test('recovers corrupt and legacy settings while preserving other preferences', 
   store.close()
   const raw = new Database(database)
   for (const [key, value] of Object.entries({ fontSize: 'garbage', overviewBackgroundMode: 'garbage', overviewBackgroundColor: 'url(file:///secret)', overviewWallpaperId: '../secret.png' })) {
-    raw.prepare('UPDATE settings SET value = ? WHERE key = ?').run(value, key)
+    raw.prepare('UPDATE workspace_settings SET value = ? WHERE key = ?').run(value, key)
   }
   raw.close()
   store = new Store(database, options)
@@ -102,7 +102,7 @@ test('recovers corrupt and legacy settings while preserving other preferences', 
   expect(store.getSettings().fontSize, 'Invalid font size falls back').toBe(14)
   store.close()
   const legacy = new Database(database)
-  legacy.prepare("DELETE FROM settings WHERE key LIKE 'overview%'").run()
+  legacy.prepare("DELETE FROM workspace_settings WHERE key LIKE 'overview%'").run()
   legacy.close()
   store = new Store(database, options)
   expect(store.getSettings().overviewBackgroundColor, 'Older databases receive defaults').toBe('#0d0f12')

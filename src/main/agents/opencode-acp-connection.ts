@@ -3,8 +3,13 @@ import { Readable, Writable } from 'node:stream'
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION, type Client } from '@agentclientprotocol/sdk'
 import { resolveCommand } from './resolve'
 import { closeAgentServer } from './agent-server-process'
+import type { WorkspaceExecutionContext } from './workspace-execution'
+import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceEnvironment } from './opencode-workspace'
 
 export interface OpenCodeAcpOptions {
+  workspace?: WorkspaceExecutionContext
+  environment?: Readonly<NodeJS.ProcessEnv>
+  serverCwd?: string
   command?: string
   args?: string[]
   startupTimeoutMs?: number
@@ -32,10 +37,10 @@ export class OpenCodeAcpConnection {
     if (!resolved) throw new Error(`"${command}" is not installed or not on PATH`)
     this.failure = new Promise<never>((_, reject) => { this.rejectFailure = reject })
     void this.failure.catch(() => {})
-    this.child = spawn(resolved.command, [...resolved.prefixArgs, ...(options.args ?? ['acp'])], {
+    this.child = spawn(resolved.command, [...resolved.prefixArgs, ...(options.args ?? OPEN_CODE_ACP_ARGS)], {
       cwd, shell: resolved.viaShell, windowsHide: true, detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PWD: cwd, NO_COLOR: '1', FORCE_COLOR: '0' }
+      env: { ...(options.workspace ? openCodeWorkspaceEnvironment(options.workspace) : options.environment ?? process.env), PWD: cwd, NO_COLOR: '1', FORCE_COLOR: '0' }
     })
     this.closed = new Promise<void>((resolve) => { this.child.once('close', () => resolve()) })
     this.child.once('exit', (code, signal) => this.fail(new Error(`OpenCode ACP server exited before completing the turn (${signal ?? code}).`)))

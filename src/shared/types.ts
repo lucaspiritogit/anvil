@@ -224,8 +224,43 @@ export interface TaskEvent {
   text: string
 }
 
+export const DEFAULT_WORKSPACE_ID = 'default'
+export const MAX_WORKSPACE_NAME_LENGTH = 80
+
+export interface Workspace {
+  id: string
+  name: string
+  createdAt: number
+}
+
+export interface ComposerPreferences {
+  agentId: string
+  modelsByAgent: Record<string, string>
+  reasoningByAgentModel: Record<string, string>
+}
+
+export interface WorkspaceSnapshot {
+  workspaces: Workspace[]
+  workspace: Workspace
+  settings: Settings
+  preferences: WorkspacePreferences
+  projects: Project[]
+  tasks: Task[]
+}
+
+export interface WorkspaceSettingsChange {
+  workspaceId: string
+  settings: Settings
+}
+
+export interface WorkspacePreferences {
+  composer: ComposerPreferences
+  lastProjectId: string | null
+}
+
 export interface Task {
   id: string
+  readonly workspaceId: string
   projectId: string
   agentId: string
   agentLabel: string
@@ -329,4 +364,24 @@ export interface Settings {
   caffeineMode: boolean
   /** Accelerator per shortcut, e.g. `{ toggleSidebar: 'Mod+B' }`. */
   keybindings: Keybindings
+}
+
+export interface AgentAccountTarget {
+  workspaceId: string
+  agentId: 'codex' | 'opencode'
+}
+
+export interface AgentAccountConnect extends AgentAccountTarget {
+  method: 'apiKey' | 'chatgpt' | 'native'
+  apiKey?: string
+}
+
+export interface WorkspaceAgentAccount extends AgentAccountTarget {
+  workspaceName: string
+  status: 'signed-out' | 'connected' | 'pending' | 'cancelled' | 'busy' | 'error'
+  accounts: string[]
+  busy: boolean
+  message?: string
+  sessionId?: string
+  terminal?: boolean
 }

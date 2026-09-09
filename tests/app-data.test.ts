@@ -12,6 +12,7 @@ test('separates development storage from live packaged tasks', () => {
   const production = new Store(join(productionDirectory, 'anvil.db'), options)
   production.addProject({ id: 'project', name: 'Production', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
   const task: Task = {
+    workspaceId: 'default',
     id: 'live', projectId: 'project', title: 'Live task', prompt: 'Work', agentId: 'codex', agentLabel: 'Codex',
     cwd: testHome, status: 'running', deliveryStatus: 'working', startedAt: 1,
     inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,
