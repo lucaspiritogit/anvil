@@ -4,6 +4,7 @@ import { useStore } from '../state/store'
 import { TaskComposer } from './TaskComposer'
 import { renderWallpaper } from './wallpaper-effects'
 import { cn } from '../ui'
+import { loadWallpaper } from '../state/wallpaper-cache'
 import { DEFAULT_OVERVIEW_COLOR } from '@shared/appearance'
 import type { Project } from '@shared/types'
 
@@ -101,27 +102,14 @@ export function ProjectOverview({ project }: Props): JSX.Element {
 
   useEffect(() => {
     let cancelled = false
-    let image: HTMLImageElement | null = null
     setWallpaper(null)
     if (settings?.overviewBackgroundMode === 'image' && settings.overviewWallpaperId) {
-      void window.anvil.wallpapers.read(settings.overviewWallpaperId).then((url) => {
-        if (cancelled || !url) return
-        const decoder = new Image()
-        image = decoder
-        decoder.onload = () => {
-          if (!cancelled) setWallpaper({ settings, image: decoder })
-        }
-        decoder.onerror = () => { if (!cancelled) setWallpaper(null) }
-        decoder.src = url
+      void loadWallpaper(settings.overviewWallpaperId).then((entry) => {
+        if (cancelled) return
+        setWallpaper(entry ? { settings, image: entry.image } : null)
       }).catch(() => { if (!cancelled) setWallpaper(null) })
     }
-    return () => {
-      cancelled = true
-      if (image) {
-        image.onload = null
-        image.onerror = null
-      }
-    }
+    return () => { cancelled = true }
   }, [settings])
 
   const image = wallpaper?.settings === settings ? wallpaper.image : null
