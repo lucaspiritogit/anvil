@@ -156,9 +156,9 @@ for (const placement of ['overview', 'modal'] as const) {
     })
 
     test('Enter stays guarded until a valid provider and model are selected', async ({ page }) => {
-      await page.evaluate(() => localStorage.setItem('anvil-composer-preferences-v2', JSON.stringify({
-        state: { agentId: 'removed-provider', modelsByAgent: { codex: '   ' }, reasoningByAgentModel: {} }, version: 0
-      })))
+      await page.evaluate(() => window.anvil.workspaces.setPreferences('default', {
+        composer: { agentId: 'removed-provider', modelsByAgent: { codex: '   ' }, reasoningByAgentModel: {} }
+      }))
       await page.reload()
       if (placement === 'modal') await page.evaluate(() => window.composerTest.openModal())
       await prompt(page).fill('Choose my provider first')

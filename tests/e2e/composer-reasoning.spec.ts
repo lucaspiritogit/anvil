@@ -1,4 +1,4 @@
-import { chooseProvider } from './composer-setup'
+import { browseProvider, chooseProvider } from './composer-setup'
 import { expect, test, type Page } from '@playwright/test'
 
 const fixture = '/tests/e2e/fixture/?reasoningModels'
@@ -52,14 +52,14 @@ test('stale saved effort is replaced and persisted when metadata loads', async (
   })
   await page.goto(fixture)
   await expect(page.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('high')
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('anvil-composer-preferences-v2')!).state.reasoningByAgentModel))
+  await expect.poll(() => page.evaluate(async () => (await window.anvil.workspaces.getPreferences('default')).composer.reasoningByAgentModel))
     .toEqual({ '["opencode","openrouter/deepseek/deepseek-v4"]': 'high' })
 })
 
 test('late metadata refreshes only the selected agent and blocks stale effort submission while loading', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('anvil-composer-preferences-v2', JSON.stringify({ state: {
-      agentId: '', modelsByAgent: { opencode: 'openrouter/deepseek/deepseek-v4' }
+      agentId: 'opencode', modelsByAgent: { opencode: 'openrouter/deepseek/deepseek-v4' }, reasoningByAgentModel: {}
     }, version: 0 }))
   })
   await page.goto(fixture)
@@ -73,7 +73,8 @@ test('late metadata refreshes only the selected agent and blocks stale effort su
   const composer = page.getByRole('form', { name: 'Start a task' })
   const agent = composer.getByRole('button', { name: /^(Choose a model|Model:)/ })
   const reasoning = composer.getByRole('combobox', { name: 'Reasoning effort' })
-  await chooseProvider(agent, 'opencode')
+  await browseProvider(agent, 'opencode')
+  await page.keyboard.press('Escape')
   await composer.getByRole('textbox').fill('Wait for model efforts')
   await expect(reasoning).toBeDisabled()
   await expect(reasoning.locator('option:checked')).toHaveText('Loading efforts…')
@@ -142,7 +143,7 @@ test('the same model ID keeps separate agent choices and forwards the Codex opti
   const started = await page.evaluate(async () => (await window.anvil.tasks.list()).find((task) => task.id.startsWith('started-')))
   expect(started).not.toHaveProperty('thinkingLevel')
   expect(started).not.toHaveProperty('modelEffort')
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('anvil-composer-preferences-v2')!).state.reasoningByAgentModel))
+  expect(await page.evaluate(async () => (await window.anvil.workspaces.getPreferences('default')).composer.reasoningByAgentModel))
     .toEqual({ '["codex","shared-model"]': 'native-max', '["opencode","shared-model"]': 'max' })
 })
 

@@ -172,7 +172,7 @@ window.settingsTest = {
 if (query.has('settingsLoading')) {
   settings.caffeineMode = true
   // Exercise a Settings modal mounted before the initial settings read finishes.
-  useStore.setState({ ready: true, settingsOpen: true })
+  useStore.setState({ ready: true, activeWorkspaceId: 'default', settingsOpen: true })
 }
 
 const defaultSettings = structuredClone(settings)

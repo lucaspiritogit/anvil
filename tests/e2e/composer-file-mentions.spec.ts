@@ -39,7 +39,7 @@ test('replaces only the active range in the middle, restores caret, supports mul
   const input = await page.evaluate(() => window.composerTest.starts[0])
   expect(input.fileReferences).toEqual(['src/TaskComposer.tsx', 'src/renderer/index.ts'])
   expect(input.prompt).toBe('Before @"src/TaskComposer.tsx" and @"src/renderer/index.ts"  after')
-  expect(Object.keys(input).sort()).toEqual(['agentId', 'fileReferences', 'model', 'projectId', 'prompt', 'reasoningEffort'])
+  expect(Object.keys(input).sort()).toEqual(['agentId', 'fileReferences', 'model', 'projectId', 'prompt', 'reasoningEffort', 'workspaceId'])
 })
 
 test('quotes spaces, Unicode and escaped filenames; editing and removing references updates payload', async ({ page }) => {

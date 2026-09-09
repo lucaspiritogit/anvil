@@ -104,6 +104,7 @@ export function ProjectOverview({ project }: Props): JSX.Element {
 
   useEffect(() => {
     let cancelled = false
+    setImage(null)
     if (wallpaperMode === 'image' && wallpaperId) {
       void loadWallpaper(wallpaperId).then((entry) => {
         if (cancelled) return

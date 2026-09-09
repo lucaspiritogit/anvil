@@ -54,7 +54,7 @@ for (const placement of ['overview', 'modal'] as const) {
       ...input, images: input.images?.map((image) => ({ ...image, bytes: Array.from(image.bytes) }))
     })))
     expect(requests).toEqual([0, 1].map(() => ({
-      projectId: 'project-1', agentId: 'opencode', model: 'provider/model', prompt: draft.trim(),
+      workspaceId: 'default', projectId: 'project-1', agentId: 'opencode', model: 'provider/model', prompt: draft.trim(),
       fileReferences: ['workbench/OnlyHere.ts'], images: [{ ...image, bytes: Array.from(image.bytes) }]
     })))
     expect(await page.evaluate(() => window.anvil.projects.branches('project-1'))).toMatchObject({ currentBranch: 'feature/composer' })
