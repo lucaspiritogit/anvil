@@ -8,7 +8,6 @@ import type { WorkspaceExecutionContext } from './workspace-execution'
 // The child owns the socket throughout its lifetime; there is no check/bind gap
 // or parent-side reservation to leak on cancellation or process failure.
 export const OPEN_CODE_ACP_ARGS = ['acp', '--port', '0', '--hostname', '127.0.0.1', '--mdns=false']
-export const OPEN_CODE_SUPPORTED_VERSION = '1.18.25'
 const SUPPORTED_PROVIDERS = new Set(['openai', 'anthropic', 'openrouter', 'opencode', 'opencode-go'])
 
 export function isWorkspaceOpenCodeModel(model: string): boolean {

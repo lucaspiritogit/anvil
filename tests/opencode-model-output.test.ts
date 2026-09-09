@@ -72,8 +72,8 @@ test('scopes auth commands, model catalogues and image probes to Work and Person
   await fixture.assertGlobalUnchanged()
 })
 
-test('rejects unverified CLI versions before discovery reads account storage', async () => {
+test('rejects a missing CLI before discovery reads account storage', async () => {
   const fixture = await openCodeWorkspaceFixture()
-  await expect(verifyWorkspaceOpenCode(process.execPath, fixture.work.home, fixture.work.environment)).rejects.toThrow('has not been verified for workspace isolation')
+  await expect(verifyWorkspaceOpenCode('anvil-missing-opencode', fixture.work.home, fixture.work.environment)).rejects.toThrow('not installed or not on PATH')
   expect(existsSync(join(fixture.work.home, 'opencode.jsonl'))).toBe(false)
 })

@@ -3,7 +3,6 @@ import { mkdtemp, open, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveCommand } from './resolve'
-import { OPEN_CODE_SUPPORTED_VERSION } from './opencode-workspace'
 
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024
 const MAX_ERROR_BYTES = 64 * 1024
@@ -50,10 +49,7 @@ export async function readOpenCodeModelOutput(command: string, args: string[], c
   }
 }
 
-/** Refuse unverified CLI releases before they can load a workspace account. */
+/** Confirm the installed CLI launches before it can read workspace account storage. */
 export async function verifyWorkspaceOpenCode(command: string, cwd: string, environment: Readonly<NodeJS.ProcessEnv>, signal?: AbortSignal): Promise<void> {
-  const version = (await readOpenCodeModelOutput(command, ['--version'], cwd, signal, environment)).trim()
-  if (version !== OPEN_CODE_SUPPORTED_VERSION) {
-    throw new Error(`OpenCode ${version || 'unknown'} has not been verified for workspace isolation. Anvil currently supports OpenCode ${OPEN_CODE_SUPPORTED_VERSION}.`)
-  }
+  await readOpenCodeModelOutput(command, ['--version'], cwd, signal, environment)
 }
