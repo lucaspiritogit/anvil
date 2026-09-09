@@ -98,21 +98,22 @@ function WallpaperLayer({ image, color }: { image: HTMLImageElement; color: stri
 export function ProjectOverview({ project }: Props): JSX.Element {
   const settings = useStore((s) => s.settings)
   const color = settings?.overviewBackgroundColor ?? DEFAULT_OVERVIEW_COLOR
-  const [wallpaper, setWallpaper] = useState<{ settings: typeof settings; image: HTMLImageElement } | null>(null)
+  const wallpaperMode = settings?.overviewBackgroundMode
+  const wallpaperId = settings?.overviewWallpaperId
+  const [image, setImage] = useState<HTMLImageElement | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    setWallpaper(null)
-    if (settings?.overviewBackgroundMode === 'image' && settings.overviewWallpaperId) {
-      void loadWallpaper(settings.overviewWallpaperId).then((entry) => {
+    if (wallpaperMode === 'image' && wallpaperId) {
+      void loadWallpaper(wallpaperId).then((entry) => {
         if (cancelled) return
-        setWallpaper(entry ? { settings, image: entry.image } : null)
-      }).catch(() => { if (!cancelled) setWallpaper(null) })
+        setImage(entry ? entry.image : null)
+      }).catch(() => { if (!cancelled) setImage(null) })
+    } else {
+      setImage(null)
     }
     return () => { cancelled = true }
-  }, [settings])
-
-  const image = wallpaper?.settings === settings ? wallpaper.image : null
+  }, [wallpaperMode, wallpaperId])
 
   return (
     <div data-testid="project-overview" className="relative h-full min-h-0" style={{ backgroundColor: color }}>
