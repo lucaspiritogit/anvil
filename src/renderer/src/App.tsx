@@ -46,6 +46,7 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     const offOpen = window.anvil.settings.onOpenRequested(() => setSettingsOpen(true))
+    const offModels = window.anvil.agents.onModelsChanged(useStore.getState().invalidateAgentModels)
     const offSettings = window.anvil.settings.onChanged(useStore.getState().applySettingsChange)
     const offSelected = window.anvil.workspaces.onSelected(useStore.getState().receiveWorkspaceSelection)
     const offWorkspaces = window.anvil.workspaces.onChanged((workspaces) => useStore.setState({ workspaces }))
@@ -64,6 +65,7 @@ export function App(): JSX.Element {
     return () => {
       offOpen()
       offSettings()
+      offModels()
       offWorkspaces()
       offSelected()
       offProjects()

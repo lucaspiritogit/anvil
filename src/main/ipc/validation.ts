@@ -117,7 +117,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'settings:get': optional(workspaceId),
   'settings:set': object({ workspaceId, patch: settingsPatch }),
   'agents:list': none,
-  'agents:models': id,
+  'agents:models': object({ agentId: id, workspaceId: optional(id) }),
   'projects:list': none,
   'projects:add': none,
   'projects:update': object({ id, monthlyTokenLimit: nullable(number(0)), monthlyCostLimitUsd: nullable(number(0, Number.MAX_SAFE_INTEGER, false)), finishOnPush: boolean }),
@@ -134,7 +134,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:diff': id,
   'tasks:issue-diff': object({ taskId: id, issueId: id }),
   'tasks:start': (value, field) => {
-    const input = object<IpcRequests['tasks:start']>({ projectId: id, agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
+    const input = object<IpcRequests['tasks:start']>({ workspaceId: optional(id), projectId: id, agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
     if (!hasTaskContent(input.prompt, input.images)) invalid(field, 'requires a prompt or an image')
     return input
   },

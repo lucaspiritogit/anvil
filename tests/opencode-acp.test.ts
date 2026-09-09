@@ -1,3 +1,4 @@
+import { testWorkspace } from './workspace-fixture'
 import { taskImages } from './task-image-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test } from 'vitest'
@@ -17,6 +18,7 @@ test('handles ACP sessions, output, permissions, recovery and cancellation', asy
   const fixture = resolve('tests/fixtures/opencode-acp.cjs')
   const transcript = join(directory, 'requests.jsonl')
   const input: TaskInput = {
+    workspace: testWorkspace(),
     taskId: 'task-test', issueId: 'issue-test', prompt: 'Implement the issue',
     cwd: directory, model: 'provider/model'
   }
@@ -230,6 +232,7 @@ test('sends exact inline image data to ACP with server and model capability chec
     const controller = new AbortController()
     const events: TaskEvent[] = []
     const result = await client.execute({
+      workspace: testWorkspace(),
       taskId: scenario, cwd: directory, prompt: 'Implement the issue', images, model: 'provider/model', signal: controller.signal,
       ...(scenario === 'image-resume' ? { resumeSessionId: 'session-test' } : {}),
       onStarted: () => { if (scenario === 'image-cancel') controller.abort() }

@@ -27,9 +27,9 @@ export function parseOpenCodeModels(stdout: string): Pick<ProviderModelList, 'mo
 }
 
 /** ACP has no per-model image capability field. Query the same CLI in the task's project context. */
-export async function requireOpenCodeImageModel(command: string, args: string[], cwd: string, model: string | undefined, signal?: AbortSignal): Promise<void> {
+export async function requireOpenCodeImageModel(command: string, args: string[], cwd: string, model: string | undefined, signal?: AbortSignal, environment?: Readonly<NodeJS.ProcessEnv>): Promise<void> {
   if (!model) throw new Error('Select an explicit image-capable OpenCode model before attaching images.')
-  const stdout = await readOpenCodeModelOutput(command, args, cwd, signal)
+  const stdout = await readOpenCodeModelOutput(command, args, cwd, signal, environment)
   const lines = stdout.split(/\r?\n/)
   const start = lines.findIndex((line) => line.trim() === model)
   const end = lines.findIndex((line, index) => index > start + 1 && line === '}')

@@ -1,3 +1,4 @@
+import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -13,7 +14,7 @@ import { AcpOutput } from '../src/main/agents/acp-output'
 import type { TaskEvent, TaskInput } from '../src/main/agents/agent-executor'
 
 test('reconciles tool and text snapshots and persists row identity', () => {
-  const input: TaskInput = { taskId: 'output-test', issueId: 'first-issue', prompt: 'hello', cwd: '/tmp' }
+  const input: TaskInput = { workspace: testWorkspace(), taskId: 'output-test', issueId: 'first-issue', prompt: 'hello', cwd: '/tmp' }
   const events: TaskEvent[] = []
   const record = (event: TaskEvent): void => { events.push(event) }
   const rows = () => [...new Map(events.flatMap((event) => event.type === 'output' ? [[event.event.id, event.event] as const] : [])).values()]

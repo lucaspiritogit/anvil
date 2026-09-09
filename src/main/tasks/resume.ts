@@ -1,3 +1,4 @@
+import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import type { Task, TaskExecutionState } from '../../shared/types'
 import type { TaskContext } from './context'
@@ -17,6 +18,7 @@ export async function resumeTaskTurn(
 ): Promise<Task> {
   const task = check()
   validate(task)
+  const workspace = resolveTaskWorkspace(store, task.id)
   if (task.settledAt !== undefined) throw new Error('This task is settled and cannot be resumed')
   const agent = getAgent(task.agentId)
   if (!agent) throw new Error(`Unknown agent: ${task.agentId}`)
@@ -60,6 +62,7 @@ export async function resumeTaskTurn(
       })!
       // No scheduled callback: startup errors return to the invoking handler.
       await agentProcesses.startResumed({
+        workspace,
         beforeDispatch: () => { check(running) },
         taskId: task.id, issueId: state?.currentIssueId ?? undefined, agent, cwd: running.cwd,
         projectPath: project.path, model: current.model, reasoningEffort: state?.reasoningEffort,

@@ -37,7 +37,7 @@ export class CodexAppServerClient implements AgentExecutor {
     return this.server.get(() => {
       // A shared server outlives task worktrees. Recreating a deleted path does
       // not repair a process whose OS cwd still points to the removed directory.
-      const server: CodexAppServerConnection = new CodexAppServerConnection(homedir(), this.options, {
+      const server: CodexAppServerConnection = new CodexAppServerConnection(this.options.serverCwd ?? homedir(), this.options, {
         notification: (method, params) => {
           for (const active of this.executions) if (active.server() === server) active.notification(method, params)
         },
@@ -238,7 +238,7 @@ export class CodexAppServerClient implements AgentExecutor {
           'features.recommended_plugins': false,
           tool_output_token_limit: 3000,
           // Shell tools must retain Anvil's bundled vl launcher on PATH.
-          'shell_environment_policy.set.PATH': process.env.PATH ?? ''
+          'shell_environment_policy.set.PATH': this.options.environment?.PATH ?? process.env.PATH ?? ''
         }
       }
       let prompt = input.prompt

@@ -20,6 +20,7 @@ import type {
 const MAX_LINES_IN_MEMORY = 4000
 
 // A new selection invalidates asynchronous responses from the previous profile.
+const modelGenerations = new Map<string, number>()
 let workspaceGeneration = 0
 type CaffeineSave = { value: boolean; status: 'pending' | 'error' }
 
@@ -42,6 +43,8 @@ interface AnvilState {
   agents: AgentDefinition[]
   /** Model catalogues, one per agent, fetched the first time they are needed. */
   modelsByAgent: Record<string, ProviderModelList>
+  modelsByWorkspace: Record<string, Record<string, ProviderModelList>>
+  invalidateAgentModels: (workspaceId: string) => void
   loadingModelsAgentId: string | null
   settings: Settings | null
   caffeineSave: CaffeineSave | null
@@ -142,7 +145,7 @@ export const useStore = create<AnvilState>((set, get) => ({
       ...(changed ? {
         view: { kind: 'home' }, newTaskOpen: false, taskMenu: null, rebaseTaskId: null,
         settingsProjectId: null, settingsSection: 'general', caffeineSave: null,
-        modelsByAgent: {}, loadingModelsAgentId: null,
+        modelsByAgent: get().modelsByWorkspace[snapshot.workspace.id] ?? {}, loadingModelsAgentId: null,
         eventsByTask: {}, diffsByTask: {}, diffErrorsByTask: {}, diffsByIssue: {}, diffErrorsByIssue: {},
         commentsByTask: {}, sendingComments: null, commentError: null, rebasing: null,
         gitStatusByProject: {}, gitInitPending: null, gitInitError: null
@@ -195,6 +198,14 @@ export const useStore = create<AnvilState>((set, get) => ({
   tasks: [],
   agents: [],
   modelsByAgent: {},
+  modelsByWorkspace: {},
+  invalidateAgentModels: (workspaceId) => {
+    modelGenerations.set(workspaceId, (modelGenerations.get(workspaceId) ?? 0) + 1)
+    set((state) => ({
+      modelsByWorkspace: { ...state.modelsByWorkspace, [workspaceId]: {} },
+      ...(state.activeWorkspaceId === workspaceId ? { modelsByAgent: {}, loadingModelsAgentId: null } : {})
+    }))
+  },
   loadingModelsAgentId: null,
   settings: null,
   caffeineSave: null,
@@ -314,21 +325,28 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
 
   loadAgentModels: async (agentId) => {
+    const workspaceId = get().activeWorkspaceId
+    if (!workspaceId || get().workspaceSwitching) return
+    const modelGeneration = modelGenerations.get(workspaceId) ?? 0
     const generation = workspaceGeneration
+    const current = (): boolean => get().activeWorkspaceId === workspaceId && generation === workspaceGeneration && modelGeneration === (modelGenerations.get(workspaceId) ?? 0)
     if (get().modelsByAgent[agentId] || get().loadingModelsAgentId === agentId) return
     set({ loadingModelsAgentId: agentId })
     try {
-      const list = await window.anvil.agents.models(agentId)
-      if (generation !== workspaceGeneration) return
-      set((s) => ({ modelsByAgent: { ...s.modelsByAgent, [agentId]: list } }))
+      const list = await window.anvil.agents.models(agentId, workspaceId)
+      if (!current()) return
+      set((s) => ({
+        modelsByAgent: { ...s.modelsByAgent, [agentId]: list },
+        modelsByWorkspace: { ...s.modelsByWorkspace, [workspaceId]: { ...s.modelsByWorkspace[workspaceId], [agentId]: list } }
+      }))
     } catch (err) {
-      if (generation !== workspaceGeneration) return
+      if (!current()) return
       const message = err instanceof Error ? err.message : String(err)
       set((s) => ({
         modelsByAgent: { ...s.modelsByAgent, [agentId]: { agentId, models: [], error: message } }
       }))
     } finally {
-      set((s) => (generation === workspaceGeneration && s.loadingModelsAgentId === agentId ? { loadingModelsAgentId: null } : s))
+      set((s) => (current() && s.loadingModelsAgentId === agentId ? { loadingModelsAgentId: null } : s))
     }
   },
 
@@ -340,6 +358,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     const view = get().view
     const newTaskOpen = get().newTaskOpen
     const task = await window.anvil.tasks.start({
+      workspaceId: get().activeWorkspaceId ?? undefined,
       projectId, agentId, prompt, model,
       ...(images?.length ? { images } : {}),
       ...(fileReferences?.length ? { fileReferences } : {}),

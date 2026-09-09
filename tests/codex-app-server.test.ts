@@ -1,3 +1,4 @@
+import { testWorkspace } from './workspace-fixture'
 import { taskImages } from './task-image-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test } from 'vitest'
@@ -16,6 +17,7 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
   const fixture = resolve('tests/fixtures/codex-app-server.cjs')
   const transcript = join(directory, 'requests.jsonl')
   const input: TaskInput = {
+    workspace: testWorkspace(),
     taskId: 'task-test', issueId: 'issue-test', prompt: 'Implement the issue',
     cwd: directory, model: 'test-model'
   }
@@ -346,6 +348,7 @@ test('sends exact inline image data to Codex and rejects models without vision',
     onTestCleanup(() => client.close())
     const events: TaskEvent[] = []
     const result = await client.execute({
+      workspace: testWorkspace(),
       taskId: scenario, cwd: directory, prompt: 'Implement the issue', images,
       model: scenario === 'missing-rollout' ? 'reasoner' : 'test-model',
       ...(scenario === 'missing-rollout' ? { resumeSessionId: 'old', resumeFallbackPrompt: 'Recover the saved plan and branch' } : {})

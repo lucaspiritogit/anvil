@@ -1,3 +1,6 @@
+import { invalidateWorkspaceModels, closeModelDiscovery } from './agents/models'
+import { watchWorkspaceAuthChanges } from './agents/workspace-auth-changes'
+import { resolveTaskWorkspace } from './agents/workspace-execution'
 import { WallpaperLibrary } from './wallpapers'
 import { app, BrowserWindow, powerSaveBlocker } from 'electron'
 import { join } from 'node:path'
@@ -40,6 +43,7 @@ export function registerIpc(
   projectMemory?: ProjectMemory
   githubPolling: GitHubPRPolling
   stopCaffeineMode(): void
+  closeAgentDiscovery(): Promise<void>
   closeStore(): void
 } {
   const ipc = createRendererIpc(getWindow, rendererUrl)
@@ -51,7 +55,7 @@ export function registerIpc(
   const store = new Store(join(dataDirectory, 'anvil.db'), {
     migrationsFolder: join(app.getAppPath(), 'src', 'main', 'db', 'migrations')
   })
-  const agentProcesses = new AgentProcessManager()
+  const agentProcesses = new AgentProcessManager(undefined, undefined, undefined, (taskId) => resolveTaskWorkspace(store, taskId))
   const stopCaffeineMode = registerCaffeineMode(store, powerSaveBlocker)
   const gitDelivery = new GitDeliveryManager(join(dataDirectory, 'worktrees'))
   const projectMemory = new WorkspaceProjectMemory(store, (workspaceId, settings) => createProjectMemory({
@@ -79,7 +83,11 @@ export function registerIpc(
     broadcast('settings:changed', change)
   })
   registerWorkspaceHandlers(ipc, store, broadcast)
-  registerAgentHandlers(ipc)
+  registerAgentHandlers(ipc, store)
+  const stopAuthWatcher = watchWorkspaceAuthChanges(store, (workspaceId) => {
+    invalidateWorkspaceModels(workspaceId)
+    broadcast('agents:models:changed', workspaceId)
+  })
   registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask, terminals, projectMemory, getWindow, projectsChanged: () => broadcast('projects:changed', store.getProjects()) })
   registerTaskHandlers(ipc, {
     ...context,
@@ -110,5 +118,12 @@ export function registerIpc(
   registerRebaseHandlers(ipc, reviewContext)
   registerTerminalHandlers(ipc, terminals, store)
 
-  return { agentProcesses, terminals, githubPolling, stopCaffeineMode, closeStore: () => store.close(), ...(projectMemory ? { projectMemory } : {}) }
+  return {
+    agentProcesses, closeAgentDiscovery: closeModelDiscovery, terminals, githubPolling, stopCaffeineMode,
+    closeStore: () => {
+      stopAuthWatcher()
+      store.close()
+    },
+    ...(projectMemory ? { projectMemory } : {})
+  }
 }

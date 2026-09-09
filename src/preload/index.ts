@@ -95,8 +95,9 @@ const api = {
   },
   agents: {
     list: (): Promise<AgentDefinition[]> => invoke('agents:list'),
-    models: (agentId: string): Promise<ProviderModelList> =>
-      invoke('agents:models', agentId)
+    models: (agentId: string, workspaceId?: string): Promise<ProviderModelList> =>
+      invoke('agents:models', { agentId, workspaceId }),
+    onModelsChanged: (handler: (workspaceId: string) => void): (() => void) => subscribe('agents:models:changed', handler)
   },
   projects: {
     onChanged: (handler: (projects: Project[]) => void): (() => void) => subscribe('projects:changed', handler),

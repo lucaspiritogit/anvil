@@ -1,3 +1,4 @@
+import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { test, expect, vi } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -44,7 +45,7 @@ process.stdout.write(output)
 process.exit(0)
 `, { mode: 0o755 })
   const agent: AgentDefinition = { id: 'large-catalogue', label: 'Fixture', description: '', command: fixture, args: [] }
-  const catalogue = await openCodeAdapter.listModels(agent)
+  const catalogue = await openCodeAdapter.listModels(agent, testWorkspace())
   expect(catalogue.models).toEqual(['provider/large', 'provider/reasoner'])
   expect(catalogue.reasoningByModel?.['provider/reasoner'].options).toEqual([
     { id: 'high', label: 'high' }, { id: 'max', label: 'max' }
@@ -68,31 +69,31 @@ test('discovers adapter models, preserves cached effort metadata and reports fai
     const futureCatalogue = { models: ['future'], reasoningByModel: { future: { options: [{ id: 'budget:8192', label: 'Thorough' }], default: 'budget:8192' } } }
     const executor = { execute: async () => { throw new Error('unused') } }
     registerAgentAdapter({ id: 'future', createExecutor: () => executor, listModels: async () => futureCatalogue })
-    expect(getAgentAdapter('future').createExecutor()).toBe(executor)
-    expect(await listModels({ ...agent, id: 'future', models: { kind: 'adapter', adapterId: 'future' } })).toStrictEqual({ agentId: 'future', ...futureCatalogue })
+    expect(getAgentAdapter('future').createExecutor(testWorkspace())).toBe(executor)
+    expect(await listModels({ ...agent, id: 'future', models: { kind: 'adapter', adapterId: 'future' } }, testWorkspace())).toStrictEqual({ agentId: 'future', ...futureCatalogue })
     expect(() => registerAgentAdapter(getAgentAdapter('future'))).toThrow(/already registered/)
-    const unknown = await listModels({ ...agent, id: 'unknown', models: { kind: 'adapter', adapterId: 'unknown' } })
+    const unknown = await listModels({ ...agent, id: 'unknown', models: { kind: 'adapter', adapterId: 'unknown' } }, testWorkspace())
     expect(unknown.error!).toMatch(/Unknown agent adapter/)
     expect(unknown.reasoningByModel).toBe(undefined)
-    const catalogue = await listModels(agent)
+    const catalogue = await listModels(agent, testWorkspace())
     expect(catalogue).toStrictEqual({ agentId: agent.id, ...expected })
     await writeFile(fixture, `#!${process.execPath}\nprocess.exit(1)`)
-    expect(await listModels(agent), 'Cache must retain model effort metadata').toStrictEqual(catalogue)
-    const failed = await listModels({ ...agent, id: 'failure-fixture' })
+    expect(await listModels(agent, testWorkspace()), 'Cache must retain model effort metadata').toStrictEqual(catalogue)
+    const failed = await listModels({ ...agent, id: 'failure-fixture' }, testWorkspace())
     expect(failed.error).toBeTruthy()
     expect(failed.models).toStrictEqual([])
     expect(failed.reasoningByModel).toBe(undefined)
     await writeFile(fixture, `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(verboseOutput)})`, { mode: 0o755 })
-    expect(await listModels({ ...agent, id: 'failure-fixture' }), 'Failures are not cached').toStrictEqual({ agentId: 'failure-fixture', ...expected })
-    expect(await listModels({ ...agent, id: 'static-fixture', models: { kind: 'static', models: ['gpt-5'] } })).toStrictEqual({
+    expect(await listModels({ ...agent, id: 'failure-fixture' }, testWorkspace()), 'Failures are not cached').toStrictEqual({ agentId: 'failure-fixture', ...expected })
+    expect(await listModels({ ...agent, id: 'static-fixture', models: { kind: 'static', models: ['gpt-5'] } }, testWorkspace())).toStrictEqual({
       agentId: 'static-fixture', models: ['gpt-5']
     })
     const codex = { ...agent, id: 'codex-fixture', command: process.execPath, args: [join(process.cwd(), 'tests/fixtures/codex-app-server.cjs'), 'models', join(directory, 'codex.jsonl')], models: { kind: 'adapter' as const, adapterId: 'codex' } }
-    const codexModels = await listModels(codex)
+    const codexModels = await listModels(codex, testWorkspace())
     expect(codexModels.models).toStrictEqual(['reasoner', 'plain'])
     expect(codexModels.reasoningByModel?.reasoner.default).toBe('native-max')
     expect(codexModels.reasoningByModel?.plain.options).toStrictEqual([])
-    const codexError = await listModels({ ...codex, id: 'codex-error', args: [codex.args[0], 'models-error', codex.args[2]] })
+    const codexError = await listModels({ ...codex, id: 'codex-error', args: [codex.args[0], 'models-error', codex.args[2]] }, testWorkspace())
     expect(codexError.error!).toMatch(/Discovery unavailable/)
     expect(codexError.reasoningByModel).toBe(undefined)
   } finally {

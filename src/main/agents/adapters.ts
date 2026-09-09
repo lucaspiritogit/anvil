@@ -1,3 +1,4 @@
+import type { WorkspaceExecutionContext } from './workspace-execution'
 import type { AgentDefinition, ProviderModelList } from '../../shared/types'
 import type { AgentExecutor } from './agent-executor'
 import { CodexAppServerClient } from './codex-app-server'
@@ -10,8 +11,8 @@ export type AgentModelCatalogue = Pick<ProviderModelList, 'models' | 'reasoningB
 /** Provider discovery and execution share one registration point. */
 export interface AgentAdapter {
   id: string
-  createExecutor(): AgentExecutor
-  listModels(agent: AgentDefinition): Promise<AgentModelCatalogue>
+  createExecutor(workspace: WorkspaceExecutionContext): AgentExecutor
+  listModels(agent: AgentDefinition, workspace: WorkspaceExecutionContext, signal?: AbortSignal): Promise<AgentModelCatalogue>
 }
 
 export class AgentAdapterRegistry {
@@ -31,21 +32,25 @@ export class AgentAdapterRegistry {
 
 export const openCodeAdapter: AgentAdapter = {
   id: 'opencode',
-  createExecutor: () => new OpenCodeAcpClient(),
-  async listModels(agent) {
-    const stdout = await readOpenCodeModelOutput(agent.command, ['models', '--verbose'])
+  createExecutor: (workspace) => new OpenCodeAcpClient({ args: ['acp', '--port', '0'], environment: workspace.environment, serverCwd: workspace.home }),
+  async listModels(agent, workspace, signal) {
+    const stdout = await readOpenCodeModelOutput(agent.command, ['models', '--verbose'], workspace.home, signal, workspace.environment)
     return parseOpenCodeModels(stdout)
   }
 }
 
 export const codexAdapter: AgentAdapter = {
   id: 'codex',
-  createExecutor: () => new CodexAppServerClient(),
-  async listModels(agent) {
-    const client = new CodexAppServerClient({ command: agent.command, args: agent.args, requestTimeoutMs: 20_000 })
+  createExecutor: (workspace) => new CodexAppServerClient({ environment: workspace.environment, serverCwd: workspace.home }),
+  async listModels(agent, workspace, signal) {
+    const client = new CodexAppServerClient({ command: agent.command, args: agent.args, requestTimeoutMs: 20_000, environment: workspace.environment, serverCwd: workspace.home })
+    const cancel = (): void => { void client.close() }
+    signal?.addEventListener('abort', cancel, { once: true })
     try {
-      return await client.listModels(process.cwd())
+      signal?.throwIfAborted()
+      return await client.listModels(workspace.home)
     } finally {
+      signal?.removeEventListener('abort', cancel)
       await client.close()
     }
   }

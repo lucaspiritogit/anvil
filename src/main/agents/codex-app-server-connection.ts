@@ -8,6 +8,8 @@ import {
 } from './codex-app-server-protocol'
 
 export interface CodexAppServerOptions {
+  environment?: Readonly<NodeJS.ProcessEnv>
+  serverCwd?: string
   command?: string
   args?: string[]
   requestTimeoutMs?: number
@@ -45,10 +47,10 @@ export class CodexAppServerConnection implements CodexAppServerProtocol {
     if (!resolved) throw new Error(`"${command}" is not installed or not on PATH`)
     this.failure = new Promise<never>((_, reject) => { this.rejectFailure = reject })
     void this.failure.catch(() => {})
-    this.child = spawn(resolved.command, [...resolved.prefixArgs, ...(options.args ?? ['app-server', '--listen', 'stdio://'])], {
+    this.child = spawn(resolved.command, [...resolved.prefixArgs, ...(options.args ?? ['app-server', '--listen', 'stdio://']), ...(options.environment ? ['-c', 'cli_auth_credentials_store="file"'] : [])], {
       cwd, shell: resolved.viaShell, windowsHide: true, detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PWD: cwd, NO_COLOR: '1', FORCE_COLOR: '0' }
+      env: { ...(options.environment ?? process.env), PWD: cwd, NO_COLOR: '1', FORCE_COLOR: '0' }
     })
     this.closed = new Promise<void>((resolve) => { this.child.once('close', () => resolve()) })
     this.child.on('error', (error) => this.fail(error))

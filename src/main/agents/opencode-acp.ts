@@ -78,7 +78,7 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       const ready = this.server.get(() => {
         const command = this.options.command ?? 'opencode'
         output.line(`$ ${command} ${(this.options.args ?? ['acp']).join(' ')}`, 'system', 'system')
-        const server: OpenCodeAcpConnection = new OpenCodeAcpConnection(input.cwd, this.options, {
+        const server: OpenCodeAcpConnection = new OpenCodeAcpConnection(this.options.serverCwd ?? input.cwd, this.options, {
           sessionUpdate: async (notification) => {
             for (const active of this.executions) {
               if (active.server() === server && active.session() === notification.sessionId) {
@@ -101,7 +101,7 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       const request = <Response>(promise: Promise<Response>): Promise<Response> => Promise.race([promise, connection!.failure, interrupted])
       if (input.images?.length) {
         if (!connection.supportsImages) throw new Error('This OpenCode server does not support image prompts. Update OpenCode or remove the images.')
-        await request(requireOpenCodeImageModel(this.options.command ?? 'opencode', this.options.modelArgs ?? ['models', '--verbose'], input.cwd, input.model, input.signal))
+        await request(requireOpenCodeImageModel(this.options.command ?? 'opencode', this.options.modelArgs ?? ['models', '--verbose'], input.cwd, input.model, input.signal, this.options.environment))
       }
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
       startupTimer = setTimeout(() => connection?.fail(new Error('OpenCode ACP session startup timed out.')), this.options.startupTimeoutMs ?? 60_000)

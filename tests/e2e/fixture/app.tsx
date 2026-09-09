@@ -256,6 +256,7 @@ window.anvil = {
     update: async ({ id, ...patch }: Partial<Project> & { id: string }) => Object.assign(projects.find((project) => project.id === id)!, patch)
   },
   agents: {
+    onModelsChanged: () => () => {},
     list: async () => [
       { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5', supportsSteering: true },
       { id: 'opencode', label: 'OpenCode', description: 'OpenCode agent', command: 'opencode', args: [], defaultModel: 'provider/model' }

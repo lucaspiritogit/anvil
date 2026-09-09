@@ -16,7 +16,7 @@ export interface IpcRequests {
   'workspaces:preferences:set': { workspaceId: string; patch: Partial<WorkspacePreferences> }
   'workspaces:composer:import': ComposerPreferences
   'agents:list': undefined
-  'agents:models': string
+  'agents:models': { agentId: string; workspaceId?: string }
   'projects:list': undefined
   'projects:add': undefined
   'projects:update': { id: string; monthlyTokenLimit: number | null; monthlyCostLimitUsd: number | null; finishOnPush: boolean }
@@ -32,7 +32,7 @@ export interface IpcRequests {
   'tasks:events': string
   'tasks:diff': string
   'tasks:issue-diff': { taskId: string; issueId: string }
-  'tasks:start': { projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
+  'tasks:start': { workspaceId?: string; projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
   'tasks:steer': { taskId: string; message: string }
   'tasks:cancel': string
   'tasks:delete': string

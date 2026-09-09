@@ -1,3 +1,4 @@
+import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test } from 'vitest'
 import { existsSync } from 'node:fs'
@@ -51,7 +52,7 @@ test('reuses and recovers protocol servers and awaits descendant shutdown', asyn
         const entries = async (): Promise<TranscriptEntry[]> => (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
         return { client, transcript, entries }
       }
-      const input = (prompt: string, extra: Partial<TaskInput> = {}): TaskInput => ({ taskId: prompt, cwd: directory, prompt, ...extra })
+      const input = (prompt: string, extra: Partial<TaskInput> = {}): TaskInput => ({ workspace: testWorkspace(), taskId: prompt, cwd: directory, prompt, ...extra })
       const freshMethod = protocol === 'acp' ? 'session/new' : 'thread/start'
       const resumeMethod = protocol === 'acp' ? 'session/load' : 'thread/resume'
       const shared = create()

@@ -124,7 +124,7 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   registerTerminalHandlers(rendererIpc, terminals, store)
   registerWorkspaceHandlers(rendererIpc, store, context.send)
   registerSettingsHandlers(rendererIpc, context.store, new WallpaperLibrary(testHome))
-  registerAgentHandlers(rendererIpc)
+  registerAgentHandlers(rendererIpc, store)
   registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, terminals, getWindow: () => null })
   const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, name === 'settings:set' ? { workspaceId: 'default', patch: input } : input)
   const tick = async (): Promise<void> => {
@@ -139,6 +139,36 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
     get credentialRefreshes() { return credentialRefreshes }
   }
 }
+
+test('persists task ownership before preparation and retains it when selection changes', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  onTestCleanup(() => release())
+  const { store, call, project, tick, agentProcesses } = setupIpc(async (_projectId, prompt) => {
+    await gate
+    return prompt
+  })
+  const work = store.createWorkspace('Work')
+  const personal = store.createWorkspace('Personal')
+  store.selectWorkspace(work.id)
+  const pending = call('tasks:start', { workspaceId: work.id, projectId: project.id, agentId: 'codex', prompt: 'Work task' })
+  expect(store.getTasks(work.id)).toHaveLength(1)
+  expect(agentProcesses.starts).toHaveLength(0)
+  store.selectWorkspace(personal.id)
+  expect(call('tasks:list')).toEqual([])
+  await expect(call('tasks:start', { workspaceId: work.id, projectId: project.id, agentId: 'codex', prompt: 'Stale request' })).rejects.toThrow(/Workspace changed/)
+  expect(store.getTasks()).toHaveLength(1)
+  release()
+  const task: Task = await pending
+  await tick()
+  expect(task.workspaceId).toBe(work.id)
+  expect(agentProcesses.starts[0].workspace.workspaceId).toBe(work.id)
+  agentProcesses.emit('usage', { taskId: task.id, inputTokens: 2, outputTokens: 1, cachedTokens: 0, totalTokens: 3, costUsd: null })
+  expect(store.getTask(task.id)?.totalTokens).toBe(3)
+  expect(call('tasks:list')).toEqual([])
+  store.selectWorkspace(work.id)
+  expect(call('tasks:list').map((entry: Task) => entry.id)).toEqual([task.id])
+})
 
 test('registers all channels and rejects foreign, subframe and navigated senders', () => {
   const { terminalCalls } = setupIpc()
@@ -311,8 +341,8 @@ test('updates projects, validates task references and selects supported agents a
   expect(await memory.promptWithProjectMemory(project.id, 'Task')).toBe('Task')
   expect(call('projects:list')).toStrictEqual([project])
   expect(call('agents:list').map((agent: { id: string }) => agent.id)).toStrictEqual(['opencode', 'codex'])
-  expect(() => call('agents:models', 'missing')).toThrow(/Unknown agent/)
-  expect(() => call('agents:models', 'pi')).toThrow(/Unknown agent/)
+  expect(() => call('agents:models', { agentId: 'missing' })).toThrow(/Unknown agent/)
+  expect(() => call('agents:models', { agentId: 'pi' })).toThrow(/Unknown agent/)
   await expect(call('tasks:start', { projectId: project.id, agentId: 'pi', prompt: 'Unsupported agent' })).rejects.toThrow(/Unknown agent/)
   store.setSettings({ defaultAgentId: 'pi', defaultModel: 'old-model' })
   const fallbackSettings = call('settings:get')

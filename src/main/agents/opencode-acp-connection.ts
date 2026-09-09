@@ -5,6 +5,8 @@ import { resolveCommand } from './resolve'
 import { closeAgentServer } from './agent-server-process'
 
 export interface OpenCodeAcpOptions {
+  environment?: Readonly<NodeJS.ProcessEnv>
+  serverCwd?: string
   command?: string
   args?: string[]
   startupTimeoutMs?: number
@@ -35,7 +37,7 @@ export class OpenCodeAcpConnection {
     this.child = spawn(resolved.command, [...resolved.prefixArgs, ...(options.args ?? ['acp'])], {
       cwd, shell: resolved.viaShell, windowsHide: true, detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PWD: cwd, NO_COLOR: '1', FORCE_COLOR: '0' }
+      env: { ...(options.environment ?? process.env), PWD: cwd, NO_COLOR: '1', FORCE_COLOR: '0' }
     })
     this.closed = new Promise<void>((resolve) => { this.child.once('close', () => resolve()) })
     this.child.once('exit', (code, signal) => this.fail(new Error(`OpenCode ACP server exited before completing the turn (${signal ?? code}).`)))

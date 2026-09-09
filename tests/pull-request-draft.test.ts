@@ -1,3 +1,4 @@
+import { testWorkspace } from './workspace-fixture'
 import { expect, test } from 'vitest'
 import { onTestCleanup } from './test-cleanup'
 import { existsSync } from 'node:fs'
@@ -31,30 +32,30 @@ test('drafts isolated read-only PR fields with validation, cleanup and real ACP 
   onTestCleanup(() => manager.close())
   let lifecycleEvents = 0
   for (const name of ['event', 'exit', 'session', 'usage']) manager.on(name, () => { lifecycleEvents += 1 })
-  const task = { id: 'task', agentId: 'codex', model: 'chosen-model', sessionId: 'original-session', prompt: 'Improve task review' } as Task
+  const task = { workspaceId: 'default', id: 'task', agentId: 'codex', model: 'chosen-model', sessionId: 'original-session', prompt: 'Improve task review' } as Task
   const diff: TaskDiff = { patch: '+changed line', commits: [{ sha: 'commit', subject: 'Improve review' }] }
   try {
-    expect(await draftPullRequestField(manager, task, diff, 'title', 'Old title', 'Existing description', 'high')).toBe(output)
+    expect(await draftPullRequestField(manager, testWorkspace(), task, diff, 'title', 'Old title', 'Existing description', 'high')).toBe(output)
     expect(inputs[0].prompt).toMatch(/only the GitHub pull request title/)
     expect(inputs[0].prompt).toMatch(/\+changed line/)
     expect(inputs[0].model).toBe('chosen-model')
     expect(existsSync(inputs[0].cwd), 'Remove temporary drafting directories').toBe(false)
     output = '## Changes\nImprove the review layout.'
-    expect(await draftPullRequestField(manager, { ...task, agentId: 'opencode' }, diff, 'description', 'Edited title', '', 'high')).toBe(output)
+    expect(await draftPullRequestField(manager, testWorkspace(), { ...task, agentId: 'opencode' }, diff, 'description', 'Edited title', '', 'high')).toBe(output)
     expect(inputs[1].prompt).toMatch(/Edited title/)
     expect(inputs[0].taskId).not.toBe(inputs[1].taskId)
     expect(lifecycleEvents, 'PR metadata must not restart or finalize the task').toBe(0)
     output = 'Invalid\nmultiline title'
-    await expect(draftPullRequestField(manager, task, diff, 'title', '', '', 'high')).rejects.toThrow(/invalid PR draft/)
+    await expect(draftPullRequestField(manager, testWorkspace(), task, diff, 'title', '', '', 'high')).rejects.toThrow(/invalid PR draft/)
     output = ' '
-    await expect(draftPullRequestField(manager, task, diff, 'title', '', '', 'high')).rejects.toThrow(/empty draft/)
+    await expect(draftPullRequestField(manager, testWorkspace(), task, diff, 'title', '', '', 'high')).rejects.toThrow(/empty draft/)
     fail = true
-    await expect(draftPullRequestField(manager, task, diff, 'description', '', '', 'high')).rejects.toThrow(/Draft failed/)
+    await expect(draftPullRequestField(manager, testWorkspace(), task, diff, 'description', '', '', 'high')).rejects.toThrow(/Draft failed/)
     expect(inputs.every((input) => !existsSync(input.cwd)), 'Cleanup also runs after failures').toBeTruthy()
     expect(manager.isRunning(task.id)).toBe(false)
     await manager.close()
     expect(closed).toBeTruthy()
-    await expect(draftPullRequestField(manager, task, diff, 'description', '', '', 'high')).rejects.toThrow(/shutting down/)
+    await expect(draftPullRequestField(manager, testWorkspace(), task, diff, 'description', '', '', 'high')).rejects.toThrow(/shutting down/)
     const directory = await mkdtemp(join(tmpdir(), 'anvil-pr-acp-test-'))
     onTestCleanup(() => rm(directory, { recursive: true, force: true }))
     const transcript = join(directory, 'requests.jsonl')
@@ -66,8 +67,8 @@ test('drafts isolated read-only PR fields with validation, cleanup and real ACP 
     onTestCleanup(() => actualManager.close())
     try {
       const openCodeTask = { ...task, agentId: 'opencode', model: 'provider/model' }
-      expect(await draftPullRequestField(actualManager, openCodeTask, diff, 'title', '', '')).toBe('Improve task review')
-      expect(await draftPullRequestField(actualManager, openCodeTask, diff, 'description', 'Improve task review', '')).toBe('Improve the review layout. Validation was not reported.')
+      expect(await draftPullRequestField(actualManager, testWorkspace(), openCodeTask, diff, 'title', '', '')).toBe('Improve task review')
+      expect(await draftPullRequestField(actualManager, testWorkspace(), openCodeTask, diff, 'description', 'Improve task review', '')).toBe('Improve the review layout. Validation was not reported.')
       const requests = (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
       expect(requests.filter((request) => request.method === 'session/new').length).toBe(2)
       expect(requests.some((request) => request.method === 'session/load')).toBe(false)
