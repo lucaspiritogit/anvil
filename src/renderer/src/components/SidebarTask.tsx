@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import { useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
-  ArchiveArrowDownIcon, Cancel01Icon, Folder01Icon, Loading03Icon,
+  ArchiveArrowDownIcon, ArrowDown01Icon, Cancel01Icon, Folder01Icon, Loading03Icon,
   Notification03Icon, Tick02Icon
 } from '@hugeicons/core-free-icons'
 import type { Project, Task, TaskIssueSnapshot } from '@shared/types'
@@ -32,6 +32,8 @@ function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_IND
   return undefined
 }
 
+const expandedSubtasks = new Set<string>()
+
 function relativeAge(timestamp: number, now: number): string {
   const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000))
   if (minutes < 1) return 'now'
@@ -54,6 +56,15 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const settleTask = useStore((state) => state.settleTask)
   const [settling, setSettling] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(() => expandedSubtasks.has(task.id))
+  const toggleExpanded = (): void => {
+    const next = !expanded
+    setExpanded(next)
+    if (next) expandedSubtasks.add(task.id)
+    else expandedSubtasks.delete(task.id)
+  }
+  const hasChildren = Boolean(snapshot && snapshot.children.length > 0)
+  const showChildren = compact || expanded
   const eligible = canSettleTask(task)
   const deadline = settlementDeadline(task)
   const indicator = taskIndicator(task)
@@ -112,8 +123,33 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
                   {statusIcon}
                   <span className="truncate">{project?.name ?? 'Project'}</span>
                 </span>
-                <span className={cn('shrink-0 text-[11px]', indicator?.tone, eligible && 'group-hover:invisible group-focus-within:invisible')}>
-                  {indicator?.label ?? (task.status === 'pending' ? 'Pending' : task.status === 'cancelled' ? 'Cancelled' : relativeAge(task.endedAt ?? task.startedAt, now))}
+                <span className="flex shrink-0 items-center gap-1">
+                  {hasChildren && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={expanded}
+                      aria-controls={`subtasks-${task.id}`}
+                      aria-label={`${expanded ? 'Collapse' : 'Expand'} subtasks: ${task.title}`}
+                      className="grid place-items-center rounded text-dim hover:text-fg focus-visible:outline focus-visible:outline-accent"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        toggleExpanded()
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.stopPropagation()
+                          event.preventDefault()
+                          toggleExpanded()
+                        }
+                      }}
+                    >
+                      <HugeiconsIcon icon={ArrowDown01Icon} size={12} className={cn('transition-transform', !expanded && '-rotate-90')} aria-hidden="true" />
+                    </span>
+                  )}
+                  <span className={cn('shrink-0 text-[11px]', indicator?.tone, eligible && 'group-hover:invisible group-focus-within:invisible')}>
+                    {indicator?.label ?? (task.status === 'pending' ? 'Pending' : task.status === 'cancelled' ? 'Cancelled' : relativeAge(task.endedAt ?? task.startedAt, now))}
+                  </span>
                 </span>
               </span>
               <span className={cn('block truncate text-[13px] font-medium', parentActive || task.status === 'running' ? 'text-fg' : 'text-fg/80')}>
@@ -138,8 +174,8 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
         )}
         {error && <p role="alert" className="px-3 pb-2 text-xs text-danger">{error}</p>}
       </article>
-      {snapshot && snapshot.children.length > 0 && <ol aria-label={`Subtasks of ${task.title}`} className="ml-4 mr-2 mt-1 mb-2 border-l border-line pl-2 space-y-1">
-        {snapshot.children.map((issue) => <li key={issue.id}>
+      {hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="ml-4 mr-2 mt-1 mb-2 border-l border-line pl-2 space-y-1">
+        {snapshot?.children.map((issue) => <li key={issue.id}>
           <button
             aria-label={`Open subtask: ${issue.title}`}
             aria-description={issue.status}
