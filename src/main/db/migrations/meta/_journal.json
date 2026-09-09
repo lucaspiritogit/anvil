@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788723959372,
+      "tag": "0000_tense_tana_nile",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788792876136,
+      "tag": "0001_public_doctor_octopus",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788794747765,
+      "tag": "0002_futuristic_zzzax",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788835267679,
+      "tag": "0003_purple_penance",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788916127922,
+      "tag": "0004_cold_the_professor",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788921153371,
+      "tag": "0005_rare_madame_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788921942107,
+      "tag": "0006_nappy_klaw",
+      "breakpoints": true
+    }
+  ]
+}

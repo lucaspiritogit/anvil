@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.node.json",
+  "include": [
+    "vitest.config.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": [
+    "tests/e2e/**"
+  ],
+  "compilerOptions": {
+    "composite": false,
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
+    "jsx": "react-jsx",
+    "types": [
+      "node",
+      "vitest/importMeta"
+    ]
+  }
+}

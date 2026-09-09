@@ -1,0 +1,50 @@
+import { spawn } from 'node:child_process'
+import { mkdtemp, open, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { resolveCommand } from './resolve'
+
+const MAX_OUTPUT_BYTES = 32 * 1024 * 1024
+const MAX_ERROR_BYTES = 64 * 1024
+
+/** OpenCode can exit before piped stdout drains. A regular file preserves the full catalogue. */
+export async function readOpenCodeModelOutput(command: string, args: string[], cwd?: string, signal?: AbortSignal): Promise<string> {
+  const resolved = resolveCommand(command)
+  if (!resolved) throw new Error(`"${command}" is not installed or not on PATH`)
+  signal?.throwIfAborted()
+  const directory = await mkdtemp(join(tmpdir(), 'anvil-opencode-models-'))
+  try {
+    const path = join(directory, 'models.txt')
+    const output = await open(path, 'w', 0o600)
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(resolved.command, [...resolved.prefixArgs, ...args], {
+          cwd, signal, timeout: 20_000, killSignal: 'SIGKILL',
+          shell: resolved.viaShell, windowsHide: true,
+          stdio: ['ignore', output.fd, 'pipe'],
+          env: { ...process.env, ...(cwd ? { PWD: cwd } : {}), NO_COLOR: '1', FORCE_COLOR: '0' }
+        })
+        let failure: Error | undefined
+        const errors: Buffer[] = []
+        let errorBytes = 0
+        child.stderr!.on('data', (chunk: Buffer) => {
+          const retained = chunk.subarray(0, Math.max(0, MAX_ERROR_BYTES - errorBytes))
+          if (retained.length) errors.push(retained)
+          errorBytes += retained.length
+        })
+        child.once('error', (error) => { failure = error })
+        child.once('close', (code, exitSignal) => {
+          if (failure) reject(failure)
+          else if (code !== 0) reject(new Error(Buffer.concat(errors).toString('utf8').trim() || `OpenCode model discovery exited with ${exitSignal ?? code}`))
+          else resolve()
+        })
+      })
+      if ((await output.stat()).size > MAX_OUTPUT_BYTES) throw new Error('OpenCode model catalogue exceeds the 32 MiB output limit')
+    } finally {
+      await output.close()
+    }
+    return await readFile(path, 'utf8')
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}

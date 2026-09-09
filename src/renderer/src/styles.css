@@ -1,0 +1,92 @@
+@import 'tailwindcss';
+
+/*
+ * The palette the whole app is built from. Tailwind turns each --color-* entry
+ * into utilities (bg-canvas, text-dim, border-line …), so a colour is changed
+ * here and nowhere else.
+ */
+@theme {
+  --color-canvas: #0d0f12;
+  --color-raised: #14171c;
+  --color-hover: #1b1f26;
+  --color-line: #23272f;
+  --color-fg: #d7dbe0;
+  --color-dim: #868e9b;
+  --color-accent: #7aa2f7;
+  --color-ok: #7cc379;
+  --color-danger: #e06c75;
+  --color-warn: #d9a441;
+  --color-violet: #bb9af7;
+  --color-cyan: #7dcfa0;
+
+  /* The accent hairline used by the sidebar's review badge. */
+  --color-accent-edge: color-mix(in srgb, var(--color-accent) 45%, var(--color-line));
+
+  --radius-card: 0px;
+
+  --font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', Consolas, monospace;
+
+  /* Softer than Tailwind's own pulse, for the "agent is working" dot. */
+  --animate-blink: blink 1.4s ease-in-out infinite;
+  --animate-breathe: breathe 2.4s ease-in-out infinite;
+
+  @keyframes breathe {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  @keyframes blink {
+    50% {
+      opacity: 0.3;
+    }
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    overflow: hidden;
+    background: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+  }
+
+  /* Preflight leaves buttons at the browser default; every button here is one. */
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #262b33;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+}
+
+/*
+ * macOS hides the title bar, so the rows that sit where it used to be double as
+ * the window's drag handle and anything clickable inside them has to opt out.
+ */
+@utility drag-region {
+  -webkit-app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}

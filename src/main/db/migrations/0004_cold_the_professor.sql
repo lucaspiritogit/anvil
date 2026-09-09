@@ -1,0 +1,1 @@
+ALTER TABLE `task_events` ADD `issue_id` text;

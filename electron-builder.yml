@@ -1,0 +1,37 @@
+appId: dev.anvil.app
+productName: Anvil
+npmRebuild: false
+directories:
+  buildResources: build
+  output: release
+files:
+  # Package current entry points only; old build directories can remain locally.
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
+  - package.json
+  # The desktop Store applies app and internal Valence migrations once at startup.
+  # The CLI opens the existing database and does not ship separate migrations.
+  - src/main/db/migrations/**
+  - src/main/memory/migrations/**
+asarUnpack:
+  - node_modules/sharp/**
+  - node_modules/@img/**
+  - node_modules/node-pty/**
+  - node_modules/better-sqlite3/**
+  # PGlite loads its PostgreSQL and extension WebAssembly assets from disk.
+  - node_modules/@electric-sql/pglite/**
+  - node_modules/@electric-sql/pglite-pgvector/**
+mac:
+  category: public.app-category.developer-tools
+  target: dmg
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-${version}-setup.${ext}
