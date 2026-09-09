@@ -1,5 +1,6 @@
 import type { Issue } from '../../shared/valence'
 import type { IssueTracker } from '../valence/tracker'
+import type { IssueDiffSource } from '../git-delivery'
 import type { TaskExecutionState, TaskIssueSnapshot } from '../../shared/types'
 import type { Store } from '../store'
 
@@ -108,6 +109,22 @@ export class TaskIssues {
     })
     this.ownedClaims.delete(taskId)
     return paused
+  }
+
+  /** Commit range recorded for a planned issue; anchors its per-issue review diff. */
+  issueDiffSource(taskId: string, issueId: string): IssueDiffSource {
+    const state = this.requireState(taskId)
+    if (!state.issueIds.includes(issueId)) throw new Error('Issue does not belong to this task plan')
+    return this.withTracker(state, (tracker) => {
+      const issue = tracker.get(issueId)
+      const task = this.store.getTask(taskId)!
+      return {
+        baseCommit: issue.baseCommit ?? null,
+        headCommit: issue.headCommit ?? null,
+        taskBaseCommit: task.baseCommit ?? null,
+        taskHeadCommit: task.headCommit ?? null
+      }
+    })
   }
 
   /** Developer approval completes the reviewed issue and unpauses the loop. */

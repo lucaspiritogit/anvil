@@ -45,6 +45,8 @@ const children = (['queued', 'working', 'blocked', 'complete'] as const).map((st
   status, checklist: [], validation: '', labels: [], priority: 'medium' as const, dependencies: []
 }))
 
+const STATUS_LABEL = { queued: 'Queued', working: 'Working', blocked: 'Blocked', complete: 'Finished' } as const
+
 test('shared child view isolates status, history and controls and recovers from deletion', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 900, height: 500 })
   await page.goto('/tests/e2e/fixture/?scenario=review')
@@ -61,10 +63,17 @@ test('shared child view isolates status, history and controls and recovers from 
   for (const status of ['queued', 'working', 'blocked', 'complete']) {
     await page.getByRole('button', { name: `Open subtask: Child ${status}`, exact: true }).click()
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(`Child ${status}`)
-    await expect(page.getByLabel('Valence status')).toHaveText(status)
+    await expect(page.getByLabel('Valence status')).toHaveText(STATUS_LABEL[status])
     await expect(page.getByRole('region', { name: 'Task prompt' })).toHaveText(`Description for ${status}`)
     await expect(page.getByRole('group', { name: 'Task statistics' })).toHaveCount(0)
-    await expect(page.getByRole('tab', { name: /^Changes/ })).toHaveCount(0)
+    // Sub-task views expose their own Changes panel; only finished children have a diff.
+    await page.getByRole('tab', { name: 'Changes', exact: true }).click()
+    if (status === 'complete') {
+      await expect(page.getByRole('region', { name: 'Subtask code changes' }).getByRole('combobox', { name: 'Changed file' })).toBeVisible()
+    } else {
+      await expect(page.getByText('Its diff will appear here when the sub-task is submitted for review.')).toBeVisible()
+    }
+    await page.getByRole('tab', { name: 'Output', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
     await expect(page.getByRole('textbox')).toHaveCount(0)
     await expect(page.getByRole('log')).not.toContainText('Keyboard shortcuts')

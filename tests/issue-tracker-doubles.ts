@@ -114,7 +114,8 @@ export class GitDeliveryManager {
   }
   async merge(): Promise<void> {}
   async getDiff(_path: string, base: string, head: string): Promise<any> { return { patch: `${base}..${head}`, commits: [] } }
-  worktreeHead(): string | null { return null }
+  static worktreeHeadValue: string | null = null
+  worktreeHead(): string | null { return GitDeliveryManager.worktreeHeadValue }
   async getIssueDiff(_path: string, source: any): Promise<any> {
     if (source.baseCommit && source.headCommit) return { patch: `${source.baseCommit}..${source.headCommit}`, commits: [] }
     if (source.taskBaseCommit && source.taskHeadCommit) return { patch: `${source.taskBaseCommit}..${source.taskHeadCommit}`, commits: [] }
@@ -128,6 +129,7 @@ export function resetTestDoubles(): void {
   GitDeliveryManager.failFinalize = false
   GitDeliveryManager.failPrepare = false
   GitDeliveryManager.head = 0
+  GitDeliveryManager.worktreeHeadValue = null
   for (const agent of agentInstances) {
     agent.removeAllListeners()
     agent.active.clear()

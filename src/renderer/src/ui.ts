@@ -1,4 +1,4 @@
-import type { DeliveryStatus, TaskStatus } from '@shared/types'
+import type { DeliveryStatus, Issue, TaskStatus } from '@shared/types'
 
 /** Joins class names, dropping the falsy branches of a conditional. */
 export function cn(...parts: (string | false | null | undefined)[]): string {
@@ -48,6 +48,15 @@ export function statusTone(status: TaskStatus): string {
 /** Text colour for a task's code-delivery state; the quiet ones stay dim. */
 export function deliveryTone(status: DeliveryStatus): string {
   return DELIVERY_TONE[status] ?? 'text-dim'
+}
+
+/** Sub-task badges: a Valence review pauses the agent until the developer answers. */
+export const ISSUE_STATUS: Record<Issue['status'], { label: string; tone: string }> = {
+  queued: { label: 'Queued', tone: 'text-dim' },
+  working: { label: 'Working', tone: 'text-accent' },
+  blocked: { label: 'Blocked', tone: 'text-danger' },
+  review: { label: 'Review', tone: 'text-warn' },
+  complete: { label: 'Finished', tone: 'text-ok' }
 }
 
 export const btn = {

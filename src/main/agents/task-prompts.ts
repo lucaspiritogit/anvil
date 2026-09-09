@@ -50,10 +50,14 @@ export function taskFollowupPrompt(task: Task, state: TaskExecutionState, messag
   ].join('\n\n')
 }
 
-export function issueReworkPrompt(projectPath: string, issueId: string, comments: TaskComment[]): string {
-  const notes = comments
-    .map((comment) => `${comment.file}:${comment.lineNumber} — ${comment.body}`)
+function commentNotes(comments: TaskComment[]): string {
+  return comments
+    .map((comment) => comment.file ? `${comment.file}:${comment.lineNumber} — ${comment.body}` : comment.body)
     .join('\n')
+}
+
+export function issueReworkPrompt(projectPath: string, issueId: string, comments: TaskComment[]): string {
+  const notes = commentNotes(comments)
   return [
     valenceIssueTrackerInstructionsPrompt(projectPath),
     `The developer reviewed issue ${JSON.stringify(issueId)} and requested changes. The issue is working again in Valence.`,
@@ -77,9 +81,7 @@ export function agentRebasePrompt(baseCommit: string): string {
 }
 
 export function reviewPrompt(comments: TaskComment[]): string {
-  const notes = comments
-    .map((comment) => `${comment.file}:${comment.lineNumber} — ${comment.body}`)
-    .join('\n')
+  const notes = commentNotes(comments)
   return [
     'The developer reviewed your changes and left the notes below.',
     'Address each one in the code, then commit.',

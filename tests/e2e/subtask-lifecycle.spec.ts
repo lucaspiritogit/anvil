@@ -52,20 +52,58 @@ test('a newly created task discovers planning children and keeps execution and r
   await first.click()
   await expect(page.getByRole('log')).toContainText('Queued. Execution has not started.')
   await expect(page.getByRole('log')).not.toContainText('Parent planning history')
+  await page.evaluate(() => {
+    const calls: { kind: string; detail: unknown }[] = []
+    Object.assign(window, { issueReviewCalls: calls })
+    for (const name of ['fixture:issue-approval', 'fixture:issue-rejection']) {
+      window.addEventListener(name, (event) => calls.push({ kind: name, detail: (event as CustomEvent).detail }))
+    }
+  })
+  const reviewCalls = (): { kind: string; detail: unknown }[] =>
+    page.evaluate(() => (window as unknown as { issueReviewCalls: { kind: string; detail: unknown }[] }).issueReviewCalls)
   for (let index = 0; index < snapshot.children.length; index++) {
     const child = snapshot.children[index]
     child.status = 'working'
     await publish()
     await (index ? second : first).click()
-    await expect(page.getByLabel('Valence status')).toHaveText('working')
+    await expect(page.getByLabel('Valence status')).toHaveText('Working')
     await emit(`Result for ${child.title}`, child.id)
     await expect(page.getByRole('log')).toContainText(`Result for ${child.title}`)
     await expect(page.getByRole('log')).not.toContainText(`Result for ${snapshot.children[1 - index].title}`)
+    child.status = 'review'
+    await publish()
+    await expect(page.getByLabel('Valence status')).toHaveText('Review')
+    await expect((index ? second : first)).toContainText('Review')
+    // The run indicator becomes a review gate while the agent waits.
+    await expect(page.getByRole('status', { name: 'Review gate' })).toBeVisible()
+    await page.getByRole('tab', { name: 'Changes', exact: true }).click()
+    const review = page.getByRole('region', { name: 'Subtask code changes' })
+    await expect(review.getByRole('status')).toContainText('Waiting for your review')
+    await expect(review.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
+    if (index === 0) {
+      // Approving lets the agent continue with the next queued issue.
+      await review.getByRole('button', { name: 'Approve', exact: true }).click()
+      await expect.poll(reviewCalls).toEqual([{ kind: 'fixture:issue-approval', detail: { taskId: task.id } }])
+    } else {
+      // Requesting changes sends the optional note and restarts the same issue.
+      await review.getByLabel('Rework feedback').fill('Tighten the row spacing')
+      await review.getByRole('button', { name: 'Request changes', exact: true }).click()
+      await expect.poll(reviewCalls).toEqual([
+        { kind: 'fixture:issue-approval', detail: { taskId: task.id } },
+        { kind: 'fixture:issue-rejection', detail: { taskId: task.id, comment: 'Tighten the row spacing' } }
+      ])
+      child.status = 'working'
+      await publish()
+      await expect(page.getByLabel('Valence status')).toHaveText('Working')
+      child.status = 'review'
+      await publish()
+      await expect(page.getByLabel('Valence status')).toHaveText('Review')
+      await review.getByRole('button', { name: 'Approve', exact: true }).click()
+      await expect.poll(() => reviewCalls().then((calls) => calls.length)).toBe(3)
+    }
     child.status = 'complete'
     await publish()
-    await expect(page.getByLabel('Valence status')).toHaveText('complete')
-    await expect(page.getByRole('log')).toContainText(`Result for ${child.title}`)
-    await expect(page.getByRole('tab', { name: /^Changes/ })).toHaveCount(0)
+    await expect(page.getByLabel('Valence status')).toHaveText('Finished')
   }
   // Tracker failure keeps the selected child's cached history, then an explicit retry recovers.
   await page.evaluate(() => { window.anvil.tasks.issues = async () => { throw new Error('Tracker unavailable') } })
@@ -94,7 +132,10 @@ test('a newly created task discovers planning children and keeps execution and r
     detail: { ...task, status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), filesChanged: 2 }
   })), task)
   await second.click()
-  await expect(page.getByRole('tab', { name: /^Changes/ })).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Changes', exact: true }).click()
+  // A finished sub-task keeps its own recorded diff; the task-level diff stays on the owner.
+  await expect(page.getByRole('region', { name: 'Subtask code changes' }).getByRole('combobox', { name: 'Changed file' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Subtask code changes' }).getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
   await parent.click()
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()

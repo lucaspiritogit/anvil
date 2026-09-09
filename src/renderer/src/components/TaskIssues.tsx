@@ -1,15 +1,7 @@
 import { useState } from 'react'
 import type { Issue, TaskIssueSnapshot } from '@shared/types'
 import { useTaskIssues } from '../hooks/use-task-issues'
-import { btn, cn } from '../ui'
-
-const STATUS: Record<Issue['status'], { label: string; tone: string }> = {
-  queued: { label: 'Queued', tone: 'text-dim' },
-  working: { label: 'Working', tone: 'text-accent' },
-  blocked: { label: 'Blocked', tone: 'text-danger' },
-  review: { label: 'In Review', tone: 'text-warn' },
-  complete: { label: 'Complete', tone: 'text-ok' }
-}
+import { btn, cn, ISSUE_STATUS } from '../ui'
 
 export function TaskIssues({ taskId, active }: { taskId: string; active: boolean }): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -26,7 +18,7 @@ export function TaskIssues({ taskId, active }: { taskId: string; active: boolean
       >
         <span aria-hidden="true" className="text-dim">{expanded ? '−' : '+'}</span>
         <span className="min-w-0 flex-1 text-sm font-medium [overflow-wrap:anywhere]">{issue.title}</span>
-        {status && <span className={cn('border border-line px-2 py-0.5 text-xs', STATUS[status].tone)}>{STATUS[status].label}</span>}
+        {status && <span className={cn('border border-line px-2 py-0.5 text-xs', ISSUE_STATUS[status].tone)}>{ISSUE_STATUS[status].label}</span>}
       </button>
       <div id={`issue-summary-${issue.id}`} hidden={!expanded} className="border-t border-line p-4 text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
         {issue.description.trim() ? issue.description : 'No description provided.'}

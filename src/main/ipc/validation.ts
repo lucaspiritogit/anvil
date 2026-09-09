@@ -114,6 +114,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:issues': id,
   'tasks:events': id,
   'tasks:diff': id,
+  'tasks:issue-diff': object({ taskId: id, issueId: id }),
   'tasks:start': (value, field) => {
     const input = object<IpcRequests['tasks:start']>({ projectId: id, agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
     if (!hasTaskContent(input.prompt, input.images)) invalid(field, 'requires a prompt or an image')
@@ -128,7 +129,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:merge-preview': id,
   'tasks:approve': object({ taskId: id, preview: object(mergePreview) }),
   'tasks:approve-issue': id,
-  'tasks:reject-issue': id,
+  'tasks:reject-issue': object({ taskId: id, comment: optional(text(20_000)) }),
   'comments:list': id,
   'comments:add': object({ taskId: id, file, side: oneOf('additions', 'deletions'), lineNumber: number(1), body: text(20_000) }),
   'comments:remove': object({ taskId: id, id }),

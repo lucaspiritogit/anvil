@@ -26,7 +26,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 500 
     await expect(page.getByRole('textbox')).toBeHidden()
     await expect(panel.getByRole('region', { name: 'Parent issue', exact: true }).getByRole('button')).toHaveCount(1)
     await expect(panel.getByRole('region', { name: 'Child issues' }).getByRole('listitem')).toHaveCount(4)
-    for (const status of ['Queued', 'Working', 'Blocked', 'Complete']) await expect(panel.getByText(status, { exact: true })).toBeVisible()
+    for (const status of ['Queued', 'Working', 'Blocked', 'Finished']) await expect(panel.getByText(status, { exact: true })).toBeVisible()
     const parent = panel.getByRole('button', { name: /Plan the task/ })
     await parent.focus()
     await page.keyboard.press('Enter')
@@ -41,7 +41,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 500 
     updated.children[0].description = 'Updated summary'
     await publish(page, updated)
     await expect(panel.getByText('Updated summary')).toBeVisible({ timeout: 1000 })
-    await expect(panel.getByRole('button', { name: 'Issue 0 Complete', exact: true })).toHaveAttribute('aria-expanded', 'true')
+    await expect(panel.getByRole('button', { name: 'Issue 0 Finished', exact: true })).toHaveAttribute('aria-expanded', 'true')
     await page.screenshot({ path: testInfo.outputPath('issues.png') })
     await panel.getByRole('button', { name: /Issue 1/ }).click()
     await expect(panel.getByText('No description provided.').filter({ visible: true })).toHaveCount(1)

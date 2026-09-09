@@ -1,4 +1,63 @@
 import { expect, test } from '@playwright/test'
+import type { TaskIssueSnapshot } from '../../src/shared/types'
+
+type ReviewCall = { kind: string; detail: Record<string, unknown> }
+
+test('sub-task review pauses on the per-issue diff with approve and request-changes actions', async ({ page }, testInfo) => {
+  await page.goto('/tests/e2e/fixture/?scenario=review')
+  await page.evaluate(() => {
+    const calls: ReviewCall[] = []
+    Object.assign(window, { subtaskReviewCalls: calls })
+    for (const kind of ['fixture:issue-diff', 'fixture:issue-approval', 'fixture:issue-rejection']) {
+      window.addEventListener(kind, (event) => calls.push({ kind, detail: (event as CustomEvent<Record<string, unknown>>).detail }))
+    }
+  })
+  const calls = (): Promise<ReviewCall[]> =>
+    page.evaluate(() => (window as unknown as { subtaskReviewCalls: ReviewCall[] }).subtaskReviewCalls)
+  const snapshot: TaskIssueSnapshot = {
+    parent: { id: 'plan', anvilTaskId: 'review', title: 'Review sidebar changes', description: '' },
+    children: [
+      { id: 'issue-done', parentId: 'plan', title: 'Read the branch', description: '', status: 'complete', checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] },
+      { id: 'issue-review', parentId: 'plan', title: 'Extract review actions', description: 'Split the review flow', status: 'review', checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] }
+    ]
+  }
+  const publish = (value: TaskIssueSnapshot): Promise<void> =>
+    page.evaluate((snapshot) => window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'review', snapshot } })), value)
+  await publish(snapshot)
+  const sidebar = page.getByRole('complementary', { name: 'Task sidebar' })
+  const subtask = sidebar.getByRole('button', { name: 'Open subtask: Extract review actions', exact: true })
+  // The sidebar and the parent run both surface the waiting-for-review state.
+  await expect(subtask).toContainText('Review')
+  await expect(page.getByRole('status', { name: 'Review gate' })).toBeVisible()
+  await subtask.click()
+  await expect(page.getByLabel('Valence status')).toHaveText('Review')
+  await page.getByRole('tab', { name: 'Changes', exact: true }).click()
+  const review = page.getByRole('region', { name: 'Subtask code changes' })
+  await expect(review.getByRole('status')).toContainText('Waiting for your review')
+  // The diff comes from the per-issue channel, not the whole task diff.
+  await expect(review.getByRole('combobox', { name: 'Changed file' })).toHaveValue('src/sidebar.ts')
+  await expect(review.locator('[data-line]').filter({ hasText: 'spacing: 12' })).toBeVisible()
+  await expect.poll(calls).toContainEqual({ kind: 'fixture:issue-diff', detail: { taskId: 'review', issueId: 'issue-review' } })
+  await review.locator('[data-column-number="2"][data-line-type="change-addition"]').click()
+  await review.getByPlaceholder('Leave a note on this line…').fill('Rename this flag')
+  await review.getByRole('button', { name: 'Add comment', exact: true }).click()
+  await expect(review.getByText('1 line comment will be sent with the rework request.')).toBeVisible()
+  await review.getByLabel('Rework feedback').fill('Also cover the empty case')
+  await review.getByRole('button', { name: 'Request changes', exact: true }).click()
+  await expect.poll(calls).toContainEqual({ kind: 'fixture:issue-rejection', detail: { taskId: 'review', comment: 'Also cover the empty case' } })
+  // Rework restarts the issue; the next review submission refetches the diff.
+  const rework = structuredClone(snapshot)
+  rework.children[1].status = 'working'
+  await publish(rework)
+  await expect(page.getByLabel('Valence status')).toHaveText('Working')
+  await expect(review.getByText('Its diff will appear here when the sub-task is submitted for review.')).toBeVisible()
+  rework.children[1].status = 'review'
+  await publish(rework)
+  await expect(review.getByRole('combobox', { name: 'Changed file' })).toHaveValue('src/sidebar.ts')
+  await review.getByRole('button', { name: 'Approve', exact: true }).click()
+  await expect.poll(calls).toContainEqual({ kind: 'fixture:issue-approval', detail: { taskId: 'review' } })
+  await page.screenshot({ path: testInfo.outputPath('subtask-review.png') })
+})
 
 test('review shows Pierre beside the event stream, with file navigation and focus mode', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 })

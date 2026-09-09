@@ -62,10 +62,21 @@ export function registerReviewHandlers(ipc: RendererIpc, {
     })
   )
 
-  ipc.handle('tasks:reject-issue', (_event, taskId: string): Promise<Task> =>
-    withTaskOperation(store, taskId, 'review', async (check) => {
-      const state = rejectIssue(taskId)
-      const pending = store.getComments(taskId).filter((comment) => comment.sentAt === null)
+  ipc.handle('tasks:reject-issue', (_event, input): Promise<Task> =>
+    withTaskOperation(store, input.taskId, 'review', async (check) => {
+      const body = input.comment?.trim()
+      const state = rejectIssue(input.taskId)
+      if (body) store.addComment({
+        id: randomUUID(),
+        taskId: input.taskId,
+        file: '',
+        side: 'additions',
+        lineNumber: 0,
+        body,
+        createdAt: Date.now(),
+        sentAt: null
+      })
+      const pending = store.getComments(input.taskId).filter((comment) => comment.sentAt === null)
       const running = await resumeTaskTurn({ store, agentProcesses, gitDelivery, send }, {
         check,
         validate: (task) => {
@@ -74,9 +85,9 @@ export function registerReviewHandlers(ipc: RendererIpc, {
         },
         prompt: () => issueReworkPrompt(state.projectPath, state.currentIssueId!, pending)
       })
-      if (pending.length) store.markCommentsSent(taskId, Date.now(), pending.map((comment) => comment.id))
-      recordSystemEvent(taskId, `Sent ${pending.length} pending review ${pending.length === 1 ? 'comment' : 'comments'} back to ${getAgent(running.agentId)!.label}.`)
-      return store.getTask(taskId) ?? running
+      if (pending.length) store.markCommentsSent(input.taskId, Date.now(), pending.map((comment) => comment.id))
+      recordSystemEvent(input.taskId, `Sent ${pending.length} pending review ${pending.length === 1 ? 'comment' : 'comments'} back to ${getAgent(running.agentId)!.label}.`)
+      return store.getTask(input.taskId) ?? running
     })
   )
 

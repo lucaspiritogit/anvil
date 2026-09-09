@@ -22,6 +22,13 @@ function activityLabel(task: Task, event?: TaskEvent): string {
 }
 
 export function TaskActivity({ task, event, issueStatus }: { task: Task; event?: TaskEvent; issueStatus?: Issue['status'] }): JSX.Element | null {
+  if (issueStatus === 'review') {
+    return (
+      <div role="status" aria-label="Review gate" aria-live="polite" aria-atomic="true" className="py-3 text-xs text-warn">
+        <span className="block truncate motion-safe:animate-breathe" title="Waiting for your review">Waiting for your review…</span>
+      </div>
+    )
+  }
   if (issueStatus ? issueStatus !== 'working' : task.status !== 'running') return null
   const label = activityLabel(issueStatus ? { ...task, deliveryStatus: 'working' } : task, event)
 

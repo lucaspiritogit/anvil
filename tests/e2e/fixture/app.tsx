@@ -360,6 +360,11 @@ window.anvil = {
       if (query.has('diffFailure') && diffRequests === 1) throw new Error('Could not load the task diff')
       return query.has('emptyDiff') ? { patch: '', commits: [] } : reviewDiff
     },
+    issueDiff: async ({ taskId, issueId }: { taskId: string; issueId: string }) => {
+      window.dispatchEvent(new CustomEvent('fixture:issue-diff', { detail: { taskId, issueId } }))
+      if (query.has('issueDiffFailure')) throw new Error('Could not load the subtask diff')
+      return reviewDiff
+    },
     mergePreview: async (taskId: string): Promise<TaskMergePreview> => {
       await new Promise((resolve) => setTimeout(resolve, 100))
       if (query.has('mergePreviewFailure')) throw new Error('Check out a branch before approving')
@@ -374,8 +379,18 @@ window.anvil = {
       if (query.has('mergeFailure')) throw new Error('Merge failed. The task was not approved.')
       return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', reviewedAt: Date.now() })
     },
-    approveIssue: async (taskId: string) => tasks.find((task) => task.id === taskId)!,
-    rejectIssue: async (taskId: string) => tasks.find((task) => task.id === taskId)!,
+    approveIssue: async (taskId: string) => {
+      window.dispatchEvent(new CustomEvent('fixture:issue-approval', { detail: { taskId } }))
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      if (query.has('approveIssueFailure')) throw new Error('This task is not waiting for an issue review')
+      return tasks.find((task) => task.id === taskId)!
+    },
+    rejectIssue: async (input: { taskId: string; comment?: string }) => {
+      window.dispatchEvent(new CustomEvent('fixture:issue-rejection', { detail: input }))
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      if (query.has('rejectIssueFailure')) throw new Error('This task is not waiting for an issue review')
+      return tasks.find((task) => task.id === input.taskId)!
+    },
     onEvent: (listener: (event: TaskEvent) => void) => {
       const receive = (event: Event) => listener((event as CustomEvent<TaskEvent>).detail)
       window.addEventListener('fixture:output', receive)

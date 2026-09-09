@@ -8,7 +8,7 @@ import {
 import type { Project, Task, TaskIssueSnapshot } from '@shared/types'
 import { canSettleTask, settlementDeadline } from '@shared/task-settlement'
 import { useStore } from '../state/store'
-import { cn } from '../ui'
+import { cn, ISSUE_STATUS } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
 
 const TASK_INDICATORS = {
@@ -149,7 +149,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
             onClick={() => void openTask(task.id, issue.id)}
           >
             <span className="min-w-0 flex-1 truncate">{issue.title}</span>
-            <span className="shrink-0 capitalize text-[10px]">{issue.status}</span>
+            <span className={cn('shrink-0 text-[10px]', ISSUE_STATUS[issue.status].tone)}>{ISSUE_STATUS[issue.status].label}</span>
           </button>
         </li>)}
       </ol>}

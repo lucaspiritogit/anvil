@@ -99,6 +99,7 @@ const api = {
     issues: (taskId: string): Promise<TaskIssueSnapshot | null> => invoke('tasks:issues', taskId),
     events: (taskId: string): Promise<TaskEvent[]> => invoke('tasks:events', taskId),
     diff: (taskId: string): Promise<TaskDiff> => invoke('tasks:diff', taskId),
+    issueDiff: (input: IpcRequests['tasks:issue-diff']): Promise<TaskDiff> => invoke('tasks:issue-diff', input),
     start: (input: IpcRequests['tasks:start']): Promise<Task> => invoke('tasks:start', input),
     steer: (input: IpcRequests['tasks:steer']): Promise<void> => invoke('tasks:steer', input),
     cancel: (taskId: string): Promise<boolean> => invoke('tasks:cancel', taskId),
@@ -111,7 +112,7 @@ const api = {
     mergePreview: (taskId: string): Promise<TaskMergePreview> => invoke('tasks:merge-preview', taskId),
     approve: (input: IpcRequests['tasks:approve']): Promise<Task> => invoke('tasks:approve', input),
     approveIssue: (taskId: string): Promise<Task> => invoke('tasks:approve-issue', taskId),
-    rejectIssue: (taskId: string): Promise<Task> => invoke('tasks:reject-issue', taskId),
+    rejectIssue: (input: IpcRequests['tasks:reject-issue']): Promise<Task> => invoke('tasks:reject-issue', input),
     onEvent: (handler: (event: TaskEvent) => void): (() => void) =>
       subscribe<TaskEvent>('task:event', handler),
     onUpdated: (handler: (task: Task) => void): (() => void) => subscribe<Task>('task:updated', handler)

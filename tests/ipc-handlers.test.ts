@@ -144,7 +144,7 @@ test('registers all channels and rejects foreign, subframe and navigated senders
     'agents:list', 'agents:models', 'comments:add', 'comments:list', 'comments:remove', 'comments:send',
     'github:credential-status', 'github:set-token', 'github:remove-token', 'github:pr-preview', 'github:open-pr', 'github:draft-pr-field', 'github:open-pr-url',
     'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:update',
-    'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:settle', 'tasks:start', 'tasks:steer',
+    'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:settle', 'tasks:start', 'tasks:steer',
     'wallpapers:directory', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set', 'terminal:ensure', 'terminal:resize', 'terminal:write'
   ].sort())
   // Each registered handler must reject foreign windows and same-URL subframes
@@ -238,8 +238,14 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
       { projectId: project.id, path: '/outside' }, { projectId: project.id, query: '../outside' },
       { projectId: project.id, limit: 1_000_000 }
     ]) await invalidRequest('projects:files', payload)
-    for (const channel of ['projects:remove', 'projects:reveal', 'projects:git-init', 'tasks:delete', 'tasks:cancel', 'tasks:issues', 'tasks:approve-issue', 'tasks:reject-issue', 'comments:send']) {
+    for (const channel of ['projects:remove', 'projects:reveal', 'projects:git-init', 'tasks:delete', 'tasks:cancel', 'tasks:issues', 'tasks:approve-issue', 'comments:send']) {
       for (const id of ['', ' ', '../project', 'x'.repeat(129)]) await invalidRequest(channel, id)
+    }
+    for (const patch of [{ taskId: 'task', issueId: '' }, { taskId: 'task', issueId: 42 }, { taskId: 'task', issueId: 'ok', extra: 1 }]) {
+      await invalidRequest('tasks:issue-diff', patch)
+    }
+    for (const patch of [{ taskId: '' }, { taskId: 'task', comment: ' ' }, { taskId: 'task', comment: 42 }]) {
+      await invalidRequest('tasks:reject-issue', patch)
     }
     for (const field of ['cols', 'rows']) {
       for (const value of [0, -1, 1.5, NaN, Infinity, 1001, '80']) {

@@ -41,6 +41,8 @@ interface AnvilState {
   eventsByTask: Record<string, TaskEvent[]>
   diffsByTask: Record<string, TaskDiff>
   diffErrorsByTask: Record<string, string>
+  diffsByIssue: Record<string, TaskDiff>
+  diffErrorsByIssue: Record<string, string>
   gitStatusByProject: Record<string, ProjectGitStatus>
   commentsByTask: Record<string, TaskComment[]>
   rebaseTaskId: string | null
@@ -75,6 +77,8 @@ interface AnvilState {
   initGitRepo: (id: string) => Promise<void>
 
   approveTask: (taskId: string, preview: TaskMergePreview) => Promise<void>
+  approveIssue: (taskId: string) => Promise<void>
+  rejectIssue: (taskId: string, issueId: string, comment?: string) => Promise<void>
   openRebase: (taskId: string | null) => void
   rebaseTask: (taskId: string, steps: RebaseStep[]) => Promise<void>
   rebaseWithAgent: (taskId: string) => Promise<void>
@@ -96,6 +100,7 @@ interface AnvilState {
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string, issueId?: string) => Promise<void>
   loadTaskDiff: (taskId: string) => Promise<void>
+  loadIssueDiff: (taskId: string, issueId: string) => Promise<void>
   showHome: () => void
   focusTaskComposer: () => void
 
@@ -123,6 +128,8 @@ export const useStore = create<AnvilState>((set, get) => ({
   eventsByTask: {},
   diffsByTask: {},
   diffErrorsByTask: {},
+  diffsByIssue: {},
+  diffErrorsByIssue: {},
   gitStatusByProject: {},
   gitInitPending: null,
   gitInitError: null,
@@ -316,6 +323,45 @@ export const useStore = create<AnvilState>((set, get) => ({
         }
       }))
     }
+  },
+
+  loadIssueDiff: async (taskId, issueId) => {
+    try {
+      const diff = await window.anvil.tasks.issueDiff({ taskId, issueId })
+      if (!get().tasks.some((task) => task.id === taskId)) return
+      set((s) => ({
+        diffsByIssue: { ...s.diffsByIssue, [issueId]: diff },
+        diffErrorsByIssue: { ...s.diffErrorsByIssue, [issueId]: '' }
+      }))
+    } catch (error) {
+      if (!get().tasks.some((task) => task.id === taskId)) return
+      set((s) => ({
+        diffErrorsByIssue: {
+          ...s.diffErrorsByIssue,
+          [issueId]: error instanceof Error ? error.message : String(error)
+        }
+      }))
+    }
+  },
+
+  approveIssue: async (taskId) => {
+    const task = await window.anvil.tasks.approveIssue(taskId)
+    if (!get().tasks.some((item) => item.id === taskId)) return
+    set((s) => ({ tasks: s.tasks.map((item) => (item.id === task.id ? task : item)) }))
+  },
+
+  /** A rework request carries an optional general note plus any pending line comments. */
+  rejectIssue: async (taskId, issueId, comment) => {
+    const body = comment?.trim()
+    const task = await window.anvil.tasks.rejectIssue({ taskId, ...(body ? { comment: body } : {}) })
+    if (!get().tasks.some((item) => item.id === taskId)) return
+    set((s) => ({
+      tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+      // The issue restarts, so its recorded diff range is stale until the next review.
+      diffsByIssue: Object.fromEntries(Object.entries(s.diffsByIssue).filter(([key]) => key !== issueId)),
+      diffErrorsByIssue: Object.fromEntries(Object.entries(s.diffErrorsByIssue).filter(([key]) => key !== issueId))
+    }))
+    await get().loadComments(taskId)
   },
 
   approveTask: async (taskId, preview) => {

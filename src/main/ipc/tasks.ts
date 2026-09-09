@@ -66,6 +66,16 @@ export function registerTaskHandlers(ipc: RendererIpc, {
     return gitDelivery.getDiff(project.path, task.baseCommit, task.headCommit)
   })
 
+  ipc.handle('tasks:issue-diff', async (_event, input): Promise<TaskDiff> => {
+    if (!store.getTask(input.taskId)) throw new Error('Task not found')
+    const project = store.getProjects().find((item) => item.id === store.getTask(input.taskId)!.projectId)
+    if (!project) throw new Error('Project not found')
+    const source = issues.issueDiffSource(input.taskId, input.issueId)
+    const diff = await gitDelivery.getIssueDiff(project.path, source)
+    if (!diff) throw new Error('This sub-task has no recorded code changes yet')
+    return diff
+  })
+
   ipc.handle(
     'tasks:start',
     async (_event, input) => {

@@ -93,6 +93,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   agentProcesses.emit('usage', { taskId, inputTokens: 5, outputTokens: 2, cachedTokens: 0, totalTokens: 7, costUsd: null })
   expect(store.getTask(taskId)?.totalTokens).toBe(7)
   const startsBeforeSubmit = agentProcesses.starts.length
+  GitDeliveryManager.worktreeHeadValue = 'issue-head'
   const firstIssueId = await submit(taskId)
   await assertReadOnlySnapshot(['queued', 'queued', 'review'])
   expect(store.getTaskExecution(taskId)?.phase, 'The loop pauses while an issue awaits developer review').toBe('reviewing')
@@ -100,6 +101,8 @@ test('schedules dependencies and priorities sequentially and retains final task 
   expect(agentProcesses.starts.length, 'No next issue is claimed before approval').toBe(startsBeforeSubmit)
   expect(store.getTask(taskId)?.status).toBe('running')
   expect(GitDeliveryManager.head, 'Git delivery waits until all issues finish').toBe(deliveriesBeforeCompletion)
+  expect((await call('tasks:issue-diff', { taskId, issueId: firstIssueId })).patch, 'The review diff covers only the reviewed issue').toBe('base..issue-head')
+  await expect(call('tasks:issue-diff', { taskId, issueId: unrelated.id })).rejects.toThrow(/does not belong to this task plan/)
   agentProcesses.emit('usage', { taskId, inputTokens: 3, outputTokens: 1, cachedTokens: 0, totalTokens: 4, costUsd: null })
   await approve(taskId)
   await assertReadOnlySnapshot(['queued', 'working', 'complete'])
@@ -219,7 +222,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   await submit(reworkId)
   expect(store.getTaskExecution(reworkId)?.phase).toBe('reviewing')
   call('comments:add', { taskId: reworkId, file: 'src/review.ts', side: 'additions', lineNumber: 4, body: 'Extract a helper' })
-  await call('tasks:reject-issue', reworkId)
+  await call('tasks:reject-issue', { taskId: reworkId, comment: 'Also cover the empty-input case' })
   await tick()
   expect(tracker.get(reworkIssueId).status, 'Rejection returns the issue to work').toBe('working')
   expect(store.getTaskExecution(reworkId)?.phase).toBe('working')
@@ -227,6 +230,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   expect(agentProcesses.starts.at(-1).issueId, 'The same issue reruns without a new claim').toBe(reworkIssueId)
   expect(agentProcesses.starts.at(-1).prompt).toMatch(/requested changes/)
   expect(agentProcesses.starts.at(-1).prompt).toContain('src/review.ts:4 — Extract a helper')
+  expect(agentProcesses.starts.at(-1).prompt).toContain('Also cover the empty-input case')
   expect(store.getComments(reworkId).every((comment) => comment.sentAt !== null)).toBe(true)
   await submit(reworkId)
   await approve(reworkId)

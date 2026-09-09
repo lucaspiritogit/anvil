@@ -23,6 +23,7 @@ export interface IpcRequests {
   'tasks:issues': string
   'tasks:events': string
   'tasks:diff': string
+  'tasks:issue-diff': { taskId: string; issueId: string }
   'tasks:start': { projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
   'tasks:steer': { taskId: string; message: string }
   'tasks:cancel': string
@@ -33,7 +34,7 @@ export interface IpcRequests {
   'tasks:merge-preview': string
   'tasks:approve': { taskId: string; preview: TaskMergePreview }
   'tasks:approve-issue': string
-  'tasks:reject-issue': string
+  'tasks:reject-issue': { taskId: string; comment?: string }
   'comments:list': string
   'comments:add': Pick<TaskComment, 'taskId' | 'file' | 'side' | 'lineNumber' | 'body'>
   'comments:remove': { taskId: string; id: string }
