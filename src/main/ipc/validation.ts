@@ -78,26 +78,44 @@ const mergePreview = {
 }
 const dimensions = { cols: number(1, 1000), rows: number(1, 1000) }
 
+const settingsPatch = object<IpcRequests['settings:set']['patch']>({
+  memoryEnabled: optional(boolean),
+  memoryEmbeddingModel: optional(identifier),
+  ollamaBaseUrl: optional((value, field) => {
+    if (!isOllamaBaseUrl(value)) invalid(field, 'must be an HTTP or HTTPS base URL without credentials, query, or fragment')
+    return value
+  }),
+  fontSize: optional(number(MIN_FONT_SIZE, MAX_FONT_SIZE)),
+  overviewBackgroundMode: optional(oneOf('color', 'image')),
+  overviewBackgroundColor: optional(text(7, true, OVERVIEW_COLOR_PATTERN)),
+  overviewWallpaperId: optional(nullable(text(255, true, WALLPAPER_ID_PATTERN))),
+  defaultAgentId: optional(id), defaultModel: optional(text(512, false)),
+  rebaseMode: optional(oneOf('manual', 'agent')), confirmRebase: optional(boolean), caffeineMode: optional(boolean),
+  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false) }))
+})
+
+const workspaceId = text(36, true, /^(default|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/)
+const workspaceName = text(80, true, /^[^\x00-\x1f\x7f]+$/)
+const stringRecord: Check<Record<string, string>> = (value, field) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length > 2000) invalid(field, 'must be a string record')
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [text(1024, false)(key, field), text(1024, false)(entry, field)]))
+}
+const composer = object({ agentId: text(128, false), modelsByAgent: stringRecord, reasoningByAgentModel: stringRecord })
+
 const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'wallpapers:directory': none,
   'wallpapers:list': none,
   'wallpapers:read': text(255, true, WALLPAPER_ID_PATTERN),
-  'settings:get': none,
-  'settings:set': object<IpcRequests['settings:set']>({
-    memoryEnabled: optional(boolean),
-    memoryEmbeddingModel: optional(identifier),
-    ollamaBaseUrl: optional((value, field) => {
-      if (!isOllamaBaseUrl(value)) invalid(field, 'must be an HTTP or HTTPS base URL without credentials, query, or fragment')
-      return value
-    }),
-    fontSize: optional(number(MIN_FONT_SIZE, MAX_FONT_SIZE)),
-    overviewBackgroundMode: optional(oneOf('color', 'image')),
-    overviewBackgroundColor: optional(text(7, true, OVERVIEW_COLOR_PATTERN)),
-    overviewWallpaperId: optional(nullable(text(255, true, WALLPAPER_ID_PATTERN))),
-    defaultAgentId: optional(id), defaultModel: optional(text(512, false)),
-    rebaseMode: optional(oneOf('manual', 'agent')), confirmRebase: optional(boolean), caffeineMode: optional(boolean),
-    keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false) }))
-  }),
+  'workspaces:list': none,
+  'workspaces:snapshot': none,
+  'workspaces:create': workspaceName,
+  'workspaces:rename': object({ workspaceId, name: workspaceName }),
+  'workspaces:select': workspaceId,
+  'workspaces:preferences:get': workspaceId,
+  'workspaces:preferences:set': object({ workspaceId, patch: object({ composer: optional(composer), lastProjectId: optional(nullable(id)) }) }),
+  'workspaces:composer:import': composer,
+  'settings:get': optional(workspaceId),
+  'settings:set': object({ workspaceId, patch: settingsPatch }),
   'agents:list': none,
   'agents:models': id,
   'projects:list': none,

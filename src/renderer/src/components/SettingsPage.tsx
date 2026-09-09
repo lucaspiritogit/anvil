@@ -73,6 +73,7 @@ function ShortcutField({
 }
 
 export function SettingsPage(): JSX.Element {
+  const workspaceId = useStore((s) => s.activeWorkspaceId)
   const section = useStore((s) => s.settingsSection)
   const [memoryEnabled, setMemoryEnabled] = useState(false)
   const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(DEFAULT_EMBEDDING_MODEL)
@@ -110,6 +111,7 @@ export function SettingsPage(): JSX.Element {
   const [appearance, setAppearance] = useState<OverviewAppearance>({
     overviewBackgroundMode: 'color', overviewBackgroundColor: '#0d0f12', overviewWallpaperId: null
   })
+  useEffect(() => { initialSettings.current = null }, [workspaceId])
   useEffect(() => {
     if (!settings || initialSettings.current) return
     initialSettings.current = settings

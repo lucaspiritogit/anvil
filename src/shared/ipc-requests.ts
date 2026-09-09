@@ -1,12 +1,20 @@
-import type { TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, TaskComment, TaskMergePreview } from './types'
+import type { TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, ComposerPreferences, WorkspacePreferences, TaskComment, TaskMergePreview } from './types'
 
 /** The renderer supplies identities, never paths for privileged project actions. */
 export interface IpcRequests {
   'wallpapers:directory': undefined
   'wallpapers:list': undefined
   'wallpapers:read': string
-  'settings:get': undefined
-  'settings:set': Partial<Settings>
+  'settings:get': string | undefined
+  'settings:set': { workspaceId: string; patch: Partial<Settings> }
+  'workspaces:list': undefined
+  'workspaces:snapshot': undefined
+  'workspaces:create': string
+  'workspaces:rename': { workspaceId: string; name: string }
+  'workspaces:select': string
+  'workspaces:preferences:get': string
+  'workspaces:preferences:set': { workspaceId: string; patch: Partial<WorkspacePreferences> }
+  'workspaces:composer:import': ComposerPreferences
   'agents:list': undefined
   'agents:models': string
   'projects:list': undefined
@@ -54,4 +62,4 @@ export interface IpcRequests {
 export type IpcChannel = keyof IpcRequests
 export type IpcSendChannel = 'terminal:write' | 'terminal:resize'
 export type IpcInvokeChannel = Exclude<IpcChannel, IpcSendChannel>
-export type IpcArgs<C extends IpcChannel> = IpcRequests[C] extends undefined ? [] : [IpcRequests[C]]
+export type IpcArgs<C extends IpcChannel> = undefined extends IpcRequests[C] ? [input?: IpcRequests[C]] : [IpcRequests[C]]

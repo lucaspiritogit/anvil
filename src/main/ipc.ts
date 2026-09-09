@@ -14,10 +14,11 @@ import { registerRebaseHandlers } from './ipc/rebase'
 import { registerReviewHandlers } from './ipc/review'
 import { registerTaskHandlers } from './ipc/tasks'
 import { registerSteeringHandlers } from './ipc/steering'
+import { registerWorkspaceHandlers } from './ipc/workspaces'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerTerminalHandlers } from './ipc/terminals'
 import { createProjectMemory, type ProjectMemory } from './memory/project-memory'
-import { SettingsProjectMemory } from './memory/settings-project-memory'
+import { WorkspaceProjectMemory } from './memory/workspace-project-memory'
 import { createTaskMemory } from './memory/task-memory'
 import { createTaskCompletion } from './tasks/completion'
 import type { SendToRenderer } from './tasks/context'
@@ -53,8 +54,8 @@ export function registerIpc(
   const agentProcesses = new AgentProcessManager()
   const stopCaffeineMode = registerCaffeineMode(store, powerSaveBlocker)
   const gitDelivery = new GitDeliveryManager(join(dataDirectory, 'worktrees'))
-  const projectMemory = new SettingsProjectMemory(() => store.getSettings(), (settings) => createProjectMemory({
-    dataDirectory: join(dataDirectory, 'memory'),
+  const projectMemory = new WorkspaceProjectMemory(store, (workspaceId, settings) => createProjectMemory({
+    dataDirectory: workspaceId === 'default' ? join(dataDirectory, 'memory') : join(store.getWorkspaceDirectory(workspaceId), 'memory'),
     migrationsFolder: join(app.getAppPath(), 'src', 'main', 'memory', 'migrations'),
     settings
   }))
@@ -69,14 +70,15 @@ export function registerIpc(
 
   const context = { store, agentProcesses, gitDelivery, send }
   const taskEvents = registerTaskEvents(context)
-  const taskMemory = createTaskMemory(context, projectMemory)
+  const taskMemory = createTaskMemory(context, projectMemory, (workspaceId) => projectMemory.forWorkspace(workspaceId))
   const finishTask = createTaskCompletion(context, taskEvents.recordSystemEvent, taskMemory)
   const execution = registerTaskExecution({ ...context, recordSystemEvent: taskEvents.recordSystemEvent }, finishTask)
 
-  registerSettingsHandlers(ipc, store, new WallpaperLibrary(dataDirectory), (settings) => {
-    projectMemory.settingsChanged()
-    broadcast('settings:changed', settings)
+  registerSettingsHandlers(ipc, store, new WallpaperLibrary(dataDirectory), (change) => {
+    projectMemory.settingsChanged(change.workspaceId)
+    broadcast('settings:changed', change)
   })
+  registerWorkspaceHandlers(ipc, store, broadcast)
   registerAgentHandlers(ipc)
   registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask, terminals, projectMemory, getWindow, projectsChanged: () => broadcast('projects:changed', store.getProjects()) })
   registerTaskHandlers(ipc, {

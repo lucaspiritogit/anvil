@@ -89,3 +89,39 @@ test('replaces the memory adapter after live model and URL changes', async () =>
   await dynamic.close()
   expect(changed.at(-1)).toBe('closed')
 })
+
+test('workspace memory callbacks and in-flight recall retain their owning profile', async () => {
+  const { WorkspaceProjectMemory } = await import('../src/main/memory/workspace-project-memory')
+  const store = new Store(':memory:', { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') })
+  onTestCleanup(() => store.close())
+  const work = store.createWorkspace('Work')
+  store.setSettings({ memoryEnabled: true, memoryEmbeddingModel: 'personal-model' }, 'default')
+  store.setSettings({ memoryEnabled: true, memoryEmbeddingModel: 'work-model' }, work.id)
+  const calls: string[] = []
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const memory = new WorkspaceProjectMemory(store, (id, settings) => {
+    calls.push(`create:${id}:${settings.memoryEmbeddingModel}`)
+    return {
+      connect: async () => {},
+      recall: async () => { await gate; return [{ content: id, similarity: 1 }] },
+      rememberCompletedTask: async () => {}, forgetProject: async () => {},
+      close: async () => { calls.push(`close:${id}`) }
+    }
+  })
+  onTestCleanup(() => memory.close())
+  onTestCleanup(() => release())
+  const taskMemory = createTaskMemory({ store, gitDelivery: {} as TaskContext['gitDelivery'] }, memory, (id) => memory.forWorkspace(id))
+  const pending = taskMemory.promptWithProjectMemory('project', 'prompt', 'default')
+  await expect.poll(() => calls.length).toBe(1)
+  store.selectWorkspace(work.id)
+  store.setSettings({ memoryEnabled: false }, work.id)
+  memory.settingsChanged(work.id)
+  release()
+  expect(await pending).toContain('default')
+  expect(calls).toEqual(['create:default:personal-model'])
+  store.setSettings({ memoryEnabled: false }, 'default')
+  memory.settingsChanged('default')
+  await memory.close()
+  expect(calls).toEqual(['create:default:personal-model', 'close:default'])
+})

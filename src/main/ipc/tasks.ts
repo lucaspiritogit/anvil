@@ -130,7 +130,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
       try {
         if (images?.length) store.taskImages.save(task.id, images)
         const state = initializeTask(task.id, project.path, { reasoningEffort: input.reasoningEffort, ...(images?.length ? { hasImages: true } : {}) })
-        const prompt = planningPrompt(await promptWithProjectMemory(project.id, taskPrompt), state)
+        const prompt = planningPrompt(await promptWithProjectMemory(project.id, taskPrompt, task.workspaceId), state)
         requireRunningTask()
 
         // Without Git there is no task branch or diff. Run directly in the project folder.

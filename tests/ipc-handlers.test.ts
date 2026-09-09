@@ -22,6 +22,7 @@ import { registerRebaseHandlers } from '../src/main/ipc/rebase'
 import { registerReviewHandlers } from '../src/main/ipc/review'
 import { registerTaskHandlers } from '../src/main/ipc/tasks'
 import { registerSteeringHandlers } from '../src/main/ipc/steering'
+import { registerWorkspaceHandlers } from '../src/main/ipc/workspaces'
 import { registerSettingsHandlers } from '../src/main/ipc/settings'
 import { registerTerminalHandlers } from '../src/main/ipc/terminals'
 import { createTaskMemory } from '../src/main/memory/task-memory'
@@ -121,10 +122,11 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   })
   registerRebaseHandlers(rendererIpc, reviewContext)
   registerTerminalHandlers(rendererIpc, terminals, store)
+  registerWorkspaceHandlers(rendererIpc, store, context.send)
   registerSettingsHandlers(rendererIpc, context.store, new WallpaperLibrary(testHome))
   registerAgentHandlers(rendererIpc)
   registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, terminals, getWindow: () => null })
-  const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, input)
+  const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, name === 'settings:set' ? { workspaceId: 'default', patch: input } : input)
   const tick = async (): Promise<void> => {
     for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve))
   }
@@ -145,6 +147,7 @@ test('registers all channels and rejects foreign, subframe and navigated senders
     'github:credential-status', 'github:set-token', 'github:remove-token', 'github:pr-preview', 'github:open-pr', 'github:draft-pr-field', 'github:open-pr-url',
     'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:update',
     'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:settle', 'tasks:start', 'tasks:steer',
+    'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set', 'workspaces:composer:import',
     'wallpapers:directory', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set', 'terminal:ensure', 'terminal:resize', 'terminal:write'
   ].sort())
   // Each registered handler must reject foreign windows and same-URL subframes

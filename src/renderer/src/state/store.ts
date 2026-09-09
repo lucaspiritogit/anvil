@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { hydrateComposer, importLegacyComposer } from './composer-preferences'
+import { enqueueWorkspaceRequest } from './workspace-requests'
 import type { SettingsSectionId } from '../settings-sections'
 import type {
   AgentDefinition,
@@ -12,19 +14,28 @@ import type {
   TaskDiff,
   TaskEvent,
   TaskMergePreview,
-  Settings
+  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange
 } from '@shared/types'
 
 const MAX_LINES_IN_MEMORY = 4000
 
-// Keep settings responses in write order, including Save clicks while Caffeine
-// is saving. The queue survives the settings page being dismissed.
-let settingsWrite: Promise<void> = Promise.resolve()
+// A new selection invalidates asynchronous responses from the previous profile.
+let workspaceGeneration = 0
 type CaffeineSave = { value: boolean; status: 'pending' | 'error' }
 
 export type CenterView = { kind: 'home' } | { kind: 'task'; taskId: string; issueId?: string }
 
 interface AnvilState {
+  workspaces: Workspace[]
+  activeWorkspaceId: string | null
+  workspaceSwitching: boolean
+  workspaceError: string | null
+  selectWorkspace: (workspaceId: string) => Promise<void>
+  createWorkspace: (name: string) => Promise<void>
+  renameWorkspace: (workspaceId: string, name: string) => Promise<void>
+  applyWorkspaceSnapshot: (snapshot: WorkspaceSnapshot) => void
+  receiveWorkspaceSelection: (snapshot: WorkspaceSnapshot) => void
+  applySettingsChange: (change: WorkspaceSettingsChange) => void
   ready: boolean
   projects: Project[]
   tasks: Task[]
@@ -114,6 +125,71 @@ interface AnvilState {
 }
 
 export const useStore = create<AnvilState>((set, get) => ({
+  workspaces: [], activeWorkspaceId: null, workspaceSwitching: false, workspaceError: null,
+  receiveWorkspaceSelection: (snapshot) => {
+    if (!get().ready || get().workspaceSwitching || get().activeWorkspaceId === snapshot.workspace.id) return
+    workspaceGeneration += 1
+    get().applyWorkspaceSnapshot(snapshot)
+  },
+  applyWorkspaceSnapshot: (snapshot) => {
+    hydrateComposer(snapshot.workspace.id, snapshot.preferences.composer)
+    const changed = get().activeWorkspaceId !== snapshot.workspace.id
+    set({
+      workspaces: snapshot.workspaces, activeWorkspaceId: snapshot.workspace.id,
+      settings: snapshot.settings, projects: snapshot.projects, tasks: snapshot.tasks,
+      activeProjectId: snapshot.projects.find((project) => project.id === snapshot.preferences.lastProjectId)?.id ?? snapshot.projects[0]?.id ?? null,
+      ready: true,
+      ...(changed ? {
+        view: { kind: 'home' }, newTaskOpen: false, taskMenu: null, rebaseTaskId: null,
+        settingsProjectId: null, settingsSection: 'general', caffeineSave: null,
+        modelsByAgent: {}, loadingModelsAgentId: null,
+        eventsByTask: {}, diffsByTask: {}, diffErrorsByTask: {}, diffsByIssue: {}, diffErrorsByIssue: {},
+        commentsByTask: {}, sendingComments: null, commentError: null, rebasing: null,
+        gitStatusByProject: {}, gitInitPending: null, gitInitError: null
+      } : {})
+    })
+  },
+  applySettingsChange: ({ workspaceId, settings }) => {
+    if (get().activeWorkspaceId === workspaceId && !get().workspaceSwitching) set({ settings })
+  },
+  selectWorkspace: async (workspaceId) => {
+    const generation = ++workspaceGeneration
+    set({ workspaceSwitching: true, workspaceError: null })
+    try {
+      await enqueueWorkspaceRequest(async () => {
+        const snapshot = await window.anvil.workspaces.select(workspaceId)
+        if (generation === workspaceGeneration) get().applyWorkspaceSnapshot(snapshot)
+      })
+    } catch (error) {
+      if (generation !== workspaceGeneration) return
+      if (generation === workspaceGeneration) {
+        // A prior queued selection may have succeeded. Restore main to the
+        // coherent profile still shown by the renderer before enabling input.
+        const previous = get().activeWorkspaceId
+        try {
+          if (previous) {
+            const snapshot = await enqueueWorkspaceRequest(() => window.anvil.workspaces.select(previous))
+            if (generation === workspaceGeneration) get().applyWorkspaceSnapshot(snapshot)
+          }
+        } catch {
+          if (generation === workspaceGeneration) set({ workspaceError: 'Could not restore the workspace. Retry switching to continue.' })
+          return
+        }
+        if (generation !== workspaceGeneration) return
+        set({ workspaceError: error instanceof Error ? error.message : 'Could not switch workspace' })
+      }
+    }
+    if (generation === workspaceGeneration) set({ workspaceSwitching: false })
+  },
+  createWorkspace: async (name) => {
+    const workspace = await window.anvil.workspaces.create(name)
+    set({ workspaces: await window.anvil.workspaces.list() })
+    await get().selectWorkspace(workspace.id)
+  },
+  renameWorkspace: async (workspaceId, name) => {
+    await window.anvil.workspaces.rename(workspaceId, name)
+    set({ workspaces: await window.anvil.workspaces.list() })
+  },
   ready: false,
   projects: [],
   tasks: [],
@@ -151,25 +227,29 @@ export const useStore = create<AnvilState>((set, get) => ({
   setTaskMenu: (taskMenu) => set({ taskMenu }),
 
   load: async () => {
-    const [projects, tasks, agents, settings] = await Promise.all([
-      window.anvil.projects.list(),
-      window.anvil.tasks.list(),
-      window.anvil.agents.list(),
-      window.anvil.settings.get()
-    ])
-    set({
-      projects,
-      tasks,
-      agents,
-      settings,
-      activeProjectId: get().activeProjectId ?? projects[0]?.id ?? null,
-      ready: true
-    })
+    const generation = ++workspaceGeneration
+    try {
+      await enqueueWorkspaceRequest(async () => {
+        await importLegacyComposer()
+        const [snapshot, agents] = await Promise.all([window.anvil.workspaces.snapshot(), window.anvil.agents.list()])
+        if (generation !== workspaceGeneration) return
+        set({ agents })
+        get().applyWorkspaceSnapshot(snapshot)
+        set({ workspaceError: null })
+      })
+    } catch (error) {
+      if (generation !== workspaceGeneration) return
+      if (generation === workspaceGeneration) set({ workspaceError: error instanceof Error ? error.message : 'Could not load workspace' })
+    }
   },
 
   addProject: async () => {
+    const workspaceId = get().activeWorkspaceId
+    const generation = workspaceGeneration
     const project = await window.anvil.projects.add()
     if (!project) return
+    if (workspaceId) await enqueueWorkspaceRequest(() => window.anvil.workspaces.setPreferences(workspaceId, { lastProjectId: project.id }))
+    if (generation !== workspaceGeneration) return
     set((s) => ({
       projects: s.projects.some((p) => p.id === project.id) ? s.projects : [...s.projects, project],
       activeProjectId: project.id,
@@ -199,7 +279,15 @@ export const useStore = create<AnvilState>((set, get) => ({
     set((s) => ({ projects: s.projects.map((item) => (item.id === id ? project : item)) }))
   },
 
-  selectProject: (id) => set({ activeProjectId: id, view: { kind: 'home' } }),
+  selectProject: (id) => {
+    const workspaceId = get().activeWorkspaceId
+    if (!workspaceId || get().workspaceSwitching) return
+    set({ activeProjectId: id, view: { kind: 'home' } })
+    void enqueueWorkspaceRequest(() => window.anvil.workspaces.setPreferences(workspaceId, { lastProjectId: id }))
+      .catch((error: unknown) => {
+        if (get().activeWorkspaceId === workspaceId) set({ workspaceError: error instanceof Error ? error.message : 'Could not save project selection' })
+      })
+  },
 
   loadGitStatus: async (id) => {
     const status = await window.anvil.projects.gitStatus(id)
@@ -207,14 +295,17 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
 
   initGitRepo: async (id) => {
+    const generation = workspaceGeneration
     set({ gitInitPending: id, gitInitError: null })
     try {
       const status = await window.anvil.projects.gitInit(id)
+      if (generation !== workspaceGeneration) return
       set((s) => ({
         gitStatusByProject: { ...s.gitStatusByProject, [id]: status },
         gitInitPending: null
       }))
     } catch (error) {
+      if (generation !== workspaceGeneration) return
       set({
         gitInitPending: null,
         gitInitError: error instanceof Error ? error.message : String(error)
@@ -223,22 +314,27 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
 
   loadAgentModels: async (agentId) => {
+    const generation = workspaceGeneration
     if (get().modelsByAgent[agentId] || get().loadingModelsAgentId === agentId) return
     set({ loadingModelsAgentId: agentId })
     try {
       const list = await window.anvil.agents.models(agentId)
+      if (generation !== workspaceGeneration) return
       set((s) => ({ modelsByAgent: { ...s.modelsByAgent, [agentId]: list } }))
     } catch (err) {
+      if (generation !== workspaceGeneration) return
       const message = err instanceof Error ? err.message : String(err)
       set((s) => ({
         modelsByAgent: { ...s.modelsByAgent, [agentId]: { agentId, models: [], error: message } }
       }))
     } finally {
-      set((s) => (s.loadingModelsAgentId === agentId ? { loadingModelsAgentId: null } : s))
+      set((s) => (generation === workspaceGeneration && s.loadingModelsAgentId === agentId ? { loadingModelsAgentId: null } : s))
     }
   },
 
   startTask: async ({ agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
+    if (get().workspaceSwitching || !get().ready) throw new Error('Workspace is still loading')
+    const generation = workspaceGeneration
     const projectId = get().activeProjectId
     if (!projectId) throw new Error('Choose a project before starting a task')
     const view = get().view
@@ -249,6 +345,7 @@ export const useStore = create<AnvilState>((set, get) => ({
       ...(fileReferences?.length ? { fileReferences } : {}),
       ...(reasoningEffort !== undefined ? { reasoningEffort } : {})
     })
+    if (generation !== workspaceGeneration) return
     set((s) => ({
       tasks: [task, ...s.tasks],
       eventsByTask: { ...s.eventsByTask, [task.id]: [] },
@@ -494,13 +591,13 @@ export const useStore = create<AnvilState>((set, get) => ({
     })),
 
   saveSettings: async (patch) => {
-    const write = settingsWrite.then(async () => {
-      const settings = await window.anvil.settings.set(patch)
-      set({ settings })
+    const workspaceId = get().activeWorkspaceId
+    const generation = workspaceGeneration
+    if (!workspaceId) throw new Error('Workspace is still loading')
+    await enqueueWorkspaceRequest(async () => {
+      const settings = await window.anvil.settings.set(workspaceId, patch)
+      if (get().activeWorkspaceId === workspaceId && generation === workspaceGeneration) set({ settings })
     })
-    // A rejected write must not prevent the next toggle or retry from saving.
-    settingsWrite = write.catch(() => {})
-    await write
   },
 
   setCaffeineMode: async (value) => {

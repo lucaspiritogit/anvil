@@ -195,8 +195,11 @@ export class Store {
     for (const listener of this.activityListeners) listener()
   }
 
-  hasRunningTasks(): boolean {
-    return this.db.select({ id: tasks.id }).from(tasks).where(eq(tasks.status, 'running')).limit(1).get() !== undefined
+  hasRunningTasks(workspaceId?: string): boolean {
+    return this.db.select({ id: tasks.id }).from(tasks).where(and(
+      eq(tasks.status, 'running'),
+      workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId)
+    )).limit(1).get() !== undefined
   }
 
   readonly taskImages: TaskImageStorage
@@ -337,11 +340,33 @@ export class Store {
     this.requireWorkspace(workspaceId)
     if (next.composer !== undefined) this.validateComposerPreferences(next.composer)
     if (next.composer === undefined && next.lastProjectId === undefined) return this.getWorkspacePreferences(workspaceId)
-    this.db.update(workspacePreferences).set({
-      ...(next.composer === undefined ? {} : { composer: structuredClone(next.composer) }),
-      ...(next.lastProjectId === undefined ? {} : { lastProjectId: next.lastProjectId })
-    }).where(eq(workspacePreferences.workspaceId, workspaceId)).run()
-    return this.getWorkspacePreferences(workspaceId)
+    return this.db.transaction(() => {
+      this.db.update(workspacePreferences).set({
+        ...(next.composer === undefined ? {} : { composer: structuredClone(next.composer) }),
+        ...(next.lastProjectId === undefined ? {} : { lastProjectId: next.lastProjectId })
+      }).where(eq(workspacePreferences.workspaceId, workspaceId)).run()
+      if (next.composer !== undefined && workspaceId === DEFAULT_WORKSPACE_ID) {
+        this.db.insert(appState).values({ key: 'legacyComposerImported', value: 'true' }).onConflictDoNothing().run()
+      }
+      return this.getWorkspacePreferences(workspaceId)
+    })
+  }
+
+  /** Import and marker commit together; explicit SQLite choices always win. */
+  importLegacyComposerPreferences(composer: ComposerPreferences): WorkspacePreferences {
+    this.validateComposerPreferences(composer)
+    return this.db.transaction(() => {
+      const key = 'legacyComposerImported'
+      const marker = this.db.select().from(appState).where(eq(appState.key, key)).get()
+      if (!marker) {
+        const current = this.getWorkspacePreferences(DEFAULT_WORKSPACE_ID).composer
+        if (!current.agentId && !Object.keys(current.modelsByAgent).length && !Object.keys(current.reasoningByAgentModel).length) {
+          this.setWorkspacePreferences({ composer }, DEFAULT_WORKSPACE_ID)
+        }
+        this.db.insert(appState).values({ key, value: 'true' }).onConflictDoNothing().run()
+      }
+      return this.getWorkspacePreferences(DEFAULT_WORKSPACE_ID)
+    })
   }
 
   private validateComposerPreferences(composer: ComposerPreferences): void {

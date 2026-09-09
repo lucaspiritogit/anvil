@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { IpcArgs, IpcInvokeChannel, IpcRequests, IpcSendChannel } from '../shared/ipc-requests'
 import type {
+  Workspace,
+  WorkspaceSnapshot,
+  WorkspacePreferences,
+  ComposerPreferences,
+  WorkspaceSettingsChange,
   AgentDefinition,
   GitHubCredentialStatus,
   PullRequestInfo,
@@ -60,9 +65,22 @@ const api = {
       }
       return () => { if (settingsOpenHandler === handler) settingsOpenHandler = undefined }
     },
-    onChanged: (handler: (settings: Settings) => void): (() => void) => subscribe('settings:changed', handler),
-    get: (): Promise<Settings> => invoke('settings:get'),
-    set: (patch: IpcRequests['settings:set']): Promise<Settings> => invoke('settings:set', patch)
+    onChanged: (handler: (change: WorkspaceSettingsChange) => void): (() => void) => subscribe('settings:changed', handler),
+    get: (workspaceId?: string): Promise<Settings> => invoke('settings:get', workspaceId),
+    set: (workspaceId: string, patch: Partial<Settings>): Promise<Settings> => invoke('settings:set', { workspaceId, patch })
+  },
+  workspaces: {
+    list: (): Promise<Workspace[]> => invoke('workspaces:list'),
+    snapshot: (): Promise<WorkspaceSnapshot> => invoke('workspaces:snapshot'),
+    create: (name: string): Promise<Workspace> => invoke('workspaces:create', name),
+    rename: (workspaceId: string, name: string): Promise<Workspace> => invoke('workspaces:rename', { workspaceId, name }),
+    select: (workspaceId: string): Promise<WorkspaceSnapshot> => invoke('workspaces:select', workspaceId),
+    getPreferences: (workspaceId: string): Promise<WorkspacePreferences> => invoke('workspaces:preferences:get', workspaceId),
+    setPreferences: (workspaceId: string, patch: Partial<WorkspacePreferences>): Promise<WorkspacePreferences> => invoke('workspaces:preferences:set', { workspaceId, patch }),
+    importComposer: (composer: ComposerPreferences): Promise<WorkspacePreferences> => invoke('workspaces:composer:import', composer),
+    onChanged: (handler: (workspaces: Workspace[]) => void): (() => void) => subscribe('workspaces:changed', handler),
+    onSelected: (handler: (snapshot: WorkspaceSnapshot) => void): (() => void) => subscribe('workspaces:selected', handler),
+    onPreferencesChanged: (handler: (change: { workspaceId: string; preferences: WorkspacePreferences }) => void): (() => void) => subscribe('workspaces:preferences:changed', handler)
   },
   github: {
     credentialStatus: (): Promise<GitHubCredentialStatus> => invoke('github:credential-status'),

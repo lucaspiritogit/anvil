@@ -18,6 +18,9 @@ export function App(): JSX.Element {
   const suspendedDialogs = useRef<HTMLDialogElement[]>([])
   const fontSize = useStore((s) => s.settings?.fontSize)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const workspaceId = useStore((s) => s.activeWorkspaceId)
+  const switching = useStore((s) => s.workspaceSwitching)
+  const workspaceError = useStore((s) => s.workspaceError)
   const ready = useStore((s) => s.ready)
   const load = useStore((s) => s.load)
   const applyEvent = useStore((s) => s.applyEvent)
@@ -43,7 +46,9 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     const offOpen = window.anvil.settings.onOpenRequested(() => setSettingsOpen(true))
-    const offSettings = window.anvil.settings.onChanged((settings) => useStore.setState({ settings }))
+    const offSettings = window.anvil.settings.onChanged(useStore.getState().applySettingsChange)
+    const offSelected = window.anvil.workspaces.onSelected(useStore.getState().receiveWorkspaceSelection)
+    const offWorkspaces = window.anvil.workspaces.onChanged((workspaces) => useStore.setState({ workspaces }))
     const offProjects = window.anvil.projects.onChanged((projects) => {
       useStore.setState((state) => {
         const tasks = state.tasks.filter((task) => projects.some((project) => project.id === task.projectId))
@@ -56,7 +61,13 @@ export function App(): JSX.Element {
         }
       })
     })
-    return () => { offOpen(); offSettings(); offProjects() }
+    return () => {
+      offOpen()
+      offSettings()
+      offWorkspaces()
+      offSelected()
+      offProjects()
+    }
   }, [setSettingsOpen])
 
   // Native dialogs occupy the browser's top layer even inside a hidden workspace.
@@ -79,7 +90,7 @@ export function App(): JSX.Element {
     const onKey = (event: KeyboardEvent): void => {
       // Auto-repeat fires while a chord is held down; a shortcut is an action
       // per press, so only the first event of a hold counts.
-      if (event.repeat) return
+      if (event.repeat || useStore.getState().workspaceSwitching) return
       if (matchesAccelerator(event, 'Mod+,')) {
         event.preventDefault()
         if (!settingsOpen) setSettingsOpen(true)
@@ -107,7 +118,7 @@ export function App(): JSX.Element {
   }, [applyEvent, applyTaskUpdate])
 
   if (!ready) {
-    return <div className="grid place-items-center h-full text-dim">Loading…</div>
+    return <div className="grid place-items-center h-full text-dim">{workspaceError ? <><p role="alert">{workspaceError}</p><button onClick={() => void load()}>Retry</button></> : 'Loading…'}</div>
   }
 
   // Collapsing closes the grid column while the sidebar slides out behind it,
@@ -122,15 +133,19 @@ export function App(): JSX.Element {
             : sidebarCollapsed ? 'grid-cols-[0_1fr]' : 'grid-cols-[304px_1fr]'
         )}
       >
-        <Sidebar />
-        <div ref={workspaceRef} className={cn('min-w-0 min-h-0', settingsOpen && 'hidden')} inert={settingsOpen}>
-          <Workspace />
+        <div className="contents" inert={switching}><Sidebar key={workspaceId} /></div>
+        <div ref={workspaceRef} className={cn('min-w-0 min-h-0', settingsOpen && 'hidden')} inert={settingsOpen || switching}>
+          <Workspace key={workspaceId} />
           {newTaskOpen && <NewTaskModal />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
-        {settingsOpen && <SettingsPage />}
+        {settingsOpen && <div className="contents" inert={switching}><SettingsPage key={workspaceId} /></div>}
       </div>
-      <ProjectTerminal />
+      {workspaceError && <div role="alert" className="fixed bottom-4 right-4 z-50 rounded border border-line bg-canvas p-3 text-sm shadow-lg">
+        <p>{workspaceError}</p>
+        <button className="mt-2 text-accent" onClick={() => { if (workspaceId) void useStore.getState().selectWorkspace(workspaceId) }}>Retry workspace</button>
+      </div>}
+      <div className="contents" inert={switching}><ProjectTerminal key={workspaceId} /></div>
     </>
   )
 }

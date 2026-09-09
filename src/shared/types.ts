@@ -239,6 +239,20 @@ export interface ComposerPreferences {
   reasoningByAgentModel: Record<string, string>
 }
 
+export interface WorkspaceSnapshot {
+  workspaces: Workspace[]
+  workspace: Workspace
+  settings: Settings
+  preferences: WorkspacePreferences
+  projects: Project[]
+  tasks: Task[]
+}
+
+export interface WorkspaceSettingsChange {
+  workspaceId: string
+  settings: Settings
+}
+
 export interface WorkspacePreferences {
   composer: ComposerPreferences
   lastProjectId: string | null

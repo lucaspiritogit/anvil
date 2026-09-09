@@ -16,7 +16,7 @@ let database: string
 let store: Store
 let wallpapers: WallpaperLibrary
 const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
-const call = (channel: string, value?: unknown): any => handlers.get(channel)!(rendererEvent, value)
+const call = (channel: string, value?: unknown): any => handlers.get(channel)!(rendererEvent, channel === 'settings:set' ? { workspaceId: 'default', patch: value } : value)
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'anvil-overview-settings-'))
