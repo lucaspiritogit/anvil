@@ -1,11 +1,9 @@
 import type { JSX } from 'react'
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from 'react'
 import { AppSkeleton } from './components/AppSkeleton'
-import { ProjectTerminal } from './components/ProjectTerminal'
 import { OverviewBackground } from './components/OverviewBackground'
 import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
-import { SettingsPage } from './components/SettingsPage'
 import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { TaskContextMenu } from './components/TaskContextMenu'
 import { matchesAccelerator } from './keys'
@@ -13,6 +11,16 @@ import { cn } from './ui'
 import { useStore } from './state/store'
 import { DEFAULT_KEYBINDINGS, SHORTCUTS } from '@shared/keybindings'
 import type { ShortcutId } from '@shared/keybindings'
+
+const ProjectTerminal = lazy(async () => {
+  const { ProjectTerminal } = await import('./components/ProjectTerminal')
+  return { default: ProjectTerminal }
+})
+
+const SettingsPage = lazy(async () => {
+  const { SettingsPage } = await import('./components/SettingsPage')
+  return { default: SettingsPage }
+})
 
 export function App(): JSX.Element {
   const workspaceRef = useRef<HTMLDivElement>(null)
@@ -155,14 +163,14 @@ export function App(): JSX.Element {
           <Workspace key={workspaceId} />
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
-        {settingsOpen && <div className="contents" inert={switching}><SettingsPage key={workspaceId} /></div>}
+        {settingsOpen && <div className="contents" inert={switching}><Suspense fallback={<p role="status" className="p-5 text-sm text-dim">Loading settings…</p>}><SettingsPage key={workspaceId} /></Suspense></div>}
       </div>
       {switching && <div role="status" className="fixed bottom-4 right-4 z-50 border border-line bg-canvas p-3 text-sm shadow-lg">Switching workspace…</div>}
       {workspaceError && <div role="alert" className="fixed bottom-4 right-4 z-50 rounded border border-line bg-canvas p-3 text-sm shadow-lg">
         <p>{workspaceError}</p>
         <button className="mt-2 text-accent" onClick={() => { if (workspaceId) void useStore.getState().selectWorkspace(workspaceId) }}>Retry workspace</button>
       </div>}
-      <div className="contents" inert={switching}><ProjectTerminal key={workspaceId} /></div>
+      <div className="contents" inert={switching}><Suspense fallback={null}><ProjectTerminal key={workspaceId} /></Suspense></div>
     </>
   )
 }

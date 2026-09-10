@@ -1,9 +1,12 @@
 import type { JSX } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useStore } from '../state/store'
 import { IS_MAC, isTerminalShortcut } from '../keys'
 import { cn } from '../ui'
-import { TerminalPane } from './TerminalPane'
+const TerminalPane = lazy(async () => {
+  const { TerminalPane } = await import('./TerminalPane')
+  return { default: TerminalPane }
+})
 
 export function ProjectTerminal(): JSX.Element | null {
   const projects = useStore((state) => state.projects)
@@ -76,7 +79,9 @@ export function ProjectTerminal(): JSX.Element | null {
         </header>
         {opened.filter((id) => projects.some((item) => item.id === id)).map((id) => (
           <div key={id} className={cn('min-h-0 flex-1', id !== active && 'hidden')}>
-            <TerminalPane projectId={id} visible={id === active && Boolean(project)} />
+            <Suspense fallback={<p role="status" className="p-5 text-sm text-dim">Loading terminal…</p>}>
+              <TerminalPane projectId={id} visible={id === active && Boolean(project)} />
+            </Suspense>
           </div>
         ))}
       </div>

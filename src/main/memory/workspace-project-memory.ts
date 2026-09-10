@@ -9,7 +9,7 @@ export class WorkspaceProjectMemory implements ProjectMemory {
 
   constructor(
     private readonly store: Pick<Store, 'getSettings' | 'getActiveWorkspace' | 'getWorkspaces'>,
-    private readonly create: (workspaceId: string, settings: Settings) => ProjectMemory | undefined
+    private readonly create: (workspaceId: string, settings: Settings) => ProjectMemory | undefined | Promise<ProjectMemory | undefined>
   ) {}
 
   forWorkspace(workspaceId: string): ProjectMemory {

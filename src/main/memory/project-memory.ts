@@ -1,7 +1,5 @@
 import { join } from 'node:path'
 import type { Settings, Task, TaskDiff, TaskEvent } from '../../shared/types'
-import { PgliteProjectMemory } from './pglite-project-memory'
-import { PostgresProjectMemory } from './postgres-project-memory'
 
 export interface ProjectMemoryMatch {
   content: string
@@ -33,7 +31,7 @@ export interface ProjectMemoryOptions {
 export type ProjectMemoryBackend = 'pglite' | 'postgres' | 'disabled'
 
 /** Selects the local, self-hosted, or disabled adapter without exposing it to callers. */
-export function createProjectMemory(options: ProjectMemoryOptions): ProjectMemory | undefined {
+export async function createProjectMemory(options: ProjectMemoryOptions): Promise<ProjectMemory | undefined> {
   const backend = (process.env.ANVIL_MEMORY_BACKEND ?? 'pglite') as ProjectMemoryBackend
   if (backend === 'disabled') return undefined
 
@@ -47,9 +45,11 @@ export function createProjectMemory(options: ProjectMemoryOptions): ProjectMemor
       console.warn('PostgreSQL project memory requires ANVIL_MEMORY_DATABASE_URL.')
       return undefined
     }
+    const { PostgresProjectMemory } = await import('./postgres-project-memory')
     return new PostgresProjectMemory(databaseUrl, embeddingOptions, options.workspaceId)
   }
   if (backend === 'pglite') {
+    const { PgliteProjectMemory } = await import('./pglite-project-memory')
     return new PgliteProjectMemory(
       join(options.dataDirectory, 'pglite'),
       options.migrationsFolder,

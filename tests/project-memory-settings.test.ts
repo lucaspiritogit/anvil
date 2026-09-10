@@ -125,3 +125,35 @@ test('workspace memory callbacks and in-flight recall retain their owning profil
   await memory.close()
   expect(calls).toEqual(['create:default:personal-model', 'close:default'])
 })
+
+
+test('closes an asynchronously loaded adapter without connecting if memory was disabled during loading', async () => {
+  const settings = { memoryEnabled: false, memoryEmbeddingModel: 'model', ollamaBaseUrl: 'http://localhost:11434/v1' }
+  const calls: string[] = []
+  let finishLoading!: (adapter: ProjectMemory) => void
+  const loaded = new Promise<ProjectMemory>((resolve) => { finishLoading = resolve })
+  const memory = new SettingsProjectMemory(() => settings, async () => {
+    calls.push('load')
+    return loaded
+  })
+  const adapter: ProjectMemory = {
+    connect: async () => { calls.push('connect') },
+    recall: async () => { calls.push('recall'); return [] },
+    rememberCompletedTask: async () => {},
+    forgetProject: async () => {},
+    close: async () => { calls.push('close') }
+  }
+  onTestCleanup(() => memory.close())
+  onTestCleanup(() => finishLoading(adapter))
+  await memory.connect()
+  expect(calls).toEqual([])
+  settings.memoryEnabled = true
+  const pending = memory.recall('project', 'query')
+  await expect.poll(() => calls).toEqual(['load'])
+  settings.memoryEnabled = false
+  memory.settingsChanged()
+  finishLoading(adapter)
+  expect(await pending).toEqual([])
+  await memory.close()
+  expect(calls).toEqual(['load', 'close'])
+})

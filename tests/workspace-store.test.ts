@@ -297,3 +297,61 @@ test('upgrades a legacy database twice without losing settings, sessions, execut
   expect(reopened.getSettings(work.id)).toMatchObject({ defaultAgentId: 'opencode', caffeineMode: false, fontSize: 14 })
   expect(reopened.getTasks(work.id)).toEqual([])
 })
+
+
+test('opens and migrates only the active workspace until another workspace is selected', () => {
+  const { open, directory } = fixture()
+  const inactiveId = '00000000-0000-0000-0000-000000000002'
+  const inactiveDirectory = join(directory, 'workspaces', 'Later')
+  mkdirSync(inactiveDirectory, { recursive: true })
+  const inactiveDatabase = join(inactiveDirectory, 'anvil.db')
+  migrateBefore(inactiveDatabase, 12)
+  const before = readFileSync(inactiveDatabase)
+  writeFileSync(join(directory, 'config.json'), JSON.stringify({
+    version: 1,
+    workspaces: [
+      { id: 'default', name: 'Default', createdAt: 1 },
+      { id: inactiveId, name: 'Later', createdAt: 2 }
+    ],
+    activeWorkspaceId: 'default'
+  }))
+  const store = open()
+  expect(store.getOpenedWorkspaces().map((workspace) => workspace.id)).toEqual(['default'])
+  expect(store.getTasks()).toEqual([])
+  expect(store.getTask('unknown')).toBeUndefined()
+  expect(store.getPullRequestsToRefresh()).toEqual([])
+  expect(readFileSync(inactiveDatabase)).toEqual(before)
+  expect(existsSync(`${inactiveDatabase}-wal`)).toBe(false)
+
+  store.selectWorkspace(inactiveId)
+  expect(store.getOpenedWorkspaces()).toHaveLength(2)
+  expect(store.getSettings()).toEqual(store.getSettings('default'))
+  expect(store.getWorkspacePreferences().lastProjectId).toBeNull()
+  const migrated = rawDatabase(inactiveDatabase)
+  expect(migrated.prepare("SELECT name FROM sqlite_master WHERE name = 'task_executions'").get()).toBeDefined()
+  migrated.close()
+  addProject(store)
+  store.addTask({ ...taskInput('running-later'), status: 'running' })
+  store.selectWorkspace('default')
+  store.selectWorkspace(inactiveId)
+  expect(store.getTask('running-later')?.status).toBe('running')
+  store.selectWorkspace('default')
+  store.close()
+
+  const reopened = open()
+  expect(reopened.getOpenedWorkspaces().map((workspace) => workspace.id)).toEqual(['default'])
+  reopened.selectWorkspace(inactiveId)
+  expect(reopened.getTask('running-later')).toMatchObject({ status: 'pending', error: 'Interrupted by app restart' })
+})
+
+test('keeps the active workspace when opening another workspace fails', () => {
+  const { open, directory } = fixture()
+  const store = open()
+  const other = store.createWorkspace('Broken')
+  store.close()
+  writeFileSync(join(directory, 'workspaces', 'Broken', 'anvil.db'), 'invalid database')
+  const reopened = open()
+  expect(() => reopened.selectWorkspace(other.id)).toThrow()
+  expect(reopened.getActiveWorkspace().id).toBe('default')
+  expect(JSON.parse(readFileSync(join(directory, 'config.json'), 'utf8')).activeWorkspaceId).toBe('default')
+})

@@ -12,7 +12,7 @@ export class SettingsProjectMemory implements ProjectMemory {
 
   constructor(
     private readonly getSettings: () => MemorySettings,
-    private readonly create: (settings: MemorySettings) => ProjectMemory | undefined
+    private readonly create: (settings: MemorySettings) => ProjectMemory | undefined | Promise<ProjectMemory | undefined>
   ) {}
 
   isEnabled(): boolean {
@@ -51,9 +51,13 @@ export class SettingsProjectMemory implements ProjectMemory {
       const configuration = this.key(settings)
       if (this.adapter && this.configuration !== configuration) await this.release()
       if (!this.adapter) {
-        this.adapter = this.create(settings)
+        this.adapter = await this.create(settings)
         this.configuration = configuration
         if (!this.adapter) return fallback
+        if (!this.isEnabled() || configuration !== this.key()) {
+          await this.release()
+          return fallback
+        }
         try {
           await this.adapter.connect()
         } catch (error) {

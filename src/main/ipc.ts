@@ -185,7 +185,7 @@ export function registerIpc(
   }
   const githubPolling = {
     refreshIfStale: (): void => {
-      for (const workspace of store.getWorkspaces()) workspacePolling(workspace.id).refreshIfStale()
+      for (const workspace of store.getOpenedWorkspaces()) workspacePolling(workspace.id).refreshIfStale()
     },
     close: async (): Promise<void> => {
       stopPollingUpdates()

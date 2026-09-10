@@ -188,6 +188,7 @@ export class Store {
   private readonly configFile: string
   private config: RootConfig
   private readonly storage: WorkspaceStorage
+  private readonly initializedWorkspaces = new Set<string>()
   private readonly activityListeners = new Set<() => void>()
 
   /** Observe task membership/status and the setting that controls keeping tasks awake. */
@@ -232,26 +233,12 @@ export class Store {
     this.storage = new WorkspaceStorage(this.dataDirectory, options.migrationsFolder,
       (id) => this.getWorkspaceDirectory(id), (id) => this.requireWorkspace(id))
     try {
-      for (const workspace of this.getWorkspaces()) {
-        this.seedWorkspace(workspace.id, this.storage.open(workspace.id).db)
-      }
+      this.workspaceConnection(this.getActiveWorkspace().id)
       writeRootConfig(this.configFile, this.config)
       archiveLegacyRoot(legacyDatabase)
     } catch (error) {
       this.storage.close()
       throw error
-    }
-    this.recoverInterruptedTasks()
-    for (const workspace of this.getWorkspaces()) {
-      new TaskImageStorage(join(this.getWorkspaceDirectory(workspace.id), 'anvil.db.images')).prune(
-        new Set(this.getTasks(workspace.id).filter((task) => task.status !== 'cancelled' && task.deliveryStatus !== 'failed').map((task) => task.id))
-      )
-    }
-    // Restart stops Anvil execution, not other clients sharing Valence storage.
-    for (const row of this.getWorkspaces().flatMap((workspace) => this.storage.open(workspace.id).db.select().from(schema.taskExecutions).all())) {
-      if (row.state.phase === 'planning' || row.state.phase === 'working' || row.state.phase === 'recovering') {
-        this.saveTaskExecution({ ...row.state, phase: 'blocked', error: 'Interrupted by app restart. Inspect Valence work before requeueing.' })
-      }
     }
   }
 
@@ -268,6 +255,11 @@ export class Store {
 
   getWorkspaces(): Workspace[] {
     return structuredClone(this.config.workspaces).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+  }
+
+  /** Background work spans workspaces already used during this app session. */
+  getOpenedWorkspaces(): Workspace[] {
+    return this.getWorkspaces().filter((workspace) => this.initializedWorkspaces.has(workspace.id))
   }
 
   private requireWorkspace(id: string): Workspace {
@@ -292,10 +284,11 @@ export class Store {
     const previous = this.config
     this.config = { ...previous, workspaces: [...previous.workspaces, workspace] }
     try {
-      this.seedWorkspace(workspace.id, this.storage.open(workspace.id).db)
+      this.workspaceConnection(workspace.id)
       this.saveConfig(this.config)
     } catch (error) {
       this.config = previous
+      this.initializedWorkspaces.delete(workspace.id)
       this.storage.closeWorkspace(workspace.id)
       rmSync(directory, { recursive: true, force: true })
       throw error
@@ -330,6 +323,7 @@ export class Store {
 
   selectWorkspace(id: string): Workspace {
     const workspace = this.requireWorkspace(id)
+    this.workspaceConnection(id)
     this.saveConfig({ ...this.config, activeWorkspaceId: id })
     this.activityChanged()
     return workspace
@@ -394,8 +388,8 @@ export class Store {
   }
 
   /** A task cannot outlive the app, so anything still 'running' died with it. */
-  private recoverInterruptedTasks(): void {
-    for (const task of this.getTasks()) {
+  private recoverInterruptedTasks(workspaceId: string): void {
+    for (const task of this.getTasks(workspaceId)) {
       const unfinishedDelivery = ['preparing', 'working', 'finalizing', 'did_not_commit'].includes(task.deliveryStatus)
       if (task.status !== 'running' && !unfinishedDelivery) continue
       // Old versions used cancellation for shutdown too. An unfinished delivery
@@ -418,7 +412,7 @@ export class Store {
   }
 
   getPullRequestsToRefresh(workspaceId?: string): (Omit<PullRequestMerged, 'mergedAt'> & { taskId: string })[] {
-    if (workspaceId === undefined) return this.getWorkspaces().flatMap((workspace) => this.getPullRequestsToRefresh(workspace.id))
+    if (workspaceId === undefined) return this.getOpenedWorkspaces().flatMap((workspace) => this.getPullRequestsToRefresh(workspace.id))
     const db = this.workspaceConnection(workspaceId).db
     return db.select().from(schema.taskPullRequests).all().filter((link) => {
       const task = this.getTask(link.taskId)
@@ -427,7 +421,7 @@ export class Store {
   }
 
   approveMergedPullRequest(event: PullRequestMerged, workspaceId?: string): Task[] {
-    if (workspaceId === undefined) return this.getWorkspaces().flatMap((workspace) => this.approveMergedPullRequest(event, workspace.id))
+    if (workspaceId === undefined) return this.getOpenedWorkspaces().flatMap((workspace) => this.approveMergedPullRequest(event, workspace.id))
     const db = this.workspaceConnection(workspaceId).db
     return db.transaction(() => {
       const links = db.select().from(schema.taskPullRequests).where(and(
@@ -536,16 +530,16 @@ export class Store {
 
   getTasks(workspaceId?: string): Task[] {
     if (workspaceId === undefined) {
-      return this.getWorkspaces().flatMap((workspace) => this.getTasks(workspace.id)).sort((a, b) => b.startedAt - a.startedAt)
+      return this.getOpenedWorkspaces().flatMap((workspace) => this.getTasks(workspace.id)).sort((a, b) => b.startedAt - a.startedAt)
     }
     return this.workspaceConnection(workspaceId).db.select().from(tasks).orderBy(desc(tasks.startedAt)).all().map(toTask)
   }
 
   addTask(task: Omit<Task, 'workspaceId'> & { workspaceId?: string }): Task {
     const ownedTask: Task = { ...task, workspaceId: task.workspaceId ?? this.getActiveWorkspace().id }
-    this.requireWorkspace(ownedTask.workspaceId)
+    const connection = this.workspaceConnection(ownedTask.workspaceId)
     if (this.getTask(ownedTask.id)) throw new Error('Task already exists')
-    this.workspaceConnection(ownedTask.workspaceId).db.insert(tasks).values(toTaskRow(ownedTask)).run()
+    connection.db.insert(tasks).values(toTaskRow(ownedTask)).run()
     this.activityChanged()
     return ownedTask
   }
@@ -592,7 +586,7 @@ export class Store {
   }
 
   getTask(id: string): Task | undefined {
-    for (const workspace of this.getWorkspaces()) {
+    for (const workspace of this.getOpenedWorkspaces()) {
       const row = this.storage.open(workspace.id).db.select().from(tasks).where(eq(tasks.id, id)).get()
       if (row) return toTask(row)
     }
@@ -619,7 +613,7 @@ export class Store {
   }
 
   removeComment(id: string): void {
-    for (const workspace of this.getWorkspaces()) {
+    for (const workspace of this.getOpenedWorkspaces()) {
       this.workspaceConnection(workspace.id).db.delete(taskComments).where(eq(taskComments.id, id)).run()
     }
   }
@@ -683,7 +677,28 @@ export class Store {
 
   private workspaceConnection(workspaceId: string): WorkspaceConnection {
     this.requireWorkspace(workspaceId)
-    return this.storage.open(workspaceId)
+    const connection = this.storage.open(workspaceId)
+    if (this.initializedWorkspaces.has(workspaceId)) return connection
+    // Recovery calls Store methods, so mark this workspace before entering it.
+    this.initializedWorkspaces.add(workspaceId)
+    try {
+      this.seedWorkspace(workspaceId, connection.db)
+      this.recoverInterruptedTasks(workspaceId)
+      new TaskImageStorage(join(this.getWorkspaceDirectory(workspaceId), 'anvil.db.images')).prune(
+        new Set(this.getTasks(workspaceId).filter((task) => task.status !== 'cancelled' && task.deliveryStatus !== 'failed').map((task) => task.id))
+      )
+      // Restart stops Anvil execution, not other clients sharing Valence storage.
+      for (const row of connection.db.select().from(schema.taskExecutions).all()) {
+        if (row.state.phase === 'planning' || row.state.phase === 'working' || row.state.phase === 'recovering') {
+          this.saveTaskExecution({ ...row.state, phase: 'blocked', error: 'Interrupted by app restart. Inspect Valence work before requeueing.' })
+        }
+      }
+      return connection
+    } catch (error) {
+      this.initializedWorkspaces.delete(workspaceId)
+      this.storage.closeWorkspace(workspaceId)
+      throw error
+    }
   }
 
   private taskConnection(taskId: string): WorkspaceConnection {

@@ -3,8 +3,7 @@
 **A desktop control plane for running coding agents in parallel Git worktrees and reviewing their diffs.**
 
 Anvil gives every task its own branch and worktree, runs an agent there, and hands
-you one cumulative diff to review. No chat window, no turn-by-turn steering: work
-goes in, a diff comes out.
+you one cumulative diff to review.
 
 ![Anvil desktop preview](./public/showcase/01-workspace.png)
 
@@ -13,7 +12,7 @@ goes in, a diff comes out.
 ## What it does
 
 - **Runs tasks, not conversations.** Dispatch work to an agent and review the
-  result; there is no chat window in between.
+  result, there is no chat window in between.
 - **Parallel by default.** Every task gets its own branch and worktree from the
   project's current commit, so many can run in the same repository at once.
 - **Diff-first review.** Anvil saves one cumulative final diff per task for you
