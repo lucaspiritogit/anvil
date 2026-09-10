@@ -180,7 +180,11 @@ test('registers all channels and rejects foreign, subframe and navigated senders
     'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:update',
     'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:settle', 'tasks:start', 'tasks:steer',
     'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set', 'workspaces:composer:import',
+<<<<<<< Updated upstream
     'wallpapers:directory', 'wallpapers:import', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set', 'terminal:ensure', 'terminal:resize', 'terminal:write'
+=======
+    'wallpapers:directory', 'wallpapers:import','wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set', 'terminal:ensure', 'terminal:resize', 'terminal:write'
+>>>>>>> Stashed changes
   ].sort())
   // Each registered handler must reject foreign windows and same-URL subframes
   // before touching its payload or any service dependency.
