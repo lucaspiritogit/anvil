@@ -1,11 +1,8 @@
 import type { JSX } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 import { useStore } from '../state/store'
 import { TaskComposer } from './TaskComposer'
-import { renderWallpaper } from './wallpaper-effects'
 import { cn } from '../ui'
-import { loadWallpaper } from '../state/wallpaper-cache'
-import { DEFAULT_OVERVIEW_COLOR } from '@shared/appearance'
 import type { Project } from '@shared/types'
 
 interface Props {
@@ -60,87 +57,15 @@ function GitAlert({ project }: { project: Project }): JSX.Element | null {
   )
 }
 
-function WallpaperLayer({ image, color }: { image: HTMLImageElement; color: string }): JSX.Element {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    const host = canvas?.parentElement
-    if (!canvas || !host) return
-    let frame = 0
-    let settle = 0
-    const draw = (): void => {
-      frame = 0
-      // The sidebar collapse resizes the host every animation frame; while it
-      // runs, stretch the existing canvas instead of re-rendering the wallpaper
-      // and redraw once the size settles so the slide never races the paint.
-      const scale = Math.min(window.devicePixelRatio || 1, 2)
-      const width = Math.round(host.clientWidth * scale)
-      const height = Math.round(host.clientHeight * scale)
-      if (canvas.width === width && canvas.height === height) return
-      renderWallpaper(canvas, image, host.clientWidth, host.clientHeight, color)
-    }
-    const schedule = (): void => {
-      if (!frame) frame = requestAnimationFrame(draw)
-    }
-    const scheduleSettled = (): void => {
-      if (settle) clearTimeout(settle)
-      settle = window.setTimeout(() => {
-        settle = 0
-        schedule()
-      }, 200)
-    }
-    schedule()
-    const observer = new ResizeObserver(scheduleSettled)
-    observer.observe(host)
-    return () => {
-      observer.disconnect()
-      if (frame) cancelAnimationFrame(frame)
-      if (settle) clearTimeout(settle)
-    }
-  }, [image, color])
-
-  return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden
-      data-testid="overview-wallpaper"
-      data-src={image.src}
-      className="pointer-events-none absolute inset-0 h-full w-full"
-    />
-  )
-}
-
 export function ProjectOverview({ project }: Props): JSX.Element {
-  const settings = useStore((s) => s.settings)
-  const color = settings?.overviewBackgroundColor ?? DEFAULT_OVERVIEW_COLOR
-  const workspaceId = useStore((state) => state.activeWorkspaceId) ?? undefined
-  const wallpaperMode = settings?.overviewBackgroundMode
-  const wallpaperId = settings?.overviewWallpaperId
-  const [image, setImage] = useState<HTMLImageElement | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setImage(null)
-    if (wallpaperMode === 'image' && wallpaperId) {
-      void loadWallpaper(wallpaperId, { workspaceId }).then((entry) => {
-        if (cancelled) return
-        setImage(entry ? entry.image : null)
-      }).catch(() => { if (!cancelled) setImage(null) })
-    } else {
-      setImage(null)
-    }
-    return () => { cancelled = true }
-  }, [wallpaperMode, wallpaperId, workspaceId])
-
   return (
-    <div data-testid="project-overview" className="relative h-full min-h-0" style={{ backgroundColor: color }}>
-      {image && <WallpaperLayer image={image} color={color} />}
-      <div className="relative flex h-full min-h-0 flex-col overflow-y-auto px-8 py-8 max-[980px]:px-[22px]">
-        <div className={cn(SPREAD, 'my-auto')}>
-          <GitAlert project={project} />
-          <TaskComposer key={project.id} />
-        </div>
+    <div
+      data-testid="project-overview"
+      className="relative flex h-full min-h-0 flex-col overflow-y-auto px-8 py-8 max-[980px]:px-[22px]"
+    >
+      <div className={cn(SPREAD, 'my-auto')}>
+        <GitAlert project={project} />
+        <TaskComposer key={project.id} />
       </div>
     </div>
   )

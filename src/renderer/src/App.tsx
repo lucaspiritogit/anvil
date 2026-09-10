@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { ProjectTerminal } from './components/ProjectTerminal'
+import { OverviewBackground } from './components/OverviewBackground'
 import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
 import { SettingsPage } from './components/SettingsPage'
@@ -133,12 +134,13 @@ export function App(): JSX.Element {
     <>
       <div
         className={cn(
-          'grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden transition-[grid-template-columns] duration-[180ms] ease-[ease] motion-reduce:transition-none',
+          'relative isolate grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden transition-[grid-template-columns] duration-[180ms] ease-[ease] motion-reduce:transition-none',
           settingsOpen
             ? 'grid-cols-[304px_1fr] max-[700px]:grid-cols-1 max-[700px]:grid-rows-[auto_minmax(0,1fr)]'
             : sidebarCollapsed ? 'grid-cols-[0_1fr]' : 'grid-cols-[304px_1fr]'
         )}
       >
+        <OverviewBackground />
         <div className="contents" inert={switching}><Sidebar /></div>
         <div ref={workspaceRef} tabIndex={-1} className={cn('min-w-0 min-h-0 outline-none', settingsOpen && 'hidden')} inert={settingsOpen || switching}>
           <Workspace key={workspaceId} />
