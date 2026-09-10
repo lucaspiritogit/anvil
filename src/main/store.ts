@@ -515,10 +515,13 @@ export class Store {
 
   updateProject(
     id: string,
-    patch: Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush'>,
+    patch: Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush'>>,
     workspaceId = this.getActiveWorkspace().id
   ): Project | undefined {
     const db = this.workspaceConnection(workspaceId).db
+    if (patch.monthlyTokenLimit === undefined && patch.monthlyCostLimitUsd === undefined && patch.finishOnPush === undefined) {
+      return this.getProjects(workspaceId).find((project) => project.id === id)
+    }
     db.update(projects).set({
       monthlyTokenLimit: patch.monthlyTokenLimit,
       monthlyCostLimitUsd: patch.monthlyCostLimitUsd,

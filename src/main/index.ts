@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { protectRendererWindow } from './renderer-security'
 import { registerAppShutdown } from './app-shutdown'
 import { startApplication } from './startup'
+import { APP_READY_CHANNEL } from '../shared/app-lifecycle'
 import { initializeServices } from './services'
 import { resolveAppDataDirectory } from './app-data'
 
@@ -22,6 +23,7 @@ const rendererUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL
   : pathToFileURL(join(__dirname, '../renderer/index.html')).href
 
 let mainWindow: BrowserWindow | null = null
+let servicesReady = false
 let isClosing = (): boolean => false
 function openSettings(): void {
   if (isClosing()) return
@@ -64,6 +66,7 @@ function showClosingProcesses(): void {
 }
 
 function createWindow(openSettingsOnLoad = false): void {
+  const restoringWindow = servicesReady
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -89,6 +92,8 @@ function createWindow(openSettingsOnLoad = false): void {
   protectRendererWindow(mainWindow, rendererUrl)
   const window = mainWindow
   void window.loadURL(rendererUrl).then(() => {
+    // Startup signals the first window; restored windows need the same readiness.
+    if (restoringWindow && !window.isDestroyed()) window.webContents.send(APP_READY_CHANNEL, { ok: true })
     if (openSettingsOnLoad && !window.isDestroyed()) window.webContents.send('settings:open-requested')
   })
 }
@@ -110,6 +115,7 @@ if (ownsInstance) app.whenReady().then(() => {
     initializeServices: () => initializeServices(() => mainWindow, rendererUrl, dataDirectory),
     getWindow: () => mainWindow,
     onServicesReady: (services) => {
+      servicesReady = true
       app.on('browser-window-focus', () => services.githubPolling.refreshIfStale())
       powerMonitor.on('resume', () => services.githubPolling.refreshIfStale())
 

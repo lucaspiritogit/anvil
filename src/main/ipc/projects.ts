@@ -82,12 +82,12 @@ export function registerProjectHandlers(ipc: RendererIpc, {
   })
 
   ipc.handle('projects:update', (_event, input) => {
-    const workspaceId = store.getActiveWorkspace().id
+    const workspaceId = input.workspaceId ?? store.getActiveWorkspace().id
     const project = store.updateProject(input.id, {
       monthlyTokenLimit: input.monthlyTokenLimit,
       monthlyCostLimitUsd: input.monthlyCostLimitUsd,
       finishOnPush: input.finishOnPush
-    })
+    }, workspaceId)
     projectsChanged?.(workspaceId)
     return project
   })

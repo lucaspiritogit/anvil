@@ -83,7 +83,8 @@ interface AnvilState {
   removeProject: (id: string) => Promise<void>
   updateProject: (
     id: string,
-    patch: Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush'>
+    patch: Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush'>>,
+    workspaceId?: string
   ) => Promise<void>
   selectProject: (id: string) => void
   loadGitStatus: (id: string) => Promise<void>
@@ -120,7 +121,7 @@ interface AnvilState {
   applyEvent: (event: TaskEvent) => void
   applyTaskUpdate: (task: Task) => void
 
-  saveSettings: (patch: Partial<Settings>) => Promise<void>
+  saveSettings: (patch: Partial<Settings>, workspaceId?: string) => Promise<void>
   toggleSidebar: () => void
   setSettingsOpen: (open: boolean) => void
 }
@@ -284,10 +285,15 @@ export const useStore = create<AnvilState>((set, get) => ({
     })
   },
 
-  updateProject: async (id, patch) => {
-    const project = await window.anvil.projects.update({ id, ...patch })
-    if (!project) return
-    set((s) => ({ projects: s.projects.map((item) => (item.id === id ? project : item)) }))
+  updateProject: async (id, patch, destinationId) => {
+    const workspaceId = destinationId ?? get().activeWorkspaceId
+    if (!workspaceId) throw new Error('Workspace is still loading')
+    await enqueueWorkspaceRequest(async () => {
+      const project = await window.anvil.projects.update({ id, ...patch, workspaceId })
+      if (!project) throw new Error('Project is unavailable')
+      if (get().activeWorkspaceId !== workspaceId) return
+      set((s) => ({ projects: s.projects.map((item) => (item.id === id ? project : item)) }))
+    })
   },
 
   selectProject: (id) => {
@@ -608,8 +614,8 @@ export const useStore = create<AnvilState>((set, get) => ({
       diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== task.id))
     })),
 
-  saveSettings: async (patch) => {
-    const workspaceId = get().activeWorkspaceId
+  saveSettings: async (patch, destinationId) => {
+    const workspaceId = destinationId ?? get().activeWorkspaceId
     const generation = workspaceGeneration
     if (!workspaceId) throw new Error('Workspace is still loading')
     await enqueueWorkspaceRequest(async () => {

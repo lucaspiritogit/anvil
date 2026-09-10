@@ -150,9 +150,11 @@ declare global {
       overview: () => void
     }
     wallpaperTest: { items: Wallpaper[]; reads: string[]; fail: boolean; loading: boolean }
+    projectSettingsTest: { calls: IpcRequests['projects:update'][]; release: (reject?: boolean) => void }
     settingsTest: {
       apply: (patch: Partial<Settings>) => void
       calls: Partial<Settings>[]
+      destinations: string[]
       release: (reject?: boolean) => void
       finishLoading: () => void
     }
@@ -170,12 +172,23 @@ if (query.has('appearance')) {
   settings.overviewBackgroundColor = '#123456'
   settings.overviewWallpaperId = 'image-0.png'
 }
+let releaseProject: ((reject?: boolean) => void) | undefined
+window.projectSettingsTest = {
+  calls: [],
+  release: (reject) => {
+    if (!releaseProject) throw new Error('No project write is pending')
+    const release = releaseProject
+    releaseProject = undefined
+    release(reject)
+  }
+}
 let releaseSettings: ((reject?: boolean) => void) | undefined
 let finishLoading: () => void = noop
 const settingsLoaded = new Promise<void>((resolve) => { finishLoading = resolve })
 window.settingsTest = {
   apply: (patch) => { settings = { ...settings, ...patch }; workspaceSettings[selectedWorkspace] = settings; persistWorkspaces(); useStore.setState({ settings }) },
   calls: [],
+  destinations: [],
   release: (reject) => {
     if (!releaseSettings) throw new Error('No settings write is pending')
     const release = releaseSettings
@@ -272,7 +285,15 @@ window.anvil = {
       projectBranches[projectId] = branchName
       return window.anvil.projects.branches(projectId)
     },
-    update: async ({ id, ...patch }: Partial<Project> & { id: string }) => Object.assign(projects.find((project) => project.id === id)!, patch)
+    update: async (input: IpcRequests['projects:update']) => {
+      window.projectSettingsTest.calls.push(input)
+      if (query.has('projectsControlled')) await new Promise<void>((resolve, reject) => {
+        if (releaseProject) throw new Error('Project writes overlapped')
+        releaseProject = (fail) => fail ? reject(new Error('Project write rejected')) : resolve()
+      })
+      const { id, workspaceId: _workspaceId, ...patch } = input
+      return structuredClone(Object.assign(projects.find((project) => project.id === id)!, patch))
+    }
   },
   accounts: fixtureAccounts((id) => workspaceRows.find((workspace) => workspace.id === id)?.name ?? id, query.has('accountBusy')),
   agents: {
@@ -406,6 +427,7 @@ window.anvil = {
     },
     set: async (workspaceId: string, patch: Partial<Settings>) => {
       window.settingsTest.calls.push(patch)
+      window.settingsTest.destinations.push(workspaceId)
       if (query.has('settingsControlled')) {
         await new Promise<void>((resolve, reject) => {
           if (releaseSettings) throw new Error('Settings writes overlapped')

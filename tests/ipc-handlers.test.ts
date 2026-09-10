@@ -180,7 +180,7 @@ test('registers all channels and rejects foreign, subframe and navigated senders
     'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:update',
     'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:settle', 'tasks:start', 'tasks:steer',
     'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set', 'workspaces:composer:import',
-    'wallpapers:directory', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set', 'terminal:ensure', 'terminal:resize', 'terminal:write'
+    'wallpapers:directory', 'wallpapers:import', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set', 'terminal:ensure', 'terminal:resize', 'terminal:write'
   ].sort())
   // Each registered handler must reject foreign windows and same-URL subframes
   // before touching its payload or any service dependency.
@@ -317,6 +317,8 @@ test('updates projects, validates task references and selects supported agents a
   const warn = console.warn
   const projectSettings = { ...update, monthlyTokenLimit: 5000, monthlyCostLimitUsd: 12.5, finishOnPush: true }
   expect(call('projects:update', projectSettings)).toStrictEqual({ ...project, ...projectSettings })
+  expect(call('projects:update', { id: project.id, monthlyTokenLimit: null })).toStrictEqual({ ...project, ...projectSettings, monthlyTokenLimit: null })
+  expect(call('projects:update', { id: project.id, finishOnPush: false })).toStrictEqual({ ...project, ...projectSettings, monthlyTokenLimit: null, finishOnPush: false })
   // Defense in depth: even a non-IPC caller cannot smuggle extra database columns.
   store.updateProject(project.id, { ...update, id: 'replacement', path: '/outside', name: 'Changed', createdAt: 99 } as typeof update)
   expect(store.getProjects()).toStrictEqual([project])
@@ -816,4 +818,16 @@ test('file references reach fake agents as paths for worktrees and non-Git tasks
     projectId: project.id, agentId: 'codex', prompt: 'Invalid reference', fileReferences: ['../outside.txt']
   })).rejects.toThrow('Invalid project file reference')
   expect(store.getTasks()).toHaveLength(count)
+})
+
+
+test('partial project preferences target the captured workspace after switching', () => {
+  const { store, call, project } = setupIpc()
+  const original = store.getActiveWorkspace()
+  const other = store.createWorkspace('Other')
+  store.addProject(project, other.id)
+  store.selectWorkspace(other.id)
+  expect(call('projects:update', { workspaceId: original.id, id: project.id, monthlyTokenLimit: 123 })).toMatchObject({ monthlyTokenLimit: 123 })
+  expect(store.getProjects(original.id)[0]).toMatchObject({ monthlyTokenLimit: 123, monthlyCostLimitUsd: null, finishOnPush: false })
+  expect(store.getProjects(other.id)[0]).toMatchObject({ monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false })
 })
