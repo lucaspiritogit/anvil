@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { resolveCommand } from './resolve'
 import { closeAgentServer } from './agent-server-process'
+import { AgentTransportError, agentTransportFailure } from './agent-failure'
 import type { WorkspaceExecutionContext } from './workspace-execution'
 import {
   codexObject, validateCodexResponse,
@@ -53,11 +54,10 @@ export class CodexAppServerConnection implements CodexAppServerProtocol {
       env: { ...options.workspace.environment, CODEX_HOME: options.workspace.codexHome, PWD: cwd, NO_COLOR: '1', FORCE_COLOR: '0' }
     })
     this.closed = new Promise<void>((resolve) => { this.child.once('close', () => resolve()) })
-    this.child.on('error', (error) => this.fail(error))
-    this.child.stdin.on('error', (error) => this.fail(error))
-    this.child.stdout.on('error', (error) => this.fail(error))
-    this.child.stderr.on('error', (error) => this.fail(error))
-    this.child.once('exit', (code, signal) => this.fail(new Error(`Codex app-server exited (${signal ?? code})`)))
+    for (const stream of [this.child, this.child.stdin, this.child.stdout, this.child.stderr]) {
+      stream.on('error', (error: NodeJS.ErrnoException) => this.fail(agentTransportFailure(error)))
+    }
+    this.child.once('exit', (code, signal) => this.fail(new AgentTransportError(`Codex app-server exited (${signal ?? code})`)))
     const stdout = createInterface({ input: this.child.stdout, crlfDelay: Infinity })
     stdout.on('line', (line) => {
       if (this.closing || this.failureError || !line.trim()) return
@@ -67,7 +67,7 @@ export class CodexAppServerConnection implements CodexAppServerProtocol {
         this.fail(error instanceof Error ? error : new Error(String(error)))
       }
     })
-    stdout.once('close', () => this.fail(new Error('Codex app-server closed stdout before execution finished')))
+    stdout.once('close', () => this.fail(new AgentTransportError('Codex app-server closed stdout before execution finished')))
     this.child.stderr.setEncoding('utf8')
     this.child.stderr.on('data', (chunk: string) => {
       const lines = (this.stderr + chunk).split('\n')
@@ -85,11 +85,13 @@ export class CodexAppServerConnection implements CodexAppServerProtocol {
     this.pending.clear()
   }
 
+  get failureReason(): Error | undefined { return this.failureError }
+
   private send(message: unknown): void {
     if (this.failureError) throw this.failureError
     if (this.closing) throw new Error('Codex connection is closed')
     // Codex deliberately omits the jsonrpc field. Never use an ACP connection here.
-    this.child.stdin.write(`${JSON.stringify(message)}\n`, (error) => { if (error) this.fail(error) })
+    this.child.stdin.write(`${JSON.stringify(message)}\n`, (error) => { if (error) this.fail(agentTransportFailure(error)) })
   }
 
   initialized(): void {
@@ -104,7 +106,7 @@ export class CodexAppServerConnection implements CodexAppServerProtocol {
       this.pending.set(id, { resolve, reject })
       try { this.send({ id, method, params }) } catch (error) { reject(error) }
     })
-    const timeout = setTimeout(() => this.fail(new Error(`Codex ${method} request timed out`)), this.options.requestTimeoutMs ?? 60_000)
+    const timeout = setTimeout(() => this.fail(new AgentTransportError(`Codex ${method} request timed out`)), this.options.requestTimeoutMs ?? 60_000)
     try {
       const value = await response
       validateCodexResponse(method, value)

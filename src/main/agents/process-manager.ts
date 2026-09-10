@@ -508,6 +508,7 @@ export class AgentProcessManager extends EventEmitter {
   close(): Promise<void> {
     if (this.shutdown) return this.shutdown
     this.shutdown = Promise.resolve().then(async () => {
+      this.emit('closing')
       const processes = [...this.procs.entries()].map(([taskId, child]) => {
         const closed = new Promise<void>((resolve) => child.once('close', () => resolve()))
         return closeAgentServer(child, closed)

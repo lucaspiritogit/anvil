@@ -1,7 +1,7 @@
 {
   "name": "anvil",
   "version": "0.1.0",
-  "description": "An agentic development platform. No chats, clear tasks.",
+  "description": "Desktop control plane for running coding agents in parallel Git worktrees and reviewing their diffs.",
   "main": "./out/main/index.js",
   "author": "lucasignaciopirito@gmail.com",
   "license": "MIT",

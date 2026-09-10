@@ -7,7 +7,6 @@ const ANVIL_TASK_INSTRUCTIONS = [
   'Run commands directly or stream and save output with tee. Use a concise reporter that still shows progress. Preserve command failures in pipelines, using pipefail in shells that support it.',
   'Reading existing files or saved logs with tail is fine. Summarize saved output after the command finishes.',
   'Use targeted tests and checks for the current issue or review changes. Expand validation when dependencies or shared behavior change.',
-  'Run full-suite validation once after relevant issues are integrated, not by default after every issue. Rerun if later changes invalidate that evidence.',
   'Honor required repository checks and issue validation; do not skip or weaken them. Record the commands run and their actual results; do not claim unperformed checks passed.'
 ].join('\n')
 
@@ -22,7 +21,7 @@ export function planningPrompt(task: string, state: Pick<TaskExecutionState, 'pr
     'Create issues for this task with findings, paths, checklists, validation, and priorities.',
     `Create issues under parent ${JSON.stringify(state.parentIssueId)}.`,
     'Create prerequisites first; dependencies use their actual issue IDs.',
-    'Give each issue targeted validation commands. Put full-suite validation in a final integration checkpoint, either the last implementation issue or a dedicated validation issue, with dependencies on all implementation issues whose changes it validates. Do not repeat full-suite requirements across every issue unless repository instructions require them.',
+    'Give each issue targeted validation commands.',
     'Leave the finished plan queued. Do not claim or implement issues. If planning fails, block any partial issues before exiting.',
     'Summarize the plan in plain text.',
     `Task: ${task}`
@@ -62,6 +61,20 @@ export function taskFollowupPrompt(task: Task, state: TaskExecutionState, messag
       : 'Inspect and unblock the remaining task issues so Anvil can schedule them. Leave unfinished issues queued; do not claim new work.',
     'Do not create a replacement plan or claim other issues. Anvil checks Valence review submissions and pauses for developer review after each issue.',
     `Developer message: ${message}`
+  ].join('\n\n')
+}
+
+export function taskRecoveryPrompt(task: Task, state: TaskExecutionState): string {
+  return [
+    ANVIL_TASK_INSTRUCTIONS,
+    valenceIssueTrackerInstructionsPrompt(state.projectPath),
+    'Continue from where the previous attempt stopped after a temporary connection failure. This is automatic recovery of the same task and session.',
+    'Preserve completed work. Follow the latest user instructions in the saved conversation, including any that override the original request or validation plan below.',
+    `Original task: ${task.prompt}`,
+    `Task parent: ${state.parentIssueId}`,
+    state.phase === 'planning'
+      ? 'Inspect the existing plan before adding missing issues. Do not duplicate issues. Leave the finished plan queued without implementing it.'
+      : `Continue issue ${state.currentIssueId ?? '(inspect the existing task plan)'}. Check its Valence status before acting. If already submitted, report that result instead of repeating work. Do not claim other issues or create a replacement plan.`
   ].join('\n\n')
 }
 

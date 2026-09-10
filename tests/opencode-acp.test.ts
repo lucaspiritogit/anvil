@@ -43,6 +43,7 @@ test('handles ACP sessions, output, permissions, recovery and cancellation', asy
   try {
     const result = await client('success').execute(input, record)
     expect(result.status, result.error).toBe('succeeded')
+    expect(result.retry, 'A failed tool must not request task recovery').toBeUndefined()
     expect(result.taskId).toBe(input.taskId)
     expect(result.issueId).toBe(input.issueId)
     expect(result.sessionId).toBe('session-test')
@@ -152,7 +153,13 @@ test('handles ACP sessions, output, permissions, recovery and cancellation', asy
       const failed = await client(scenario).execute(input, () => {})
       expect(failed.status, scenario).toBe('failed')
       expect(failed.error, scenario).toBeTruthy()
+      if (scenario === 'rpc-error') expect(failed.retry).toBeUndefined()
+      if (scenario === 'exit') expect(failed.retry).toEqual({ source: 'transport' })
     }
+    const transient = await client('transient-error').execute(input, record)
+    expect(transient.status).toBe('failed')
+    expect(transient.retry).toEqual({ source: 'provider' })
+    expect(transient.sessionId).toBe('session-test')
     if (process.platform !== 'win32') {
       expect((await client('orphan').execute(input, () => {})).status, 'Clean up inherited pipes when the server exits').toBe('failed')
     }

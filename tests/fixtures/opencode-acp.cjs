@@ -126,6 +126,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       return setTimeout(() => process.exit(4), 30)
     }
     if (scenario === 'rpc-error') return send({ id: message.id, error: { code: -32603, message: 'Provider authentication failed' } })
+    if (scenario === 'transient-error') return send({ id: message.id, error: {
+      code: -32603, message: 'Internal error: [Novita] model is temporarily rate-limited upstream.',
+      data: { service: 'session', errorName: 'APIError' }
+    } })
     if (scenario.startsWith('cancel')) {
       text(scenario === 'cancel-partial' ? 'Waiting' : 'Waiting\n')
       return

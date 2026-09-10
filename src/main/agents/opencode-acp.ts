@@ -7,6 +7,7 @@ import { OpenCodeAcpConnection, type OpenCodeAcpOptions } from './opencode-acp-c
 import { LazyAgentServer } from './lazy-agent-server'
 import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceEnvironment, requireOpenCodeProjectIsolation, requireWorkspaceOpenCodeModel } from './opencode-workspace'
 import { verifyWorkspaceOpenCode } from './opencode-model-output'
+import { retryableAgentFailure } from './agent-failure'
 
 interface AcpExecution {
   server(): OpenCodeAcpConnection | undefined
@@ -35,10 +36,11 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
 
   async execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult> {
     const output = new AcpOutput(input, onEvent)
-    let sessionId: string | undefined
+    let sessionId = input.resumeSessionId
     let status: TaskResult['status'] = 'failed'
     let stopReason: string | undefined
     let error: string | undefined
+    let retry: TaskResult['retry']
     let connection: OpenCodeAcpConnection | undefined
     let startupTimer: ReturnType<typeof setTimeout> | undefined
     let cancelTimer: ReturnType<typeof setTimeout> | undefined
@@ -196,7 +198,20 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       if (status === 'failed') error = `OpenCode stopped with reason: ${stopReason}`
     } catch (failure) {
       status = input.signal?.aborted ? 'cancelled' : 'failed'
-      if (status === 'failed') error = failure instanceof Error ? failure.message : String(failure)
+      if (status === 'failed') {
+        error = failure instanceof Error ? failure.message : String(failure)
+        if (connection?.failureReason) {
+          try {
+            const reason = connection.failureReason
+            await connection.close()
+            retry = retryableAgentFailure(reason)
+          } catch {
+            error += ' Could not stop the failed agent server.'
+          }
+        } else if (acceptingUpdates) {
+          retry = retryableAgentFailure(failure)
+        }
+      }
     } finally {
       acceptingUpdates = false
       clearTimeout(startupTimer)
@@ -218,7 +233,7 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
     if (error) output.line(error, 'error', 'system')
     output.line(status === 'cancelled' ? 'Task cancelled.' : `ACP turn ${status}.`, 'system', 'system')
     return {
-      taskId: input.taskId, issueId: input.issueId, status, sessionId, stopReason, error,
+      taskId: input.taskId, issueId: input.issueId, status, sessionId, stopReason, error, retry,
       output: output.output, changedFiles: [...output.changedFiles], usage: output.usage
     }
   }

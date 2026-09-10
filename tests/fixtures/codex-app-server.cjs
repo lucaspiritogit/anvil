@@ -42,6 +42,12 @@ if (scenario === 'profile-startup-rejected') {
 }
 
 function finish() {
+  if (scenario === 'transient-error') {
+    notify('turn/completed', { turn: turn('failed', {
+      message: 'Model stream failed', codexErrorInfo: { responseStreamDisconnected: {} }
+    }) })
+    return
+  }
   if (scenario === 'failure' || scenario === 'interrupted' || scenario === 'invalid-status') {
     const status = scenario === 'failure' ? 'failed' : scenario === 'interrupted' ? 'interrupted' : 'inProgress'
     notify('turn/completed', { turn: turn(status, status === 'failed' ? { message: 'Provider rejected the turn' } : null) })

@@ -1,11 +1,20 @@
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
-import { implementationPrompt } from '../agents/task-prompts'
+import { implementationPrompt, taskRecoveryPrompt } from '../agents/task-prompts'
 import type { ExitInfo } from '../agents/process-manager'
 import type { TaskContext } from './context'
 import type { RecordSystemEvent } from './context'
 import { TaskIssues } from './task-issues'
 import type { TaskExecutionState } from '../../shared/types'
+
+const MAX_RECOVERY_ATTEMPTS = 3
+const RECOVERY_WINDOW_MS = 120_000
+
+interface TaskRetry {
+  attempt: number
+  deadline: number
+  timer?: ReturnType<typeof setTimeout>
+}
 
 export interface TaskExecution {
   initializeTask(taskId: string, projectPath: string, settings?: Pick<TaskExecutionState, 'reasoningEffort' | 'hasImages'>): TaskExecutionState
@@ -23,6 +32,18 @@ export function registerTaskExecution(
   finishTask: (info: ExitInfo) => Promise<void>
 ): TaskExecution {
   const issues = new TaskIssues(store)
+  // Retries belong to this running scheduler. App restarts retain the existing
+  // interrupted-task recovery policy instead of silently relaunching work.
+  const retries = new Map<string, TaskRetry>()
+  let closing = false
+  const clearRetry = (taskId: string): void => {
+    clearTimeout(retries.get(taskId)?.timer)
+    retries.delete(taskId)
+  }
+  agentProcesses.on('closing', () => {
+    closing = true
+    for (const taskId of retries.keys()) clearRetry(taskId)
+  })
   const notify = (taskId: string): void => {
     const task = store.getTask(taskId)
     if (task) send('task:updated', task)
@@ -36,6 +57,7 @@ export function registerTaskExecution(
     return saved
   }
   const stopTask = (taskId: string, error: string): void => {
+    clearRetry(taskId)
     issues.stop(taskId, error)
     notify(taskId)
   }
@@ -50,7 +72,7 @@ export function registerTaskExecution(
   }
 
   const startNextTurn = async (taskId: string): Promise<void> => {
-    if (starting.has(taskId) || agentProcesses.isRunning(taskId)) return
+    if (closing || starting.has(taskId) || agentProcesses.isRunning(taskId)) return
     starting.add(taskId)
     try {
       const task = store.getTask(taskId)
@@ -99,19 +121,105 @@ export function registerTaskExecution(
     }
   }
 
+  const scheduleRetry = (info: ExitInfo): boolean => {
+    const retry = info.result?.retry
+    const task = store.getTask(info.taskId)
+    const state = store.getTaskExecution(info.taskId)
+    const sessionId = info.result?.sessionId
+    if (closing || !retry || !task || !state || !sessionId || task.sessionId !== sessionId ||
+      task.status !== 'running' || agentProcesses.isRunning(task.id) ||
+      !['planning', 'working', 'recovering'].includes(state.phase)) return false
+    const previous = retries.get(task.id)
+    const attempt = (previous?.attempt ?? 0) + 1
+    const deadline = previous?.deadline ?? Date.now() + RECOVERY_WINDOW_MS
+    const backoff = Math.min(2_000 * 2 ** (attempt - 1), 30_000) + Math.floor(Math.random() * 1_000)
+    const afterMs = retry.afterMs !== undefined && Number.isFinite(retry.afterMs) ? Math.max(0, retry.afterMs) : 0
+    const delay = Math.max(afterMs, backoff)
+    if (attempt > MAX_RECOVERY_ATTEMPTS || Date.now() + delay > deadline) {
+      recordSystemEvent(task.id, 'Automatic recovery exhausted. Task will pause for intervention.')
+      return false
+    }
+    const pending: TaskRetry = { attempt, deadline }
+    retries.set(task.id, pending)
+    const stillCurrent = (): boolean => {
+      if (closing || retries.get(task.id) !== pending) return false
+      const current = store.getTask(task.id)
+      const execution = store.getTaskExecution(task.id)
+      return current?.status === 'running' && current.sessionId === sessionId &&
+        current.workspaceId === task.workspaceId && current.projectId === task.projectId &&
+        current.agentId === task.agentId && current.cwd === task.cwd && current.branchName === task.branchName &&
+        execution?.phase === state.phase && execution.currentIssueId === state.currentIssueId
+    }
+    pending.timer = setTimeout(() => {
+      pending.timer = undefined
+      void (async () => {
+        if (!stillCurrent()) {
+          if (retries.get(task.id) === pending) clearRetry(task.id)
+          return
+        }
+        try {
+          if (agentProcesses.isRunning(task.id)) return
+          const issue = state.currentIssueId ? issues.list(task.id).find((item) => item.id === state.currentIssueId) : undefined
+          if (issue?.status === 'review' || issue?.status === 'complete') {
+            await finishTaskTurn({ ...info, code: 0, error: undefined })
+            return
+          }
+          if (issue && issue.status !== 'working') throw new Error(`Issue ${issue.id} is ${issue.status}; recovery stopped.`)
+          const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
+          const agent = getAgent(task.agentId)
+          if (!project || project.path !== state.projectPath || !agent) throw new Error('Task project or agent is unavailable')
+          recordSystemEvent(task.id, `Resuming the saved agent session, attempt ${attempt}/${MAX_RECOVERY_ATTEMPTS}.`)
+          agentProcesses.start({
+            taskId: task.id, issueId: state.currentIssueId ?? undefined,
+            workspace: resolveTaskWorkspace(store, task.id), agent, cwd: task.cwd,
+            projectPath: project.path, model: task.model, reasoningEffort: state.reasoningEffort,
+            resumeSessionId: sessionId,
+            beforeDispatch: () => {
+              if (!stillCurrent()) throw new Error('Task recovery was cancelled or superseded')
+            },
+            prompt: taskRecoveryPrompt(task, state)
+          })
+        } catch (error) {
+          if (!stillCurrent()) return
+          await finishTaskTurn({ taskId: task.id, code: 1, cancelled: false,
+            error: error instanceof Error ? error.message : String(error) })
+        }
+      })()
+    }, delay)
+    pending.timer.unref()
+    recordSystemEvent(task.id, `Temporary agent failure. Retrying in ${Math.ceil(delay / 1000)}s, attempt ${attempt}/${MAX_RECOVERY_ATTEMPTS}: ${info.error ?? 'Connection failed.'}`)
+    return true
+  }
+
   const finishing = new Set<string>()
   const finishTaskTurn = async (info: ExitInfo): Promise<void> => {
     const state = store.getTaskExecution(info.taskId)
     if (!state || store.getTask(info.taskId)?.status !== 'running' || finishing.has(info.taskId)) return
+    if (agentProcesses.isRunning(info.taskId)) return
     if (info.result?.issueId && info.result.issueId !== state.currentIssueId) return
+    // Duplicate exit notifications must not consume the retry budget or timers.
+    if (retries.get(info.taskId)?.timer && !info.cancelled) return
     finishing.add(info.taskId)
     try {
       if (state.phase === 'complete') {
+        clearRetry(info.taskId)
         await finishTask(info)
         return
       }
       if (state.phase === 'blocked') return
-      if (info.cancelled || info.code !== 0) throw new Error(info.error ?? (info.cancelled ? 'Task cancelled.' : 'Agent failed.'))
+      if (info.cancelled) throw new Error('Task cancelled.')
+      if (info.code !== 0) {
+        const currentIssue = info.result?.retry && state.currentIssueId
+          ? issues.list(info.taskId).find((issue) => issue.id === state.currentIssueId) : undefined
+        if (currentIssue?.status === 'review' || currentIssue?.status === 'complete') {
+          recordSystemEvent(info.taskId, 'The issue was submitted before the connection failed. Preserving its review state.')
+          info = { ...info, code: 0, error: undefined }
+        } else {
+          if ((!currentIssue || currentIssue.status === 'working') && scheduleRetry(info)) return
+          throw new Error(info.error ?? 'Agent failed.')
+        }
+      }
+      clearRetry(info.taskId)
       if (state.phase === 'planning') {
         issues.finishPlanning(info.taskId)
       } else if (state.phase === 'recovering') {
@@ -188,6 +296,7 @@ export function registerTaskExecution(
 
   const resumeTask = (taskId: string): TaskExecutionState => {
     requireStoppedTurn(taskId)
+    clearRetry(taskId)
     return issues.resume(taskId)
   }
 

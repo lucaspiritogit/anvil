@@ -3,6 +3,7 @@ import { Readable, Writable } from 'node:stream'
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION, type Client } from '@agentclientprotocol/sdk'
 import { resolveCommand } from './resolve'
 import { closeAgentServer } from './agent-server-process'
+import { AgentTransportError, agentTransportFailure } from './agent-failure'
 import type { WorkspaceExecutionContext } from './workspace-execution'
 import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceEnvironment } from './opencode-workspace'
 
@@ -43,9 +44,9 @@ export class OpenCodeAcpConnection {
       env: { ...(options.workspace ? openCodeWorkspaceEnvironment(options.workspace) : options.environment ?? process.env), PWD: cwd, NO_COLOR: '1', FORCE_COLOR: '0' }
     })
     this.closed = new Promise<void>((resolve) => { this.child.once('close', () => resolve()) })
-    this.child.once('exit', (code, signal) => this.fail(new Error(`OpenCode ACP server exited before completing the turn (${signal ?? code}).`)))
+    this.child.once('exit', (code, signal) => this.fail(new AgentTransportError(`OpenCode ACP server exited before completing the turn (${signal ?? code}).`)))
     for (const stream of [this.child, this.child.stdin, this.child.stdout, this.child.stderr]) {
-      stream.on('error', (error) => this.fail(error))
+      stream.on('error', (error: NodeJS.ErrnoException) => this.fail(agentTransportFailure(error)))
     }
     this.child.stderr.setEncoding('utf8')
     this.child.stderr.on('data', (chunk: string) => {
@@ -58,7 +59,7 @@ export class OpenCodeAcpConnection {
       Writable.toWeb(this.child.stdin),
       Readable.toWeb(this.child.stdout) as ReadableStream<Uint8Array>
     ))
-    void this.rpc.closed.then(() => this.fail(new Error('OpenCode ACP closed its connection')))
+    void this.rpc.closed.then(() => this.fail(new AgentTransportError('OpenCode ACP closed its connection')))
   }
 
   async initialize(): Promise<void> {
@@ -96,6 +97,8 @@ export class OpenCodeAcpConnection {
     this.failureError = error
     this.rejectFailure(error)
   }
+
+  get failureReason(): Error | undefined { return this.failureError }
 
   close(): Promise<void> {
     if (this.closing) return this.closing

@@ -228,6 +228,7 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
     await writeFile(transcript, '')
     const result = await client('success').execute(input, record)
     expect(result.status, result.error).toBe('succeeded')
+    expect(result.retry, 'Native retry notifications must not request another task execution').toBeUndefined()
     expect(result.sessionId).toBe('thread-test')
     expect(result.issueId).toBe('issue-test')
     expect(result.output).toBe(expected)
@@ -352,7 +353,13 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
       expect(failed.status, scenario).toBe('failed')
       expect(failed.error, scenario).toBeTruthy()
       if (scenario === 'failure') expect(failed.error!).toMatch(/Provider rejected/)
+      if (scenario === 'rpc-error' || scenario === 'malformed') expect(failed.retry).toBeUndefined()
+      if (scenario === 'exit' || scenario === 'eof') expect(failed.retry).toEqual({ source: 'transport' })
     }
+    const transient = await client('transient-error').execute(input, record)
+    expect(transient.status).toBe('failed')
+    expect(transient.retry).toEqual({ source: 'provider' })
+    expect(transient.sessionId).toBe('thread-test')
     if (process.platform !== 'win32') expect((await client('orphan').execute(input, () => {})).status).toBe('failed')
     expect((await client('interrupted').execute(input, () => {})).status).toBe('cancelled')
     const startup = await new CodexAppServerClient({ workspace: testWorkspace(),

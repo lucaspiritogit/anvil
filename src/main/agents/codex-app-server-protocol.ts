@@ -25,7 +25,7 @@ export interface CodexTurn {
   id: string
   status: CodexTurnStatus
   items: CodexObject[]
-  error?: { message: string } | null
+  error?: { message: string; codexErrorInfo?: unknown } | null
 }
 
 export type CodexAccount =
@@ -131,7 +131,10 @@ export function codexTurn(value: unknown): CodexTurn {
   return {
     id: codexId(turn.id), status: turn.status as CodexTurnStatus,
     items: turn.items.map(codexObject),
-    error: turn.error == null ? null : { message: codexString(codexObject(turn.error).message) }
+    error: turn.error == null ? null : {
+      message: codexString(codexObject(turn.error).message),
+      codexErrorInfo: codexObject(turn.error).codexErrorInfo
+    }
   }
 }
 

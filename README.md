@@ -1,11 +1,52 @@
 # Anvil
 
-Anvil is a desktop control plane for coding agents: dispatch work in parallel across isolated Git worktrees, follow execution, and review the resulting diffs before they land.
+**A desktop control plane for running coding agents in parallel Git worktrees and reviewing their diffs.**
+
+Anvil gives every task its own branch and worktree, runs an agent there, and hands
+you one cumulative diff to review. No chat window, no turn-by-turn steering: work
+goes in, a diff comes out.
 
 ![Anvil desktop preview](./public/showcase/01-workspace.png)
 
 ![Anvil task preview](./public/showcase/02-agent-at-work.png)
 
+## What it does
+
+- **Runs tasks, not conversations.** Dispatch work to an agent and review the
+  result; there is no chat window in between.
+- **Parallel by default.** Every task gets its own branch and worktree from the
+  project's current commit, so many can run in the same repository at once.
+- **Diff-first review.** Anvil saves one cumulative final diff per task for you
+  to comment on and approve.
+
+## Install
+
+Download the latest DMG from
+[Releases](https://github.com/lucaspiritogit/anvil/releases), open it, drag Anvil
+into Applications, and launch it there. Requires macOS.
+
+The builds are unsigned for now, so macOS may warn on first launch. To build from
+source instead, see [Package for macOS](#package-for-macos).
+
+## Supported agents
+
+Anvil drives agent CLIs already on your PATH, with no hosted backend.
+
+| Agent | Command | Protocol |
+| --- | --- | --- |
+| OpenCode (default) | `opencode` | ACP server over stdio |
+| Codex | `codex` | app-server over stdio |
+
+## How it differs
+
+- **No chat.** There is no window or persona to steer; you dispatch work and
+  review the result.
+- **One task, one worktree.** Parallel tasks never contend for the project
+  checkout, and your local project changes stay put.
+- **One final diff.** You review a single cumulative diff before it lands instead
+  of approving every step.
+- **Local-first.** It runs on your machine against the agent CLIs you already
+  use, with state under `~/.anvil-composer/`.
 
 ## Philosophy
 
@@ -80,7 +121,7 @@ either version. This also isolates its Electron profile. For example:
 ANVIL_DATA_DIR="$(mktemp -d /tmp/anvil-test.XXXXXX)" npm run dev
 ```
 
-### Install on macOS
+### Package for macOS
 
 Build a local installer on the Mac where you will use Anvil:
 

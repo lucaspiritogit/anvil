@@ -1,6 +1,6 @@
 import { test, expect, beforeEach } from 'vitest'
 import type { Issue, Task, TaskExecutionState } from '../src/shared/types'
-import { planningPrompt, implementationPrompt, taskFollowupPrompt, issueReworkPrompt, reviewPrompt, agentRebasePrompt } from '../src/main/agents/task-prompts'
+import { planningPrompt, implementationPrompt, taskFollowupPrompt, taskRecoveryPrompt, issueReworkPrompt, reviewPrompt, agentRebasePrompt } from '../src/main/agents/task-prompts'
 
 const task = 'Use the existing OpenAI SVG'
 const issue: Issue = {
@@ -35,12 +35,10 @@ test('keeps planning concise and queues issues under the task parent', () => {
   expect(planning).toMatch(/Leave the finished plan queued/)
 })
 
-test('plans targeted checks and an ordered full-suite integration checkpoint', () => {
+test('plans targeted checks without requiring a full-validation checkpoint', () => {
   for (const prompt of [planning, taskFollowupPrompt(savedTask, { ...execution, phase: 'planning' }, 'Continue planning')]) {
     expect(prompt).toContain('Give each issue targeted validation commands')
-    expect(prompt).toContain('last implementation issue or a dedicated validation issue')
-    expect(prompt).toContain('dependencies on all implementation issues whose changes it validates')
-    expect(prompt).toContain('Do not repeat full-suite requirements across every issue unless repository instructions require them')
+    expect(prompt).not.toMatch(/full-suite|integration checkpoint|dedicated validation issue/)
     expect(prompt).toContain('Do not claim or implement issues')
   }
 })
@@ -71,9 +69,22 @@ test('requires submitted review through vl and failure evidence', () => {
   expect(implementation).toMatch(/developer review/)
 })
 
+test('recovery preserves task context and later user instructions without duplicating the plan', () => {
+  const prompt = taskRecoveryPrompt(savedTask, execution)
+  expect(prompt).toContain(savedTask.prompt)
+  expect(prompt).toContain(execution.parentIssueId)
+  expect(prompt).toContain(`Continue issue ${issue.id}`)
+  expect(prompt).toContain('latest user instructions in the saved conversation')
+  expect(prompt).toContain('If already submitted, report that result instead of repeating work')
+  const planningRecovery = taskRecoveryPrompt(savedTask, { ...execution, phase: 'planning', currentIssueId: null })
+  expect(planningRecovery).toContain('Leave the finished plan queued without implementing it')
+  expect(planningRecovery).not.toContain('Continue issue')
+})
+
 test.each([
   ['planning', () => planning],
   ['implementation', () => implementation],
+  ['automatic recovery', () => taskRecoveryPrompt(savedTask, execution)],
   ['resumed planning', () => taskFollowupPrompt(savedTask, { ...execution, phase: 'planning' }, 'Continue planning')],
   ['resumed issue', () => taskFollowupPrompt(savedTask, execution, 'Continue implementation')],
   ['resumed scheduling', () => taskFollowupPrompt(savedTask, { ...execution, currentIssueId: null }, 'Unblock the plan')],
@@ -88,8 +99,7 @@ test.each([
   expect(prompt).toContain('pipefail')
   expect(prompt).toContain('Reading existing files or saved logs with tail is fine')
   expect(prompt).toContain('Use targeted tests and checks for the current issue or review changes')
-  expect(prompt).toContain('not by default after every issue')
-  expect(prompt).toContain('Rerun if later changes invalidate that evidence')
+  expect(prompt).not.toMatch(/full-suite|integration checkpoint/)
   expect(prompt).toContain('Honor required repository checks and issue validation; do not skip or weaken them')
 })
 

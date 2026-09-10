@@ -46,6 +46,8 @@ export interface TaskResult {
   usage?: TaskUsage
   stopReason?: string
   error?: string
+  /** Only supplied after a transiently failed turn has ended or its server has stopped. */
+  retry?: { source: 'provider' | 'transport'; afterMs?: number }
 }
 
 export interface TaskSteeringInput {

@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path'
+import { retryableAgentFailure } from './agent-failure'
 import type { AgentExecutor, TaskEvent, TaskInput, TaskResult, TaskSteeringInput } from './agent-executor'
 import { CodexAppServerConnection, CodexRpcError, type CodexAppServerOptions, type ConnectionHandlers } from './codex-app-server-connection'
 import { CodexAppServerOutput } from './codex-app-server-output'
@@ -131,6 +132,7 @@ export class CodexAppServerClient implements AgentExecutor {
     let status: TaskResult['status'] = 'failed'
     let stopReason: string | undefined
     let error: string | undefined
+    let retry: TaskResult['retry']
     let cancelTimer: ReturnType<typeof setTimeout> | undefined
     const queued: Array<{ method: string; params: CodexObject }> = []
     let resolveTurn!: (turn: CodexTurn) => void
@@ -319,10 +321,26 @@ export class CodexAppServerClient implements AgentExecutor {
       const turn = await Promise.race([completed, connection.failure])
       stopReason = turn.status
       status = input.signal?.aborted || turn.status === 'interrupted' ? 'cancelled' : turn.status === 'completed' ? 'succeeded' : 'failed'
-      if (status === 'failed') error = turn.error?.message ?? 'Codex turn failed'
+      if (status === 'failed') {
+        error = turn.error?.message ?? 'Codex turn failed'
+        retry = retryableAgentFailure(turn.error)
+      }
     } catch (failure) {
       status = input.signal?.aborted ? 'cancelled' : 'failed'
-      if (status === 'failed') error = failure instanceof Error ? failure.message : String(failure)
+      if (status === 'failed') {
+        error = failure instanceof Error ? failure.message : String(failure)
+        if (connection?.failureReason) {
+          try {
+            const reason = connection.failureReason
+            await connection.close()
+            retry = retryableAgentFailure(reason)
+          } catch {
+            error += ' Could not stop the failed agent server.'
+          }
+        } else if (startingTurn && failure instanceof CodexRpcError) {
+          retry = retryableAgentFailure(failure)
+        }
+      }
     } finally {
       finished = true
       input.signal?.removeEventListener('abort', cancel)
@@ -336,7 +354,7 @@ export class CodexAppServerClient implements AgentExecutor {
     output.line(status === 'cancelled' ? 'Task cancelled.' : `Codex turn ${status}.`, 'system', 'system')
     return {
       taskId: input.taskId, issueId: input.issueId, status, sessionId: threadId,
-      stopReason, error, output: output.output, changedFiles: [...output.changedFiles], usage: output.usage
+      stopReason, error, retry, output: output.output, changedFiles: [...output.changedFiles], usage: output.usage
     }
   }
 }
