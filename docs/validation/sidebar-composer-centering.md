@@ -22,5 +22,7 @@ Events returned `osascript is not allowed assistive access (-1728)`. No interact
 computer tool is available in this session. Native dragging, actual traffic-light
 clearance, and repeated native sidebar toggles with a draft still require manual
 verification. Browser coverage does not establish native window-drag behavior.
-The issue must remain blocked rather than be submitted with that checklist item
-confirmed.
+The developer subsequently unblocked this task and explicitly instructed
+"submit the review" after receiving this limitation. Review submission proceeds
+under that instruction with native manual verification outstanding; no native
+interaction checks are claimed as passed.
