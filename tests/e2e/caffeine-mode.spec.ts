@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-for (const dismissal of ['Close', 'Escape'] as const) {
+for (const dismissal of ['Back to workspace', 'Escape'] as const) {
   test(`caffeine mode persists after ${dismissal} without Save`, async ({ page }) => {
     await page.goto('/tests/e2e/fixture/')
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -8,8 +8,8 @@ for (const dismissal of ['Close', 'Escape'] as const) {
     await expect(toggle).not.toBeChecked()
     await toggle.check()
 
-    if (dismissal === 'Close') {
-      await page.getByRole('button', { name: 'Close', exact: true }).click()
+    if (dismissal === 'Back to workspace') {
+      await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
     } else if (dismissal === 'Escape') {
       await page.keyboard.press('Escape')
     }
@@ -28,14 +28,14 @@ test('caffeine mode is off by default and saves through settings', async ({ page
   await expect(toggle).not.toBeChecked()
   await toggle.check()
   expect(await page.evaluate(async () => (await window.anvil.settings.get()).caffeineMode)).toBe(true)
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await expect(toggle).toBeChecked()
   await toggle.uncheck()
   await expect.poll(() => page.evaluate(async () => (await window.anvil.settings.get()).caffeineMode)).toBe(false)
 })
 
-for (const dismissal of ['Close', 'Escape'] as const) {
+for (const dismissal of ['Back to workspace', 'Escape'] as const) {
   test(`pending caffeine write survives ${dismissal} and reopening`, async ({ page }) => {
     await page.goto('/tests/e2e/fixture/?settingsControlled')
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -45,7 +45,7 @@ for (const dismissal of ['Close', 'Escape'] as const) {
     expect(await page.evaluate(() => window.settingsTest.calls)).toEqual([{ caffeineMode: true }])
     expect(await page.evaluate(async () => (await window.anvil.settings.get()).caffeineMode)).toBe(false)
 
-    if (dismissal === 'Close') await page.getByRole('button', { name: 'Close', exact: true }).click()
+    if (dismissal === 'Back to workspace') await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
     else await page.keyboard.press('Escape')
     // The main renderer keeps queued writes alive after leaving settings.
     await expect(toggle).not.toBeVisible()
@@ -64,7 +64,7 @@ test('failed caffeine write restores confirmed value and retries after reopening
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const toggle = page.getByRole('checkbox', { name: /Caffeine mode/ })
   await toggle.check()
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
   await page.evaluate(() => window.settingsTest.release(true))
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await expect(toggle).not.toBeChecked()
@@ -120,7 +120,7 @@ test('rapid toggles and interleaved autosaves cannot overwrite the latest choice
   expect(calls[2]).toEqual({ caffeineMode: false })
   expect(calls[3]).toEqual({ caffeineMode: true })
   expect(await page.evaluate(async () => (await window.anvil.settings.get()).caffeineMode)).toBe(true)
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await expect(toggle).toBeChecked()
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Source control', exact: true }).click()
@@ -156,7 +156,7 @@ test('caffeine autosave preserves other autosaved preferences', async ({ page })
   await page.getByRole('checkbox', { name: /Work is done on push/ }).check()
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'General', exact: true }).click()
   await page.getByRole('checkbox', { name: /Caffeine mode/ }).check()
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await expect(page.getByRole('checkbox', { name: /Caffeine mode/ })).toBeChecked()
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Source control', exact: true }).click()

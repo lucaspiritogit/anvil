@@ -116,7 +116,7 @@ export function SettingsPage(): JSX.Element {
   const persist = (patch: Partial<Settings>, draft: Record<string, unknown> = patch): void => {
     if (settings && workspaceId) autosave(workspaceKey, patch, draft)
   }
-  const [saveError, setSaveError] = useState('')
+  const [projectRemovalError, setProjectRemovalError] = useState('')
   const initialSettings = useRef<Partial<Settings> | null>(null)
   const [appearance, setAppearance] = useState<OverviewAppearance>({
     overviewBackgroundMode: 'color', overviewBackgroundColor: '#0d0f12', overviewWallpaperId: null
@@ -175,6 +175,11 @@ export function SettingsPage(): JSX.Element {
           <p className="mb-3 break-words text-xs text-dim" aria-label="Settings workspace">Workspace: {workspaceName}</p>
           <h2 id="settings-section-title" className="text-2xl font-semibold tracking-tight">{currentSection.label}</h2>
           <p className="mb-7 mt-2 text-sm text-dim">{currentSection.description}</p>
+          <div aria-live="polite" className="mb-6 min-w-0 space-y-2 break-words text-xs">
+            {projectRemovalError && <p role="alert" className="text-danger">{projectRemovalError}</p>}
+            {failed.length > 0 && <p role="alert" className="text-danger">Could not save settings. Your changes are retained. <button className={btn.text} onClick={() => failed.forEach(([key]) => retryAutosave(key))}>Retry</button></p>}
+            <span role="status" className={hint}>{saving ? 'Saving settings…' : saved ? caffeineSave ? 'Other settings saved' : 'Saved' : 'Changes save automatically.'}</span>
+          </div>
           {!settings && <p role="status" className="mb-4 text-dim">Loading settings…</p>}
           {(section === 'general' || section === 'source-control') && projects.length > 0 && (
             <label className={cn(field.wrap, 'mb-6')}>
@@ -283,7 +288,7 @@ export function SettingsPage(): JSX.Element {
                     className={btn.danger}
                     onClick={() => {
                       void removeProject(activeProject.id).then(() => setSettingsOpen(false)).catch((error) => {
-                        setSaveError(error instanceof Error ? error.message : 'Could not remove project.')
+                        setProjectRemovalError(error instanceof Error ? error.message : 'Could not remove project.')
                       })
                     }}
                   >
@@ -428,17 +433,6 @@ export function SettingsPage(): JSX.Element {
           </fieldset>
         </div>
       </main>
-      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line px-8 py-4">
-        <div aria-live="polite" className="min-w-0 flex-1 text-xs">
-          {saveError && <p role="alert" className="text-danger">{saveError}</p>}
-          {failed.length > 0 && <p role="alert" className="text-danger">Could not save settings. Your changes are retained. <button className={btn.text} onClick={() => failed.forEach(([key]) => retryAutosave(key))}>Retry</button></p>}
-          <span role="status" className={hint}>{saving ? 'Saving settings…' : saved ? caffeineSave ? 'Other settings saved' : 'Saved' : 'Changes save automatically.'}</span>
-        </div>
-        <div className="flex gap-2">
-          <button className={btn.ghost} onClick={() => setSettingsOpen(false)}>Close</button>
-          <button className={btn.primary} disabled={!settings || saving || failed.length === 0} onClick={() => failed.forEach(([key]) => retryAutosave(key))}>{saving ? 'Saving…' : 'Save'}</button>
-        </div>
-      </footer>
     </div>
   )
 }
