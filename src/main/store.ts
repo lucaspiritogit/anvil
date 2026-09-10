@@ -189,16 +189,20 @@ export class Store {
   private config: RootConfig
   private readonly storage: WorkspaceStorage
   private readonly initializedWorkspaces = new Set<string>()
+  private activityDepth = 0
   private readonly activityListeners = new Set<() => void>()
 
-  /** Observe task membership/status and the setting that controls keeping tasks awake. */
+  /** Observe committed task/issue state and settings that control task activity. */
   subscribeActivity(listener: () => void): () => void {
     this.activityListeners.add(listener)
     return () => { this.activityListeners.delete(listener) }
   }
 
   private activityChanged(): void {
-    for (const listener of this.activityListeners) listener()
+    if (this.activityDepth) return
+    for (const listener of this.activityListeners) {
+      try { listener() } catch (error) { console.warn('Store activity listener failed:', error) }
+    }
   }
 
   hasRunningTasks(workspaceId?: string): boolean {
@@ -671,7 +675,20 @@ export class Store {
 
   /** Share one immediate transaction with the borrowed tracker and execution metadata. */
   transaction<Result>(operation: () => Result, workspaceId = this.getActiveWorkspace().id): Result {
-    return this.workspaceConnection(workspaceId).sqlite.transaction(operation).immediate()
+    const connection = this.workspaceConnection(workspaceId)
+    const changes = () => (connection.sqlite.prepare('SELECT total_changes() AS count').get() as { count: number }).count
+    const before = changes()
+    this.activityDepth++
+    let committed = false
+    try {
+      const result = connection.sqlite.transaction(operation).immediate()
+      committed = true
+      return result
+    } finally {
+      this.activityDepth--
+      // Nested changes are observed only after the outer transaction commits.
+      if (committed && changes() !== before) this.activityChanged()
+    }
   }
 
   getWorkspaceDatabasePath(workspaceId: string): string {
@@ -725,6 +742,7 @@ export class Store {
     const db = this.taskConnection(state.taskId).db
     db.insert(schema.taskExecutions).values({ taskId: state.taskId, state })
       .onConflictDoUpdate({ target: schema.taskExecutions.taskId, set: { state } }).run()
+    this.activityChanged()
     return state
   }
 

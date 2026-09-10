@@ -64,8 +64,10 @@ export function registerProjectHandlers(ipc: RendererIpc, {
       ? (projectMemory as import('../memory/workspace-project-memory').WorkspaceProjectMemory).forWorkspace(workspaceId) : projectMemory
     const projectTasks = store.getTasks(workspaceId).filter((task) => task.projectId === id)
     terminals.dispose(id)
-    for (const task of projectTasks) stopTask(task.id, 'Anvil project removed.')
-    store.removeProject(id, workspaceId)
+    store.transaction(() => {
+      for (const task of projectTasks) stopTask(task.id, 'Anvil project removed.')
+      store.removeProject(id, workspaceId)
+    }, workspaceId)
     for (const task of projectTasks) {
       if (agentProcesses.isRunning(task.id)) agentProcesses.cancel(task.id)
       else void gitDelivery.releaseWorktree(task.id)

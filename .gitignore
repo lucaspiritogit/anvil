@@ -6,6 +6,7 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .env
+/native/mac-notifications/build/
 
 # Playwright
 /test-results/

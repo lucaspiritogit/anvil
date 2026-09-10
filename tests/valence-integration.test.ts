@@ -237,12 +237,15 @@ test('snapshot closes trackers on successful reads and failed parent or child re
   expect(read().children).toEqual([])
   expect(close).toHaveBeenCalledTimes(1)
   store.saveTaskExecution({ ...state, parentIssueId: 'missing-parent' })
+  // Notification observers also open and close trackers when execution changes.
+  close.mockClear()
   expect(read).toThrow(/parent.*not found/i)
-  expect(close).toHaveBeenCalledTimes(2)
+  expect(close).toHaveBeenCalledTimes(1)
   store.saveTaskExecution(state)
+  close.mockClear()
   vi.spyOn(IssueTracker.prototype, 'list').mockImplementationOnce(() => { throw new Error('Cannot read children') })
   expect(read).toThrow('Cannot read children')
-  expect(close).toHaveBeenCalledTimes(3)
+  expect(close).toHaveBeenCalledTimes(1)
   expect(store.getTaskExecution(taskId)).toEqual(state)
 })
 

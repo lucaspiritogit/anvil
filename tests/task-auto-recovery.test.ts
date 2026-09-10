@@ -1,3 +1,7 @@
+import { EventEmitter } from 'node:events'
+import type { NotificationConstructorOptions } from 'electron'
+import { registerTaskNotifications } from '../src/main/task-notifications'
+import { callIssueTool } from '../src/main/issue-tools/server'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
@@ -47,6 +51,14 @@ async function setup() {
   agents.emit('session', { taskId: task.id, sessionId: 'saved-session' })
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   onTestCleanup(() => { vi.useRealTimers() })
+  const notifications: NotificationConstructorOptions[] = []
+  class Notification extends EventEmitter {
+    static isSupported() { return true }
+    constructor(options: NotificationConstructorOptions) { super(); notifications.push(options) }
+    show() {}
+    close() {}
+  }
+  onTestCleanup(registerTaskNotifications(store, Notification))
   const fail = async (retryable = true, afterMs?: number) => {
     agents.active.delete(task.id)
     agents.emit('exit', {
@@ -56,7 +68,7 @@ async function setup() {
     })
     await tick()
   }
-  return { store, agents, git, task, tracker, issue, execution, finish, fail }
+  return { store, agents, git, task, tracker, issue, execution, finish, fail, notifications }
 }
 
 test('recovers the same claimed issue and session before finalization, then waits for review', async () => {
@@ -157,4 +169,34 @@ test.each(['cancel', 'delete', 'shutdown'] as const)('invalidates pending recove
   if (action === 'shutdown') f.agents.emit('closing')
   await vi.advanceTimersByTimeAsync(120_000)
   expect(f.agents.starts).toHaveLength(1)
+})
+
+for (const stage of ['working', 'submitted', 'reviewing'] as const) {
+  test(`cancelling ${stage} work emits one cancelled subtask alert through orchestration`, async () => {
+    const f = await setup()
+    if (stage !== 'working') {
+      callIssueTool(f.store, f.task.id, f.task.workspaceId!, 'anvil_submit_review', {
+        id: f.issue.id, checklist: [true], evidence: 'Validated'
+      })
+      expect(f.notifications.map((n) => n.title)).toEqual(['Subtask ready for review: Implement'])
+    }
+    f.agents.active.delete(f.task.id)
+    if (stage === 'reviewing') await f.execution.finishTaskTurn({ taskId: f.task.id, code: 0, cancelled: false })
+    f.notifications.length = 0
+    await f.execution.finishTaskTurn({ taskId: f.task.id, code: null, cancelled: true })
+    expect(f.notifications).toEqual([{ title: 'Subtask cancelled: Implement', body: `Task · ${f.issue.id}` }])
+    expect(f.tracker.get(f.issue.id).status).toBe('blocked')
+    expect(f.store.getTask(f.task.id)?.status).toBe('cancelled')
+    expect(f.finish).toHaveBeenCalledOnce()
+    await f.execution.finishTaskTurn({ taskId: f.task.id, code: null, cancelled: true })
+    f.store.setSettings({ caffeineMode: true })
+    expect(f.notifications).toHaveLength(1)
+  })
+}
+
+test('permanent orchestration failure alerts blocked once without a duplicate parent pause', async () => {
+  const f = await setup()
+  await f.fail(false)
+  expect(f.notifications).toEqual([{ title: 'Subtask blocked: Implement', body: `Task · ${f.issue.id}` }])
+  expect(f.store.getTask(f.task.id)?.status).toBe('pending')
 })
