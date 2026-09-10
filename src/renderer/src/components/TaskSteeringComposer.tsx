@@ -47,7 +47,7 @@ export function TaskSteeringComposer({ task, hidden = false }: { task: Task; hid
             : task.status === 'pending' || task.status === 'failed' || task.status === 'cancelled' ? 'Help this task continue...' : 'Continue this task...'}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) {
+            if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing) {
               event.preventDefault()
               void send()
             }
