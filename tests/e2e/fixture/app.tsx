@@ -14,6 +14,22 @@ import '../../../src/renderer/src/styles.css'
 const noop = () => {}
 const subscribe = () => noop
 const query = new URLSearchParams(location.search)
+
+// Mirror the preload readiness latch: buffer the signal so a late App effect
+// still observes it, and schedule delivery asynchronously so the skeleton can
+// paint before the shell swaps in.
+type AppReadiness = { ok: true } | { ok: false; message: string }
+let readiness: AppReadiness | null = null
+const readinessHandlers = new Set<(readiness: AppReadiness) => void>()
+const deliverReadiness = (value: AppReadiness): void => {
+  readiness = value
+  for (const handler of [...readinessHandlers]) handler(value)
+}
+const subscribeReadiness = (handler: (readiness: AppReadiness) => void): (() => void) => {
+  readinessHandlers.add(handler)
+  if (readiness) handler(readiness)
+  return () => { readinessHandlers.delete(handler) }
+}
 const now = Date.now()
 let projects: Project[] = ['Anvil', 'Workbench'].map((name, index) => ({
   id: `project-${index}`, name, path: `/tmp/${name.toLowerCase()}`, createdAt: now,
@@ -213,8 +229,8 @@ window.composerTest = {
 window.anvil = {
   platform: query.get('platform') === 'darwin' ? 'darwin' : query.get('platform') === 'win32' ? 'win32' : 'linux',
   app: {
-    onReady: () => noop,
-    onInitFailed: () => noop
+    onReady: (handler: () => void) => subscribeReadiness((value) => { if (value.ok) handler() }),
+    onInitFailed: (handler: (message: string) => void) => subscribeReadiness((value) => { if (!value.ok) handler(value.message) })
   },
   projects: {
     files: async ({ projectId }: { projectId: string }) => {
@@ -507,6 +523,13 @@ window.anvil = {
   },
   terminal: { ensure: async () => ({ data: '$ ', sequence: 0 }), write: noop, resize: noop, onData: subscribe, onExit: subscribe }
 }
+
+const servicesDelay = Number(query.get('servicesDelay') ?? 0)
+setTimeout(() => {
+  deliverReadiness(query.has('servicesFailure')
+    ? { ok: false, message: 'Anvil services failed to start' }
+    : { ok: true })
+}, servicesDelay)
 
 const outputTaskId = query.get('task') ?? 'output'
 const outputTask = tasks.find((task) => task.id === outputTaskId) ?? tasks.find((task) => task.id === 'output')!

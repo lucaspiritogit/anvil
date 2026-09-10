@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useLayoutEffect, useRef } from 'react'
+import { AppSkeleton } from './components/AppSkeleton'
 import { ProjectTerminal } from './components/ProjectTerminal'
 import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
@@ -31,8 +32,15 @@ export function App(): JSX.Element {
   const focusTaskComposer = useStore((s) => s.focusTaskComposer)
   const keybindings = useStore((s) => s.settings?.keybindings) ?? DEFAULT_KEYBINDINGS
 
+  // Main creates the window before its services finish, so the shell must wait
+  // for app:ready before any IPC-backed loading starts. Retry still calls load.
   useEffect(() => {
-    void load()
+    const offReady = window.anvil.app.onReady(() => { void load() })
+    const offInitFailed = window.anvil.app.onInitFailed((message) => useStore.setState({ workspaceError: message }))
+    return () => {
+      offReady()
+      offInitFailed()
+    }
   }, [load])
 
   useEffect(() => {
@@ -124,7 +132,8 @@ export function App(): JSX.Element {
   }, [applyEvent, applyTaskUpdate])
 
   if (!ready) {
-    return <div className="grid place-items-center h-full text-dim">{workspaceError ? <><p role="alert">{workspaceError}</p><button onClick={() => void load()}>Retry</button></> : 'Loading…'}</div>
+    if (!workspaceError) return <AppSkeleton />
+    return <div className="grid place-items-center h-full text-dim"><p role="alert">{workspaceError}</p><button onClick={() => void load()}>Retry</button></div>
   }
 
   // Collapsing closes the grid column while the sidebar slides out behind it,
