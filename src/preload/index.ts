@@ -1,5 +1,7 @@
 import type { WorkspaceAgentAccount } from '../shared/types'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { APP_INIT_FAILED_CHANNEL, APP_READY_CHANNEL, type AppReadiness } from '../shared/app-lifecycle'
+import { createEventLatch } from '../shared/event-latch'
 import type { IpcArgs, IpcInvokeChannel, IpcRequests, IpcSendChannel } from '../shared/ipc-requests'
 import type {
   Workspace,
@@ -35,6 +37,11 @@ ipcRenderer.on('settings:open-requested', () => {
   else settingsOpenPending = true
 })
 
+// Keep startup readiness available if main finishes before React subscribes.
+const appReadiness = createEventLatch<AppReadiness>()
+ipcRenderer.on(APP_READY_CHANNEL, (_event, readiness?: AppReadiness) => appReadiness.deliver(readiness ?? { ok: true }))
+ipcRenderer.on(APP_INIT_FAILED_CHANNEL, (_event, readiness: AppReadiness) => appReadiness.deliver(readiness))
+
 function invoke<C extends IpcInvokeChannel, T>(channel: C, ...args: IpcArgs<C>): Promise<T> {
   return ipcRenderer.invoke(channel, ...args)
 }
@@ -52,6 +59,12 @@ function subscribe<T>(channel: string, handler: (payload: T) => void): () => voi
 const api = {
   /** Drives the platform-dependent half of the keyboard shortcuts. */
   platform: process.platform,
+  app: {
+    onReady: (handler: () => void): (() => void) =>
+      appReadiness.subscribe((readiness) => { if (readiness.ok) handler() }),
+    onInitFailed: (handler: (message: string) => void): (() => void) =>
+      appReadiness.subscribe((readiness) => { if (!readiness.ok) handler(readiness.message) })
+  },
   wallpapers: {
     directory: (workspaceId?: string): Promise<string> => invoke('wallpapers:directory', workspaceId),
     list: (workspaceId?: string): Promise<Wallpaper[]> => invoke('wallpapers:list', workspaceId),

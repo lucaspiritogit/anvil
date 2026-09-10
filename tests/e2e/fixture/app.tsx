@@ -212,6 +212,10 @@ window.composerTest = {
 
 window.anvil = {
   platform: query.get('platform') === 'darwin' ? 'darwin' : query.get('platform') === 'win32' ? 'win32' : 'linux',
+  app: {
+    onReady: () => noop,
+    onInitFailed: () => noop
+  },
   projects: {
     files: async ({ projectId }: { projectId: string }) => {
       const fixture = window.fileMentionTest
