@@ -170,3 +170,12 @@ The remaining acceptance gap is unchanged: a properly signed build on an interac
 macOS desktop must verify allow, deny without repeated prompts, re-enable via System
 Settings, and visible foreground/minimized delivery. These observations are not
 claimed as passing.
+
+## Developer-directed review submission
+
+After the missing native acceptance evidence and rejected partial-checklist
+submission were disclosed, the developer explicitly instructed: “submit the review”.
+The committed implementation is submitted for review with that known limitation.
+Manual native acceptance is deferred to developer review; it has not passed and no
+new native observations are claimed. The recorded test results above remain the
+validation evidence for the unchanged implementation.
