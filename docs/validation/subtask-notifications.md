@@ -77,3 +77,19 @@ proof. The issue must remain blocked rather than confirming its last checklist i
 Anvil rejected an attempted description update with “Issues can only be edited
 during planning”; this issue was already claimed/working. No ownership, dependencies,
 or other issues were changed.
+
+## Developer-directed submission
+
+After the blocker above was disclosed, the developer unblocked this same issue and
+explicitly instructed “use anvil_submit_review”. This supersedes the earlier decision
+to leave it blocked. The issue was verified against the owning task, requeued and
+restarted on its original branch; no other issue was claimed.
+
+Submission accounts for checklist item 8 under that explicit direction with the
+completed automated validation and disclosed native acceptance deferral. It does
+not claim that the missing packaged macOS manual checks passed. Visible native
+review/blocked/cancelled delivery, background/minimized behavior and restart/rework
+acceptance remain unverified and are deferred to developer review. The implementation
+is unchanged from ee46f71; its 99 passing tests and both passing typechecks remain
+the recorded validation. Only this documentation changed, checked with
+`git diff --check`; implementation tests were not rerun unnecessarily.
