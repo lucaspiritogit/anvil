@@ -133,7 +133,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'agents:models': object({ agentId: id, workspaceId: optional(id) }),
   'projects:list': none,
   'projects:add': none,
-  'projects:update': object({ id, monthlyTokenLimit: nullable(number(0)), monthlyCostLimitUsd: nullable(number(0, Number.MAX_SAFE_INTEGER, false)), finishOnPush: boolean }),
+  'projects:update': object({ id, workspaceId: optional(workspaceId), monthlyTokenLimit: optional(nullable(number(0))), monthlyCostLimitUsd: optional(nullable(number(0, Number.MAX_SAFE_INTEGER, false))), finishOnPush: optional(boolean) }),
   'projects:remove': id,
   'projects:reveal': id,
   'projects:git-status': id,

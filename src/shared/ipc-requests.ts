@@ -25,7 +25,7 @@ export interface IpcRequests {
   'agents:models': { agentId: string; workspaceId?: string }
   'projects:list': undefined
   'projects:add': undefined
-  'projects:update': { id: string; monthlyTokenLimit: number | null; monthlyCostLimitUsd: number | null; finishOnPush: boolean }
+  'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean }
   'projects:remove': string
   'projects:reveal': string
   'projects:git-status': string

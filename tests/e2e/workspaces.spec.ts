@@ -120,7 +120,6 @@ test('switching restores project, preferences and history while background tasks
   await page.getByRole('button', { name: 'Display', exact: true }).click()
   await expect(page.getByLabel('Font size', { exact: true })).toHaveValue('14')
   await page.getByLabel('Font size', { exact: true }).selectOption('16')
-  await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(page.getByText('Saved', { exact: true })).toBeVisible()
   await back(page)
   await expect(page.getByRole('searchbox')).toHaveValue('')

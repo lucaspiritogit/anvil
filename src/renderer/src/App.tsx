@@ -114,6 +114,11 @@ export function App(): JSX.Element {
       // Auto-repeat fires while a chord is held down; a shortcut is an action
       // per press, so only the first event of a hold counts.
       if (event.repeat || useStore.getState().workspaceSwitching) return
+      if (event.key === 'Escape' && useStore.getState().settingsOpen) {
+        event.preventDefault()
+        setSettingsOpen(false)
+        return
+      }
       if (matchesAccelerator(event, 'Mod+,')) {
         event.preventDefault()
         if (!settingsOpen) setSettingsOpen(true)
