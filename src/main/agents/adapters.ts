@@ -35,7 +35,7 @@ export const openCodeAdapter: AgentAdapter = {
   id: 'opencode',
   createExecutor: (workspace) => new OpenCodeAcpClient({ workspace }),
   async listModels(agent, workspace, signal) {
-    const launch = openCodeWorkspaceCommand(workspace, ['models', '--verbose'])
+    const launch = openCodeWorkspaceCommand(workspace, ['models', '--refresh', '--verbose'])
     await verifyWorkspaceOpenCode(agent.command, launch.cwd, launch.environment, signal)
     const stdout = await readOpenCodeModelOutput(agent.command, launch.args, launch.cwd, signal, launch.environment)
     const catalogue = parseOpenCodeModels(stdout)
