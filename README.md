@@ -7,7 +7,7 @@ you one cumulative diff to review.
 
 ![Anvil desktop preview](./public/showcase/01-workspace.png)
 
-![Anvil task preview](./public/showcase/02-agent-at-work.png)
+![Anvil demo showing task creation, agent activity, and workspace switching](./public/showcase/anvil-demo.gif)
 
 ## What it does
 
