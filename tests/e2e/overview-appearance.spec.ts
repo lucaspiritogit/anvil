@@ -79,6 +79,71 @@ test('obsolete reads cannot replace a newer image or color, and decode failures 
   await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeEditable()
 })
 
+test('toggling the sidebar neither resizes nor redraws the wallpaper layer', async ({ page }) => {
+  await page.addInitScript(() => {
+    const counter = { draws: 0 }
+    Object.assign(window, { __wallpaperDraws: counter })
+    const original = CanvasRenderingContext2D.prototype.drawImage
+    CanvasRenderingContext2D.prototype.drawImage = function (this: CanvasRenderingContext2D, ...args: unknown[]) {
+      if ((this.canvas as HTMLCanvasElement).dataset.testid === 'overview-wallpaper') counter.draws += 1
+      return (original as (...inner: unknown[]) => unknown).apply(this, args)
+    }
+  })
+  await page.goto(fixture)
+  const wallpaperDraws = (): Promise<number> => page.evaluate(() =>
+    (window as unknown as { __wallpaperDraws: { draws: number } }).__wallpaperDraws.draws)
+
+  const canvas = page.getByTestId('overview-wallpaper')
+  const background = page.getByTestId('overview-background')
+  const composer = page.getByRole('form', { name: 'Start a task' })
+  await expect(canvas).toHaveAttribute('data-src', /data:image/)
+  await expect(background).toBeVisible()
+
+  // Let the first paint and its follow-up resize frame settle before counting.
+  await expect.poll(wallpaperDraws).toBeGreaterThan(0)
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    const counter = (window as unknown as { __wallpaperDraws: { draws: number } }).__wallpaperDraws
+    let last = counter.draws
+    let stable = 0
+    const tick = (): void => {
+      if (counter.draws === last) {
+        if (++stable >= 2) return resolve()
+      } else {
+        stable = 0
+        last = counter.draws
+      }
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }))
+  await page.evaluate(() => { (window as unknown as { __wallpaperDraws: { draws: number } }).__wallpaperDraws.draws = 0 })
+
+  const capture = async () => ({
+    width: await canvas.evaluate((element) => (element as HTMLCanvasElement).width),
+    height: await canvas.evaluate((element) => (element as HTMLCanvasElement).height),
+    src: await canvas.getAttribute('data-src'),
+    box: await background.boundingBox()
+  })
+
+  const expandedWallpaper = await capture()
+  const expandedComposerWidth = (await composer.boundingBox())!.width
+
+  await page.keyboard.press('Control+b')
+  await expect.poll(async () => (await composer.boundingBox())!.width).toBeGreaterThan(expandedComposerWidth)
+  await page.waitForTimeout(250)
+  expect(await capture()).toEqual(expandedWallpaper)
+  expect(await wallpaperDraws()).toBe(0)
+
+  const collapsedComposerWidth = (await composer.boundingBox())!.width
+  expect(collapsedComposerWidth).toBeGreaterThan(expandedComposerWidth)
+
+  await page.keyboard.press('Control+b')
+  await expect.poll(async () => (await composer.boundingBox())!.width).toBeLessThan(collapsedComposerWidth)
+  await page.waitForTimeout(250)
+  expect(await capture()).toEqual(expandedWallpaper)
+  expect(await wallpaperDraws()).toBe(0)
+})
+
 test('a rejected image read preserves the fallback and composer', async ({ page }) => {
   await page.goto(fixture)
   await expect(page.getByTestId('overview-wallpaper')).toHaveAttribute('data-src', /data:image/)
