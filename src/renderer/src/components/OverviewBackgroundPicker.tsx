@@ -1,5 +1,5 @@
 import { useStore } from '../state/store'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { Settings, Wallpaper } from '@shared/types'
 import { loadWallpaper } from '../state/wallpaper-cache'
@@ -20,7 +20,7 @@ function Thumbnail({ wallpaper, refresh, workspaceId }: { wallpaper: Wallpaper; 
   }, [wallpaper.id, refresh, workspaceId])
   return url
     ? <img src={url} alt="" className="h-16 w-full object-cover" />
-    : <span className="flex h-16 items-center justify-center text-xs text-dim">{url === undefined ? 'Loading…' : 'Unavailable. Refresh to retry.'}</span>
+    : <span className="flex h-16 items-center justify-center text-xs text-dim">{url === undefined ? 'Loading…' : 'Image unavailable.'}</span>
 }
 
 export function OverviewBackgroundPicker({ value, onChange }: {
@@ -28,20 +28,41 @@ export function OverviewBackgroundPicker({ value, onChange }: {
   onChange: (value: OverviewAppearance) => void
 }): JSX.Element {
   const workspaceId = useStore((state) => state.activeWorkspaceId) ?? undefined
-  const workspaceName = useStore((state) => state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId)?.name)
   const [library, setLibrary] = useState<Wallpaper[]>([])
-  const [directory, setDirectory] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [revision, setRevision] = useState(0)
   const [page, setPage] = useState(0)
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const requestGeneration = useRef(0)
   useEffect(() => {
-    let cancelled = false
-    void window.anvil.wallpapers.directory(workspaceId).then((path) => {
-      if (!cancelled) setDirectory(path)
-    }, () => { if (!cancelled) setDirectory(null) })
-    return () => { cancelled = true }
-  }, [workspaceId, workspaceName])
+    setImporting(false)
+    setImportError(null)
+    return () => { requestGeneration.current += 1 }
+  }, [workspaceId])
+
+  const addWallpaper = async (): Promise<void> => {
+    const generation = requestGeneration.current
+    setImporting(true)
+    setImportError(null)
+    try {
+      const added = await window.anvil.wallpapers.importImage(workspaceId)
+      if (!added || generation !== requestGeneration.current) return
+      const items = await window.anvil.wallpapers.list(workspaceId)
+      if (generation !== requestGeneration.current) return
+      setLibrary(items)
+      setError(false)
+      const index = items.findIndex((item) => item.id === added.id)
+      setPage(index < 0 ? 0 : Math.floor(index / PAGE_SIZE))
+    } catch (error) {
+      if (generation === requestGeneration.current) {
+        setImportError(error instanceof Error ? error.message : 'Could not add wallpaper. Try another image.')
+      }
+    } finally {
+      if (generation === requestGeneration.current) setImporting(false)
+    }
+  }
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -76,16 +97,20 @@ export function OverviewBackgroundPicker({ value, onChange }: {
           onChange={(event) => onChange({ ...value, overviewBackgroundColor: event.target.value })} />
       </label>
       <p className={field.hint}>This color is also used when an image is unavailable.</p>
-      <p className={cn(field.hint, 'break-all')}>{directory
-        ? <>Drop PNG, JPEG or WebP images into <code>{directory}</code>, then select Refresh.</>
-        : 'Wallpaper folder location is unavailable. Reopen Settings to retry.'}</p>
-      <button type="button" className={btn.ghost} disabled={loading} onClick={() => setRevision((current) => current + 1)}>Refresh</button>
+      <p className={field.hint}>Choose a PNG, JPEG or WebP image from your computer.</p>
+      <button type="button" className={btn.ghost} disabled={loading || importing} onClick={() => void addWallpaper()}>
+        {importing ? 'Adding image…' : 'Add image…'}
+      </button>
+      {importError && <p role="alert">{importError}</p>}
       {loading ? <p role="status">Loading wallpapers…</p> : error ? (
-        <p role="alert">Cannot read the wallpaper folder. Check folder permissions, then Refresh to retry.</p>
+        <div>
+          <p role="alert">Cannot load wallpapers. Check folder permissions and try again.</p>
+          <button type="button" className={btn.ghost} disabled={importing} onClick={() => setRevision((current) => current + 1)}>Retry</button>
+        </div>
       ) : <>
-        {library.length === 0 && <p role="status">No supported images found. Add images to the folder, then Refresh.</p>}
+        {library.length === 0 && <p role="status">No wallpapers yet. Choose Add image to get started.</p>}
         {value.overviewWallpaperId && !library.some((item) => item.id === value.overviewWallpaperId) && (
-          <p role="status" className="break-words">Selected image {value.overviewWallpaperId} is unavailable. Restore it and Refresh, or choose another image. The background color will be used until it is available.</p>
+          <p role="status" className="break-words">Selected image {value.overviewWallpaperId} is unavailable. Add it again or choose another image. The background color will be used until it is available.</p>
         )}
         {value.overviewBackgroundMode === 'image' && library.length > 0 && <>
           <div className="my-3 grid min-w-0 grid-cols-3 gap-2" aria-label="Wallpapers">

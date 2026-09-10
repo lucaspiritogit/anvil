@@ -5,10 +5,11 @@ import { invalidateWorkspaceModels, closeModelDiscovery, pauseWorkspaceModelDisc
 import { watchWorkspaceAuthChanges } from './agents/workspace-auth-changes'
 import { resolveTaskWorkspace } from './agents/workspace-execution'
 import { WallpaperLibrary } from './wallpapers'
-import { app, BrowserWindow, powerSaveBlocker } from 'electron'
+import { app, BrowserWindow, Notification, powerSaveBlocker } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerCaffeineMode } from './caffeine-mode'
+import { registerTaskNotifications } from './task-notifications'
 import { AgentProcessManager } from './agents/process-manager'
 import { GitDeliveryManager } from './git-delivery'
 import { registerAgentHandlers } from './ipc/agents'
@@ -67,6 +68,7 @@ export function registerIpc(
   const agentProcesses = new AgentProcessManager(undefined, undefined, undefined,
     (taskId) => resolveTaskWorkspace(store, taskId), (taskId) => issueTools.open(taskId))
   const stopCaffeineMode = registerCaffeineMode(store, powerSaveBlocker)
+  const stopTaskNotifications = registerTaskNotifications(store, Notification)
   const worktreeOwners = new Map<string, string>()
   const rememberWorktreeOwners = (): void => {
     for (const task of store.getTasks()) worktreeOwners.set(task.id, task.workspaceId)
@@ -217,6 +219,7 @@ export function registerIpc(
     },
     terminals, githubPolling, stopCaffeineMode,
     closeStore: () => {
+      stopTaskNotifications()
       stopAuthWatcher()
       stopRememberingWorktreeOwners()
       store.close()

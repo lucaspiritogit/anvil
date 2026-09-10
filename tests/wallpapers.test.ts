@@ -44,6 +44,30 @@ test('creates an empty singular wallpaper folder', async () => {
   expect(await new WallpaperLibrary(root).list(), 'Creates an empty singular wallpaper folder').toStrictEqual([])
 })
 
+test('imports a selected image and lists it immediately without overwriting a matching name', async () => {
+  const { library, outside, folder } = await setupWallpapers()
+  const original = await readFile(outside)
+  const first = await library.importImage(outside)
+  const second = await library.importImage(outside)
+  expect(first.id).toBe('outside.png')
+  expect(second.id).not.toBe(first.id)
+  for (const imported of [first, second]) {
+    expect(await readFile(join(folder, imported.id))).toEqual(original)
+    expect(await library.list()).toContainEqual(imported)
+    expect(await library.read(imported.id)).toMatch(/^data:image\/webp;base64,/)
+  }
+  expect(await readFile(outside)).toEqual(original)
+})
+
+test('rejects invalid selected images before adding files to the library', async () => {
+  const { library, folder } = await setupWallpapers()
+  const before = await library.list()
+  for (const id of ['corrupt.png', 'large.png', 'wide.png', 'pixels.png', 'truncated.png', 'disguised.png']) {
+    await expect(library.importImage(join(folder, id))).rejects.toThrow(/Choose a valid/)
+  }
+  expect(await library.list()).toEqual(before)
+})
+
 test('orders supported images and returns fully decoded WebP permitted by the CSP', async () => {
   const { library } = await setupWallpapers()
   const expected = ['A.jpeg', 'space name.webp', 'z.png']

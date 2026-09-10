@@ -105,6 +105,7 @@ const composer = object({ agentId: text(128, false), modelsByAgent: stringRecord
 const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'wallpapers:directory': optional(workspaceId),
   'wallpapers:list': optional(workspaceId),
+  'wallpapers:import': optional(workspaceId),
   'wallpapers:read': (value, field) => typeof value === 'string'
     ? text(255, true, WALLPAPER_ID_PATTERN)(value, field)
     : object({ workspaceId, id: text(255, true, WALLPAPER_ID_PATTERN) })(value, field),

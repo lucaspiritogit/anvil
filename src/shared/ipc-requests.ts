@@ -4,6 +4,7 @@ import type { AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, Pull
 export interface IpcRequests {
   'wallpapers:directory': string | undefined
   'wallpapers:list': string | undefined
+  'wallpapers:import': string | undefined
   'wallpapers:read': string | { workspaceId: string; id: string }
   'settings:get': string | undefined
   'settings:set': { workspaceId: string; patch: Partial<Settings> }

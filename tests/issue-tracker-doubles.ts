@@ -10,6 +10,9 @@ export const testHome = process.env.ANVIL_TEST_HOME ?? realpathSync(mkdtempSync(
 export const handlers = new Map<string, (...args: any[]) => any>()
 export const app = { isPackaged: true, getPath: () => testHome, getAppPath: () => process.cwd() }
 export const powerSaveBlocker = { start: () => 0, stop: () => true }
+export class Notification {
+  static isSupported(): boolean { return false }
+}
 export const ipcMain = {
   handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler),
   on: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler)

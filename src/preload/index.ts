@@ -68,6 +68,7 @@ const api = {
   wallpapers: {
     directory: (workspaceId?: string): Promise<string> => invoke('wallpapers:directory', workspaceId),
     list: (workspaceId?: string): Promise<Wallpaper[]> => invoke('wallpapers:list', workspaceId),
+    importImage: (workspaceId?: string): Promise<Wallpaper | null> => invoke('wallpapers:import', workspaceId),
     read: (id: string, workspaceId?: string): Promise<string | null> => invoke('wallpapers:read', workspaceId ? { id, workspaceId } : id)
   },
   settings: {

@@ -1,6 +1,7 @@
 import { constants, mkdirSync, realpathSync } from 'node:fs'
-import { lstat, open, readdir, realpath } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { lstat, open, readdir, realpath, writeFile } from 'node:fs/promises'
+import { basename, extname, join, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { isWallpaperId } from '../shared/appearance'
 import type { Wallpaper } from '../shared/types'
@@ -44,9 +45,8 @@ export class WallpaperLibrary {
     }
   }
 
-  private async load(id: string): Promise<{ wallpaper: Wallpaper; dataUrl: string } | null> {
+  private async load(id: string, path = join(this.directory, id)): Promise<{ wallpaper: Wallpaper; dataUrl: string; bytes: Buffer } | null> {
     if (!isWallpaperId(id) || id.length > 255) return null
-    const path = join(this.directory, id)
     try {
       if (await realpath(path) !== path) return null
       // NOFOLLOW rejects a file swapped for a symlink between checking and opening.
@@ -78,10 +78,30 @@ export class WallpaperLibrary {
       const output = await image.rotate().resize({ width: 2560, height: 2560, fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 85 }).toBuffer()
       if (output.length > MAX_WALLPAPER_BYTES) return null
-      return { wallpaper: { id, name: id, width, height }, dataUrl: `data:image/webp;base64,${output.toString('base64')}` }
+      return { wallpaper: { id, name: id, width, height }, dataUrl: `data:image/webp;base64,${output.toString('base64')}`, bytes }
     } catch {
       return null
     }
+  }
+
+  /** Only main-process file picker results may supply a source path. */
+  importImage(sourcePath: string): Promise<Wallpaper> {
+    return this.serialize(async () => {
+      if (!await this.availableDirectory()) throw new Error('Cannot write to the wallpaper folder')
+      const name = basename(sourcePath)
+      const loaded = await this.load(name, await realpath(sourcePath))
+      if (!loaded) throw new Error('Choose a valid PNG, JPEG or WebP image up to 10 MB and 8192 pixels per side, with no more than 16 megapixels.')
+      let id = name
+      try {
+        await writeFile(join(this.directory, id), loaded.bytes, { flag: 'wx' })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        const extension = extname(name)
+        id = `${basename(name, extension).slice(0, 40)}-${randomUUID()}${extension}`
+        await writeFile(join(this.directory, id), loaded.bytes, { flag: 'wx' })
+      }
+      return { ...loaded.wallpaper, id, name: id }
+    })
   }
 
   list(): Promise<Wallpaper[]> {

@@ -335,6 +335,7 @@ window.anvil = {
     openUrl: async (url: string) => { window.dispatchEvent(new CustomEvent('fixture:pr-url', { detail: url })) }
   },
   wallpapers: {
+    importImage: async () => null,
     directory: async () => '/test/.anvil-composer-dev/wallpaper',
     list: async () => {
       while (window.wallpaperTest.loading) await new Promise((resolve) => setTimeout(resolve, 20))
