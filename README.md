@@ -2,7 +2,10 @@
 
 Anvil is a desktop control plane for coding agents: dispatch work in parallel across isolated Git worktrees, follow execution, and review the resulting diffs before they land.
 
-![Anvil desktop preview](https://github.com/user-attachments/assets/27a47d7f-0e50-4826-a5ac-34ebbed9469a)
+![Anvil desktop preview](./public/showcase/01-workspace.png)
+
+![Anvil task preview](./public/showcase/02-agent-at-work.png)
+
 
 ## Philosophy
 
