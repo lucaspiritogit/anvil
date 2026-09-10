@@ -60,7 +60,10 @@ test('scopes auth commands, model catalogues and image probes to Work and Person
       expect(spawn.environment).toMatchObject({ HOME: workspace.home, XDG_DATA_HOME: join(workspace.directory, 'data'),
         XDG_CONFIG_HOME: join(workspace.directory, 'config'), XDG_CACHE_HOME: join(workspace.directory, 'cache'),
         XDG_STATE_HOME: join(workspace.directory, 'state'), OPENCODE_PURE: 'true' })
-      expect(JSON.parse(spawn.environment!.OPENCODE_CONFIG_CONTENT!)).toEqual({ enabled_providers: ['openai', 'anthropic', 'openrouter', 'opencode', 'opencode-go'] })
+      expect(JSON.parse(spawn.environment!.OPENCODE_CONFIG_CONTENT!)).toEqual({
+        enabled_providers: ['openai', 'anthropic', 'openrouter', 'opencode', 'opencode-go'],
+        permission: { external_directory: 'allow' }
+      })
       for (const name of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AWS_PROFILE', 'OPENCODE_AUTH_CONTENT', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'OPENCODE_DB', 'OPENCODE_TEST_HOME']) {
         expect(spawn.environment?.[name], name).toBeUndefined()
       }

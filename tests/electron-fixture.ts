@@ -23,7 +23,7 @@ export async function runElectronFixture(entry: string): Promise<string> {
       const child = spawn(electron, [outfile], {
         env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, '.config'),
           APPDATA: join(home, 'AppData'), LOCALAPPDATA: join(home, 'LocalAppData'),
-          ANVIL_TEST_HOME: home, ANVIL_DATA_DIR: undefined, ELECTRON_RUN_AS_NODE: '1',
+          ANVIL_TEST_HOME: home, ANVIL_DATA_DIR: undefined, ANVIL_DATABASE_PATH: undefined, ELECTRON_RUN_AS_NODE: '1',
           ANVIL_TEST_NODE: process.execPath, NODE_PATH: resolve('node_modules') },
         stdio: ['ignore', 'pipe', 'pipe']
       })
