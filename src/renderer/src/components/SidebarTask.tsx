@@ -1,4 +1,4 @@
-import type { JSX } from 'react'
+import type { ComponentPropsWithRef, JSX } from 'react'
 import { useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
@@ -42,13 +42,14 @@ function relativeAge(timestamp: number, now: number): string {
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`
 }
 
-export function SidebarTask({ task, snapshot, project, now, active, compact = false }: {
+export function SidebarTask({ task, snapshot, project, now, active, compact = false, rowProps }: {
   task: Task
   snapshot?: TaskIssueSnapshot | null
   project?: Project
   now: number
   active: boolean
   compact?: boolean
+  rowProps?: ComponentPropsWithRef<'li'> & { 'data-index'?: number }
 }): JSX.Element {
   const view = useStore((state) => state.view)
   const parentActive = active && view.kind === 'task' && !view.issueId
@@ -63,7 +64,8 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
     if (next) expandedSubtasks.add(task.id)
     else expandedSubtasks.delete(task.id)
   }
-  const hasChildren = Boolean(snapshot && snapshot.children.length > 0)
+  const childCount = snapshot?.children.length ?? 0
+  const hasChildren = childCount > 0
   const showChildren = compact || expanded
   const eligible = canSettleTask(task)
   const deadline = settlementDeadline(task)
@@ -93,7 +95,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   }
 
   return (
-    <li>
+    <li {...rowProps}>
       <article
         className={cn(
           'group relative transition-colors',
@@ -124,29 +126,6 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
                   <span className="truncate">{project?.name ?? 'Project'}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1">
-                  {hasChildren && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      aria-expanded={expanded}
-                      aria-controls={`subtasks-${task.id}`}
-                      aria-label={`${expanded ? 'Collapse' : 'Expand'} subtasks: ${task.title}`}
-                      className="grid place-items-center rounded text-dim hover:text-fg focus-visible:outline focus-visible:outline-accent"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        toggleExpanded()
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.stopPropagation()
-                          event.preventDefault()
-                          toggleExpanded()
-                        }
-                      }}
-                    >
-                      <HugeiconsIcon icon={ArrowDown01Icon} size={12} className={cn('transition-transform', !expanded && '-rotate-90')} aria-hidden="true" />
-                    </span>
-                  )}
                   <span className={cn('shrink-0 text-[11px]', indicator?.tone, eligible && 'group-hover:invisible group-focus-within:invisible')}>
                     {indicator?.label ?? (task.status === 'pending' ? 'Pending' : task.status === 'cancelled' ? 'Cancelled' : relativeAge(task.endedAt ?? task.startedAt, now))}
                   </span>
@@ -173,6 +152,19 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           </button>
         )}
         {error && <p role="alert" className="px-3 pb-2 text-xs text-danger">{error}</p>}
+        {!compact && hasChildren && (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={`subtasks-${task.id}`}
+            aria-label={`${expanded ? 'Collapse' : 'Expand'} subtasks: ${task.title}`}
+            className="flex w-full items-center justify-between gap-2 border-t border-line px-3 py-1.5 text-xs text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent"
+            onClick={toggleExpanded}
+          >
+            <span>{childCount} {childCount === 1 ? 'subtask' : 'subtasks'}</span>
+            <HugeiconsIcon icon={ArrowDown01Icon} size={20} className={cn('transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
+          </button>
+        )}
       </article>
       {hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="ml-4 mr-2 mt-1 mb-2 border-l border-line pl-2 space-y-1">
         {snapshot?.children.map((issue) => <li key={issue.id}>

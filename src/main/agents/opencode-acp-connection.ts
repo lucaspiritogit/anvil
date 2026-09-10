@@ -31,6 +31,7 @@ export class OpenCodeAcpConnection {
   private stderr = ''
   supportsLoadSession = false
   supportsImages = false
+  supportsHttpMcp = false
 
   constructor(cwd: string, private readonly options: OpenCodeAcpOptions, client: Client, private readonly diagnostic: (text: string) => void) {
     const command = options.command ?? 'opencode'
@@ -71,6 +72,7 @@ export class OpenCodeAcpConnection {
         clientCapabilities: {}
       }), this.failure])
       if (initialized.protocolVersion !== PROTOCOL_VERSION) throw new Error(`Unsupported ACP version: ${initialized.protocolVersion}`)
+      this.supportsHttpMcp = initialized.agentCapabilities?.mcpCapabilities?.http === true
       this.supportsImages = initialized.agentCapabilities?.promptCapabilities?.image === true
       this.supportsLoadSession = Boolean(initialized.agentCapabilities?.loadSession)
     } finally {

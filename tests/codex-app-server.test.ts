@@ -199,7 +199,7 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
   const record = (event: TaskEvent): void => { events.push(event) }
   const requests = async (): Promise<any[]> => (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
   const outputEvents = () => events.filter((event) => event.type === 'output').map((event) => event.event)
-  const expected = 'Done ✓\nCompleted issue-test through vl. Tests passed.'
+  const expected = 'Done ✓\nCompleted issue-test through anvil_submit_review. Tests passed.'
   try {
     const discoveryClient = client('models')
     expect(await discoveryClient.listModels(directory)).toStrictEqual({
@@ -252,8 +252,7 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
       'memories.use_memories': false,
       'memories.generate_memories': false,
       'features.recommended_plugins': false,
-      tool_output_token_limit: 3000,
-      'shell_environment_policy.set.PATH': process.env.PATH ?? ''
+      tool_output_token_limit: 3000
     })
     expect(initial[5].params.input, 'Only the task prompt is sent, not the persisted event log').toStrictEqual([{ type: 'text', text: input.prompt, text_elements: [] }])
     expect(initial[5].params.cwd).toBe(directory)
@@ -268,10 +267,11 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
       { resumeSessionId: 'thread-test', reasoningEffort: undefined }
     ]) {
       await writeFile(transcript, '')
-      const configured = await client('success').execute({ ...input, model: 'reasoner', reasoningEffort, resumeSessionId }, () => {})
+      const configured = await client('success').execute({ ...input, model: 'reasoner', reasoningEffort, resumeSessionId, issueTools: { url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: 'Bearer turn-token' } } }, () => {})
       expect(configured.status, configured.error).toBe('succeeded')
       const calls = await requests()
       const thread = calls.find((entry) => entry.method === (resumeSessionId ? 'thread/resume' : 'thread/start'))
+      expect(thread.params.config['mcp_servers.anvil_issue_tracker']).toEqual({ url: 'http://127.0.0.1:1234/mcp', http_headers: { Authorization: 'Bearer turn-token' }, required: true })
       expect(thread.params.config.model_reasoning_effort).toBe(reasoningEffort)
       expect('model_reasoning_effort' in thread.params.config).toBe(reasoningEffort !== undefined)
       expect(thread.params.threadId).toBe(resumeSessionId)

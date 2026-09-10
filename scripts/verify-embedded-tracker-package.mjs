@@ -8,10 +8,11 @@ if (!application) throw new Error('Usage: node scripts/verify-embedded-tracker-p
 const archive = join(application, 'Contents/Resources/app.asar')
 const entries = listPackage(archive)
 assert(!entries.some((entry) => /^\/out\/valence(?:\/|$)/.test(entry)), 'Package still ships the obsolete standalone Valence distribution')
-for (const path of ['out/main/index.js', 'out/main/valence-cli.js']) {
+assert(!entries.some((entry) => entry.endsWith('/valence-cli.js')), 'Package still ships the removed CLI')
+for (const path of ['out/main/index.js']) {
   const code = extractFile(archive, path).toString()
   assert(!/importLegacyPlans|Legacy parent missing|legacy-import\.ts/.test(code), `${path} still contains the standalone importer`)
   assert(!/['"]\.config['"],\s*['"]valence['"]|\.config\/valence/.test(code), `${path} still references standalone config storage`)
-  assert(code.includes('ANVIL_DATABASE_PATH'), `${path} must pin the CLI to Anvil's database`)
+  assert(code.includes('anvil_get_plan'), `${path} must include the issue tools`)
 }
 console.log('Package passed: embedded Anvil SQLite only; no standalone Valence distribution or importer')

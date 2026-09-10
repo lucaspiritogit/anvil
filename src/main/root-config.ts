@@ -46,7 +46,7 @@ export function readRootConfig(filename: string): RootConfig {
   }
 }
 
-/** Publish a complete file so CLI readers never see a partially written selection. */
+/** Publish a complete file so readers never see a partially written selection. */
 export function writeRootConfig(filename: string, config: RootConfig): void {
   mkdirSync(dirname(filename), { recursive: true, mode: 0o700 })
   const temporary = `${filename}.${randomUUID()}.tmp`

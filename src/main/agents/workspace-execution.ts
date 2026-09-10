@@ -15,7 +15,7 @@ export interface WorkspaceExecutionContext {
 // Start with runtime variables, rather than trying to enumerate every provider's
 // credentials. In particular, do not inherit API keys, config overrides, cloud
 // credential chains, NODE_OPTIONS, or an external agent's session pointers.
-const RUNTIME_VARIABLE = /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|COMSPEC|TEMP|TMP|TMPDIR|LANG|LANGUAGE|LC_[A-Z_]+|TZ|TERM|COLORTERM|USER|USERNAME|LOGNAME|SHELL|SSH_AUTH_SOCK|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|SSL_CERT_FILE|SSL_CERT_DIR|NODE_EXTRA_CA_CERTS|CODEX_CA_CERTIFICATE|OPENCODE_GIT_BASH_PATH|GIT_AUTHOR_NAME|GIT_AUTHOR_EMAIL|GIT_COMMITTER_NAME|GIT_COMMITTER_EMAIL|ANVIL_DATABASE_PATH)$/i
+const RUNTIME_VARIABLE = /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|COMSPEC|TEMP|TMP|TMPDIR|LANG|LANGUAGE|LC_[A-Z_]+|TZ|TERM|COLORTERM|USER|USERNAME|LOGNAME|SHELL|SSH_AUTH_SOCK|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|SSL_CERT_FILE|SSL_CERT_DIR|NODE_EXTRA_CA_CERTS|CODEX_CA_CERTIFICATE|OPENCODE_GIT_BASH_PATH|GIT_AUTHOR_NAME|GIT_AUTHOR_EMAIL|GIT_COMMITTER_NAME|GIT_COMMITTER_EMAIL)$/i
 
 function seedGitIdentity(home: string, inherited: NodeJS.ProcessEnv): void {
   const path = join(home, '.gitconfig')
@@ -50,7 +50,6 @@ export function resolveWorkspaceExecution(
     if (RUNTIME_VARIABLE.test(key) && value !== undefined) environment[key] = value
   }
   Object.assign(environment, {
-    ANVIL_DATABASE_PATH: join(directory, 'anvil.db'),
     HOME: home,
     USERPROFILE: home,
     CODEX_HOME: codexHome,

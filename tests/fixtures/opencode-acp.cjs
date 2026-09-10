@@ -55,7 +55,7 @@ function finish() {
   update({ sessionUpdate: 'tool_call', toolCallId: 'test', title: 'Run tests', kind: 'execute', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'Tests passed' } }] })
   update({ sessionUpdate: 'plan', entries: [{ content: 'Implement issue', priority: 'high', status: 'completed' }] })
   update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Wrong session' } }, 'other-session')
-  const output = 'Done ✓\nCompleted issue-test through vl. Tests passed.'
+  const output = 'Done ✓\nCompleted issue-test through anvil_submit_review. Tests passed.'
   // Model deltas can split anywhere in the final summary.
   for (const character of output) text(character)
   update({ sessionUpdate: 'usage_update', used: 9999, size: 100000, cost: { amount: 0.25, currency: 'USD' } })
@@ -77,7 +77,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (message.method === 'initialize') {
     if (scenario === 'startup-hang') return
     initialized = true
-    respond(message.id, { protocolVersion: scenario === 'version' ? 999 : 1, agentCapabilities: { loadSession: scenario !== 'no-resume', promptCapabilities: { image: scenario !== 'image-unsupported' } } })
+    respond(message.id, { protocolVersion: scenario === 'version' ? 999 : 1, agentCapabilities: { mcpCapabilities: { http: scenario !== 'no-http-mcp' }, loadSession: scenario !== 'no-resume', promptCapabilities: { image: scenario !== 'image-unsupported' } } })
   } else if (message.method === 'session/new' || message.method === 'session/load') {
     if (!initialized || (scenario !== 'read-only-config-draft' && (realpathSync(message.params.cwd) !== process.cwd() || realpathSync(process.env.PWD) !== process.cwd()))) process.exit(9)
     if (message.method === 'session/load') {

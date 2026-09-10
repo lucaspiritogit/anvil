@@ -141,15 +141,20 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       }
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
       startupTimer = setTimeout(() => connection?.fail(new Error('OpenCode ACP session startup timed out.')), this.options.startupTimeoutMs ?? 60_000)
+      const mcpServers = input.issueTools ? [{
+        type: 'http' as const, name: 'anvil_issue_tracker', url: input.issueTools.url,
+        headers: Object.entries(input.issueTools.headers).map(([name, value]) => ({ name, value }))
+      }] : []
+      if (input.issueTools && !connection.supportsHttpMcp) throw new Error('OpenCode must support HTTP MCP servers to use Anvil issue tools. Update OpenCode.')
       let configOptions: SessionConfigOption[] = []
       if (input.resumeSessionId) {
         if (!connection.supportsLoadSession) throw new Error('OpenCode does not support loading sessions')
         sessionId = input.resumeSessionId
         // Loading replays history. Do not count it as this turn's evidence.
-        const session = await request(connection.rpc.loadSession({ sessionId, cwd: input.cwd, mcpServers: [] }))
+        const session = await request(connection.rpc.loadSession({ sessionId, cwd: input.cwd, mcpServers }))
         configOptions = session.configOptions ?? []
       } else {
-        const session = await request(connection.rpc.newSession({ cwd: input.cwd, mcpServers: [] }))
+        const session = await request(connection.rpc.newSession({ cwd: input.cwd, mcpServers }))
         sessionId = session.sessionId
         configOptions = session.configOptions ?? []
         if (input.readOnly) {

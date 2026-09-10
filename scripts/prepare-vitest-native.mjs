@@ -3,7 +3,7 @@
 // Vitest runs on host Node, so it needs a separately compiled SQLite addon.
 // This script builds that copy in node_modules/.anvil-vitest-native; the test setup
 // in tests/vitest.setup.ts loads it while Electron keeps its installed binary.
-// Reuse requires a matching package version, Node ABI, platform and architecture,
+// Reuse requires a matching package version, exact Node version, ABI, platform and architecture,
 // plus a successful database open. A missing or unusable copy is rebuilt locally.
 // See docs/testing/vitest-migration.md for native prerequisites and cleanup.
 
@@ -21,7 +21,8 @@ if (!(major === 22 && minor >= 12 || major === 24 || major >= 26)) {
 const source = resolve('node_modules/better-sqlite3')
 const destination = resolve('node_modules/.anvil-vitest-native/better-sqlite3')
 const version = JSON.parse(await readFile(join(source, 'package.json'), 'utf8')).version
-const fingerprint = `${version}:${process.versions.modules}:${process.platform}:${process.arch}`
+// Node header changes can affect native behavior without changing the module ABI.
+const fingerprint = `${version}:${process.versions.node}:${process.versions.modules}:${process.platform}:${process.arch}`
 const stamp = join(destination, '.anvil-runtime')
 let ready = false
 try {

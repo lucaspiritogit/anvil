@@ -18,7 +18,7 @@ process.env.ANVIL_TEST_NODE = process.execPath
 delete process.env.ANVIL_DATA_DIR
 const suiteEnvironment = { ...process.env }
 
-// Both Vite imports and Valence's external CommonJS require use the same real
+// Both Vite imports and bundled CommonJS modules use the same real
 // host-native SQLite constructor. Electron subprocesses keep their own addon.
 const require = createRequire(import.meta.url)
 const sqliteId = require.resolve('better-sqlite3')

@@ -6,6 +6,7 @@ export interface TaskInput {
   taskId: string
   workspace: WorkspaceExecutionContext
   issueId?: string
+  issueTools?: { url: string; headers: Record<string, string> }
   prompt: string
   images?: TaskImageAttachment[]
   /** Absolute task working directory. */

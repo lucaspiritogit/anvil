@@ -16,7 +16,7 @@ export function taskState(store: Store, taskId: string) {
   }
 }
 
-/** Agent-side connection: never constructs Store or runs startup recovery. */
+/** Independent test connection: never constructs Store or runs startup recovery. */
 export function openTaskTracker(projectPath: string, databasePath = join(testHome, '.anvil-composer/workspaces/Default/anvil.db')): IssueTracker {
   const connection = new Database(databasePath, { fileMustExist: true })
   try {

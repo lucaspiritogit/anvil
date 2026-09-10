@@ -54,7 +54,7 @@ test('captures immutable profiles without inheriting provider credentials or glo
   inherited.OPENAI_API_KEY = 'changed-secret'
   expect(context.workspaceId).toBe(work)
   expect(context.environment).toMatchObject({ PATH: '/runtime/bin', HTTPS_PROXY: 'http://proxy:8080',
-    LANG: 'en_US.UTF-8', ANVIL_DATABASE_PATH: store.getWorkspaceDatabasePath(work), HOME: context.home, CODEX_HOME: context.codexHome })
+    LANG: 'en_US.UTF-8', HOME: context.home, CODEX_HOME: context.codexHome })
   for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AWS_PROFILE', 'AWS_ACCESS_KEY_ID',
     'GOOGLE_APPLICATION_CREDENTIALS', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_CONTENT', 'NODE_OPTIONS', 'GIT_CONFIG_GLOBAL']) {
     expect(context.environment[key], key).toBeUndefined()
@@ -137,6 +137,9 @@ test('resumes an old session after switching and SQLite restart with its saved o
   store.close()
   const restarted = new Store(database, { migrationsFolder: resolve('src/main/db/migrations') })
   onTestCleanup(() => restarted.close())
+  expect(restarted.getTask(task.id)).toBeUndefined()
+  restarted.selectWorkspace(work)
+  restarted.selectWorkspace(personal)
   const inputs: TaskInput[] = []
   const executor: AgentExecutor = {
     async execute(input) {

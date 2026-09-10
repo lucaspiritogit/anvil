@@ -195,32 +195,6 @@ Repository database commands and `npm run memory:inspect` default to development
 storage. Set `ANVIL_DATA_DIR="$HOME/.anvil-composer"` explicitly to maintain the
 packaged app's data after quitting that app.
 
-### Agent issue commands
-
-Anvil builds `vl` from `src/main/valence/cli.ts` and exposes a launcher to agent
-shells. It runs with Electron and the bundled SQLite addon. No global `vl`, npm
-Valence package, or system Node installation is needed.
-
-Use `vl --project "/original/project/path" <command>` from a task worktree.
-`--project` selects a registered Anvil project, not a database. The launcher pins
-`ANVIL_DATABASE_PATH` to the running app's profile. `ANVIL_DATA_DIR` selects the
-app's data directory at startup; development and packaged profiles stay separate.
-Direct CLI invocation requires an absolute `ANVIL_DATABASE_PATH` for an existing,
-migrated Anvil database. The CLI never runs startup recovery or image cleanup.
-
-Supported commands are `status`, `parent create/update/show/list`, `create`,
-`update`, `show`, `list`, `ready`, `claim`, `start`, `complete`, `block`, and
-`requeue`. Use `--help` for fields and `--json` for structured output. Anvil creates
-the task parent before starting agents. Explicit `parent create` requires
-`--anvil-task-id` belonging to the selected project. Completion requires checklist
-confirmation and validation evidence. `init` only checks existing Anvil storage;
-`--local` and `--config` are rejected.
-
-Task parents, issues, dependencies, and execution state live in Anvil's SQLite
-database. Opening a tracker never discovers or imports standalone Valence
-storage. The bundled CLI uses that same database. See
-[embedded issue storage](docs/valence/storage.md) for ownership and validation.
-
 ### Reset app data
 
 Quit the development app before running either command. Both delete its SQLite

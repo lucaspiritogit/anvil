@@ -100,8 +100,8 @@ export class TaskIssues {
       }
       if (issue.status !== 'complete') {
         throw new Error(issue.status === 'working'
-          ? `Issue ${issue.id} is still working in Valence. The agent must submit it for review through vl.`
-          : `Issue ${issue.id} is ${issue.status} in Valence, not submitted for review. The agent must submit it for review through vl.`)
+          ? `Issue ${issue.id} is still working in Valence. The agent must submit it for review through anvil_submit_review.`
+          : `Issue ${issue.id} is ${issue.status} in Valence, not submitted for review. The agent must submit it for review through anvil_submit_review.`)
       }
       const complete = state.issueIds.every((id) => tracker.get(id).status === 'complete')
       this.store.saveTaskExecution({ ...state, currentIssueId: null, phase: complete ? 'complete' : 'working', error: null })
@@ -174,7 +174,7 @@ export class TaskIssues {
         return
       }
       if (current && current.status !== 'complete') {
-        throw new Error(`Issue ${current.id} is ${current.status} in Valence, not submitted for review. The agent must submit it for review or complete it through vl.`)
+        throw new Error(`Issue ${current.id} is ${current.status} in Valence, not submitted for review. The agent must submit it for review through anvil_submit_review.`)
       }
       const complete = state.issueIds.every((id) => tracker.get(id).status === 'complete')
       this.store.saveTaskExecution({ ...state, currentIssueId: null, phase: complete ? 'complete' : 'working', error: null })

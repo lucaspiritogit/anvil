@@ -163,8 +163,12 @@ test('serializes steering and comments through resume, completion and recovery',
     store.addTask({ ...finished, id: 'interrupted', status: 'cancelled', deliveryStatus: 'finalizing', error: 'Task cancelled.' })
     store.saveTaskExecution({ ...new TaskIssues(store).initialize('interrupted', testHome), phase: 'blocked' })
     const recovered = new Store(databasePath, options)
+    onTestCleanup(() => recovered.close())
+    expect(recovered.getTask('interrupted')).toBeUndefined()
+    recovered.selectWorkspace(work.id)
     expect(recovered.getTask('interrupted')?.status).toBe('pending')
     expect(recovered.getTask('interrupted')?.deliveryStatus).toBe('agent_failed')
+    recovered.selectWorkspace(personal.id)
     recovered.close()
     gitDelivery.checkoutBranch = originalReopen
     await steer('interrupted', 'Fix the already running error')
@@ -241,7 +245,8 @@ test('serializes steering and comments through resume, completion and recovery',
   store.close()
   const restarted = new Store(databasePath, options)
   try {
-    const task = restarted.getTasks().find((task) => task.prompt === 'Original task' && task.id !== 'unsupported' && task.id !== 'unmanaged')!
+    const work = restarted.getWorkspaces().find((workspace) => workspace.name === 'Work')!
+    const task = restarted.getTasks(work.id).find((task) => task.prompt === 'Original task' && task.id !== 'unsupported' && task.id !== 'unmanaged')!
     expect(task.workspaceId).not.toBe(restarted.getActiveWorkspace().id)
     expect(task.model).toBe('original-model')
     expect(task.sessionId).toBe('newest-session')

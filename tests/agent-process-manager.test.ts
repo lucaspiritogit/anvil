@@ -180,3 +180,36 @@ test('passes images intact to both server adapters and rejects text-only executo
   expect(received).toHaveLength(2)
   expect(events).toHaveLength(0)
 })
+
+test('enables issue tools for server turns and releases them after success, failure or cancellation', async () => {
+  const active = new Set<string>()
+  const executor: import('../src/main/agents/agent-executor').AgentExecutor = {
+    async execute(input) {
+      expect(active.has(input.taskId)).toBe(true)
+      expect(input.issueTools?.headers.Authorization).toBe(input.taskId)
+      input.onStarted?.()
+      if (input.prompt === 'fail') throw new Error('Transport failed')
+      if (input.prompt === 'cancel') {
+        await new Promise<void>((resolve) => input.signal!.addEventListener('abort', () => resolve(), { once: true }))
+      }
+      return { taskId: input.taskId, status: input.signal?.aborted ? 'cancelled' : 'succeeded', output: '', changedFiles: [] }
+    }
+  }
+  const manager = new AgentProcessManager(executor, executor, undefined, undefined, async (taskId) => {
+    active.add(taskId)
+    return { url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: taskId }, close: () => { active.delete(taskId) } }
+  })
+  onTestCleanup(() => manager.close())
+  for (const executionProtocol of ['acp', 'codex-app-server'] as const) {
+    for (const prompt of ['success', 'fail', 'cancel']) {
+      const taskId = `${executionProtocol}-${prompt}`
+      const exited = once(manager, 'exit')
+      manager.start({ workspace: testWorkspace(), taskId, prompt, cwd: process.cwd(),
+        agent: { id: 'test', label: 'Test', description: '', command: 'unused', args: [], executionProtocol },
+        onStarted: () => { if (prompt === 'cancel') queueMicrotask(() => manager.cancel(taskId)) }
+      })
+      await exited
+      expect(active.size).toBe(0)
+    }
+  }
+})

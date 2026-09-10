@@ -1,4 +1,4 @@
-import { taskCli } from './fixtures/task-cli'
+import { callIssueTool } from '../src/main/issue-tools/server'
 import { rendererEvent } from './renderer-fixture'
 import { expect, test } from 'vitest'
 import { existsSync } from 'node:fs'
@@ -14,7 +14,6 @@ test('schedules dependencies and priorities sequentially and retains final task 
   const database = join(testHome, '.anvil-composer/anvil.db')
   const store = new Store(database, options)
   const workspaceDatabase = store.getWorkspaceDatabasePath('default')
-  const cli = await taskCli(workspaceDatabase, testHome)
   store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
   const { agentProcesses: processes } = registerTestIpc()
   const agentProcesses = processes as unknown as AgentProcessManager
@@ -28,8 +27,8 @@ test('schedules dependencies and priorities sequentially and retains final task 
   }
   const submit = async (taskId: string): Promise<string> => {
     const issueId = store.getTaskExecution(taskId)!.currentIssueId!
-    cli('submit-review', issueId, '--confirm-checklist', '--evidence', 'Focused tests passed')
-    agentProcesses.finishTurn(taskId, 'Submitted through the built CLI')
+    callIssueTool(store, taskId, store.getTask(taskId)!.workspaceId, 'anvil_submit_review', { id: issueId, checklist: [true, true], evidence: 'Focused tests passed' })
+    agentProcesses.finishTurn(taskId, 'Submitted through the issue tool')
     await tick()
     return issueId
   }
@@ -41,7 +40,6 @@ test('schedules dependencies and priorities sequentially and retains final task 
   const taskId = await start('Build a feature')
   const tracker = store.issueTracker('project')
   expect(tracker.databasePath).toBe(workspaceDatabase)
-  expect(cli('status')).toMatchObject({ database: workspaceDatabase })
   expect(tracker.getParent(store.getTaskExecution(taskId)!.parentIssueId).anvilTaskId).toBe(taskId)
   expect(existsSync(join(testHome, '.valence')), 'Starting a task must not create project-local storage').toBe(false)
   expect(agentProcesses.starts[0].prompt).toMatch(/Leave the finished plan queued/)

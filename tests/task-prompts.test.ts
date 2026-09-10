@@ -59,11 +59,11 @@ test('preserves follow-up and review context without applying validation to hist
   expect(rebase).not.toMatch(/targeted tests|full-suite validation/)
 })
 
-test('requires submitted review through vl and failure evidence', () => {
+test('requires submitted review through anvil_submit_review and failure evidence', () => {
   expect(implementation.length < 2400, `Implementation prompt should stay concise: ${implementation.length} characters`).toBeTruthy()
   expect(implementation).toMatch(/already claimed/)
-  expect(implementation).toMatch(/Submit it for review through vl/)
-  expect(implementation).toMatch(/submit-review/)
+  expect(implementation).toMatch(/Submit it for review with anvil_submit_review/)
+  expect(implementation).toMatch(/anvil_submit_review/)
   expect(implementation).toMatch(/block it/)
   expect(implementation).toMatch(/evidence/)
   expect(implementation).toMatch(/developer review/)
@@ -103,14 +103,13 @@ test.each([
   expect(prompt).toContain('Honor required repository checks and issue validation; do not skip or weaken them')
 })
 
-test('routes both prompts through the project CLI and retains issue context', () => {
+test('routes both prompts through task-scoped tools and retains issue context', () => {
   for (const prompt of [planning, implementation]) {
     expect(prompt.includes(task)).toBeTruthy()
-    expect(prompt).toMatch(/vl --help/)
-    expect(prompt).toMatch(/vl --project "\/projects\/example"/)
+    expect(prompt).toContain('anvil_get_plan')
+    expect(prompt).toContain('anvil_create_issue')
+    expect(prompt).not.toContain('vl ')
     expect(prompt).not.toMatch(/~\/\.config|--local/)
-    expect(prompt).toMatch(/launcher selects the owning Anvil database/)
-    expect(prompt).toMatch(/init only checks storage readiness/)
     expect(prompt).toMatch(/plain text/)
     expect(prompt).not.toMatch(/task-result|noChanges/)
   }

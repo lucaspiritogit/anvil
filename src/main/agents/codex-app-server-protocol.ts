@@ -14,7 +14,7 @@ export interface CodexThreadOptions {
   model?: string
   approvalPolicy: 'never'
   sandbox: 'danger-full-access' | 'read-only'
-  config?: Record<string, boolean | number | string>
+  config?: Record<string, unknown>
 }
 
 export interface CodexSandboxPolicy {

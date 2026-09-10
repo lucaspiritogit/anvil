@@ -1,4 +1,4 @@
-import { taskCli } from './fixtures/task-cli'
+import { callIssueTool } from '../src/main/issue-tools/server'
 import { rendererEvent } from './renderer-fixture'
 import { expect, test } from 'vitest'
 import { execFileSync } from 'node:child_process'
@@ -24,7 +24,6 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   const database = join(testHome, '.anvil-composer/config.json')
   const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
   const seed = new Store(database, options)
-  const cli = await taskCli(database, projectPath)
   seed.addProject({ id: 'project', name: 'Git test', path: projectPath, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
 
   const { agentProcesses: realAgentProcesses } = registerTestIpc()
@@ -59,9 +58,9 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   writeFileSync(join(firstCwd, 'first.txt'), 'first change\n')
   git(firstCwd, 'add', 'first.txt')
   git(firstCwd, 'commit', '-m', 'feat: first file')
-  cli('submit-review', board.items[0].id, '--confirm-checklist', '--evidence', 'Read first.txt and verified its content')
-  cli('approve', board.items[0].id)
-  agentProcesses.finishTurn(task.id, 'Completed through the built CLI')
+  callIssueTool(seed, task.id, seed.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[0].id, checklist: [true], evidence: 'Read first.txt and verified its content' })
+  seed.issueTracker('project').approve(board.items[0].id)
+  agentProcesses.finishTurn(task.id, 'Submitted through the issue tool')
   await waitFor(() => taskStarts().length === 3)
   expect(git(firstCwd, 'branch', '--show-current')).toBe(task.branchName)
   expect(seed.getTask(task.id)?.deliveryStatus).toBe('working')
@@ -70,9 +69,9 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   writeFileSync(join(secondCwd, 'second.txt'), 'second change\n')
   // Exercise Anvil's fallback commit for an agent that leaves a dirty worktree.
   board = taskState(seed, task.id)!
-  cli('submit-review', board.items[1].id, '--confirm-checklist', '--evidence', 'Read second.txt and verified its content')
-  cli('approve', board.items[1].id)
-  agentProcesses.finishTurn(task.id, 'Completed through the built CLI')
+  callIssueTool(seed, task.id, seed.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[1].id, checklist: [true], evidence: 'Read second.txt and verified its content' })
+  seed.issueTracker('project').approve(board.items[1].id)
+  agentProcesses.finishTurn(task.id, 'Submitted through the issue tool')
   await waitFor(() => seed.getTask(task.id)?.deliveryStatus === 'reviewable')
   expect(existsSync(secondCwd), 'Finalization retains the task worktree').toBe(true)
   expect(existsSync(join(projectPath, 'local.txt'))).toBe(true)
@@ -131,7 +130,6 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   const database = join(testHome, '.anvil-composer/config.json')
   const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
   const store = new Store(database, options)
-  const cli = await taskCli(database, projectPath)
   store.addProject({ id: 'issue-ranges', name: 'Issue ranges', path: projectPath, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
 
   const { agentProcesses: realAgentProcesses } = registerTestIpc()
@@ -159,8 +157,8 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   git(firstCwd, 'commit', '-m', 'feat: first file')
   const firstHead = git(firstCwd, 'rev-parse', 'HEAD')
   let board = taskState(store, task.id)!
-  cli('submit-review', board.items[0].id, '--confirm-checklist', '--evidence', 'Read first.txt and verified its content')
-  cli('approve', board.items[0].id)
+  callIssueTool(store, task.id, store.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[0].id, checklist: [true], evidence: 'Read first.txt and verified its content' })
+  store.issueTracker('issue-ranges').approve(board.items[0].id)
   agentProcesses.finishTurn(task.id, 'Completed the first issue')
   await waitFor(() => agentProcesses.starts.length === 3)
 
@@ -169,14 +167,14 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   git(secondCwd, 'add', 'second.txt')
   git(secondCwd, 'commit', '-m', 'feat: second attempt')
   board = taskState(store, task.id)!
-  cli('submit-review', board.items[1].id, '--confirm-checklist', '--evidence', 'Read second.txt and verified its content')
-  cli('reject', board.items[1].id)
+  callIssueTool(store, task.id, store.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[1].id, checklist: [true], evidence: 'Read second.txt and verified its content' })
+  store.issueTracker('issue-ranges').reject(board.items[1].id)
   writeFileSync(join(secondCwd, 'second.txt'), 'second rework\n')
   git(secondCwd, 'add', 'second.txt')
   git(secondCwd, 'commit', '-m', 'fix: second rework')
   const reworkHead = git(secondCwd, 'rev-parse', 'HEAD')
-  cli('submit-review', board.items[1].id, '--confirm-checklist', '--evidence', 'Rework verified against second.txt')
-  cli('approve', board.items[1].id)
+  callIssueTool(store, task.id, store.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[1].id, checklist: [true], evidence: 'Rework verified against second.txt' })
+  store.issueTracker('issue-ranges').approve(board.items[1].id)
   agentProcesses.finishTurn(task.id, 'Reworked and completed')
   await waitFor(() => store.getTask(task.id)?.deliveryStatus === 'reviewable')
 

@@ -10,14 +10,14 @@ const ANVIL_TASK_INSTRUCTIONS = [
   'Honor required repository checks and issue validation; do not skip or weaken them. Record the commands run and their actual results; do not claim unperformed checks passed.'
 ].join('\n')
 
-function valenceIssueTrackerInstructionsPrompt(projectPath: string): string {
-  return `Use vl --project ${JSON.stringify(projectPath)} <command>. Run vl --help for commands. The launcher selects the owning Anvil database; --project selects the registered original project. init only checks storage readiness.`
+function issueTrackerInstructionsPrompt(): string {
+  return 'Use the anvil_issue_tracker tools supplied by Anvil. Call anvil_get_plan to read the current task and its issues. The connection already selects the owning task, project and workspace. Use anvil_create_issue and anvil_update_issue during planning, anvil_block_issue or anvil_requeue_issue for interrupted work, and anvil_submit_review with checklist confirmations and actual validation evidence after committing. Developer approval happens in Anvil.'
 }
 
 export function planningPrompt(task: string, state: Pick<TaskExecutionState, 'projectPath' | 'parentIssueId'>): string {
   return [
     ANVIL_TASK_INSTRUCTIONS,
-    valenceIssueTrackerInstructionsPrompt(state.projectPath),
+    issueTrackerInstructionsPrompt(),
     'Create issues for this task with findings, paths, checklists, validation, and priorities.',
     `Create issues under parent ${JSON.stringify(state.parentIssueId)}.`,
     'Create prerequisites first; dependencies use their actual issue IDs.',
@@ -33,8 +33,8 @@ export function implementationPrompt(task: string, issue: Issue, projectPath: st
   return [
     ANVIL_TASK_INSTRUCTIONS,
     'Implement this issue, validate it, and commit.',
-    valenceIssueTrackerInstructionsPrompt(projectPath),
-    'Anvil already claimed your issue. Submit it for review through vl only after satisfying its checklist (vl submit-review with --confirm-checklist and real validation evidence). Anvil then pauses for developer review before any next issue.',
+    issueTrackerInstructionsPrompt(),
+    'Anvil already claimed your issue. Submit it for review with anvil_submit_review only after satisfying its checklist and providing real validation evidence. Anvil then pauses for developer review before any next issue.',
     'Do not claim or create other issues, or change issue ownership or dependencies. If unfinished, block it and explain why in plain text.',
     'Install dependencies locally, without shared node_modules symlinks.',
     'Anvil reads review submission from Valence, not your response. Summarize the outcome in plain text.',
@@ -53,11 +53,11 @@ export function taskFollowupPrompt(task: Task, state: TaskExecutionState, messag
   return [
     ANVIL_TASK_INSTRUCTIONS,
     'The developer is unblocking this task. Keep its existing plan and branch.',
-    valenceIssueTrackerInstructionsPrompt(state.projectPath),
+    issueTrackerInstructionsPrompt(),
     `Original task: ${task.prompt}`,
     `Task issue IDs: ${state.issueIds.join(', ')}`,
     state.currentIssueId
-      ? `Resume issue ${state.currentIssueId}. Inspect its status, requeue and start it if blocked, then implement, validate, commit, and submit it for review through vl. If still working, verify it belongs to this interrupted task before requeueing. Do not take over another client's work.`
+      ? `Resume issue ${state.currentIssueId}. Inspect its status, requeue and start it if blocked, then implement, validate, commit, and submit it for review with anvil_submit_review. If still working, verify it belongs to this interrupted task before requeueing. Do not take over another client's work.`
       : 'Inspect and unblock the remaining task issues so Anvil can schedule them. Leave unfinished issues queued; do not claim new work.',
     'Do not create a replacement plan or claim other issues. Anvil checks Valence review submissions and pauses for developer review after each issue.',
     `Developer message: ${message}`
@@ -67,7 +67,7 @@ export function taskFollowupPrompt(task: Task, state: TaskExecutionState, messag
 export function taskRecoveryPrompt(task: Task, state: TaskExecutionState): string {
   return [
     ANVIL_TASK_INSTRUCTIONS,
-    valenceIssueTrackerInstructionsPrompt(state.projectPath),
+    issueTrackerInstructionsPrompt(),
     'Continue from where the previous attempt stopped after a temporary connection failure. This is automatic recovery of the same task and session.',
     'Preserve completed work. Follow the latest user instructions in the saved conversation, including any that override the original request or validation plan below.',
     `Original task: ${task.prompt}`,
@@ -88,10 +88,10 @@ export function issueReworkPrompt(projectPath: string, issueId: string, comments
   const notes = commentNotes(comments)
   return [
     ANVIL_TASK_INSTRUCTIONS,
-    valenceIssueTrackerInstructionsPrompt(projectPath),
+    issueTrackerInstructionsPrompt(),
     `The developer reviewed issue ${JSON.stringify(issueId)} and requested changes. The issue is working again in Valence.`,
     'Address the notes below in the code, then commit. Do not claim or create other issues, or change issue ownership or dependencies.',
-    'Submit the issue for review through vl again once its checklist is satisfied, with real validation evidence. Anvil pauses for developer review after every issue.',
+    'Submit the issue for review with anvil_submit_review again once its checklist is satisfied, with real validation evidence. Anvil pauses for developer review after every issue.',
     '',
     notes
   ].join('\n')

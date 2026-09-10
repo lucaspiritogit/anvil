@@ -49,7 +49,7 @@ test('handles ACP sessions, output, permissions, recovery and cancellation', asy
     expect(result.sessionId).toBe('session-test')
     expect(result.changedFiles).toStrictEqual(['/changed.ts'])
     expect(result.usage).toStrictEqual({ inputTokens: 20, outputTokens: 10, cachedTokens: 5, totalTokens: 35, costUsd: 0.25 })
-    const expected = 'Done ✓\nCompleted issue-test through vl. Tests passed.'
+    const expected = 'Done ✓\nCompleted issue-test through anvil_submit_review. Tests passed.'
     expect(result.output).toBe(expected)
     const outputEvents = events.filter((event) => event.type === 'output').map((event) => event.event)
     expect(outputEvents.filter((event) => event.category === 'message').map((event) => event.text)).toStrictEqual([expected])
@@ -67,6 +67,18 @@ test('handles ACP sessions, output, permissions, recovery and cancellation', asy
     expect(initialRequests[0].params.clientCapabilities).toStrictEqual({})
     expect(initialRequests[1].params.mcpServers).toStrictEqual([])
     expect(initialRequests.find((request) => request.id === 'permission').result.outcome.optionId).toBe('once')
+
+    const issueTools = { url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: 'Bearer turn-token' } }
+    for (const resumeSessionId of [undefined, 'session-test']) {
+      const before = (await requests()).length
+      const result = await client('success').execute({ ...input, issueTools, resumeSessionId }, () => {})
+      expect(result.status, result.error).toBe('succeeded')
+      const session = (await requests()).slice(before).find((request) => request.method === (resumeSessionId ? 'session/load' : 'session/new'))
+      expect(session.params.mcpServers).toEqual([{ type: 'http', name: 'anvil_issue_tracker', url: issueTools.url, headers: [{ name: 'Authorization', value: 'Bearer turn-token' }] }])
+    }
+    const unsupportedMcp = await client('no-http-mcp').execute({ ...input, issueTools }, () => {})
+    expect(unsupportedMcp.status).toBe('failed')
+    expect(unsupportedMcp.error).toMatch(/HTTP MCP/)
 
     for (const scenario of ['read-only-config', 'read-only-config-grouped']) {
       const before = (await requests()).length

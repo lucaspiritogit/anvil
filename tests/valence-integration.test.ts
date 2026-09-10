@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto'
 import { onTestCleanup } from './test-cleanup'
 import { TaskIssues } from '../src/main/tasks/task-issues'
 import { IssueTracker } from '../src/main/valence/tracker'
-import { openCliTracker } from '../src/main/valence/connection'
 import { Store } from '../src/main/store'
 import { registerTestIpc } from './test-ipc'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
@@ -33,14 +32,14 @@ test('cascades task-owned plans on project removal', async () => {
   expect.assert(issue, 'Anvil-created issues must be visible to another Valence client')
   expect(issue.status).toBe('working')
   expect(tracker.get(unrelated.id).status, 'Anvil must not claim unrelated higher-priority issues').toBe('queued')
-  expect(agentProcesses.starts.at(-1)!.prompt).toMatch(/vl --project/)
-  // Model an agent submitting through vl and the developer approving before the turn report arrives.
-  tracker.submitForReview(issue.id, { checklist: [true], evidence: 'CLI validation passed' })
+  expect(agentProcesses.starts.at(-1)!.prompt).toMatch(/anvil_get_plan/)
+  // Model an agent submitting through the issue tool and the developer approving before the turn report arrives.
+  tracker.submitForReview(issue.id, { checklist: [true], evidence: 'Focused validation passed' })
   tracker.approve(issue.id)
   const completedAt = tracker.get(issue.id).completedAt
   agentProcesses.finishTurn(task.id, 'Finished. See Valence for validation evidence.')
   await tick()
-  expect(tracker.get(issue.id).evidence).toBe('CLI validation passed')
+  expect(tracker.get(issue.id).evidence).toBe('Focused validation passed')
   expect(tracker.get(issue.id).completedAt).toBe(completedAt)
   expect(store.getTask(task.id)?.status).toBe('succeeded')
   const removing = await handlers.get('tasks:start')!(rendererEvent, { projectId: 'project', agentId: 'codex', prompt: 'Remove project' })
@@ -144,13 +143,13 @@ test.each(['missing', 'changed'] as const)('recovers embedded plans with %s stan
   const recovered = new TaskIssues(reopened)
   expect(recovered.snapshot(taskId)?.children[0].id).toBe(child.id)
   expect(recovered.resume(taskId).phase).toBe('recovering')
-  const client = openCliTracker(directory, tracker.databasePath)
+  const client = reopened.issueTracker(projectId)
   onTestCleanup(() => client.close())
-  client.submitForReview(child.id, { checklist: [true], evidence: 'Completed through embedded CLI' })
+  client.submitForReview(child.id, { checklist: [true], evidence: 'Completed through issue tool' })
   client.approve(child.id)
   recovered.finishRecovery(taskId)
   expect(reopened.getTaskExecution(taskId)?.phase).toBe('complete')
-  expect(recovered.snapshot(taskId)?.children[0].evidence).toBe('Completed through embedded CLI')
+  expect(recovered.snapshot(taskId)?.children[0].evidence).toBe('Completed through issue tool')
   expect(connection.prepare('SELECT * FROM valence_imports').all()).toEqual(receipt)
 })
 
@@ -371,31 +370,4 @@ test('reuses an existing task parent and recovers a persisted interrupted claim'
   recovered.finishRecovery(taskId)
   expect(reopened.getTaskExecution(taskId)?.phase).toBe('complete')
   expect(recovered.initialize(taskId, directory).parentIssueId).toBe(parent.id)
-})
-
-test('CLI follows the JSON workspace selection and still accepts a direct workspace database', () => {
-  const directory = mkdtempSync(join(testHome, 'json-cli-'))
-  onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
-  const configFile = join(directory, 'config.json')
-  const store = new Store(configFile, { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') })
-  onTestCleanup(() => store.close())
-  const work = store.createWorkspace('Work')
-  for (const workspace of store.getWorkspaces()) {
-    store.addProject({ id: 'project', name: workspace.name, path: directory, createdAt: 1,
-      monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' }, workspace.id)
-    store.selectWorkspace(workspace.id)
-    const client = openCliTracker(directory, configFile)
-    try {
-      expect(client.databasePath).toBe(store.getWorkspaceDatabasePath(workspace.id))
-    } finally {
-      client.close()
-    }
-  }
-  store.selectWorkspace('default')
-  const direct = openCliTracker(directory, store.getWorkspaceDatabasePath(work.id))
-  try {
-    expect(direct.databasePath).toBe(store.getWorkspaceDatabasePath(work.id))
-  } finally {
-    direct.close()
-  }
 })

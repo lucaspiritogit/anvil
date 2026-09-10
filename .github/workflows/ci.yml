@@ -22,7 +22,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          # Node 24.20.0 headers crash better-sqlite3 during statement cleanup.
+          node-version: '24.14.1'
           cache: npm
       - run: npm ci
       - name: Check release version
@@ -72,7 +73,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          # Node 24.20.0 headers crash better-sqlite3 during statement cleanup.
+          node-version: '24.14.1'
           cache: npm
       - run: npm ci
       # Packaging disables npmRebuild, so build both native addons for Electron.

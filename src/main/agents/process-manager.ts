@@ -1,3 +1,4 @@
+import type { IssueToolConnection } from '../issue-tools/server'
 import type { WorkspaceExecutionContext } from './workspace-execution'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -169,7 +170,8 @@ export class AgentProcessManager extends EventEmitter {
     private readonly openCodeClient?: AgentExecutor,
     private readonly codexClient?: AgentExecutor,
     private readonly createExecutor = (agentId: string, workspace: WorkspaceExecutionContext): AgentExecutor => getAgentAdapter(agentId).createExecutor(workspace),
-    private readonly taskWorkspace?: (taskId: string) => WorkspaceExecutionContext
+    private readonly taskWorkspace?: (taskId: string) => WorkspaceExecutionContext,
+    private readonly openIssueTools?: (taskId: string) => Promise<IssueToolConnection>
   ) {
     super()
   }
@@ -244,19 +246,27 @@ export class AgentProcessManager extends EventEmitter {
       opts.onStarted?.()
     }
     const { agent: _agent, onStartFailed: _onStartFailed, ...input } = opts
-    const completion = (async () => client.execute({ ...input, onStarted, signal: controller.signal }, (event) => {
-      switch (event.type) {
-        case 'output':
-          this.emit('event', { ...event.event, issueId } satisfies TaskEvent)
-          break
-        case 'session':
-          this.emit('session', { taskId: event.taskId, sessionId: event.sessionId } satisfies SessionInfo)
-          break
-        case 'usage':
-          this.emit('usage', { taskId: event.taskId, ...event.usage } satisfies UsageInfo)
-          break
+    const completion = (async () => {
+      const issueTools = await this.openIssueTools?.(opts.taskId)
+      try {
+        controller.signal.throwIfAborted()
+        return await client.execute({ ...input, issueTools, onStarted, signal: controller.signal }, (event) => {
+          switch (event.type) {
+            case 'output':
+              this.emit('event', { ...event.event, issueId } satisfies TaskEvent)
+              break
+            case 'session':
+              this.emit('session', { taskId: event.taskId, sessionId: event.sessionId } satisfies SessionInfo)
+              break
+            case 'usage':
+              this.emit('usage', { taskId: event.taskId, ...event.usage } satisfies UsageInfo)
+              break
+          }
+        })
+      } finally {
+        issueTools?.close()
       }
-    }))().then((result) => {
+    })().then((result) => {
       this.steeringExecutors.delete(opts.taskId)
       this.serverExecutions.delete(opts.taskId)
       this.executionWorkspaces.delete(opts.taskId)

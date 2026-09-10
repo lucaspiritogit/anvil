@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { join, resolve } from 'node:path'
 import { Store } from '../../src/main/store'
-import { openCliTracker } from '../../src/main/valence/connection'
+import { IssueTracker } from '../../src/main/valence/tracker'
 import { onTestCleanup } from '../test-cleanup'
 
 export function internalTrackerFixture(project: string) {
@@ -14,5 +14,5 @@ export function internalTrackerFixture(project: string) {
     db.prepare(`INSERT INTO tasks (id, project_id, agent_id, agent_label, prompt, title, cwd, status, started_at)
       VALUES ('task', 'project', 'codex', 'Codex', 'Prompt', 'Title', ?, 'succeeded', 1)`).run(project)
   } finally { db.close() }
-  return { writer: store.issueTracker('project'), open: () => openCliTracker(project, databasePath) }
+  return { writer: store.issueTracker('project'), open: () => new IssueTracker(new Database(store.getWorkspaceDatabasePath('default')), 'project', 'owned') }
 }

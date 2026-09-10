@@ -7,16 +7,21 @@ import {
 } from '@hugeicons/core-free-icons'
 import { SETTINGS_SECTIONS } from '../settings-sections'
 import { IS_MAC } from '../keys'
+import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { useStore } from '../state/store'
 import { cn } from '../ui'
 import { useSidebarIssueSnapshots } from '../hooks/use-task-issues'
-import { SidebarTask } from './SidebarTask'
+import { SidebarTaskList } from './SidebarTaskList'
 import { ProjectPicker } from './ProjectPicker'
 import { WorkspacePicker } from './WorkspacePicker'
 
 const ICON_BUTTON = 'grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent'
 
 export function Sidebar(): JSX.Element {
+  const fontSize = useStore((state) => state.settings?.fontSize)
+  const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
+  // Native traffic lights do not scale with the renderer's font-size zoom.
+  const titlebarStyle = IS_MAC ? { height: 52 / scale, paddingLeft: 84 / scale } : undefined
   const workspaceId = useStore((state) => state.activeWorkspaceId)
   const projects = useStore((state) => state.projects)
   const tasks = useStore((state) => state.tasks)
@@ -53,20 +58,27 @@ export function Sidebar(): JSX.Element {
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
   const snapshots = useSidebarIssueSnapshots()
   const query = search.trim().toLowerCase()
-  const matching = tasks.filter((task) => {
-    if (projectFilter && task.projectId !== projectFilter) return false
-    return !query || [task.title, task.branchName, projectById.get(task.projectId)?.name,
-      ...(snapshots.get(task.id)?.children.map((issue) => issue.title) ?? [])]
-      .some((text) => text?.toLowerCase().includes(query))
-  })
-  const activeTasks = matching.filter((task) => task.settledAt === undefined)
-  const settledTasks = matching.filter((task) => task.settledAt !== undefined)
-    .sort((first, second) => second.settledAt! - first.settledAt!)
+  const { activeTasks, settledTasks } = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    const matching = tasks.filter((task) => {
+      if (projectFilter && task.projectId !== projectFilter) return false
+      return !query || [task.title, task.branchName, projectById.get(task.projectId)?.name,
+        ...(snapshots.get(task.id)?.children.map((issue) => issue.title) ?? [])]
+        .some((text) => text?.toLowerCase().includes(query))
+    })
+    return {
+      activeTasks: matching.filter((task) => task.settledAt === undefined),
+      settledTasks: matching.filter((task) => task.settledAt !== undefined)
+        .sort((first, second) => second.settledAt! - first.settledAt!)
+    }
+  }, [tasks, projectFilter, search, projectById, snapshots])
+  const listKey = JSON.stringify([workspaceId, projectFilter, search])
+  const matchingCount = activeTasks.length + settledTasks.length
   const showSettled = settledOpen || Boolean(query)
 
   if (settingsOpen) return (
     <aside aria-label="Sidebar" className="flex min-h-0 flex-col border-r border-line bg-canvas max-[700px]:border-b max-[700px]:border-r-0">
-      <header className={cn('drag-region flex h-11 shrink-0 items-center px-4', IS_MAC && 'pl-[78px]')}>
+      <header style={titlebarStyle} className="drag-region flex h-11 shrink-0 items-center px-4">
         <h1 className="text-sm font-semibold">Settings</h1>
       </header>
       <nav aria-label="Settings sections" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3 max-[700px]:flex-row max-[700px]:overflow-x-auto">
@@ -98,7 +110,7 @@ export function Sidebar(): JSX.Element {
       inert={sidebarCollapsed}
       aria-hidden={sidebarCollapsed || undefined}
     >
-      <div className={cn('flex shrink-0 items-center h-11 px-4 text-[11px] font-semibold tracking-[0.12em] text-dim', IS_MAC && 'drag-region pl-[78px]')}>
+      <div style={titlebarStyle} className={cn('flex shrink-0 items-center h-11 px-4 text-[11px] font-semibold tracking-[0.12em] text-dim', IS_MAC && 'drag-region')}>
         ANVIL
       </div>
 
@@ -147,14 +159,9 @@ export function Sidebar(): JSX.Element {
         </button>
       </div>
 
-      <nav aria-label="Active tasks" className="flex-1 min-h-0 space-y-1.5 px-2.5 pb-2 overflow-y-auto overscroll-contain">
-        <ul className="space-y-1.5">
-          {activeTasks.map((task) => (
-            <SidebarTask key={task.id} snapshot={snapshots.get(task.id)} task={task} project={projectById.get(task.projectId)} now={now} active={view.kind === 'task' && view.taskId === task.id} />
-          ))}
-        </ul>
-        {!matching.length && <p className="px-2 py-4 text-xs text-dim">{query ? 'No matching tasks.' : 'No tasks yet.'}</p>}
-        {!activeTasks.length && matching.length > 0 && <p className="px-2 py-4 text-xs text-dim">No active tasks.</p>}
+      <nav aria-label="Active tasks" className="flex flex-1 min-h-0 flex-col px-2.5 pb-2">
+        <SidebarTaskList key={listKey} tasks={activeTasks} snapshots={snapshots} projectById={projectById} now={now} view={view}
+          emptyMessage={matchingCount ? 'No active tasks.' : query ? 'No matching tasks.' : 'No tasks yet.'} />
       </nav>
 
       <section aria-label="Settled tasks" className="flex shrink-0 flex-col max-h-[35%] min-h-0 px-2.5">
@@ -170,14 +177,8 @@ export function Sidebar(): JSX.Element {
           <span className="h-px flex-1 bg-line" />
         </button>
         {showSettled && (
-          <div id="settled-task-list" className="min-h-0 overflow-y-auto overscroll-contain pb-1">
-            <ul className="space-y-1">
-              {settledTasks.map((task) => (
-                <SidebarTask key={task.id} snapshot={snapshots.get(task.id)} task={task} project={projectById.get(task.projectId)} now={now} compact active={view.kind === 'task' && view.taskId === task.id} />
-              ))}
-            </ul>
-            {!settledTasks.length && <p className="px-2 pb-3 text-xs text-dim">No settled tasks.</p>}
-          </div>
+          <SidebarTaskList key={listKey} id="settled-task-list" tasks={settledTasks} snapshots={snapshots}
+            projectById={projectById} now={now} view={view} compact emptyMessage="No settled tasks." />
         )}
       </section>
 

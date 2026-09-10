@@ -32,6 +32,7 @@ import type { SendToRenderer } from './tasks/context'
 import { registerTaskEvents } from './tasks/events'
 import { registerTaskExecution } from './tasks/task-execution'
 import { Store } from './store'
+import { IssueToolServer } from './issue-tools/server'
 import { TerminalManager } from './terminal'
 import { createRendererIpc } from './renderer-security'
 import { resolveAppDataDirectory } from './app-data'
@@ -59,7 +60,12 @@ export function registerIpc(
   const store = new Store(join(dataDirectory, 'config.json'), {
     migrationsFolder: join(app.getAppPath(), 'src', 'main', 'db', 'migrations')
   })
-  const agentProcesses = new AgentProcessManager(undefined, undefined, undefined, (taskId) => resolveTaskWorkspace(store, taskId))
+  const issueTools = new IssueToolServer(store, (taskId) => {
+    const task = store.getTask(taskId)
+    if (task) broadcast('task:updated', task)
+  })
+  const agentProcesses = new AgentProcessManager(undefined, undefined, undefined,
+    (taskId) => resolveTaskWorkspace(store, taskId), (taskId) => issueTools.open(taskId))
   const stopCaffeineMode = registerCaffeineMode(store, powerSaveBlocker)
   const worktreeOwners = new Map<string, string>()
   const rememberWorktreeOwners = (): void => {
@@ -203,7 +209,13 @@ export function registerIpc(
   registerTerminalHandlers(ipc, terminals, store)
 
   return {
-    agentProcesses, closeAgentDiscovery: async () => { await accounts.close(); await closeModelDiscovery() }, terminals, githubPolling, stopCaffeineMode,
+    agentProcesses,
+    closeAgentDiscovery: async () => {
+      await accounts.close()
+      await closeModelDiscovery()
+      await issueTools.close()
+    },
+    terminals, githubPolling, stopCaffeineMode,
     closeStore: () => {
       stopAuthWatcher()
       stopRememberingWorktreeOwners()

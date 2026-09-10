@@ -11,7 +11,7 @@ import type {
 } from '../../shared/valence'
 
 /** Project-scoped core over an already migrated Anvil database.
- * Borrowed connections belong to Store. CLI callers can transfer ownership by
+ * Borrowed connections belong to Store. Direct callers can transfer ownership by
  * passing 'owned' and must close the connection themselves if construction fails.
  */
 export class IssueTracker {

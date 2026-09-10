@@ -7,11 +7,11 @@ directories:
 files:
   # Package current entry points only; old build directories can remain locally.
   - out/main/**
+  - "!out/main/valence-cli.js"
   - out/preload/**
   - out/renderer/**
   - package.json
-  # The desktop Store applies app and internal Valence migrations once at startup.
-  # The CLI opens the existing database and does not ship separate migrations.
+  # The desktop Store migrates each workspace when it is first opened.
   - src/main/db/migrations/**
   - src/main/memory/migrations/**
 asarUnpack:

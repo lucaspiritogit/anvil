@@ -34,7 +34,7 @@ function fixture(read = vi.fn<(id: string) => Promise<TaskIssueSnapshot | null>>
 
 const tick = () => vi.advanceTimersByTimeAsync(0)
 
-test('polls internal CLI changes without task events and derives current selected details', async () => {
+test('polls stored issue changes without task events and derives current selected details', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'issue-refresh-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
   const { writer, open } = internalTrackerFixture(directory)

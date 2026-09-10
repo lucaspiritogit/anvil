@@ -33,7 +33,7 @@ const usage = (total) => notify('thread/tokenUsage/updated', { tokenUsage: {
   last: { inputTokens: 2, cachedInputTokens: 1, outputTokens: 1, totalTokens: 3 }, modelContextWindow: 100000
 } })
 const delta = (text, extra = {}) => notify('item/agentMessage/delta', { itemId: 'message', delta: text, ...extra })
-const resultText = 'Done ✓\nCompleted issue-test through vl. Tests passed.'
+const resultText = 'Done ✓\nCompleted issue-test through anvil_submit_review. Tests passed.'
 
 if (scenario === 'cancel-hang') process.on('SIGTERM', () => {})
 if (scenario === 'profile-startup-rejected') {

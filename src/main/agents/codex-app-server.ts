@@ -277,8 +277,11 @@ export class CodexAppServerClient implements AgentExecutor {
           'memories.generate_memories': false,
           'features.recommended_plugins': false,
           tool_output_token_limit: 3000,
-          // Shell tools must retain Anvil's bundled vl launcher on PATH.
-          'shell_environment_policy.set.PATH': this.options.workspace.environment.PATH ?? ''
+          ...(input.issueTools ? {
+            'mcp_servers.anvil_issue_tracker': {
+              url: input.issueTools.url, http_headers: input.issueTools.headers, required: true
+            }
+          } : {})
         }
       }
       let prompt = input.prompt
