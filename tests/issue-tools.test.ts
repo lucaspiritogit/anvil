@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { expect, test } from 'vitest'
@@ -8,6 +9,8 @@ import { Store } from '../src/main/store'
 import { TaskIssues } from '../src/main/tasks/task-issues'
 import { callIssueTool, IssueToolServer } from '../src/main/issue-tools/server'
 import type { Issue } from '../src/shared/valence'
+import { CodexAppServerClient } from '../src/main/agents/codex-app-server'
+import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 
 function fixture() {
@@ -95,6 +98,15 @@ test('MCP discovery and calls stay in the captured workspace and expire with the
   expect(store.issueTracker('project', work.id).list()).toHaveLength(0)
   const otherConnection = await server.open('task-b')
   expect(otherConnection.headers).not.toEqual(connection.headers)
+  const otherClient = new Client({ name: 'other-task', version: '1.0.0' })
+  onTestCleanup(() => otherClient.close())
+  await otherClient.connect(new StreamableHTTPClientTransport(new URL(otherConnection.url), { requestInit: { headers: otherConnection.headers } }))
+  const otherIssueResult = await otherClient.callTool({ name: 'anvil_create_issue', arguments: input })
+  const otherIssue = JSON.parse((otherIssueResult.content as { text: string }[])[0].text) as Issue
+  const foreign = await client.callTool({ name: 'anvil_submit_review', arguments: { id: otherIssue.id, checklist: [true], evidence: 'Cannot submit another task' } })
+  expect(foreign.isError).toBe(true)
+  expect((foreign.content as { text: string }[])[0].text).toMatch(/not found|another task/i)
+
   expect((await fetch(connection.url, { method: 'POST' })).status).toBe(403)
   expect((await fetch(connection.url, { method: 'POST', headers: { ...connection.headers, Origin: 'https://example.com' } })).status).toBe(403)
   connection.close()
@@ -112,3 +124,102 @@ test('MCP discovery and calls stay in the captured workspace and expire with the
   const deleted = await resumedClient.callTool({ name: 'anvil_get_plan', arguments: {} })
   expect(deleted.isError).toBe(true)
 })
+
+// The provider is fake; discovery, HTTP authorization, mutations and review gate are real.
+for (const mode of ['fresh', 'resumed', 'planning-reuse', 'blocked-recovery', 'prose-only']) {
+  test(`Codex app-server MCP review: ${mode}`, async () => {
+    const { store, issues, call } = fixture()
+    const task = store.getTask('task-a')!
+    const issue = call('task-a', 'anvil_create_issue', input) as Issue
+    const server = new IssueToolServer(store)
+    onTestCleanup(() => server.close())
+    const executor = new CodexAppServerClient({
+      workspace: testWorkspace(), command: process.execPath,
+      args: [resolve('tests/fixtures/codex-app-server.cjs'), mode === 'prose-only' ? 'success' : 'mcp-review', join(task.cwd, 'codex.jsonl')],
+      requestTimeoutMs: 5000
+    })
+    onTestCleanup(() => executor.close())
+    const execute = async (resumeSessionId?: string) => {
+      const connection = await server.open(task.id)
+      try {
+        return await executor.execute({ workspace: testWorkspace(), taskId: task.id,
+          cwd: task.cwd, prompt: 'Implement the issue', model: 'test-model',
+          resumeSessionId, issueTools: connection }, () => {})
+      } finally {
+        connection.close()
+        expect((await fetch(connection.url, { method: 'POST', headers: connection.headers })).status).toBe(403)
+      }
+    }
+    let sessionId = mode === 'resumed' ? 'thread-test' : undefined
+    if (mode === 'planning-reuse') {
+      const planning = await execute()
+      expect(planning.status, planning.error).toBe('succeeded')
+      sessionId = planning.sessionId
+      expect(store.issueTracker('project').get(issue.id).status).toBe('queued')
+    }
+    issues.finishPlanning(task.id)
+    issues.claim(task.id)
+    if (mode === 'blocked-recovery') call(task.id, 'anvil_block_issue', { id: issue.id })
+    const result = await execute(sessionId)
+    expect(result.status, result.error).toBe('succeeded')
+    if (mode === 'prose-only') {
+      expect(() => issues.finishIssue(task.id)).toThrow(/must submit.*anvil_submit_review/)
+      expect(store.issueTracker('project').get(issue.id).status).toBe('working')
+    } else {
+      expect(store.issueTracker('project').get(issue.id)).toMatchObject({
+        status: 'review', evidence: expect.stringContaining('node:assert/strict')
+      })
+      expect(issues.finishIssue(task.id)).toBe(true)
+      expect(store.getTaskExecution(task.id)).toMatchObject({ phase: 'reviewing', currentIssueId: issue.id })
+      expect(new TaskIssues(store).initialize(task.id, task.cwd).phase).toBe('reviewing')
+    }
+  })
+}
+
+// Explicit opt-in: uses an authenticated Codex profile and performs a live model turn.
+test.skipIf(!process.env.ANVIL_LIVE_CODEX_HOME)('live Codex app-server commits and submits through MCP', async () => {
+  const { store, issues, call } = fixture()
+  const task = store.getTask('task-a')!
+  const repo = join(task.cwd, 'smoke-repo')
+  mkdirSync(repo)
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim()
+  git('init')
+  git('config', 'user.name', 'Anvil smoke')
+  git('config', 'user.email', 'smoke@example.invalid')
+  git('commit', '--allow-empty', '-m', 'chore: initialize smoke repository')
+  const base = git('rev-parse', 'HEAD')
+  const issue = call(task.id, 'anvil_create_issue', { title: 'Smoke review',
+    description: 'Create smoke.txt containing ok, validate with node, commit and submit review.',
+    checklist: ['smoke.txt contains ok and validation passed', 'Change committed'],
+    validation: 'Run node to assert smoke.txt contains ok' }) as Issue
+  issues.finishPlanning(task.id)
+  issues.claim(task.id)
+  const server = new IssueToolServer(store)
+  onTestCleanup(() => server.close())
+  const connection = await server.open(task.id)
+  onTestCleanup(() => connection.close())
+  const isolated = testWorkspace('live-smoke')
+  const codexHome = process.env.ANVIL_LIVE_CODEX_HOME!
+  const workspace = { ...isolated, codexHome, environment: { ...isolated.environment, CODEX_HOME: codexHome } }
+  const executor = new CodexAppServerClient({ workspace, requestTimeoutMs: 30000 })
+  onTestCleanup(async () => {
+    try { await executor.close() } catch (error) {
+      console.error('Live Codex cleanup failed:', error)
+      throw error
+    }
+  })
+  const account = await executor.readAccount()
+  expect(account.account, 'Authenticated file-backed Codex profile required').toBeTruthy()
+  const result = await executor.execute({ workspace, taskId: task.id, cwd: repo,
+    issueTools: connection,
+    prompt: 'Use the supplied anvil_issue_tracker MCP tools. Read anvil_get_plan for the current issue. Implement it in this disposable repository: write smoke.txt containing ok, run a node assertion to validate it, git add and git commit with a chore: subject. Then call anvil_submit_review with the current issue ID, ordered checklist confirmations and actual command/results evidence. Do not block or approve the issue. Stop after successful submission.'
+  }, (event) => { if (event.type === 'output') process.stdout.write(event.event.text) })
+  expect(result.status, result.error).toBe('succeeded')
+  const head = git('rev-parse', 'HEAD')
+  expect(head).not.toBe(base)
+  expect(git('status', '--porcelain')).toBe('')
+  expect(store.issueTracker('project').get(issue.id)).toMatchObject({ status: 'review', evidence: expect.stringContaining('node') })
+  expect(issues.finishIssue(task.id, head)).toBe(true)
+  expect(store.getTaskExecution(task.id)?.phase).toBe('reviewing')
+  console.log('Live Codex smoke verified: committed', head, 'and persisted developer-review pause')
+}, 180000)
