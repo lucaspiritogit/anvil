@@ -11,15 +11,29 @@ const ANVIL_TASK_INSTRUCTIONS = [
 ].join('\n')
 
 function issueTrackerInstructionsPrompt(): string {
-  return 'Use the anvil_issue_tracker tools supplied by Anvil. Call anvil_get_plan to read the current task and its issues. The connection already selects the owning task, project and workspace. Use anvil_create_issue and anvil_update_issue during planning, anvil_block_issue or anvil_requeue_issue for interrupted work, and anvil_submit_review with checklist confirmations and actual validation evidence after committing. Developer approval happens in Anvil.'
+  return 'Use the supplied anvil_issue_tracker tools. If not visible, discover them through the available tool search/list facility. Call anvil_get_plan for current issue context and status. Follow the discovered MCP schema for arguments and call the tool directly. The connection supplies task ownership; no database access, credentials, or hand-written HTTP is needed.'
+}
+
+const PLANNING_TOOLS = 'Use anvil_create_issue and anvil_update_issue to build the queued plan. Use anvil_requeue_issue for repaired blocked planning issues and anvil_block_issue only for unfinished planning.'
+
+const REVIEW_TOOLS = 'After satisfying the checklist, validating, and committing, call anvil_submit_review and require a successful result before reporting submission. Prose is never a review submission. Anvil pauses for developer review; only the developer approves. If unfinished, use anvil_block_issue and explain why in plain text.'
+
+function interruptedIssuePrompt(issueId: string | null): string {
+  if (!issueId) return 'Inspect the plan. Use anvil_requeue_issue only for blocked remaining task issues so Anvil can schedule them. Do not claim new work.'
+  return [
+    `Continue issue ${issueId}. Read its status with anvil_get_plan before acting.`,
+    'If blocked, use anvil_requeue_issue then anvil_start_issue for this current interrupted issue. If queued, use anvil_start_issue. If working, continue without requeueing. If already submitted (review or done), report that result instead of repeating work or submitting again.',
+    'For unfinished work, implement, validate, and commit. Do not claim other issues or create a replacement plan.',
+    REVIEW_TOOLS
+  ].join('\n')
 }
 
 export function planningPrompt(task: string, state: Pick<TaskExecutionState, 'projectPath' | 'parentIssueId'>): string {
   return [
     ANVIL_TASK_INSTRUCTIONS,
     issueTrackerInstructionsPrompt(),
+    PLANNING_TOOLS,
     'Create issues for this task with findings, paths, checklists, validation, and priorities.',
-    `Create issues under parent ${JSON.stringify(state.parentIssueId)}.`,
     'Create prerequisites first; dependencies use their actual issue IDs.',
     'Give each issue targeted validation commands.',
     'Leave the finished plan queued. Do not claim or implement issues. If planning fails, block any partial issues before exiting.',
@@ -29,17 +43,18 @@ export function planningPrompt(task: string, state: Pick<TaskExecutionState, 'pr
 }
 
 export function implementationPrompt(task: string, issue: Issue, projectPath: string): string {
-  const { id, parentId, title, description, checklist, validation } = issue
+  const { id, title, description, checklist, validation } = issue
   return [
     ANVIL_TASK_INSTRUCTIONS,
     'Implement this issue, validate it, and commit.',
     issueTrackerInstructionsPrompt(),
-    'Anvil already claimed your issue. Submit it for review with anvil_submit_review only after satisfying its checklist and providing real validation evidence. Anvil then pauses for developer review before any next issue.',
-    'Do not claim or create other issues, or change issue ownership or dependencies. If unfinished, block it and explain why in plain text.',
+    'Anvil already claimed your issue.',
+    REVIEW_TOOLS,
+    'Do not claim or create other issues, or change issue ownership or dependencies.',
     'Install dependencies locally, without shared node_modules symlinks.',
-    'Anvil reads review submission from Valence, not your response. Summarize the outcome in plain text.',
+    'Summarize the outcome in plain text.',
     `Task: ${task}`,
-    `Issue: ${JSON.stringify({ id, parentId, title, description, checklist, validation })}`
+    `Issue: ${JSON.stringify({ id, title, description, checklist, validation })}`
   ].join('\n')
 }
 
@@ -55,11 +70,7 @@ export function taskFollowupPrompt(task: Task, state: TaskExecutionState, messag
     'The developer is unblocking this task. Keep its existing plan and branch.',
     issueTrackerInstructionsPrompt(),
     `Original task: ${task.prompt}`,
-    `Task issue IDs: ${state.issueIds.join(', ')}`,
-    state.currentIssueId
-      ? `Resume issue ${state.currentIssueId}. Inspect its status, requeue and start it if blocked, then implement, validate, commit, and submit it for review with anvil_submit_review. If still working, verify it belongs to this interrupted task before requeueing. Do not take over another client's work.`
-      : 'Inspect and unblock the remaining task issues so Anvil can schedule them. Leave unfinished issues queued; do not claim new work.',
-    'Do not create a replacement plan or claim other issues. Anvil checks Valence review submissions and pauses for developer review after each issue.',
+    interruptedIssuePrompt(state.currentIssueId),
     `Developer message: ${message}`
   ].join('\n\n')
 }
@@ -71,10 +82,9 @@ export function taskRecoveryPrompt(task: Task, state: TaskExecutionState): strin
     'Continue from where the previous attempt stopped after a temporary connection failure. This is automatic recovery of the same task and session.',
     'Preserve completed work. Follow the latest user instructions in the saved conversation, including any that override the original request or validation plan below.',
     `Original task: ${task.prompt}`,
-    `Task parent: ${state.parentIssueId}`,
     state.phase === 'planning'
-      ? 'Inspect the existing plan before adding missing issues. Do not duplicate issues. Leave the finished plan queued without implementing it.'
-      : `Continue issue ${state.currentIssueId ?? '(inspect the existing task plan)'}. Check its Valence status before acting. If already submitted, report that result instead of repeating work. Do not claim other issues or create a replacement plan.`
+      ? `${PLANNING_TOOLS} Inspect the existing plan before adding missing issues. Do not duplicate issues. Leave the finished plan queued without implementing it.`
+      : interruptedIssuePrompt(state.currentIssueId)
   ].join('\n\n')
 }
 
@@ -89,9 +99,9 @@ export function issueReworkPrompt(projectPath: string, issueId: string, comments
   return [
     ANVIL_TASK_INSTRUCTIONS,
     issueTrackerInstructionsPrompt(),
-    `The developer reviewed issue ${JSON.stringify(issueId)} and requested changes. The issue is working again in Valence.`,
-    'Address the notes below in the code, then commit. Do not claim or create other issues, or change issue ownership or dependencies.',
-    'Submit the issue for review with anvil_submit_review again once its checklist is satisfied, with real validation evidence. Anvil pauses for developer review after every issue.',
+    `The developer reviewed issue ${JSON.stringify(issueId)} and requested changes. The issue is working again.`,
+    'Address the notes below in the code, validate, then commit. Do not claim or create other issues, or change issue ownership or dependencies.',
+    REVIEW_TOOLS,
     '',
     notes
   ].join('\n')

@@ -44,7 +44,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   expect(existsSync(join(testHome, '.valence')), 'Starting a task must not create project-local storage').toBe(false)
   expect(agentProcesses.starts[0].prompt).toMatch(/Leave the finished plan queued/)
   expect(agentProcesses.starts[0].projectPath).toBe(testHome)
-  expect(agentProcesses.starts[0].prompt.includes(store.getTaskExecution(taskId)!.parentIssueId)).toBeTruthy()
+  expect(agentProcesses.starts[0].prompt).not.toContain(store.getTaskExecution(taskId)!.parentIssueId)
   expect(handlers.has('board:review')).toBe(false)
   const { key: _key, ...fields } = issue
   const unrelatedTaskId = await start('Unrelated work')

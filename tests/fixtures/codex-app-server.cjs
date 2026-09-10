@@ -23,6 +23,44 @@ let initialized = false
 let resumed = false
 let steeringAttempts = 0
 const requests = new Map()
+let issueClient
+async function exerciseIssueTools(config) {
+  const assert = require('node:assert/strict')
+  if (!issueClient) {
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
+    const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js')
+    issueClient = new Client({ name: 'codex-transport-fixture', version: '1.0.0' })
+    await issueClient.connect(new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers: config.http_headers } }))
+  }
+  const { tools } = await issueClient.listTools()
+  const review = tools.find((tool) => tool.name === 'anvil_submit_review')
+  assert.deepEqual(review.inputSchema.required, ['id', 'checklist', 'evidence'])
+  const call = async (name, args = {}) => {
+    assert.ok(tools.some((tool) => tool.name === name))
+    const result = await issueClient.callTool({ name, arguments: args })
+    assert.ok(!result.isError, JSON.stringify(result))
+    return JSON.parse(result.content[0].text)
+  }
+  const plan = await call('anvil_get_plan')
+  if (plan.phase === 'planning') return
+  const issue = plan.issues.find((issue) => issue.id === plan.currentIssueId)
+  assert.ok(issue)
+  const args = { id: issue.id, checklist: issue.checklist.map(() => true), evidence: 'node:assert/strict: discovered review schema and current issue passed in Codex transport fixture' }
+  if (issue.status === 'blocked') {
+    const result = await issueClient.callTool({ name: review.name, arguments: args })
+    assert.equal(result.isError, true)
+    assert.match(result.content[0].text, /Only working/)
+    await call('anvil_requeue_issue', { id: issue.id })
+    await call('anvil_start_issue', { id: issue.id })
+  }
+  for (const invalid of [{ ...args, checklist: [] }, { ...args, evidence: '' }]) {
+    const result = await issueClient.callTool({ name: review.name, arguments: invalid })
+    assert.equal(result.isError, true)
+    assert.match(result.content[0].text, /checklist|evidence/)
+  }
+  assert.equal((await call(review.name, args)).status, 'review')
+}
+let issueConfig
 const send = (message) => process.stdout.write(JSON.stringify(message) + '\n')
 const respond = (id, result) => send({ id, result })
 const notify = (method, params = {}) => send({ method, params: { threadId, turnId, ...params } })
@@ -157,6 +195,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       return send({ id: message.id, error: { code: -32600, message: `no rollout found for thread id ${message.params.threadId}` } })
     }
     if (scenario === 'rejected-effort') return send({ id: message.id, error: { code: -32602, message: 'Effort rejected by backend' } })
+    if (scenario === 'mcp-review') issueConfig = message.params.config['mcp_servers.anvil_issue_tracker']
     realpathSync(message.params.cwd)
     if (realpathSync(process.env.PWD) !== process.cwd()) process.exit(24)
     if (!['read-only', 'workspace-write', 'danger-full-access'].includes(message.params.sandbox)) {
@@ -221,7 +260,11 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       return
     }
     // The acknowledgement cannot be interpreted as successful completion.
-    setTimeout(finish, 30)
+    if (scenario === 'mcp-review') {
+      void exerciseIssueTools(issueConfig).then(finish).catch((error) => {
+        notify('turn/completed', { turn: turn('failed', { message: error.stack }) })
+      })
+    } else setTimeout(finish, 30)
   } else if (message.method === 'turn/steer') {
     if (message.params.threadId !== threadId || message.params.expectedTurnId !== turnId) process.exit(30)
     if (message.params.input[0].text !== 'Adjust validation') process.exit(31)

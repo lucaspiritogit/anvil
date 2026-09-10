@@ -60,9 +60,8 @@ export class AgentProcessManager extends EventEmitter {
   createPlan(taskId: string, inputs: Omit<BatchIssue, 'parentId'>[]): Issue[] {
     const tracker = openIssueTracker(this.starts.findLast((start) => start.taskId === taskId).projectPath, this.starts.findLast((start) => start.taskId === taskId).workspace ? join(this.starts.findLast((start) => start.taskId === taskId).workspace.directory, 'anvil.db') : this.databasePath)
     try {
-      const prompt = this.starts.findLast((start) => start.taskId === taskId).prompt as string
-      const parentId = /Create issues under parent "([^"]+)"/.exec(prompt)?.[1]
-      if (!parentId) throw new Error('Planning prompt has no Valence parent')
+      const parentId = tracker.listParents().find((parent) => parent.anvilTaskId === taskId)?.id
+      if (!parentId) throw new Error('Task has no Valence parent')
       return tracker.createMany(inputs.map((input) => ({ ...input, parentId })))
     } finally {
       tracker.close()
