@@ -153,7 +153,7 @@ const api = {
       invoke('tasks:rebase-agent', taskId),
     mergePreview: (taskId: string): Promise<TaskMergePreview> => invoke('tasks:merge-preview', taskId),
     approve: (input: IpcRequests['tasks:approve']): Promise<Task> => invoke('tasks:approve', input),
-    approveIssue: (taskId: string): Promise<Task> => invoke('tasks:approve-issue', taskId),
+    approveIssue: (input: IpcRequests['tasks:approve-issue']): Promise<Task> => invoke('tasks:approve-issue', input),
     rejectIssue: (input: IpcRequests['tasks:reject-issue']): Promise<Task> => invoke('tasks:reject-issue', input),
     onEvent: (handler: (event: TaskEvent) => void): (() => void) =>
       subscribe<TaskEvent>('task:event', handler),

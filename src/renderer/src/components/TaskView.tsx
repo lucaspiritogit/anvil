@@ -458,8 +458,11 @@ function Notice({ tone = 'danger', children }: { tone?: 'danger' | 'warn'; child
 
 export function TaskView({ task, issueId }: Props): JSX.Element {
   const { snapshot, loading, error: issueError, refresh } = useTaskIssues(task.id, true)
-  const issue = snapshot?.children.find((child) => child.id === issueId && child.parentId === snapshot.parent.id)
-  const childOutput = useIssueEvents(task.id, issue?.id)
+  const viewedIssue = snapshot?.children.find((child) => child.id === issueId && child.parentId === snapshot.parent.id)
+  const pendingIssue = snapshot?.children.find((child) => child.status === 'review' &&
+    (!snapshot.execution?.currentIssueId || child.id === snapshot.execution.currentIssueId))
+  const issue = issueId ? viewedIssue : pendingIssue
+  const childOutput = useIssueEvents(task.id, viewedIssue?.id)
   const parentEvents = useStore((s) => s.eventsByTask[task.id])
   const events = issueId ? childOutput.events : parentEvents
   const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? task.workspaceId)
@@ -469,9 +472,8 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
   const diff = useStore((s) => s.diffsByTask[task.id])
   const diffError = useStore((s) => s.diffErrorsByTask[task.id])
   const loadTaskDiff = useStore((s) => s.loadTaskDiff)
-  const issueDiff = useStore((s) => (issue ? s.diffsByIssue[issue.id] : undefined))
-  const issueDiffError = useStore((s) => (issue ? s.diffErrorsByIssue[issue.id] : undefined))
-  const loadIssueDiff = useStore((s) => s.loadIssueDiff)
+  const [issueDiffState, setIssueDiffState] = useState<{ key: string; diff?: TaskDiff; error?: string }>({ key: '' })
+  const [diffAttempt, setDiffAttempt] = useState(0)
   const approveIssue = useStore((s) => s.approveIssue)
   const rejectIssue = useStore((s) => s.rejectIssue)
   const [reviewBusy, setReviewBusy] = useState<'approve' | 'reject' | null>(null)
@@ -498,7 +500,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
   const outputRef = useRef<HTMLDivElement>(null)
   const [now, setNow] = useState(Date.now())
   const [follow, setFollow] = useState(true)
-  const reviewable = !issueId && (task.deliveryStatus === 'reviewable' || approved)
+  const reviewable = !issueId && !pendingIssue && (task.deliveryStatus === 'reviewable' || approved)
   const [activePanel, setActivePanel] = useState<TaskPanel>('output')
 
   useEffect(() => {
@@ -520,37 +522,53 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
     if (reviewable && !diff) void loadTaskDiff(task.id)
   }, [diff, loadTaskDiff, reviewable, task.id])
 
-  const loadedIssueDiff = useRef<string | null>(null)
-  const issueDiffKey = issue ? `${issue.id}:${issue.headCommit ?? ''}` : null
-  useEffect(() => {
-    if (!issue || !issueDiffKey) return
-    // Leaving review (rework) invalidates the recorded range, so the next review refetches.
-    if (issue.status !== 'review' && issue.status !== 'complete') {
-      loadedIssueDiff.current = null
-      return
-    }
-    if (loadedIssueDiff.current === issueDiffKey) return
-    loadedIssueDiff.current = issueDiffKey
-    void loadIssueDiff(task.id, issue.id)
-  }, [issue, issueDiffKey, loadIssueDiff, task.id])
-
-  const retryIssueDiff = (): void => {
-    loadedIssueDiff.current = null
-    if (issue) void loadIssueDiff(task.id, issue.id)
+  const issueDiffKey = issue && (issue.status === 'review' || issue.status === 'complete')
+    ? JSON.stringify([task.id, issue.id, issue.baseCommit, issue.headCommit, snapshot?.reviewReady]) : ''
+  const reviewRevision = useRef({ key: issueDiffKey, version: 0 })
+  if (reviewRevision.current.key !== issueDiffKey) {
+    reviewRevision.current = { key: issueDiffKey, version: reviewRevision.current.version + 1 }
   }
+  const issueDiff = issueDiffState.key === issueDiffKey ? issueDiffState.diff : undefined
+  const issueDiffError = issueDiffState.key === issueDiffKey ? issueDiffState.error : undefined
+  useEffect(() => {
+    setDraft(null)
+    setReworkComment('')
+    setReviewError(null)
+  }, [issueDiffKey])
+  useEffect(() => {
+    let active = true
+    setIssueDiffState({ key: issueDiffKey })
+    if (issue && issueDiffKey && snapshot?.reviewReady !== false) {
+      void window.anvil.tasks.issueDiff({ taskId: task.id, issueId: issue.id }).then((diff) => {
+        if (active) setIssueDiffState({ key: issueDiffKey, diff })
+      }).catch((error: unknown) => {
+        if (active) setIssueDiffState({ key: issueDiffKey, error: error instanceof Error ? error.message : String(error) })
+      })
+    }
+    return () => { active = false }
+  }, [issueDiffKey, diffAttempt, task.id])
+
+  const retryIssueDiff = (): void => setDiffAttempt((value) => value + 1)
+  const reviewDisabled = !!reviewBusy || !!issueError || snapshot?.reviewReady === false || !issueDiff
 
   const reviewIssue = async (action: 'approve' | 'reject'): Promise<void> => {
-    if (!issue || reviewBusy) return
+    if (!issue || issue.status !== 'review' || reviewDisabled) return
+    const submittedVersion = reviewRevision.current.version
     setReviewBusy(action)
     setReviewError(null)
     try {
-      if (action === 'approve') await approveIssue(task.id)
+      if (action === 'approve') await approveIssue(task.id, issue.id, issue.headCommit ?? null)
       else {
-        await rejectIssue(task.id, issue.id, reworkComment)
+        await rejectIssue(task.id, issue.id, reworkComment, issue.headCommit ?? null)
+      }
+      if (reviewRevision.current.version === submittedVersion) {
+        setIssueDiffState({ key: '' })
+        setDraft(null)
         setReworkComment('')
       }
+      refresh()
     } catch (error) {
-      setReviewError(error instanceof Error ? error.message : String(error))
+      if (reviewRevision.current.version === submittedVersion) setReviewError(error instanceof Error ? error.message : String(error))
     } finally {
       setReviewBusy(null)
     }
@@ -604,15 +622,15 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
 
       <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4">
         <div className="flex items-start justify-between gap-4">
-          <h1 className="min-w-0 flex-1 text-base font-medium leading-snug [overflow-wrap:anywhere]">{issue?.title ?? task.title}</h1>
+          <h1 className="min-w-0 flex-1 text-base font-medium leading-snug [overflow-wrap:anywhere]">{viewedIssue?.title ?? task.title}</h1>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs">
             {issue ? <>
-              <span aria-label="Valence status" className={cn('font-medium', ISSUE_STATUS[issue.status].tone)}>{ISSUE_STATUS[issue.status].label}</span>
+              <span aria-label={issueId ? "Valence status" : "Task status"} className={cn('font-medium', ISSUE_STATUS[issue.status].tone)}>{ISSUE_STATUS[issue.status].label}{!issueId && `: ${issue.title}`}</span>
               {issue.status === 'review' && <>
-                <button className={cn(btn.ghost, 'ml-2')} disabled={!!reviewBusy || snapshot?.reviewReady === false} onClick={() => void reviewIssue('reject')}>
+                <button className={cn(btn.ghost, 'ml-2')} disabled={reviewDisabled} onClick={() => void reviewIssue('reject')}>
                   {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
                 </button>
-                <button className={cn(btn.primary, 'bg-ok')} disabled={!!reviewBusy || snapshot?.reviewReady === false} onClick={() => void reviewIssue('approve')}>
+                <button className={cn(btn.primary, 'bg-ok')} disabled={reviewDisabled} onClick={() => void reviewIssue('approve')}>
                   {reviewBusy === 'approve' ? 'Approving…' : 'Approve'}
                 </button>
               </>}
@@ -649,7 +667,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
               <span aria-hidden="true">/</span>
               <span className="truncate" title={project?.path}>{project?.name ?? 'Tasks'}</span>
             </span>
-            {issue ? <>
+            {viewedIssue ? <>
               <span className="flex min-w-0 items-center gap-1.5">
                 <span>Subtask of</span>
                 <button className="min-w-0 max-w-72 truncate text-accent hover:underline" aria-label="Open owning task" title="Open owning task" onClick={() => void openTask(task.id)}>{task.title}</button>
@@ -660,7 +678,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
                   : 'Not recorded'} />
                 <StatBlock label="Completed" detail="Developer approval time, including time waiting for review." value={issueCompletedAt
                   ? <time dateTime={issueCompletedAt.toISOString()}>{issueCompletedAt.toLocaleString()}</time>
-                  : issue.status === 'complete' ? 'Not recorded' : 'Not completed'} />
+                  : viewedIssue.status === 'complete' ? 'Not recorded' : 'Not completed'} />
               </div>
             </> : <>
               <span className="flex items-center gap-1.5">
@@ -698,7 +716,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
       {issue && issueError && <Notice>Could not refresh subtask. Showing last known data. <button className={btn.text} onClick={refresh}>Retry</button></Notice>}
       {!issueId && (task.error || task.deliveryError) && <Notice>{task.error || task.deliveryError}</Notice>}
       {reviewError && <Notice>{reviewError}</Notice>}
-      {reviewable && commentError && <Notice>{commentError}</Notice>}
+      {(reviewable || issue) && commentError && <Notice>{commentError}</Notice>}
 
       <div className="flex shrink-0 items-stretch gap-1 px-3 border-b border-line" role="tablist" aria-label="Task panels">
         {panels.map((panel) => {
@@ -719,7 +737,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
               {selected && <span aria-hidden="true" className="absolute inset-x-0 -bottom-px h-0.5 bg-accent" />}
               {panel === 'output' && 'Output'}
               {panel === 'issues' && 'Issues'}
-              {panel === 'changes' && (issueId ? 'Changes' : <>
+              {panel === 'changes' && (issue ? 'Changes' : <>
                 Changes{' '}
                 <span className="font-mono font-normal tabular-nums text-dim">{task.filesChanged}</span>
                 {task.filesChanged > 0 && <>{' '}<span className="font-mono font-normal tabular-nums">
@@ -740,6 +758,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
               <p role="status" className="shrink-0 text-xs text-warn">Waiting for your review. The agent pauses until you approve or request changes.</p>
               <textarea
                 aria-label="Rework feedback"
+                disabled={reviewDisabled}
                 className={cn(field.control, 'min-w-56 flex-1 resize-none px-2.5 py-1.5 text-xs')}
                 rows={1}
                 placeholder="Optional note sent to the agent with a rework request…"
@@ -750,6 +769,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
             {pending.length > 0 && <p className="mt-1.5 text-[11px] text-dim">{pending.length} line comment{pending.length === 1 ? '' : 's'} will be sent with the rework request.</p>}
           </div>}
           {issueHasDiff ? <>
+            {issueDiff && (!issue.baseCommit || !issue.headCommit) && <p className="px-4 py-2 text-xs text-dim">Legacy submission: showing the available recorded range, with task commit fallback.</p>}
             {!issueDiff && !issueDiffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {issueDiffError && <div role="alert" className="p-5 text-sm text-danger">
               <p>{issueDiffError}</p>
@@ -757,17 +777,18 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
             </div>}
             {issueDiff && <Suspense fallback={<p className="p-5 text-sm text-dim">Loading diff renderer…</p>}>
               <PatchFiles
-                key={issueDiff.patch}
+                key={issueDiffKey}
                 patch={issueDiff.patch}
-                comments={comments ?? []}
+                comments={pending}
                 draft={draft}
                 trailing={issue.status === 'review' && pending.length === 0 && <span>Select a line to comment</span>}
-                onSelectLine={issue.status === 'review' ? setDraft : () => {}}
+                onSelectLine={issue.status === 'review' && !reviewDisabled ? setDraft : () => {}}
                 onSubmit={(target, body) => {
+                  if (issue && reviewDisabled) return
                   void addComment({ taskId: task.id, ...target, body })
                   setDraft(null)
                 }}
-                onRemove={(id) => void removeComment(task.id, id)}
+                onRemove={(id) => { if (!reviewDisabled) void removeComment(task.id, id) }}
               />
             </Suspense>}
           </> : <div className={EMPTY_PANEL}>
@@ -776,7 +797,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
           </div>}
         </section>}
 
-        {!issueId && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
+        {!issueId && !issue && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
           {reviewable ? <>
             {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {diffError && <div role="alert" className="p-5 text-sm text-danger">
@@ -810,13 +831,13 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
         <section id="task-panel-output" aria-label="Output" className={cn('flex flex-col flex-1 min-h-0 min-w-0', activePanel !== 'output' && 'hidden')}>
           <div className="relative flex-1 min-h-0 min-w-0">
             <div ref={outputRef} role="log" aria-label="Task output" className="h-full min-w-0 px-5 pb-3 overflow-y-auto overscroll-contain font-mono text-[12.5px] leading-[1.55]" onScroll={onScroll}>
-              <PromptBlock label={issue ? 'Description' : 'Prompt'} text={issue?.description ?? task.prompt} />
+              <PromptBlock label={viewedIssue ? 'Description' : 'Prompt'} text={viewedIssue?.description ?? task.prompt} />
               {!events && <p className={PLACEHOLDER}>Loading output…</p>}
               {childOutput.error && issue && <p role="alert" className={PLACEHOLDER}>{childOutput.error} <button className={btn.text} onClick={childOutput.retry}>Retry</button></p>}
               {!childOutput.error && events?.length === 0 && (issue || task.status !== 'running') && <p className={PLACEHOLDER}>{issue?.status === 'queued' ? 'Queued. Execution has not started.' : 'No output recorded.'}</p>}
-              {issue?.status === 'queued' && !!events?.length && <p className={PLACEHOLDER}>Queued again. Showing previous execution history.</p>}
+              {viewedIssue?.status === 'queued' && !!events?.length && <p className={PLACEHOLDER}>Queued again. Showing previous execution history.</p>}
               {events?.map((event) => <LogRow key={event.id} event={event} />)}
-              <TaskActivity task={task} presentation={presentation} issueStatus={issue?.status} event={events?.at(-1)} />
+              <TaskActivity task={task} presentation={presentation} issueStatus={viewedIssue?.status} event={events?.at(-1)} />
             </div>
             {!follow && <button className="absolute right-5 bottom-3 px-3 py-1.5 text-xs bg-hover border border-line" onClick={() => setFollow(true)}>
               Jump to latest

@@ -196,7 +196,11 @@ export class GitDeliveryManager {
     if (!existsSync(worktree)) return
     try {
       await this.withRepoLock(worktree, async () => {
-        if (existsSync(worktree)) await git(worktree, ['worktree', 'remove', '--force', worktree])
+        if (existsSync(worktree)) {
+          // Windows cannot remove the working directory of the Git process itself.
+          const commonDir = (await git(worktree, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).stdout.trim()
+          await git(commonDir, ['worktree', 'remove', '--force', worktree])
+        }
       })
     } catch (error) {
       console.warn(`Could not clean up task worktree ${taskId}:`, error)

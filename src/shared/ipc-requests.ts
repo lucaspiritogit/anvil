@@ -47,8 +47,8 @@ export interface IpcRequests {
   'tasks:rebase-agent': string
   'tasks:merge-preview': string
   'tasks:approve': { taskId: string; preview: TaskMergePreview }
-  'tasks:approve-issue': string
-  'tasks:reject-issue': { taskId: string; comment?: string }
+  'tasks:approve-issue': { taskId: string; issueId: string; headCommit: string | null }
+  'tasks:reject-issue': { taskId: string; issueId: string; headCommit: string | null; comment?: string }
   'comments:list': string
   'comments:add': Pick<TaskComment, 'taskId' | 'file' | 'side' | 'lineNumber' | 'body'>
   'comments:remove': { taskId: string; id: string }

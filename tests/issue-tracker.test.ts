@@ -25,6 +25,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
     await tick()
     return task.id
   }
+  const trackerHead = (taskId: string): string | null => store.issueTracker('project').get(store.getTaskExecution(taskId)!.currentIssueId!).headCommit ?? null
   const submit = async (taskId: string): Promise<string> => {
     const issueId = store.getTaskExecution(taskId)!.currentIssueId!
     callIssueTool(store, taskId, store.getTask(taskId)!.workspaceId, 'anvil_submit_review', { id: issueId, checklist: [true, true], evidence: 'Focused tests passed' })
@@ -32,14 +33,14 @@ test('schedules dependencies and priorities sequentially and retains final task 
     expect(pending.execution).toMatchObject({ currentIssueId: issueId })
     expect(pending.children.find((child: { id: string }) => child.id === issueId).status).toBe('review')
     expect(pending.reviewReady).toBe(false)
-    await expect(call('tasks:approve-issue', taskId)).rejects.toThrow(/not finished stopping/)
+    await expect(call('tasks:approve-issue', { taskId, issueId: store.getTaskExecution(taskId)!.currentIssueId!, headCommit: trackerHead(taskId) })).rejects.toThrow(/not finished stopping/)
     agentProcesses.finishTurn(taskId, 'Submitted through the issue tool')
     await tick()
     expect((await call('tasks:issues', taskId)).reviewReady).toBe(true)
     return issueId
   }
   const approve = async (taskId: string): Promise<void> => {
-    await call('tasks:approve-issue', taskId)
+    await call('tasks:approve-issue', { taskId, issueId: store.getTaskExecution(taskId)!.currentIssueId!, headCommit: trackerHead(taskId) })
     await tick()
   }
 
@@ -109,7 +110,11 @@ test('schedules dependencies and priorities sequentially and retains final task 
   expect((await call('tasks:issue-diff', { taskId, issueId: firstIssueId })).patch, 'The review diff covers only the reviewed issue').toBe('base..issue-head')
   await expect(call('tasks:issue-diff', { taskId, issueId: unrelated.id })).rejects.toThrow(/does not belong to this task plan/)
   agentProcesses.emit('usage', { taskId, inputTokens: 3, outputTokens: 1, cachedTokens: 0, totalTokens: 4, costUsd: null })
+  await expect(call('tasks:approve-issue', { taskId, issueId: firstIssueId, headCommit: 'stale-head' })).rejects.toThrow(/pending review changed/)
+  await expect(call('tasks:reject-issue', { taskId, issueId: unrelated.id, headCommit: null, comment: 'Wrong sibling' })).rejects.toThrow(/pending review changed/)
+  await call('comments:add', { taskId, file: 'first.txt', side: 'additions', lineNumber: 1, body: 'Discard on approval' })
   await approve(taskId)
+  expect(store.getComments(taskId).filter((comment) => comment.sentAt === null)).toHaveLength(0)
   await assertReadOnlySnapshot(['queued', 'working', 'complete'])
   expect(store.getTaskExecution(taskId)?.phase).toBe('working')
   expect(store.getTaskExecution(taskId)?.currentIssueId).toBe(prerequisite.id)
@@ -227,7 +232,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   await submit(reworkId)
   expect(store.getTaskExecution(reworkId)?.phase).toBe('reviewing')
   call('comments:add', { taskId: reworkId, file: 'src/review.ts', side: 'additions', lineNumber: 4, body: 'Extract a helper' })
-  await call('tasks:reject-issue', { taskId: reworkId, comment: 'Also cover the empty-input case' })
+  await call('tasks:reject-issue', { taskId: reworkId, issueId: store.getTaskExecution(reworkId)!.currentIssueId!, headCommit: trackerHead(reworkId), comment: 'Also cover the empty-input case' })
   await tick()
   expect(tracker.get(reworkIssueId).status, 'Rejection returns the issue to work').toBe('working')
   expect(store.getTaskExecution(reworkId)?.phase).toBe('working')
@@ -276,7 +281,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
     tracker.submitForReview(currentId, { checklist: [true, true], evidence: 'Server validation passed' })
     await serverExit('Submitted for review.')
     expect(store.getTaskExecution(serverId)?.phase).toBe('reviewing')
-    await call('tasks:approve-issue', serverId)
+    await call('tasks:approve-issue', { taskId: serverId, issueId: store.getTaskExecution(serverId)!.currentIssueId!, headCommit: trackerHead(serverId) })
     await tick()
     expect(tracker.get(currentId).evidence).toBe('Server validation passed')
     expect(store.getTask(serverId)?.status, 'Completion needs no assistant output').toBe('succeeded')

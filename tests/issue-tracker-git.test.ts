@@ -158,8 +158,12 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   const firstHead = git(firstCwd, 'rev-parse', 'HEAD')
   let board = taskState(store, task.id)!
   callIssueTool(store, task.id, store.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[0].id, checklist: [true], evidence: 'Read first.txt and verified its content' })
-  store.issueTracker('issue-ranges').approve(board.items[0].id)
   agentProcesses.finishTurn(task.id, 'Completed the first issue')
+  await waitFor(() => store.getTaskExecution(task.id)?.phase === 'reviewing')
+  const firstReview = await call('tasks:issue-diff', { taskId: task.id, issueId: board.items[0].id })
+  expect(firstReview.patch).toContain('first.txt')
+  expect(firstReview.patch).not.toContain('second.txt')
+  await call('tasks:approve-issue', { taskId: task.id, issueId: board.items[0].id, headCommit: firstHead })
   await waitFor(() => agentProcesses.starts.length === 3)
 
   const secondCwd = agentProcesses.starts[2].cwd
@@ -168,14 +172,26 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   git(secondCwd, 'commit', '-m', 'feat: second attempt')
   board = taskState(store, task.id)!
   callIssueTool(store, task.id, store.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[1].id, checklist: [true], evidence: 'Read second.txt and verified its content' })
-  store.issueTracker('issue-ranges').reject(board.items[1].id)
+  agentProcesses.finishTurn(task.id, 'Second attempt ready for review')
+  await waitFor(() => store.getTaskExecution(task.id)?.phase === 'reviewing')
+  const secondReview = await call('tasks:issue-diff', { taskId: task.id, issueId: board.items[1].id })
+  expect(secondReview.patch).toContain('second.txt')
+  expect(secondReview.patch).not.toContain('first.txt')
+  await call('tasks:reject-issue', { taskId: task.id, issueId: board.items[1].id,
+    headCommit: git(secondCwd, 'rev-parse', 'HEAD'), comment: 'Rework the second file' })
+  await waitFor(() => agentProcesses.starts.length === 4)
+  expect(agentProcesses.starts[3].cwd).toBe(firstCwd)
   writeFileSync(join(secondCwd, 'second.txt'), 'second rework\n')
   git(secondCwd, 'add', 'second.txt')
   git(secondCwd, 'commit', '-m', 'fix: second rework')
   const reworkHead = git(secondCwd, 'rev-parse', 'HEAD')
   callIssueTool(store, task.id, store.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[1].id, checklist: [true], evidence: 'Rework verified against second.txt' })
-  store.issueTracker('issue-ranges').approve(board.items[1].id)
   agentProcesses.finishTurn(task.id, 'Reworked and completed')
+  await waitFor(() => store.getTaskExecution(task.id)?.phase === 'reviewing')
+  const reworkReview = await call('tasks:issue-diff', { taskId: task.id, issueId: board.items[1].id })
+  expect(reworkReview.patch).toContain('second rework')
+  expect(reworkReview.patch).not.toContain('first.txt')
+  await call('tasks:approve-issue', { taskId: task.id, issueId: board.items[1].id, headCommit: reworkHead })
   await waitFor(() => store.getTask(task.id)?.deliveryStatus === 'reviewable')
 
   const [first, second] = taskState(store, task.id)!.items

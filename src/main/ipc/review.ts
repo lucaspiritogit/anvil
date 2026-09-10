@@ -1,3 +1,4 @@
+import { TaskIssues } from '../tasks/task-issues'
 import type { RendererIpc } from '../renderer-security'
 import { randomUUID } from 'node:crypto'
 import { getAgent } from '../agents/registry'
@@ -53,9 +54,21 @@ export function registerReviewHandlers(ipc: RendererIpc, {
     })
   })
 
-  ipc.handle('tasks:approve-issue', (_event, taskId: string): Promise<Task> =>
-    withTaskOperation(store, taskId, 'review', async () => {
+  const requireCurrentReview = (input: { taskId: string; issueId: string; headCommit: string | null }): void => {
+    const state = store.getTaskExecution(input.taskId)
+    if (state?.currentIssueId !== input.issueId ||
+      new TaskIssues(store).issueDiffSource(input.taskId, input.issueId).headCommit !== input.headCommit) {
+      throw new Error('The pending review changed. Refresh and review the latest changes.')
+    }
+  }
+
+  ipc.handle('tasks:approve-issue', (_event, input): Promise<Task> =>
+    withTaskOperation(store, input.taskId, 'review', async () => {
+      requireCurrentReview(input)
+      const taskId = input.taskId
+      const pending = store.getComments(taskId).filter((comment) => comment.sentAt === null)
       await approveIssue(taskId)
+      for (const comment of pending) store.removeComment(comment.id)
       const approved = store.getTask(taskId)
       if (!approved) throw new Error('Task was deleted')
       return approved
@@ -64,6 +77,7 @@ export function registerReviewHandlers(ipc: RendererIpc, {
 
   ipc.handle('tasks:reject-issue', (_event, input): Promise<Task> =>
     withTaskOperation(store, input.taskId, 'review', async (check) => {
+      requireCurrentReview(input)
       const body = input.comment?.trim()
       const state = rejectIssue(input.taskId)
       if (body) store.addComment({

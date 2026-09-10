@@ -494,14 +494,14 @@ window.anvil = {
       if (query.has('mergeFailure')) throw new Error('Merge failed. The task was not approved.')
       return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', reviewedAt: Date.now() })
     },
-    approveIssue: async (taskId: string) => {
+    approveIssue: async ({ taskId }: { taskId: string; issueId: string; headCommit: string | null }) => {
       window.dispatchEvent(new CustomEvent('fixture:issue-approval', { detail: { taskId } }))
       await new Promise((resolve) => setTimeout(resolve, 100))
       if (query.has('approveIssueFailure')) throw new Error('This task is not waiting for an issue review')
       return tasks.find((task) => task.id === taskId)!
     },
     rejectIssue: async (input: { taskId: string; comment?: string }) => {
-      window.dispatchEvent(new CustomEvent('fixture:issue-rejection', { detail: input }))
+      window.dispatchEvent(new CustomEvent('fixture:issue-rejection', { detail: { taskId: input.taskId, ...(input.comment ? { comment: input.comment } : {}) } }))
       await new Promise((resolve) => setTimeout(resolve, 100))
       if (query.has('rejectIssueFailure')) throw new Error('This task is not waiting for an issue review')
       return tasks.find((task) => task.id === input.taskId)!

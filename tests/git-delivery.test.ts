@@ -18,6 +18,8 @@ async function fixture(initialCommit = true) {
   git(repo, 'init', '-b', 'main')
   git(repo, 'config', 'user.name', 'Anvil test')
   git(repo, 'config', 'user.email', 'anvil-test@example.invalid')
+  // Fixture contents must not depend on the developer's global checkout settings.
+  git(repo, 'config', 'core.autocrlf', 'false')
   if (initialCommit) {
     await writeFile(join(repo, 'app', 'source.ts'), 'base\n')
     git(repo, 'add', '.')

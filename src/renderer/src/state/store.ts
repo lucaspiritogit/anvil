@@ -91,8 +91,8 @@ interface AnvilState {
   initGitRepo: (id: string) => Promise<void>
 
   approveTask: (taskId: string, preview: TaskMergePreview) => Promise<void>
-  approveIssue: (taskId: string) => Promise<void>
-  rejectIssue: (taskId: string, issueId: string, comment?: string) => Promise<void>
+  approveIssue: (taskId: string, issueId: string, headCommit: string | null) => Promise<void>
+  rejectIssue: (taskId: string, issueId: string, comment?: string, headCommit?: string | null) => Promise<void>
   openRebase: (taskId: string | null) => void
   rebaseTask: (taskId: string, steps: RebaseStep[]) => Promise<void>
   rebaseWithAgent: (taskId: string) => Promise<void>
@@ -468,19 +468,24 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  approveIssue: async (taskId) => {
-    const task = await window.anvil.tasks.approveIssue(taskId)
-    if (!get().tasks.some((item) => item.id === taskId)) return
-    set((s) => ({ tasks: s.tasks.map((item) => (item.id === task.id ? task : item)) }))
-  },
-
-  /** A rework request carries an optional general note plus any pending line comments. */
-  rejectIssue: async (taskId, issueId, comment) => {
-    const body = comment?.trim()
-    const task = await window.anvil.tasks.rejectIssue({ taskId, ...(body ? { comment: body } : {}) })
+  approveIssue: async (taskId, issueId, headCommit) => {
+    const task = await window.anvil.tasks.approveIssue({ taskId, issueId, headCommit })
+    await get().loadComments(taskId)
     if (!get().tasks.some((item) => item.id === taskId)) return
     set((s) => ({
       tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+      diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== taskId))
+    }))
+  },
+
+  /** A rework request carries an optional general note plus any pending line comments. */
+  rejectIssue: async (taskId, issueId, comment, headCommit) => {
+    const body = comment?.trim()
+    const task = await window.anvil.tasks.rejectIssue({ taskId, issueId, headCommit: headCommit ?? null, ...(body ? { comment: body } : {}) })
+    if (!get().tasks.some((item) => item.id === taskId)) return
+    set((s) => ({
+      tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+      diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== taskId)),
       // The issue restarts, so its recorded diff range is stale until the next review.
       diffsByIssue: Object.fromEntries(Object.entries(s.diffsByIssue).filter(([key]) => key !== issueId)),
       diffErrorsByIssue: Object.fromEntries(Object.entries(s.diffErrorsByIssue).filter(([key]) => key !== issueId))

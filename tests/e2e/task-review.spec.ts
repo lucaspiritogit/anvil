@@ -3,6 +3,138 @@ import type { TaskIssueSnapshot } from '../../src/shared/types'
 
 type ReviewCall = { kind: string; detail: Record<string, unknown> }
 
+test('owner reviews two isolated ranges and rework before the combined final diff', async ({ page }, testInfo) => {
+  await page.goto('/tests/e2e/fixture/?scenario=review')
+  await expect(page.getByRole('log')).toContainText('The sidebar spacing is updated')
+  await page.evaluate(() => {
+    const snapshot: TaskIssueSnapshot = {
+      parent: { id: 'plan', title: 'Two changes', description: '' },
+      execution: { phase: 'reviewing', currentIssueId: 'first', error: null },
+      reviewReady: true,
+      children: ['first', 'second'].map((id) => ({ id, parentId: 'plan', title: `${id} change`, description: '',
+        status: id === 'first' ? 'review' : 'queued', baseCommit: `base-${id}`, headCommit: `head-${id}`,
+        checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] }))
+    }
+    const publish = () => window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'review', snapshot: structuredClone(snapshot) } }))
+    const patch = (id: string) => `diff --git a/${id}.txt b/${id}.txt\nnew file mode 100644\n--- /dev/null\n+++ b/${id}.txt\n@@ -0,0 +1 @@\n+${id} change\n`
+    window.anvil.tasks.issueDiff = async ({ issueId }) => ({ patch: patch(issueId), commits: [] })
+    window.anvil.tasks.diff = async () => ({ patch: patch('first') + patch('second'), commits: [] })
+    window.anvil.tasks.approveIssue = async ({ issueId }) => {
+      snapshot.children.find((child) => child.id === issueId)!.status = 'complete'
+      if (issueId === 'first') {
+        snapshot.children[1].status = 'review'
+        snapshot.execution!.currentIssueId = 'second'
+      } else {
+        snapshot.execution = { phase: 'complete', currentIssueId: null, error: null }
+      }
+      publish()
+      return (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    }
+    window.anvil.tasks.rejectIssue = async ({ issueId, comment }) => {
+      if (issueId !== 'second' || comment !== 'Rework second only') throw new Error('Wrong review feedback')
+      snapshot.children[1].status = 'working'
+      snapshot.execution!.phase = 'working'
+      publish()
+      setTimeout(() => {
+        snapshot.children[1].status = 'review'
+        snapshot.children[1].headCommit = 'reworked-second'
+        snapshot.execution!.phase = 'reviewing'
+        publish()
+      }, 1200)
+      return (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    }
+    publish()
+    for (const [index, text] of ['Planning history', 'First issue output', 'Second issue output'].entries()) {
+      window.dispatchEvent(new CustomEvent('fixture:output', { detail: { id: `history-${index}`, taskId: 'review',
+        issueId: index ? ['first', 'second'][index - 1] : undefined, ts: Date.now(), stream: 'stdout', kind: 'output', category: 'message', text } }))
+    }
+  })
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('first change')
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  const file = page.getByRole('combobox', { name: 'Changed file' })
+  await expect(file).toHaveValue('first.txt')
+  await page.getByLabel('Rework feedback').fill('Do not carry this draft')
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  await expect(file).toHaveValue('second.txt')
+  await expect(file.locator('option')).toHaveCount(1)
+  await expect(page.getByLabel('Rework feedback')).toHaveValue('')
+  await page.getByLabel('Rework feedback').fill('Rework second only')
+  await page.getByRole('button', { name: 'Request changes', exact: true }).click()
+  await expect(page.getByLabel('Rework feedback')).toBeHidden()
+  await expect(page.getByLabel('Rework feedback')).toHaveValue('')
+  await expect(file).toHaveValue('second.txt')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.screenshot({ path: testInfo.outputPath('second-review-wide.png') })
+  await page.setViewportSize({ width: 900, height: 650 })
+  await page.screenshot({ path: testInfo.outputPath('second-review-narrow.png') })
+  await page.getByRole('tab', { name: 'Output', exact: true }).click()
+  for (const text of ['Planning history', 'First issue output', 'Second issue output']) await expect(page.getByRole('log')).toContainText(text)
+  await page.screenshot({ path: testInfo.outputPath('continuous-output.png') })
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toBeVisible()
+  await expect(file.locator('option')).toHaveCount(2)
+  await expect(file.locator('option')).toHaveText(['first.txt', 'second.txt'])
+  await page.screenshot({ path: testInfo.outputPath('combined-final-review.png') })
+})
+
+test('owner handles failed and empty issue diffs with explicit legacy fallback', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=review')
+  await page.evaluate(() => {
+    let attempt = 0
+    window.anvil.tasks.issueDiff = async () => {
+      if (++attempt === 1) throw new Error('Recorded range unavailable')
+      return { patch: '', commits: [] }
+    }
+    window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'review', snapshot: {
+      parent: { id: 'plan', title: 'Plan', description: '' }, reviewReady: true,
+      children: [{ id: 'empty', parentId: 'plan', title: 'No changes', description: '', status: 'review', checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] }]
+    } } }))
+  })
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  await expect(page.getByRole('alert')).toContainText('Recorded range unavailable')
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.getByText('No file changes in this range.')).toBeVisible()
+  await expect(page.getByText(/Legacy submission:/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeEnabled()
+})
+
+test('a late sibling diff cannot replace the current review', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=review')
+  await expect(page.getByRole('log')).toContainText('The sidebar spacing is updated')
+  await page.evaluate(() => {
+    const snapshot: TaskIssueSnapshot = {
+      parent: { id: 'plan', title: 'Plan', description: '' },
+      children: ['slow', 'next'].map((id) => ({ id, parentId: 'plan', title: id, description: '',
+        status: id === 'slow' ? 'review' : 'queued', checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] }))
+    }
+    const publish = () => window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'review', snapshot: structuredClone(snapshot) } }))
+    window.anvil.tasks.issueDiff = async ({ issueId }) => {
+      if (issueId === 'slow') {
+        setTimeout(() => {
+          snapshot.children[0].status = 'complete'
+          snapshot.children[1].status = 'review'
+          publish()
+        }, 50)
+        await new Promise((resolve) => setTimeout(resolve, 1800))
+        window.dispatchEvent(new Event('fixture:slow-diff-returned'))
+        return { patch: 'stale sibling patch', commits: [] }
+      }
+      return { patch: '', commits: [] }
+    }
+    Object.assign(window, { slowDiffReturned: false })
+    window.addEventListener('fixture:slow-diff-returned', () => Object.assign(window, { slowDiffReturned: true }))
+    publish()
+  })
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('next')
+  await expect(page.getByText('No file changes in this range.')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { slowDiffReturned: boolean }).slowDiffReturned)).toBe(true)
+  await expect(page.getByText('No file changes in this range.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeEnabled()
+})
+
 test('sub-task review pauses on the per-issue diff with approve and request-changes actions', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(() => {
@@ -24,15 +156,9 @@ test('sub-task review pauses on the per-issue diff with approve and request-chan
   const publish = (value: TaskIssueSnapshot): Promise<void> =>
     page.evaluate((snapshot) => window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'review', snapshot } })), value)
   await publish(snapshot)
-  const sidebar = page.getByRole('complementary', { name: 'Task sidebar' })
-  const subtask = sidebar.getByRole('button', { name: 'Open subtask: Extract review actions', exact: true })
-  await sidebar.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
-  // The sidebar and the parent run both surface the waiting-for-review state.
-  await expect(subtask).toContainText('Review')
-  await expect(page.getByRole('status', { name: 'Review gate' })).toBeVisible()
-  await subtask.click()
-  await expect(page.getByLabel('Valence status')).toHaveText('Review')
-  await page.getByRole('tab', { name: 'Changes', exact: true }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Review sidebar changes')
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Extract review actions')
+  await page.getByRole('tab', { name: /^Changes/ }).click()
   const review = page.getByRole('region', { name: 'Subtask code changes' })
   await expect(review.getByRole('status')).toContainText('Waiting for your review')
   // The diff comes from the per-issue channel, not the whole task diff.
@@ -50,11 +176,14 @@ test('sub-task review pauses on the per-issue diff with approve and request-chan
   const rework = structuredClone(snapshot)
   rework.children[1].status = 'working'
   await publish(rework)
-  await expect(page.getByLabel('Valence status')).toHaveText('Working')
-  await expect(review.getByText('Its diff will appear here when the sub-task is submitted for review.')).toBeVisible()
+  await expect(review).toHaveCount(0)
   rework.children[1].status = 'review'
   await publish(rework)
   await expect(review.getByRole('combobox', { name: 'Changed file' })).toHaveValue('src/sidebar.ts')
+  await expect(review.getByLabel('Rework feedback')).toHaveValue('')
+  await page.screenshot({ path: testInfo.outputPath('subtask-review-wide.png') })
+  await page.setViewportSize({ width: 900, height: 650 })
+  await page.screenshot({ path: testInfo.outputPath('subtask-review-narrow.png') })
   await page.getByRole('button', { name: 'Approve', exact: true }).click()
   await expect.poll(calls).toContainEqual({ kind: 'fixture:issue-approval', detail: { taskId: 'review' } })
   await page.screenshot({ path: testInfo.outputPath('subtask-review.png') })
