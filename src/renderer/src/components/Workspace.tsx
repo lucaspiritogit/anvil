@@ -36,12 +36,19 @@ export function Workspace(): JSX.Element {
   const activeTask = view.kind === 'task' ? tasks.find((r) => r.id === view.taskId) : undefined
 
   const issueId = view.kind === 'task' ? view.issueId : undefined
+  const overview = view.kind === 'home' || !activeTask
 
   return (
-    <main className="flex flex-col min-w-0 min-h-0 h-full overflow-hidden">
-      {dragStrip && <DragStrip />}
+    <main className={cn('relative flex flex-col min-w-0 min-h-0 h-full overflow-hidden',
+      // Keep the overview centered in the full window, with fixed clearance for
+      // traffic lights even when its content needs to scroll in a short window.
+      IS_MAC && overview && 'py-11'
+    )}>
+      {dragStrip && (overview
+        ? <div className="absolute inset-x-0 top-0"><DragStrip /></div>
+        : <DragStrip />)}
       <section className="relative flex-1 min-w-0 min-h-0 overflow-hidden">
-        {(view.kind === 'home' || !activeTask) && (
+        {overview && (
           <ProjectOverview project={project} />
         )}
         {activeTask && <TaskView key={JSON.stringify([activeTask.id, issueId])} task={activeTask} issueId={issueId} />}
