@@ -16,6 +16,7 @@ function setup() {
   class FakeNotification extends EventEmitter {
     static isSupported = vi.fn(() => true)
     show = vi.fn()
+    close = vi.fn()
     constructor(readonly options: NotificationConstructorOptions) {
       super()
       notifications.push(this)

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, Menu, powerMonitor } from 'electron'
+import { showNotificationSettings } from './mac-notifications'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -137,6 +138,7 @@ if (ownsInstance) app.whenReady().then(() => {
       Menu.setApplicationMenu(Menu.buildFromTemplate([
         ...(process.platform === 'darwin' ? [{ label: app.name, submenu: [
           { role: 'about' as const }, { type: 'separator' as const }, settingsMenu,
+          { label: 'Notifications…', click: () => { void showNotificationSettings().catch(console.warn) } },
           { type: 'separator' as const }, { role: 'services' as const },
           { type: 'separator' as const }, { role: 'hide' as const }, { role: 'hideOthers' as const },
           { role: 'unhide' as const }, { type: 'separator' as const }, { role: 'quit' as const }

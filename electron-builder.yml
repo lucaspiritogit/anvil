@@ -23,6 +23,9 @@ asarUnpack:
   - node_modules/@electric-sql/pglite/**
   - node_modules/@electric-sql/pglite-pgvector/**
 mac:
+  extraResources:
+    - from: native/mac-notifications/build/Release/authorization.node
+      to: mac-notifications/authorization.node
   category: public.app-category.developer-tools
   target: dmg
 dmg:

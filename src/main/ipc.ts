@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerCaffeineMode } from './caffeine-mode'
 import { registerTaskNotifications } from './task-notifications'
+import { macNotificationOptions } from './mac-notifications'
 import { AgentProcessManager } from './agents/process-manager'
 import { GitDeliveryManager } from './git-delivery'
 import { registerAgentHandlers } from './ipc/agents'
@@ -68,7 +69,7 @@ export function registerIpc(
   const agentProcesses = new AgentProcessManager(undefined, undefined, undefined,
     (taskId) => resolveTaskWorkspace(store, taskId), (taskId) => issueTools.open(taskId))
   const stopCaffeineMode = registerCaffeineMode(store, powerSaveBlocker)
-  const stopTaskNotifications = registerTaskNotifications(store, Notification)
+  const stopTaskNotifications = registerTaskNotifications(store, Notification, macNotificationOptions())
   const worktreeOwners = new Map<string, string>()
   const rememberWorktreeOwners = (): void => {
     for (const task of store.getTasks()) worktreeOwners.set(task.id, task.workspaceId)
