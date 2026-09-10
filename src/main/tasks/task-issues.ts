@@ -193,7 +193,8 @@ export class TaskIssues {
         if (tracker.get(state.currentIssueId!).status === 'review') tracker.block(state.currentIssueId!)
       })
       else if (state.currentIssueId && this.ownedClaims.get(taskId) === state.currentIssueId) this.withTracker(state, (tracker) => {
-        if (tracker.get(state.currentIssueId!).status === 'working') tracker.block(state.currentIssueId!)
+        const status = tracker.get(state.currentIssueId!).status
+        if (status === 'working' || status === 'review') tracker.block(state.currentIssueId!)
       })
     } catch (storageError) {
       error += ` Could not block the Valence issue: ${storageError instanceof Error ? storageError.message : String(storageError)}`

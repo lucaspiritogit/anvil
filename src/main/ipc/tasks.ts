@@ -49,9 +49,11 @@ export function registerTaskHandlers(ipc: RendererIpc, {
   ipc.handle('tasks:delete', (_event, taskId: string): void => {
     cancelTaskOperation(store, taskId)
     // Release only this process's claim; the independent Valence records survive deletion.
-    stopTask(taskId, 'Anvil task deleted.')
-    // Remove before cancellation so late callbacks cannot restore Anvil metadata.
-    store.deleteTaskCascade(taskId)
+    store.transaction(() => {
+      stopTask(taskId, 'Anvil task deleted.')
+      // Remove before cancellation so late callbacks cannot restore Anvil metadata.
+      store.deleteTaskCascade(taskId)
+    }, store.getTask(taskId)?.workspaceId)
     forgetUsage(taskId)
     if (agentProcesses.isRunning(taskId)) agentProcesses.cancel(taskId)
     else void gitDelivery.releaseWorktree(taskId)

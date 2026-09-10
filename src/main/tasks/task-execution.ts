@@ -241,8 +241,13 @@ export function registerTaskExecution(
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      stopTask(info.taskId, message)
-      if (store.getTask(info.taskId)?.status === 'running') await finishTask({ ...info, code: 1, error: message })
+      const wasRunning = store.getTask(info.taskId)?.status === 'running'
+      store.transaction(() => {
+        stopTask(info.taskId, message)
+        // Commit explicit cancellation with its incidental blocked issue state.
+        if (info.cancelled && wasRunning) store.updateTask(info.taskId, { status: 'cancelled' })
+      }, store.getTask(info.taskId)?.workspaceId)
+      if (wasRunning) await finishTask({ ...info, code: 1, error: message })
     } finally {
       finishing.delete(info.taskId)
     }
