@@ -35,7 +35,6 @@ export function Workspace(): JSX.Element {
 
   const activeTask = view.kind === 'task' ? tasks.find((r) => r.id === view.taskId) : undefined
 
-  const issueId = view.kind === 'task' ? view.issueId : undefined
   const overview = view.kind === 'home' || !activeTask
 
   return (
@@ -51,7 +50,7 @@ export function Workspace(): JSX.Element {
         {overview && (
           <ProjectOverview project={project} />
         )}
-        {activeTask && <TaskView key={JSON.stringify([activeTask.id, issueId])} task={activeTask} issueId={issueId} />}
+        {activeTask && <TaskView key={activeTask.id} task={activeTask} />}
       </section>
     </main>
   )

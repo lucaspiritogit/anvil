@@ -24,7 +24,7 @@ const modelGenerations = new Map<string, number>()
 let workspaceGeneration = 0
 type CaffeineSave = { value: boolean; status: 'pending' | 'error' }
 
-export type CenterView = { kind: 'home' } | { kind: 'task'; taskId: string; issueId?: string }
+export type CenterView = { kind: 'home' } | { kind: 'task'; taskId: string }
 
 interface AnvilState {
   workspaces: Workspace[]
@@ -112,7 +112,7 @@ interface AnvilState {
   startTask: (input: { agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
   steerTask: (taskId: string, message: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
-  openTask: (taskId: string, issueId?: string) => Promise<void>
+  openTask: (taskId: string) => Promise<void>
   loadTaskDiff: (taskId: string) => Promise<void>
   loadIssueDiff: (taskId: string, issueId: string) => Promise<void>
   showHome: () => void
@@ -415,14 +415,13 @@ export const useStore = create<AnvilState>((set, get) => ({
     })
   },
 
-  openTask: async (taskId, issueId) => {
+  openTask: async (taskId) => {
     const task = get().tasks.find((item) => item.id === taskId)
     if (!task) {
       get().showHome()
       return
     }
-    set({ activeProjectId: task.projectId, view: { kind: 'task', taskId, ...(issueId ? { issueId } : {}) } })
-    if (issueId) return
+    set({ activeProjectId: task.projectId, view: { kind: 'task', taskId } })
     if (get().eventsByTask[taskId]) return
     const events = await window.anvil.tasks.events(taskId)
     if (!get().tasks.some((task) => task.id === taskId)) return

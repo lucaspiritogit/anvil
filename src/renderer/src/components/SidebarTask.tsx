@@ -52,8 +52,6 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   compact?: boolean
   rowProps?: ComponentPropsWithRef<'li'> & { 'data-index'?: number }
 }): JSX.Element {
-  const view = useStore((state) => state.view)
-  const parentActive = active && view.kind === 'task' && !view.issueId
   const openTask = useStore((state) => state.openTask)
   const settleTask = useStore((state) => state.settleTask)
   const [settling, setSettling] = useState(false)
@@ -104,14 +102,14 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
       <article
         className={cn(
           'group relative transition-colors',
-          indicator?.highlight || (parentActive ? 'bg-hover' : compact ? 'hover:bg-hover/60' : 'bg-raised/60 hover:bg-hover/70'),
-          (parentActive || indicator?.highlight) && 'ring-1 ring-inset',
-          parentActive && (indicator?.highlight ? 'outline outline-1 outline-offset-1 outline-dim/60' : 'ring-line')
+          indicator?.highlight || (active ? 'bg-hover' : compact ? 'hover:bg-hover/60' : 'bg-raised/60 hover:bg-hover/70'),
+          (active || indicator?.highlight) && 'ring-1 ring-inset',
+          active && (indicator?.highlight ? 'outline outline-1 outline-offset-1 outline-dim/60' : 'ring-line')
         )}
       >
         <button
           aria-label={`Open task: ${task.title}`}
-          aria-current={parentActive ? 'page' : undefined}
+          aria-current={active ? 'page' : undefined}
           className={cn('w-full min-w-0 text-left focus-visible:outline focus-visible:outline-accent', compact ? 'flex items-center gap-2 px-2.5 py-2' : 'block px-3 py-3')}
           onClick={() => void openTask(task.id)}
           onContextMenu={(event) => openTaskContextMenu(event, task.id)}
@@ -136,7 +134,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
                   </span>
                 </span>
               </span>
-              <span className={cn('block truncate text-[13px] font-medium', parentActive || task.status === 'running' ? 'text-fg' : 'text-fg/80')}>
+              <span className={cn('block truncate text-[13px] font-medium', active || task.status === 'running' ? 'text-fg' : 'text-fg/80')}>
                 {task.title}
               </span>
               <span className="block truncate mt-1 font-mono text-[10px] text-dim/65">
@@ -174,17 +172,13 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
       </article>
       {hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="ml-4 mr-2 mt-1 mb-2 border-l border-line pl-2 space-y-1">
         {snapshot?.children.map((issue) => <li key={issue.id}>
-          <button
-            aria-label={`Open subtask: ${issue.title}`}
-            aria-description={issue.status}
-            aria-current={view.kind === 'task' && view.taskId === task.id && view.issueId === issue.id ? 'page' : undefined}
-            className="flex w-full min-w-0 items-center gap-2 min-h-7 px-2 py-1 text-left text-[11px] text-dim hover:bg-hover focus-visible:outline focus-visible:outline-accent aria-[current=page]:bg-hover aria-[current=page]:text-fg"
+          <div
+            className="flex w-full min-w-0 items-center gap-2 min-h-7 px-2 py-1 text-left text-[11px] text-dim"
             title={issue.title}
-            onClick={() => void openTask(task.id, issue.id)}
           >
             <span className="min-w-0 flex-1 truncate">{issue.title}</span>
             <span className={cn('shrink-0 text-[10px]', ISSUE_STATUS[issue.status].tone)}>{ISSUE_STATUS[issue.status].label}</span>
-          </button>
+          </div>
         </li>)}
       </ol>}
     </li>

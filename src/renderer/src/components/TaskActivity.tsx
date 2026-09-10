@@ -1,6 +1,6 @@
 import type { taskIssuePresentation } from '@shared/task-issue-presentation'
 import type { JSX } from 'react'
-import type { Issue, Task, TaskEvent } from '@shared/types'
+import type { Task, TaskEvent } from '@shared/types'
 
 function activityLabel(task: Task, event?: TaskEvent): string {
   switch (task.deliveryStatus) {
@@ -22,22 +22,15 @@ function activityLabel(task: Task, event?: TaskEvent): string {
   }
 }
 
-export function TaskActivity({ task, event, issueStatus, presentation }: { presentation?: ReturnType<typeof taskIssuePresentation>; task: Task; event?: TaskEvent; issueStatus?: Issue['status'] }): JSX.Element | null {
+export function TaskActivity({ task, event, presentation }: { presentation?: ReturnType<typeof taskIssuePresentation>; task: Task; event?: TaskEvent }): JSX.Element | null {
   if (presentation) {
     return <div role="status" aria-label={presentation.status === 'review' ? 'Review gate' : 'Agent activity'} aria-live="polite" aria-atomic="true" className="py-3 text-xs text-dim">
       {presentation.detail}: {presentation.issue.title}
       {presentation.status === 'working' && <span className="block">{activityLabel(task, event)}</span>}
     </div>
   }
-  if (issueStatus === 'review') {
-    return (
-      <div role="status" aria-label="Review gate" aria-live="polite" aria-atomic="true" className="py-3 text-xs text-warn">
-        <span className="block truncate motion-safe:animate-breathe" title="Waiting for your review">Waiting for your review…</span>
-      </div>
-    )
-  }
-  if (issueStatus ? issueStatus !== 'working' : task.status !== 'running') return null
-  const label = activityLabel(issueStatus ? { ...task, deliveryStatus: 'working' } : task, event)
+  if (task.status !== 'running') return null
+  const label = activityLabel(task, event)
 
   return (
     <div role="status" aria-label="Agent activity" aria-live="polite" aria-atomic="true" className="py-3 text-xs text-dim">

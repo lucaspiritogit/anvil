@@ -15,7 +15,6 @@ import { RebaseModal } from './RebaseModal'
 import { TaskSteeringComposer } from './TaskSteeringComposer'
 import { TaskIssues } from './TaskIssues'
 import { useTaskIssues } from '../hooks/use-task-issues'
-import { useIssueEvents } from '../hooks/use-issue-events'
 import { TaskActivity } from './TaskActivity'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
 import { isTaskSettled } from '@shared/task-settlement'
@@ -31,7 +30,6 @@ import type {
 
 interface Props {
   task: Task
-  issueId?: string
 }
 
 /** Either a saved note or the line currently being written on. */
@@ -456,15 +454,11 @@ function Notice({ tone = 'danger', children }: { tone?: 'danger' | 'warn'; child
   )
 }
 
-export function TaskView({ task, issueId }: Props): JSX.Element {
-  const { snapshot, loading, error: issueError, refresh } = useTaskIssues(task.id, true)
-  const viewedIssue = snapshot?.children.find((child) => child.id === issueId && child.parentId === snapshot.parent.id)
-  const pendingIssue = snapshot?.children.find((child) => child.status === 'review' &&
+export function TaskView({ task }: Props): JSX.Element {
+  const { snapshot, error: issueError, refresh } = useTaskIssues(task.id, true)
+  const issue = snapshot?.children.find((child) => child.status === 'review' &&
     (!snapshot.execution?.currentIssueId || child.id === snapshot.execution.currentIssueId))
-  const issue = issueId ? viewedIssue : pendingIssue
-  const childOutput = useIssueEvents(task.id, viewedIssue?.id)
-  const parentEvents = useStore((s) => s.eventsByTask[task.id])
-  const events = issueId ? childOutput.events : parentEvents
+  const events = useStore((s) => s.eventsByTask[task.id])
   const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? task.workspaceId)
   const project = useStore((s) => s.projects.find((item) => item.id === task.projectId))
   const openTask = useStore((s) => s.openTask)
@@ -500,18 +494,18 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
   const outputRef = useRef<HTMLDivElement>(null)
   const [now, setNow] = useState(Date.now())
   const [follow, setFollow] = useState(true)
-  const reviewable = !issueId && !pendingIssue && (task.deliveryStatus === 'reviewable' || approved)
+  const reviewable = !issue && (task.deliveryStatus === 'reviewable' || approved)
   const [activePanel, setActivePanel] = useState<TaskPanel>('output')
 
   useEffect(() => {
-    if (!issueId && !events) void openTask(task.id)
-  }, [events, openTask, task.id, issueId])
+    if (!events) void openTask(task.id)
+  }, [events, openTask, task.id])
 
   useEffect(() => {
-    if (issueId || task.status !== 'running') return
+    if (task.status !== 'running') return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [task.status, issueId])
+  }, [task.status])
 
   useEffect(() => {
     const output = outputRef.current
@@ -586,10 +580,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
 
   const pending = (comments ?? []).filter((comment) => comment.sentAt === null)
   // Submission is visible immediately, even while the turn is still stopping.
-  const presentation = !issueId ? taskIssuePresentation(task, snapshot) : null
-  const issueStartedAt = issue?.startedAt === undefined ? undefined : new Date(issue.startedAt)
-  const issueCompletedAt = issue?.completedAt === undefined ? undefined : new Date(issue.completedAt)
-  const issueHasDiff = issue?.status === 'review' || issue?.status === 'complete'
+  const presentation = taskIssuePresentation(task, snapshot)
 
   const onScroll = (e: React.UIEvent<HTMLDivElement>): void => {
     const el = e.currentTarget
@@ -597,13 +588,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
     setFollow(atBottom)
   }
 
-  if (issueId && !issue) return <div className="p-6 space-y-3">
-    <p role="status">{loading ? 'Loading subtask…' : issueError ? 'Could not load subtask.' : 'This subtask is no longer available in this task.'}</p>
-    {issueError && <button className={btn.ghost} onClick={refresh}>Retry</button>}
-    <button className={btn.ghost} onClick={() => void openTask(task.id)}>Open owning task</button>
-  </div>
-
-  const panels: readonly TaskPanel[] = issueId ? ['output', 'changes'] : ['output', 'changes', 'issues']
+  const panels: readonly TaskPanel[] = ['output', 'changes', 'issues']
 
   return (
     <div className="@container relative flex flex-col h-full min-w-0 min-h-0 overflow-hidden">
@@ -613,7 +598,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
       {approvalTaskId === task.id && (
         <ApproveTaskModal key={task.id} taskId={task.id} onClose={() => setApprovalTaskId(null)} />
       )}
-      {!issueId && rebaseTaskId === task.id &&
+      {rebaseTaskId === task.id &&
         (settings?.rebaseMode === 'agent' ? (
           <AgentRebaseModal taskId={task.id} />
         ) : (
@@ -622,10 +607,10 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
 
       <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4">
         <div className="flex items-start justify-between gap-4">
-          <h1 className="min-w-0 flex-1 text-base font-medium leading-snug [overflow-wrap:anywhere]">{viewedIssue?.title ?? task.title}</h1>
+          <h1 className="min-w-0 flex-1 text-base font-medium leading-snug [overflow-wrap:anywhere]">{task.title}</h1>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs">
             {issue ? <>
-              <span aria-label={issueId ? "Valence status" : "Task status"} className={cn('font-medium', ISSUE_STATUS[issue.status].tone)}>{ISSUE_STATUS[issue.status].label}{!issueId && `: ${issue.title}`}</span>
+              <span aria-label="Task status" className={cn('font-medium', ISSUE_STATUS[issue.status].tone)}>{ISSUE_STATUS[issue.status].label}{`: ${issue.title}`}</span>
               {issue.status === 'review' && <>
                 <button className={cn(btn.ghost, 'ml-2')} disabled={reviewDisabled} onClick={() => void reviewIssue('reject')}>
                   {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
@@ -667,38 +652,23 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
               <span aria-hidden="true">/</span>
               <span className="truncate" title={project?.path}>{project?.name ?? 'Tasks'}</span>
             </span>
-            {viewedIssue ? <>
+            <span className="flex items-center gap-1.5">
+              <AgentIcon agentId={task.agentId} label={task.agentLabel} size={14} />
+              {task.agentLabel}
+              {task.model && <span className="[overflow-wrap:anywhere]">· {task.model}</span>}
+            </span>
+            {task.branchName && (
               <span className="flex min-w-0 items-center gap-1.5">
-                <span>Subtask of</span>
-                <button className="min-w-0 max-w-72 truncate text-accent hover:underline" aria-label="Open owning task" title="Open owning task" onClick={() => void openTask(task.id)}>{task.title}</button>
+                {task.baseBranch && <span className="truncate" title={task.baseBranch}>{task.baseBranch} ←</span>}
+                <CopyableText label="branch name" value={task.branchName} />
               </span>
-              <div aria-label="Subtask timing" role="group" className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <StatBlock label="Started" detail="First recorded start, preserved across retries." value={issueStartedAt
-                  ? <time dateTime={issueStartedAt.toISOString()}>{issueStartedAt.toLocaleString()}</time>
-                  : 'Not recorded'} />
-                <StatBlock label="Completed" detail="Developer approval time, including time waiting for review." value={issueCompletedAt
-                  ? <time dateTime={issueCompletedAt.toISOString()}>{issueCompletedAt.toLocaleString()}</time>
-                  : viewedIssue.status === 'complete' ? 'Not recorded' : 'Not completed'} />
-              </div>
-            </> : <>
-              <span className="flex items-center gap-1.5">
-                <AgentIcon agentId={task.agentId} label={task.agentLabel} size={14} />
-                {task.agentLabel}
-                {task.model && <span className="[overflow-wrap:anywhere]">· {task.model}</span>}
-              </span>
-              {task.branchName && (
-                <span className="flex min-w-0 items-center gap-1.5">
-                  {task.baseBranch && <span className="truncate" title={task.baseBranch}>{task.baseBranch} ←</span>}
-                  <CopyableText label="branch name" value={task.branchName} />
-                </span>
-              )}
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="shrink-0">ID</span>
-                <CopyableText label="task ID" value={task.id} />
-              </span>
-            </>}
+            )}
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="shrink-0">ID</span>
+              <CopyableText label="task ID" value={task.id} />
+            </span>
           </div>
-          {!issueId && <div aria-label="Task statistics" role="group" className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div aria-label="Task statistics" role="group" className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <StatBlock label="Elapsed" value={formatDuration(task, now)} />
             <StatBlock label="Tokens" detail={tokenBreakdown(task)} value={
               <span className="flex gap-x-1.5">
@@ -709,12 +679,12 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
             } />
             <StatBlock label="Cached" value={formatTokens(task.cachedTokens)} detail={`${formatTokens(task.cachedTokens)} cached input`} />
             <StatBlock label="Cost" value={formatCost(task.costUsd)} />
-          </div>}
+          </div>
         </div>
       </header>
 
       {issue && issueError && <Notice>Could not refresh subtask. Showing last known data. <button className={btn.text} onClick={refresh}>Retry</button></Notice>}
-      {!issueId && (task.error || task.deliveryError) && <Notice>{task.error || task.deliveryError}</Notice>}
+      {(task.error || task.deliveryError) && <Notice>{task.error || task.deliveryError}</Notice>}
       {reviewError && <Notice>{reviewError}</Notice>}
       {(reviewable || issue) && commentError && <Notice>{commentError}</Notice>}
 
@@ -750,7 +720,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
       </div>
 
       <div className="flex flex-1 min-h-0 min-w-0">
-        {!issueId && <TaskIssues taskId={task.id} active={activePanel === 'issues'} />}
+        <TaskIssues taskId={task.id} active={activePanel === 'issues'} />
 
         {issue && <section id="task-panel-changes" aria-label="Subtask code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
           {issue.status === 'review' && <div className="shrink-0 px-4 py-2 border-b border-line bg-warn/5">
@@ -768,7 +738,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
             </div>
             {pending.length > 0 && <p className="mt-1.5 text-[11px] text-dim">{pending.length} line comment{pending.length === 1 ? '' : 's'} will be sent with the rework request.</p>}
           </div>}
-          {issueHasDiff ? <>
+          <>
             {issueDiff && (!issue.baseCommit || !issue.headCommit) && <p className="px-4 py-2 text-xs text-dim">Legacy submission: showing the available recorded range, with task commit fallback.</p>}
             {!issueDiff && !issueDiffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {issueDiffError && <div role="alert" className="p-5 text-sm text-danger">
@@ -791,13 +761,10 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
                 onRemove={(id) => { if (!reviewDisabled) void removeComment(task.id, id) }}
               />
             </Suspense>}
-          </> : <div className={EMPTY_PANEL}>
-            <p>{issue.status === 'queued' ? 'This sub-task has not started yet.' : issue.status === 'blocked' ? 'This sub-task is blocked.' : 'The agent is working on this sub-task.'}</p>
-            <p className="text-xs">Its diff will appear here when the sub-task is submitted for review.</p>
-          </div>}
+          </>
         </section>}
 
-        {!issueId && !issue && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
+        {!issue && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
           {reviewable ? <>
             {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {diffError && <div role="alert" className="p-5 text-sm text-danger">
@@ -831,19 +798,17 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
         <section id="task-panel-output" aria-label="Output" className={cn('flex flex-col flex-1 min-h-0 min-w-0', activePanel !== 'output' && 'hidden')}>
           <div className="relative flex-1 min-h-0 min-w-0">
             <div ref={outputRef} role="log" aria-label="Task output" className="h-full min-w-0 px-5 pb-3 overflow-y-auto overscroll-contain font-mono text-[12.5px] leading-[1.55]" onScroll={onScroll}>
-              <PromptBlock label={viewedIssue ? 'Description' : 'Prompt'} text={viewedIssue?.description ?? task.prompt} />
+              <PromptBlock label="Prompt" text={task.prompt} />
               {!events && <p className={PLACEHOLDER}>Loading output…</p>}
-              {childOutput.error && issue && <p role="alert" className={PLACEHOLDER}>{childOutput.error} <button className={btn.text} onClick={childOutput.retry}>Retry</button></p>}
-              {!childOutput.error && events?.length === 0 && (issue || task.status !== 'running') && <p className={PLACEHOLDER}>{issue?.status === 'queued' ? 'Queued. Execution has not started.' : 'No output recorded.'}</p>}
-              {viewedIssue?.status === 'queued' && !!events?.length && <p className={PLACEHOLDER}>Queued again. Showing previous execution history.</p>}
+              {events?.length === 0 && task.status !== 'running' && <p className={PLACEHOLDER}>No output recorded.</p>}
               {events?.map((event) => <LogRow key={event.id} event={event} />)}
-              <TaskActivity task={task} presentation={presentation} issueStatus={viewedIssue?.status} event={events?.at(-1)} />
+              <TaskActivity task={task} presentation={presentation} event={events?.at(-1)} />
             </div>
             {!follow && <button className="absolute right-5 bottom-3 px-3 py-1.5 text-xs bg-hover border border-line" onClick={() => setFollow(true)}>
               Jump to latest
             </button>}
           </div>
-          {!issueId && !isTaskSettled(task) && <TaskSteeringComposer key={task.id} task={task} hidden={activePanel !== 'output'} />}
+          {!isTaskSettled(task) && <TaskSteeringComposer key={task.id} task={task} hidden={activePanel !== 'output'} />}
         </section>
       </div>
     </div>

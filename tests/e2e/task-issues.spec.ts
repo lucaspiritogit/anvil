@@ -81,7 +81,10 @@ test('loading, errors, retry, stale data, empty states and task switching', asyn
   await expect(page.getByText('Loading issues…')).toBeVisible()
   await page.evaluate(() => { document.body.dataset.issueError = 'true'; document.body.dataset.issueWait = 'false' })
   await expect(page.getByRole('alert')).toContainText('Could not load issues.')
-  await page.evaluate(() => { document.body.dataset.issueError = 'false' })
+  // Keep polling in the error state until the actual retry click reaches the app.
+  await page.evaluate(() => {
+    document.addEventListener('click', () => { document.body.dataset.issueError = 'false' }, { capture: true, once: true })
+  })
   await page.getByRole('button', { name: 'Retry', exact: true }).click()
   await expect(page.getByText('No execution metadata is available for this task.')).toBeVisible()
   await publish(page, { ...snapshot, children: [] })

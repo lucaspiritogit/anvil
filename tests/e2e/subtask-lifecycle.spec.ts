@@ -50,15 +50,12 @@ test('a newly created task discovers planning children and keeps execution and r
     }
     await expect(rows.getByRole('listitem')).toHaveCount(snapshot.children.length)
   }
-  const first = rows.getByRole('button', { name: 'Open subtask: Implement rows', exact: true })
-  const second = rows.getByRole('button', { name: 'Open subtask: Validate navigation', exact: true })
+  const first = rows.getByRole('listitem').first()
+  const second = rows.getByRole('listitem').nth(1)
   await first.click()
-  await expect(page.getByRole('log')).toContainText('Queued. Execution has not started.')
-  await expect(page.getByRole('log')).not.toContainText('Parent planning history')
-  const timing = page.getByRole('group', { name: 'Subtask timing' })
-  await expect(timing).toContainText('Started')
-  await expect(timing).toContainText('Not recorded')
-  await expect(timing).toContainText('Not completed')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(task.title)
+  await expect(page.getByRole('log')).toContainText('Parent planning history')
+  await expect(rows.locator('button, a, [tabindex], [aria-current]')).toHaveCount(0)
   await page.evaluate(() => {
     const calls: { kind: string; detail: unknown }[] = []
     Object.assign(window, { issueReviewCalls: calls })
@@ -74,16 +71,13 @@ test('a newly created task discovers planning children and keeps execution and r
     child.startedAt = Date.UTC(2026, 8, 9, 12, index)
     await publish()
     await (index ? second : first).click()
-    await expect(page.getByLabel('Valence status')).toHaveText('Working')
-    await expect(timing.locator('time')).toHaveCount(1)
-    await expect(timing.locator('time')).toHaveAttribute('datetime', new Date(child.startedAt).toISOString())
+    await page.getByRole('tab', { name: 'Output', exact: true }).click()
+    await expect(page.getByLabel('Task status', { exact: true })).toHaveText(`Working: ${child.title}`)
     await emit(`Result for ${child.title}`, child.id)
     await expect(page.getByRole('log')).toContainText(`Result for ${child.title}`)
-    await expect(page.getByRole('log')).not.toContainText(`Result for ${snapshot.children[1 - index].title}`)
     child.status = 'review'
     await publish()
-    await expect(page.getByLabel('Valence status')).toHaveText('Review')
-    await expect(timing).toContainText('Not completed')
+    await expect(page.getByLabel('Task status', { exact: true })).toHaveText(`Review: ${child.title}`)
     await expect((index ? second : first)).toContainText('Review')
     // The run indicator becomes a review gate while the agent waits.
     await expect(page.getByRole('status', { name: 'Review gate' })).toBeVisible()
@@ -105,43 +99,24 @@ test('a newly created task discovers planning children and keeps execution and r
       ])
       child.status = 'working'
       await publish()
-      await expect(page.getByLabel('Valence status')).toHaveText('Working')
+      await expect(page.getByLabel('Task status', { exact: true })).toHaveText(`Working: ${child.title}`)
       child.status = 'review'
       await publish()
-      await expect(page.getByLabel('Valence status')).toHaveText('Review')
+      await expect(page.getByLabel('Task status', { exact: true })).toHaveText(`Review: ${child.title}`)
       await page.getByRole('button', { name: 'Approve', exact: true }).click()
       await expect.poll(() => reviewCalls().then((calls) => calls.length)).toBe(3)
     }
     child.status = 'complete'
     child.completedAt = child.startedAt + 60_000
     await publish()
-    await expect(page.getByLabel('Valence status')).toHaveText('Finished')
-    await expect(timing.locator('time')).toHaveCount(2)
-    await expect(timing.locator('time').first()).toHaveAttribute('datetime', new Date(child.startedAt).toISOString())
-    await expect(timing.locator('time').last()).toHaveAttribute('datetime', new Date(child.completedAt).toISOString())
   }
-  // Legacy issues expose their completion without inventing a start timestamp.
-  delete snapshot.children[1].startedAt
-  await publish()
-  await expect(timing).toContainText('Not recorded')
-  await expect(timing.locator('time')).toHaveCount(1)
-  // Tracker failure keeps the selected child's cached history, then an explicit retry recovers.
-  await page.evaluate(() => { window.anvil.tasks.issues = async () => { throw new Error('Tracker unavailable') } })
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
-  await expect(page.getByRole('alert')).toContainText('Could not refresh subtask')
   await page.getByRole('tab', { name: 'Output', exact: true }).click()
-  await expect(page.getByRole('log')).toContainText('Result for Validate navigation')
-  await page.evaluate(({ taskId, snapshot }) => {
-    window.anvil.tasks.issues = async (id) => id === taskId ? snapshot : null
-  }, { taskId: task.id, snapshot })
-  await page.getByRole('button', { name: 'Retry', exact: true }).click()
-  await expect(page.getByRole('alert')).toHaveCount(0)
   await parent.click()
   for (const text of ['Parent planning history', 'Result for Implement rows', 'Result for Validate navigation']) {
     await expect(page.getByRole('log')).toContainText(text)
   }
   expect(await page.evaluate(() => (window as unknown as { lifecycleMutations: string[] }).lifecycleMutations)).toEqual([])
-  // Steering remains an explicit parent action after visiting both children.
+  // Steering remains an explicit parent action after reviewing both children.
   await page.evaluate((task) => window.dispatchEvent(new CustomEvent('fixture:task-updated', {
     detail: { ...task, sessionId: 'lifecycle-session' }
   })), task)
@@ -153,11 +128,7 @@ test('a newly created task discovers planning children and keeps execution and r
     detail: { ...task, status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), filesChanged: 2 }
   })), task)
   await second.click()
-  await page.getByRole('tab', { name: 'Changes', exact: true }).click()
-  // A finished sub-task keeps its own recorded diff; the task-level diff stays on the owner.
-  await expect(page.getByRole('region', { name: 'Subtask code changes' }).getByRole('combobox', { name: 'Changed file' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
-  await parent.click()
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(task.title)
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
