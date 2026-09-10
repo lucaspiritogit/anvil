@@ -1,12 +1,11 @@
-import { app, BrowserWindow, Menu, powerMonitor } from 'electron'
+import { app, BrowserWindow, dialog, Menu, powerMonitor } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { protectRendererWindow } from './renderer-security'
-import { registerIpc } from './ipc'
 import { registerAppShutdown } from './app-shutdown'
-import { exposeValenceLauncher, installValenceLauncher } from './valence/launcher'
-import { restoreShellPath } from './shell-path'
+import { startApplication } from './startup'
+import { initializeServices } from './services'
 import { resolveAppDataDirectory } from './app-data'
 
 const dataDirectory = resolveAppDataDirectory(app.getPath('home'), app.isPackaged, process.env.ANVIL_DATA_DIR)
@@ -105,49 +104,54 @@ app.on('second-instance', () => {
   mainWindow.focus()
 })
 
-if (ownsInstance) app.whenReady().then(async () => {
-  await restoreShellPath()
-  const cliDirectory = join(app.getPath('userData'), 'bin')
-  installValenceLauncher(cliDirectory, process.execPath, join(__dirname, 'valence-cli.js'), join(dataDirectory, 'config.json'))
-  exposeValenceLauncher(cliDirectory)
-  const services = registerIpc(() => mainWindow, rendererUrl, dataDirectory)
-  app.on('browser-window-focus', () => services.githubPolling.refreshIfStale())
-  powerMonitor.on('resume', () => services.githubPolling.refreshIfStale())
+if (ownsInstance) app.whenReady().then(() => {
+  void startApplication({
+    createWindow: () => createWindow(),
+    initializeServices: () => initializeServices(() => mainWindow, rendererUrl, dataDirectory),
+    getWindow: () => mainWindow,
+    onServicesReady: (services) => {
+      app.on('browser-window-focus', () => services.githubPolling.refreshIfStale())
+      powerMonitor.on('resume', () => services.githubPolling.refreshIfStale())
 
-  isClosing = registerAppShutdown(app, {
-    showClosing: showClosingProcesses,
-    cleanup: [
-      () => services.stopCaffeineMode(),
-      () => services.terminals.close(),
-      () => services.agentProcesses.close(),
-      () => services.closeAgentDiscovery(),
-      () => services.githubPolling.close(),
-      () => services.projectMemory?.close()
-    ],
-    finalize: () => services.closeStore(),
-    reportError: (error) => console.error('Could not complete app cleanup:', error)
-  })
+      isClosing = registerAppShutdown(app, {
+        showClosing: showClosingProcesses,
+        cleanup: [
+          () => services.stopCaffeineMode(),
+          () => services.terminals.close(),
+          () => services.agentProcesses.close(),
+          () => services.closeAgentDiscovery(),
+          () => services.githubPolling.close(),
+          () => services.projectMemory?.close()
+        ],
+        finalize: () => services.closeStore(),
+        reportError: (error) => console.error('Could not complete app cleanup:', error)
+      })
 
-  process.on('SIGINT', () => app.quit())
-  process.on('SIGTERM', () => app.quit())
+      process.on('SIGINT', () => app.quit())
+      process.on('SIGTERM', () => app.quit())
 
-  const settingsMenu = {
-    label: 'Settings…', accelerator: 'CommandOrControl+,',
-    click: openSettings
-  }
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform === 'darwin' ? [{ label: app.name, submenu: [
-      { role: 'about' as const }, { type: 'separator' as const }, settingsMenu,
-      { type: 'separator' as const }, { role: 'services' as const },
-      { type: 'separator' as const }, { role: 'hide' as const }, { role: 'hideOthers' as const },
-      { role: 'unhide' as const }, { type: 'separator' as const }, { role: 'quit' as const }
-    ] }] : [{ label: 'File', submenu: [settingsMenu, { role: 'quit' as const }] }]),
-    { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }
-  ]))
-  createWindow()
+      const settingsMenu = {
+        label: 'Settings…', accelerator: 'CommandOrControl+,',
+        click: openSettings
+      }
+      Menu.setApplicationMenu(Menu.buildFromTemplate([
+        ...(process.platform === 'darwin' ? [{ label: app.name, submenu: [
+          { role: 'about' as const }, { type: 'separator' as const }, settingsMenu,
+          { type: 'separator' as const }, { role: 'services' as const },
+          { type: 'separator' as const }, { role: 'hide' as const }, { role: 'hideOthers' as const },
+          { role: 'unhide' as const }, { type: 'separator' as const }, { role: 'quit' as const }
+        ] }] : [{ label: 'File', submenu: [settingsMenu, { role: 'quit' as const }] }]),
+        { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }
+      ]))
 
-  app.on('activate', () => {
-    if (!isClosing() && !mainWindow) createWindow()
+      app.on('activate', () => {
+        if (!isClosing() && !mainWindow) createWindow()
+      })
+    },
+    onInitFailed: (error) => {
+      console.error('Could not initialize Anvil services:', error)
+      dialog.showErrorBox('Anvil failed to start', error instanceof Error ? error.message : String(error))
+    }
   })
 })
 
