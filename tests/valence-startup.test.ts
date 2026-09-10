@@ -45,7 +45,8 @@ test('initializes task-owned parents in Anvil before planning without standalone
   expect(tracker.getParent(state.parentIssueId)).toStrictEqual({
     id: state.parentIssueId, anvilTaskId: first.id, title: first.title, description: first.prompt
   })
-  expect(agents.starts[0].prompt.includes(state.parentIssueId), 'The parent exists before planning starts').toBe(true)
+  expect(agents.starts[0].prompt).not.toContain(state.parentIssueId)
+  expect(agents.starts[0].prompt).toContain('anvil_get_plan')
   const second = await start()
   expect(store.getTaskExecution(second.id)!.parentIssueId).not.toBe(state.parentIssueId)
   expect(tracker.listParents()).toHaveLength(2)

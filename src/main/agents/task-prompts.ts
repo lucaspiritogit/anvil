@@ -58,21 +58,12 @@ export function implementationPrompt(task: string, issue: Issue, projectPath: st
   ].join('\n')
 }
 
-export function taskFollowupPrompt(task: Task, state: TaskExecutionState, message: string): string {
-  if (state.phase === 'complete') return [ANVIL_TASK_INSTRUCTIONS, message].join('\n\n')
-  if (state.phase === 'planning') return [
-    planningPrompt(task.prompt, state),
-    'The developer is unblocking planning. Inspect existing issues for this task; fix and requeue partial blocked issues instead of duplicating the plan.',
-    `Developer message: ${message}`
-  ].join('\n\n')
-  return [
-    ANVIL_TASK_INSTRUCTIONS,
-    'The developer is unblocking this task. Keep its existing plan and branch.',
-    issueTrackerInstructionsPrompt(),
-    `Original task: ${task.prompt}`,
-    interruptedIssuePrompt(state.currentIssueId),
-    `Developer message: ${message}`
-  ].join('\n\n')
+export function taskFollowupPrompt(state: TaskExecutionState, message: string): string {
+  if (state.phase === 'complete') return message
+  const instruction = state.currentIssueId
+    ? `Resume issue ${state.currentIssueId}`
+    : 'Resume task with anvil_get_plan'
+  return `${instruction}\n\n${message}`
 }
 
 export function taskRecoveryPrompt(task: Task, state: TaskExecutionState): string {

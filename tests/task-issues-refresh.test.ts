@@ -15,8 +15,10 @@ function fixture(read = vi.fn<(id: string) => Promise<TaskIssueSnapshot | null>>
   const updates = new Set<(id: string) => void>()
   const deletes = new Set<(id: string) => void>()
   const focus = new Set<() => void>()
+  const onMissing = vi.fn()
   const cache = createTaskIssuesCache({
     read,
+    onMissing,
     onUpdated: (fn) => { updates.add(fn); return () => { updates.delete(fn) } },
     onDeleted: (fn) => { deletes.add(fn); return () => { deletes.delete(fn) } },
     onFocus: (fn) => { focus.add(fn); return () => { focus.delete(fn) } }
@@ -29,7 +31,7 @@ function fixture(read = vi.fn<(id: string) => Promise<TaskIssueSnapshot | null>>
     onTestCleanup(stop)
     return stop
   }
-  return { cache, loader, start, read, updates, deletes, focus }
+  return { cache, loader, start, read, updates, deletes, focus, onMissing }
 }
 
 const tick = () => vi.advanceTimersByTimeAsync(0)
@@ -186,4 +188,26 @@ test('deletion clears every consumer of its task while other visible tasks keep 
   await vi.advanceTimersByTimeAsync(500)
   expect(read.mock.calls).toEqual([['survivor']])
   expect(updates.size).toBe(1)
+})
+
+test.each([
+  'Task not found',
+  'Parent issue not found: e5a19584cf7e1b94',
+  "Error invoking remote method 'tasks:issues': Error: Parent issue not found: e5a19584cf7e1b94"
+])('missing records notify navigation without displaying an error: %s', async (message) => {
+  const read = vi.fn<(id: string) => Promise<TaskIssueSnapshot | null>>().mockRejectedValue(new Error(message))
+  const { start, loader, onMissing } = fixture(read)
+  start()
+  await tick()
+  expect(onMissing).toHaveBeenCalledWith('task')
+  expect(loader.getSnapshot()).toMatchObject({ snapshot: null, missing: true, loading: false, error: null })
+})
+
+test('storage errors remain visible without navigating away', async () => {
+  const read = vi.fn<(id: string) => Promise<TaskIssueSnapshot | null>>().mockRejectedValue(new Error('Database unavailable'))
+  const { start, loader, onMissing } = fixture(read)
+  start()
+  await tick()
+  expect(onMissing).not.toHaveBeenCalled()
+  expect(loader.getSnapshot().error).toBe('Database unavailable')
 })

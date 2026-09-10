@@ -10,6 +10,7 @@ export interface TaskIssuesState {
 }
 
 interface Source {
+  onMissing?: (taskId: string) => void
   read: (taskId: string) => Promise<TaskIssueSnapshot | null>
   onUpdated: (refresh: (taskId: string) => void) => () => void
   onDeleted: (remove: (taskId: string) => void) => () => void
@@ -64,7 +65,13 @@ export function createTaskIssuesCache(source: Source) {
           }
         } catch (error) {
           if (entry.listeners.size && generation === entry.generation) {
-            publish(entry, { ...entry.state, loading: false, error: error instanceof Error ? error.message : String(error) })
+            const message = error instanceof Error ? error.message : String(error)
+            if (/(?:^|Error: )(?:Task not found|Parent issue not found(?:: [^\n]+)?)$/.test(message)) {
+              publish(entry, { ...entry.state, snapshot: null, loading: false, missing: true, error: null })
+              source.onMissing?.(taskId)
+            } else {
+              publish(entry, { ...entry.state, loading: false, error: message })
+            }
           }
         } finally {
           entry.busy = false

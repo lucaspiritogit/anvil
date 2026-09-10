@@ -99,3 +99,14 @@ test('bounds retained native notifications that are never dismissed', () => {
   expect(notifications[0].eventNames()).toEqual([])
   expect(notifications[1].close).not.toHaveBeenCalled()
 })
+
+test('disabled delivery never initializes native notifications or requests authorization', () => {
+  const authorize = vi.fn()
+  const onUnavailable = vi.fn()
+  const { delivery, notifications, Notification } = setup({ enabled: false, authorize, onUnavailable })
+  delivery.send({ title: 'Finished' })
+  expect(authorize).not.toHaveBeenCalled()
+  expect(Notification.isSupported).not.toHaveBeenCalled()
+  expect(notifications).toHaveLength(0)
+  expect(onUnavailable).not.toHaveBeenCalled()
+})

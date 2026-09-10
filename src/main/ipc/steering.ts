@@ -48,7 +48,8 @@ export function registerSteeringHandlers(ipc: RendererIpc, {
           requireStoppedTask(current)
         },
         resumeExecution: resumeTask,
-        prompt: (current, state) => taskFollowupPrompt(current, state!, message)
+        gitInstructions: false,
+        prompt: (_current, state) => taskFollowupPrompt(state!, message)
       })
       recordSystemEvent(taskId, `You:\n${message}`)
     })

@@ -69,11 +69,9 @@ export async function resumeTaskTurn(
         resumeSessionId: current.sessionId,
         prompt: executionPrompt,
         images,
-        resumeFallbackPrompt: resumeExecution && state?.phase !== 'complete' && (!state?.hasImages || images) ? [
-          'The previous agent conversation is unavailable. Recover from the saved task plan and existing branch.',
-          'Inspect the current files, Git history, and Valence issue details before making changes. Earlier work may already be committed; preserve it and do not repeat completed issues.',
-          executionPrompt
-        ].join('\n\n') : undefined
+        resumeFallbackPrompt: resumeExecution && state?.phase !== 'complete' && (!state?.hasImages || images)
+          ? message
+          : undefined
       })
       send('task:updated', store.getTask(task.id) ?? running)
       return store.getTask(task.id) ?? running

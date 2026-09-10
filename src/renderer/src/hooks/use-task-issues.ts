@@ -5,6 +5,10 @@ import { createTaskIssuesCache, selectedTaskIssue } from '../state/task-issues'
 
 // Lazy source callbacks keep this singleton safe to import before preload is available.
 const taskIssues = createTaskIssuesCache({
+  onMissing: (taskId) => {
+    const state = useStore.getState()
+    if (state.view.kind === 'task' && state.view.taskId === taskId) state.showHome()
+  },
   read: (id) => window.anvil.tasks.issues(id),
   onUpdated: (refresh) => window.anvil.tasks.onUpdated((task) => refresh(task.id)),
   onFocus: (refresh) => {

@@ -417,7 +417,10 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   openTask: async (taskId, issueId) => {
     const task = get().tasks.find((item) => item.id === taskId)
-    if (!task) return
+    if (!task) {
+      get().showHome()
+      return
+    }
     set({ activeProjectId: task.projectId, view: { kind: 'task', taskId, ...(issueId ? { issueId } : {}) } })
     if (issueId) return
     if (get().eventsByTask[taskId]) return

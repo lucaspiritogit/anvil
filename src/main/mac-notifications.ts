@@ -7,6 +7,9 @@ interface AuthorizationBridge {
   authorization(request: boolean): Promise<NotificationAuthorization>
 }
 
+// Enable only when signed macOS distribution is available.
+const macNotificationsEnabled = false
+
 let bridge: AuthorizationBridge | undefined
 function authorization(request: boolean): Promise<NotificationAuthorization> {
   const requireNative = createRequire(join(app.getAppPath(), 'package.json'))
@@ -29,6 +32,15 @@ export async function openNotificationSettings(): Promise<void> {
 }
 
 export async function showNotificationSettings(): Promise<void> {
+  if (!macNotificationsEnabled) {
+    await dialog.showMessageBox({
+      type: 'info',
+      message: 'Anvil notifications are disabled',
+      detail: 'macOS notifications are disabled while Anvil is distributed without code signing.',
+      buttons: ['Close']
+    })
+    return
+  }
   let status: string
   try { status = await authorization(false) } catch (error) { status = `unavailable (${String(error)})` }
   const { response } = await dialog.showMessageBox({
@@ -41,6 +53,7 @@ export async function showNotificationSettings(): Promise<void> {
 
 export function macNotificationOptions(): NotificationDeliveryOptions {
   if (process.platform !== 'darwin') return {}
+  if (!macNotificationsEnabled) return { enabled: false }
   return {
     authorize: () => authorization(true),
     onUnavailable: async (reason) => {

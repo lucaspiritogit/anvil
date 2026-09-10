@@ -16,6 +16,7 @@ export interface NotificationApi {
 }
 
 export interface NotificationDeliveryOptions {
+  enabled?: boolean
   authorize?: () => Promise<NotificationAuthorization>
   onUnavailable?: (reason: string) => void | Promise<void>
 }
@@ -74,7 +75,7 @@ export function createNotificationDelivery(NotificationClass: NotificationApi, o
 
   return {
     send(content: NotificationConstructorOptions): void {
-      if (disposed) return
+      if (disposed || options.enabled === false) return
       try {
         if (!options.authorize) {
           show(content)

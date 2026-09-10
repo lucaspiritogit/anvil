@@ -36,16 +36,15 @@ test('keeps planning concise and queues issues under the task parent', () => {
 })
 
 test('plans targeted checks without requiring a full-validation checkpoint', () => {
-  for (const prompt of [planning, taskFollowupPrompt(savedTask, { ...execution, phase: 'planning' }, 'Continue planning')]) {
+  for (const prompt of [planning]) {
     expect(prompt).toContain('Give each issue targeted validation commands')
     expect(prompt).not.toMatch(/full-suite|integration checkpoint|dedicated validation issue/)
     expect(prompt).toContain('Do not claim or implement issues')
   }
 })
 
-test('preserves follow-up and review context without applying validation to history-only rebases', () => {
+test('preserves review context without applying validation to history-only rebases', () => {
   const message = 'Fix the remaining bug'
-  expect(taskFollowupPrompt(savedTask, { ...execution, phase: 'complete' }, message)).toMatch(/Fix the remaining bug$/)
   const comments = [{
     id: 'comment-one', taskId: savedTask.id, file: 'src/icon.tsx', side: 'additions' as const,
     lineNumber: 12, body: message, createdAt: 0, sentAt: null
@@ -85,10 +84,6 @@ test.each([
   ['planning', () => planning],
   ['implementation', () => implementation],
   ['automatic recovery', () => taskRecoveryPrompt(savedTask, execution)],
-  ['resumed planning', () => taskFollowupPrompt(savedTask, { ...execution, phase: 'planning' }, 'Continue planning')],
-  ['resumed issue', () => taskFollowupPrompt(savedTask, execution, 'Continue implementation')],
-  ['resumed scheduling', () => taskFollowupPrompt(savedTask, { ...execution, currentIssueId: null }, 'Unblock the plan')],
-  ['completed-task follow-up', () => taskFollowupPrompt(savedTask, { ...execution, phase: 'complete' }, 'Fix the remaining bug')],
   ['issue rework', () => issueReworkPrompt(savedTask.cwd, issue.id, [])],
   ['task review', () => reviewPrompt([])]
 ] as const)('%s includes observable commands and scoped validation instructions once', (_name, buildPrompt) => {
@@ -141,7 +136,7 @@ test('tool guidance is phase-specific and keeps ownership out of arguments', () 
 })
 
 test('interrupted guidance distinguishes blocked, queued, working and submitted issues', () => {
-  for (const prompt of [taskRecoveryPrompt(savedTask, execution), taskFollowupPrompt(savedTask, execution, 'Continue')]) {
+  for (const prompt of [taskRecoveryPrompt(savedTask, execution)]) {
     expect(prompt).toContain('If blocked, use anvil_requeue_issue then anvil_start_issue')
     expect(prompt).toContain('If queued, use anvil_start_issue')
     expect(prompt).toContain('If working, continue without requeueing')
@@ -149,7 +144,13 @@ test('interrupted guidance distinguishes blocked, queued, working and submitted 
     expect(prompt).toContain('require a successful result')
     expect(prompt).not.toMatch(/anvil_create_issue|anvil_update_issue/)
   }
-  const scheduling = taskFollowupPrompt(savedTask, { ...execution, currentIssueId: null }, 'Continue')
-  expect(scheduling).toContain('Do not claim new work')
-  expect(scheduling).not.toMatch(/anvil_start_issue|anvil_submit_review/)
+
+})
+
+test('follow-ups send a concise resume instruction and the developer message', () => {
+  expect(taskFollowupPrompt(execution, 'Keep going')).toBe(`Resume issue ${issue.id}\n\nKeep going`)
+  expect(taskFollowupPrompt({ ...execution, phase: 'planning', currentIssueId: null }, 'Continue'))
+    .toBe('Resume task with anvil_get_plan\n\nContinue')
+  expect(taskFollowupPrompt({ ...execution, phase: 'complete', currentIssueId: null }, 'Fix this'))
+    .toBe('Fix this')
 })
