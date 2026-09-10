@@ -69,7 +69,7 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
           }
         },
         requestPermission: async (request) => {
-          if (input.readOnly || input.signal?.aborted || !acceptingUpdates || request.sessionId !== sessionId) {
+          if (input.readOnly || input.signal?.aborted || !acceptingUpdates) {
             return { outcome: { outcome: 'cancelled' } }
           }
           const option = request.options.find((option) => option.kind === 'allow_once')
@@ -114,6 +114,7 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
           },
           requestPermission: async (request) => {
             const active = [...this.executions].find((entry) => entry.server() === server && entry.session() === request.sessionId)
+              ?? [...this.executions].reverse().find((entry) => entry.server() === server)
             return active ? active.client.requestPermission(request) : { outcome: { outcome: 'cancelled' } }
           }
         }, (text) => {

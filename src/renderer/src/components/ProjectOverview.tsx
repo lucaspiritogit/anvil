@@ -68,19 +68,35 @@ function WallpaperLayer({ image, color }: { image: HTMLImageElement; color: stri
     const host = canvas?.parentElement
     if (!canvas || !host) return
     let frame = 0
+    let settle = 0
     const draw = (): void => {
       frame = 0
+      // The sidebar collapse resizes the host every animation frame; while it
+      // runs, stretch the existing canvas instead of re-rendering the wallpaper
+      // and redraw once the size settles so the slide never races the paint.
+      const scale = Math.min(window.devicePixelRatio || 1, 2)
+      const width = Math.round(host.clientWidth * scale)
+      const height = Math.round(host.clientHeight * scale)
+      if (canvas.width === width && canvas.height === height) return
       renderWallpaper(canvas, image, host.clientWidth, host.clientHeight, color)
     }
     const schedule = (): void => {
       if (!frame) frame = requestAnimationFrame(draw)
     }
+    const scheduleSettled = (): void => {
+      if (settle) clearTimeout(settle)
+      settle = window.setTimeout(() => {
+        settle = 0
+        schedule()
+      }, 200)
+    }
     schedule()
-    const observer = new ResizeObserver(schedule)
+    const observer = new ResizeObserver(scheduleSettled)
     observer.observe(host)
     return () => {
       observer.disconnect()
       if (frame) cancelAnimationFrame(frame)
+      if (settle) clearTimeout(settle)
     }
   }, [image, color])
 
