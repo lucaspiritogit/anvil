@@ -14,6 +14,10 @@ requests authorization when created, but
 does not await that request. The public Electron API has no equivalent of
 `UNUserNotificationCenter.getNotificationSettings`. `Notification.isSupported()`
 and browser notification permission are not OS authorization checks.
+The [44.3.0 API implementation](https://github.com/electron/electron/blob/v44.3.0/shell/browser/api/electron_api_notification.cc)
+also shows that `isSupported()` creates the presenter. Anvil therefore waits for
+authorization before even calling `isSupported()`, avoiding a competing implicit
+request from Electron. Regression assertions cover both pending and denied states.
 
 The small in-process N-API module in `native/mac-notifications` queries Apple's
 UserNotifications framework under Anvil's own identity. It requests alert, sound,
@@ -70,6 +74,20 @@ On a Mac with a signed bundle and a fresh test account/authorization state:
 
 Do not reset the user's notification database to obtain a fresh test state.
 
+For a repeatable native probe, run:
+
+```sh
+node scripts/probe-mac-notifications.cjs release/mac-arm64/Anvil.app/Contents/MacOS/Anvil
+node scripts/probe-mac-notifications.cjs release/mac-arm64/Anvil.app/Contents/MacOS/Anvil --request
+```
+
+The first command only queries OS authorization. The second may request permission
+and sends a diagnostic notification only after authorization succeeds. It keeps the
+app open for 15 seconds after scheduling for visual inspection. Both use a temporary
+Anvil data directory and leave OS notification preferences intact. The probe times
+out after 45 seconds if native authorization cannot complete. It never reports a
+scheduled event as proof of a visible banner.
+
 ## Validation on 2026-09-10
 
 Environment: macOS Darwin 25.5.0, arm64, Node 24.14.1, Electron 44.3.0.
@@ -123,3 +141,32 @@ Native allow/deny/re-enable and visible foreground/minimized delivery acceptance
 remain unverified. Unit tests and the successful bundle build are not substitutes
 for these checks. No renderer was changed, so the conditional SettingsPage browser
 suite does not apply.
+
+## Resumed validation on 2026-09-10
+
+The interrupted issue was verified against the owning task, requeued, and restarted
+on the original branch. No other issue was claimed.
+
+- Inspected Electron 44.3.0's `Notification::IsSupported()` and corrected the
+  premature presenter initialization described above.
+- `npm test -- tests/task-notifications.test.ts tests/notification-delivery.test.ts`:
+  exit 0, 2 files / 9 tests, including new assertions that pending/denied permission
+  does not call the side-effectful support check.
+- `npm run typecheck` and `npm run typecheck:tests`: both exit 0.
+- `npm run pack:mac`: exit 1 at signing after successful native compilation,
+  typechecking, and bundling. Output streamed to `/tmp/anvil-pack-mac-resume.log`.
+  `security find-identity -v -p codesigning` still reports zero valid identities.
+- Deep/strict `codesign` verification of `release/mac-arm64/Anvil.app`: exit 1,
+  missing signed resource envelope. `codesign -dv --verbose=4` exited 0 and again
+  reported the unbound `Electron` linker signature rather than a signed Anvil bundle.
+- `node scripts/probe-mac-notifications.cjs release/mac-arm64/Anvil.app/Contents/MacOS/Anvil`:
+  exit 0, native status `not-determined`; delivery explicitly not attempted.
+- The same probe with `--request`: exit 1, native request rejected with
+  `UNErrorDomain error 1`. Both probes launched the actual artifact with temporary
+  app data. The app also logged its existing closing-window `ERR_FAILED` during
+  shutdown; this did not change the native authorization result.
+
+The remaining acceptance gap is unchanged: a properly signed build on an interactive
+macOS desktop must verify allow, deny without repeated prompts, re-enable via System
+Settings, and visible foreground/minimized delivery. These observations are not
+claimed as passing.

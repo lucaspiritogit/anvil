@@ -48,6 +48,9 @@ export function createNotificationDelivery(NotificationClass: NotificationApi, o
     if (disposed) return
     let notification: NativeNotification | undefined
     try {
+      // Electron 44's support check creates its presenter and requests macOS
+      // authorization. Only touch it after our first-use authorization completes.
+      if (!NotificationClass.isSupported()) return
       // Bound retained native objects, including banners never dismissed by the user.
       if (active.size >= 100) {
         const oldest = active.values().next().value!
@@ -73,7 +76,6 @@ export function createNotificationDelivery(NotificationClass: NotificationApi, o
     send(content: NotificationConstructorOptions): void {
       if (disposed) return
       try {
-        if (!NotificationClass.isSupported()) return
         if (!options.authorize) {
           show(content)
           return
