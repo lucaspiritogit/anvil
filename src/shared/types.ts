@@ -7,6 +7,8 @@ export type { Issue } from './valence'
 export interface TaskIssueSnapshot {
   parent: ParentIssue
   children: Issue[]
+  execution?: Pick<TaskExecutionState, 'phase' | 'currentIssueId' | 'error'>
+  reviewReady?: boolean
 }
 
 /** Anvil execution metadata only. Issue records belong to Valence. */

@@ -20,7 +20,7 @@ interface TaskHandlerDependencies extends TaskContext, TaskEvents, TaskExecution
 
 export function registerTaskHandlers(ipc: RendererIpc, {
   store, agentProcesses, gitDelivery, send, recordSystemEvent, forgetUsage,
-  initializeTask, stopTask, finishTaskTurn, requireFinishedTask, promptWithProjectMemory
+  issueReviewReady, initializeTask, stopTask, finishTaskTurn, requireFinishedTask, promptWithProjectMemory
 }: TaskHandlerDependencies): void {
   // Retry cleanup for tasks that settled before the app last closed.
   for (const task of store.getTasks()) {
@@ -59,7 +59,10 @@ export function registerTaskHandlers(ipc: RendererIpc, {
     else void gitDelivery.releaseWorktree(taskId)
   })
   const issues = new TaskIssues(store)
-  ipc.handle('tasks:issues', (_event, taskId: string): TaskIssueSnapshot | null => issues.snapshot(taskId))
+  ipc.handle('tasks:issues', (_event, taskId: string): TaskIssueSnapshot | null => {
+    const snapshot = issues.snapshot(taskId)
+    return snapshot && { ...snapshot, reviewReady: issueReviewReady(taskId) }
+  })
   ipc.handle('tasks:events', (_event, taskId: string) => store.readEvents(taskId))
   ipc.handle('tasks:diff', async (_event, taskId: string): Promise<TaskDiff> => {
     const task = store.getTask(taskId)

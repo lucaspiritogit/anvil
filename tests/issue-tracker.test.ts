@@ -28,8 +28,14 @@ test('schedules dependencies and priorities sequentially and retains final task 
   const submit = async (taskId: string): Promise<string> => {
     const issueId = store.getTaskExecution(taskId)!.currentIssueId!
     callIssueTool(store, taskId, store.getTask(taskId)!.workspaceId, 'anvil_submit_review', { id: issueId, checklist: [true, true], evidence: 'Focused tests passed' })
+    const pending = await call('tasks:issues', taskId)
+    expect(pending.execution).toMatchObject({ currentIssueId: issueId })
+    expect(pending.children.find((child: { id: string }) => child.id === issueId).status).toBe('review')
+    expect(pending.reviewReady).toBe(false)
+    await expect(call('tasks:approve-issue', taskId)).rejects.toThrow(/not finished stopping/)
     agentProcesses.finishTurn(taskId, 'Submitted through the issue tool')
     await tick()
+    expect((await call('tasks:issues', taskId)).reviewReady).toBe(true)
     return issueId
   }
   const approve = async (taskId: string): Promise<void> => {

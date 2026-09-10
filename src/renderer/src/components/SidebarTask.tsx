@@ -6,6 +6,7 @@ import {
   Notification03Icon, Tick02Icon
 } from '@hugeicons/core-free-icons'
 import type { Project, Task, TaskIssueSnapshot } from '@shared/types'
+import { taskIssuePresentation } from '@shared/task-issue-presentation'
 import { canSettleTask, settlementDeadline } from '@shared/task-settlement'
 import { useStore } from '../state/store'
 import { cn, ISSUE_STATUS } from '../ui'
@@ -69,13 +70,17 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const showChildren = compact || expanded
   const eligible = canSettleTask(task)
   const deadline = settlementDeadline(task)
-  const indicator = taskIndicator(task)
+  const presentation = taskIssuePresentation(task, snapshot)
+  const indicator = presentation ? {
+    ...(presentation.status === 'review' ? TASK_INDICATORS.reviewable : presentation.status === 'working' ? TASK_INDICATORS.running : presentation.status === 'blocked' ? TASK_INDICATORS.failed : presentation.status === 'complete' ? TASK_INDICATORS.approved : TASK_INDICATORS.pending),
+    label: presentation.label
+  } : taskIndicator(task)
   const statusIcon = (
     <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex shrink-0', indicator?.tone ?? 'text-dim')}>
       <HugeiconsIcon
         icon={indicator?.icon ?? Folder01Icon}
         size={compact ? 15 : 16}
-        className={task.status === 'running' ? 'animate-spin motion-reduce:animate-none' : undefined}
+        className={indicator?.icon === Loading03Icon ? 'animate-spin motion-reduce:animate-none' : undefined}
         aria-hidden="true"
       />
     </span>
@@ -139,6 +144,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
               </span>
             </>
           )}
+          {presentation && <span className="block truncate px-1 text-[11px] text-dim" title={presentation.issue.title}>{presentation.label}: {presentation.issue.title}</span>}
         </button>
         {!compact && eligible && (
           <button

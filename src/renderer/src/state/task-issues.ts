@@ -82,9 +82,12 @@ export function createTaskIssuesCache(source: Source) {
       })()
     }
   }
-  const refresh = (taskId?: string): void => {
+  const refresh = (taskId?: string, invalidate = true): void => {
     for (const [id, entry] of entries) {
-      if (entry.listeners.size && (taskId === undefined || taskId === id)) entry.pending = true
+      if (entry.listeners.size && (taskId === undefined || taskId === id)) {
+        if (invalidate) entry.generation++
+        entry.pending = true
+      }
     }
     pump()
   }
@@ -103,7 +106,7 @@ export function createTaskIssuesCache(source: Source) {
       const first = entry.listeners.size === 0
       entry.listeners.add(notify)
       if (!cleanup) {
-        const timer = setInterval(() => refresh(), 500)
+        const timer = setInterval(() => refresh(undefined, false), 500)
         const offUpdate = source.onUpdated(refresh)
         const offFocus = source.onFocus(() => refresh())
         const offDelete = source.onDeleted((id) => {

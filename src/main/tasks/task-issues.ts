@@ -79,6 +79,7 @@ export class TaskIssues {
     // Resolve ownership from the persisted task, never renderer-supplied identities.
     return this.withTracker(state, (tracker) => ({
       parent: tracker.getParent(state.parentIssueId),
+      execution: { phase: state.phase, currentIssueId: state.currentIssueId, error: state.error },
       children: tracker.list(state.parentIssueId)
     }))
   }

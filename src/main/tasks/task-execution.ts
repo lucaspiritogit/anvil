@@ -22,6 +22,7 @@ export interface TaskExecution {
   stopTask(taskId: string, error: string): void
   finishTaskTurn(info: ExitInfo): Promise<void>
   requireFinishedTask(taskId: string): void
+  issueReviewReady(taskId: string): boolean
   approveIssue(taskId: string): Promise<TaskExecutionState>
   rejectIssue(taskId: string): TaskExecutionState
 }
@@ -305,5 +306,12 @@ export function registerTaskExecution(
     return issues.resume(taskId)
   }
 
-  return { initializeTask, resumeTask, stopTask, finishTaskTurn, requireFinishedTask, approveIssue, rejectIssue }
+  const issueReviewReady = (taskId: string): boolean => {
+    try {
+      requireStoppedTurn(taskId)
+      return store.getTaskExecution(taskId)?.phase === 'reviewing'
+    } catch { return false }
+  }
+
+  return { issueReviewReady, initializeTask, resumeTask, stopTask, finishTaskTurn, requireFinishedTask, approveIssue, rejectIssue }
 }

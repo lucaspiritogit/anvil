@@ -1,3 +1,4 @@
+import type { taskIssuePresentation } from '@shared/task-issue-presentation'
 import type { JSX } from 'react'
 import type { Issue, Task, TaskEvent } from '@shared/types'
 
@@ -21,7 +22,13 @@ function activityLabel(task: Task, event?: TaskEvent): string {
   }
 }
 
-export function TaskActivity({ task, event, issueStatus }: { task: Task; event?: TaskEvent; issueStatus?: Issue['status'] }): JSX.Element | null {
+export function TaskActivity({ task, event, issueStatus, presentation }: { presentation?: ReturnType<typeof taskIssuePresentation>; task: Task; event?: TaskEvent; issueStatus?: Issue['status'] }): JSX.Element | null {
+  if (presentation) {
+    return <div role="status" aria-label={presentation.status === 'review' ? 'Review gate' : 'Agent activity'} aria-live="polite" aria-atomic="true" className="py-3 text-xs text-dim">
+      {presentation.detail}: {presentation.issue.title}
+      {presentation.status === 'working' && <span className="block">{activityLabel(task, event)}</span>}
+    </div>
+  }
   if (issueStatus === 'review') {
     return (
       <div role="status" aria-label="Review gate" aria-live="polite" aria-atomic="true" className="py-3 text-xs text-warn">

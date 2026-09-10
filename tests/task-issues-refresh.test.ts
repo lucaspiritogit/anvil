@@ -6,6 +6,7 @@ import { internalTrackerFixture } from './fixtures/internal-valence'
 import type { TaskIssueSnapshot } from '../src/shared/types'
 import { createTaskIssuesCache, selectedTaskIssue } from '../src/renderer/src/state/task-issues'
 import { onTestCleanup } from './test-cleanup'
+import { taskIssuePresentation } from '../src/shared/task-issue-presentation'
 
 const snapshot = (id: string): TaskIssueSnapshot => ({ parent: { id, anvilTaskId: id, title: id, description: '' }, children: [] })
 
@@ -35,6 +36,39 @@ function fixture(read = vi.fn<(id: string) => Promise<TaskIssueSnapshot | null>>
 }
 
 const tick = () => vi.advanceTimersByTimeAsync(0)
+
+test('parent presentation follows transitions and preserves final delivery semantics', () => {
+  const task = { status: 'running' } as import('../src/shared/types').Task
+  const state = snapshot('task')
+  state.children = [{ id: 'child', title: 'Current work', description: '', validation: '', status: 'queued', checklist: [], dependencies: [], labels: [], priority: 'high', parentId: 'task' }]
+  for (const status of ['queued', 'working', 'review', 'queued', 'working', 'blocked', 'complete'] as const) {
+    state.children[0].status = status
+    expect(taskIssuePresentation(task, state)).toMatchObject({ status, issue: { title: 'Current work' } })
+  }
+  state.children[0].status = 'review'
+  state.reviewReady = false
+  expect(taskIssuePresentation(task, state)?.detail).toContain('stop and save')
+  expect(taskIssuePresentation({ ...task, status: 'failed' }, state)?.status).toBe('review')
+  expect(taskIssuePresentation({ ...task, status: 'succeeded', deliveryStatus: 'reviewable' }, state)).toBeNull()
+  state.children[0].status = 'working'
+  state.execution = { phase: 'blocked', currentIssueId: 'child', error: 'Interrupted' }
+  expect(taskIssuePresentation(task, state)?.status).toBe('blocked')
+})
+
+test('an update invalidates an in-flight obsolete review without starving slow polling', async () => {
+  const responses: Array<(value: TaskIssueSnapshot) => void> = []
+  const read = vi.fn((_id: string) => new Promise<TaskIssueSnapshot>((resolve) => responses.push(resolve)))
+  const { cache, start, updates } = fixture(read)
+  start()
+  updates.forEach((fn) => fn('task'))
+  responses.shift()!(snapshot('obsolete-review'))
+  await tick()
+  expect(cache.getSnapshot('task').snapshot).toBeNull()
+  await vi.advanceTimersByTimeAsync(1500)
+  responses.shift()!(snapshot('rework'))
+  await tick()
+  expect(cache.getSnapshot('task').snapshot?.parent.id).toBe('rework')
+})
 
 test('polls stored issue changes without task events and derives current selected details', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'issue-refresh-'))

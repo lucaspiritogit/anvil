@@ -1,3 +1,4 @@
+import { taskIssuePresentation } from '@shared/task-issue-presentation'
 import type { JSX, ReactNode } from 'react'
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
@@ -566,8 +567,8 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
   }, [comments, loadComments, task.id])
 
   const pending = (comments ?? []).filter((comment) => comment.sentAt === null)
-  // While an issue awaits review no agent is running; the run indicator becomes a review gate.
-  const childInReview = !issueId && (snapshot?.children.some((child) => child.status === 'review') ?? false)
+  // Submission is visible immediately, even while the turn is still stopping.
+  const presentation = !issueId ? taskIssuePresentation(task, snapshot) : null
   const issueStartedAt = issue?.startedAt === undefined ? undefined : new Date(issue.startedAt)
   const issueCompletedAt = issue?.completedAt === undefined ? undefined : new Date(issue.completedAt)
   const issueHasDiff = issue?.status === 'review' || issue?.status === 'complete'
@@ -608,19 +609,21 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
             {issue ? <>
               <span aria-label="Valence status" className={cn('font-medium', ISSUE_STATUS[issue.status].tone)}>{ISSUE_STATUS[issue.status].label}</span>
               {issue.status === 'review' && <>
-                <button className={cn(btn.ghost, 'ml-2')} disabled={!!reviewBusy} onClick={() => void reviewIssue('reject')}>
+                <button className={cn(btn.ghost, 'ml-2')} disabled={!!reviewBusy || snapshot?.reviewReady === false} onClick={() => void reviewIssue('reject')}>
                   {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
                 </button>
-                <button className={cn(btn.primary, 'bg-ok')} disabled={!!reviewBusy} onClick={() => void reviewIssue('approve')}>
+                <button className={cn(btn.primary, 'bg-ok')} disabled={!!reviewBusy || snapshot?.reviewReady === false} onClick={() => void reviewIssue('approve')}>
                   {reviewBusy === 'approve' ? 'Approving…' : 'Approve'}
                 </button>
               </>}
             </> : <>
-              <span className="flex items-center gap-2">
+              <span aria-label="Task status" className="flex items-center gap-2">
+                {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
                 <span className={dot(task.status)} />
                 <span className={cn('font-medium', statusTone(task.status))}>{STATUS_LABEL[task.status]}</span>
                 <span className="text-dim">·</span>
                 <span className={deliveryTone(task.deliveryStatus)}>{DELIVERY_LABEL[task.deliveryStatus]}</span>
+                </>}
               </span>
               {task.status === 'running' && (
                 <button className={cn(btn.danger, 'ml-2')} onClick={() => void cancelTask(task.id)}>Stop</button>
@@ -813,7 +816,7 @@ export function TaskView({ task, issueId }: Props): JSX.Element {
               {!childOutput.error && events?.length === 0 && (issue || task.status !== 'running') && <p className={PLACEHOLDER}>{issue?.status === 'queued' ? 'Queued. Execution has not started.' : 'No output recorded.'}</p>}
               {issue?.status === 'queued' && !!events?.length && <p className={PLACEHOLDER}>Queued again. Showing previous execution history.</p>}
               {events?.map((event) => <LogRow key={event.id} event={event} />)}
-              <TaskActivity task={task} issueStatus={issue ? issue.status : childInReview ? 'review' : undefined} event={events?.at(-1)} />
+              <TaskActivity task={task} presentation={presentation} issueStatus={issue?.status} event={events?.at(-1)} />
             </div>
             {!follow && <button className="absolute right-5 bottom-3 px-3 py-1.5 text-xs bg-hover border border-line" onClick={() => setFollow(true)}>
               Jump to latest
