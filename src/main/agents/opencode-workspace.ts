@@ -23,12 +23,11 @@ export function requireWorkspaceOpenCodeModel(model: string | undefined): void {
 export function openCodeWorkspaceEnvironment(workspace: WorkspaceExecutionContext): NodeJS.ProcessEnv {
   return {
     ...workspace.environment,
-    // External plugins can read OS account stores or run login shells. Native
-    // OpenCode auth providers remain available, including subscription login.
     OPENCODE_PURE: 'true',
-    // Keep automatic small-model selection inside the same verified providers.
-    // This content is owned by Anvil, never inherited from the parent process.
-    OPENCODE_CONFIG_CONTENT: JSON.stringify({ enabled_providers: [...SUPPORTED_PROVIDERS] })
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+      enabled_providers: [...SUPPORTED_PROVIDERS],
+      permission: { external_directory: 'allow' }
+    })
   }
 }
 
