@@ -48,7 +48,11 @@ test('tools preserve ownership, dependency scheduling and developer review', () 
   expect(() => call('task-a', 'anvil_block_issue', { id: second.id })).toThrow(/current issue/)
   expect(() => call('task-a', 'anvil_submit_review', { id: first.id, checklist: [false], evidence: 'Failed' })).toThrow(/checklist/)
   expect(() => call('task-a', 'anvil_submit_review', { id: first.id, checklist: [true], evidence: '' })).toThrow(/evidence/)
+  for (const checklist of [[], [true, true], ['true']]) {
+    expect(() => call('task-a', 'anvil_submit_review', { id: first.id, checklist, evidence: 'Passed' })).toThrow(/checklist/)
+  }
   call('task-a', 'anvil_block_issue', { id: first.id })
+  expect(() => call('task-a', 'anvil_submit_review', { id: first.id, checklist: [true], evidence: 'Passed' })).toThrow(/Only working/)
   call('task-a', 'anvil_requeue_issue', { id: first.id })
   call('task-a', 'anvil_start_issue', { id: first.id })
   call('task-a', 'anvil_submit_review', { id: first.id, checklist: [true], evidence: 'Focused test passed' })
@@ -68,6 +72,18 @@ test('MCP discovery and calls stay in the captured workspace and expire with the
   await client.connect(new StreamableHTTPClientTransport(new URL(connection.url), { requestInit: { headers: connection.headers } }))
   const tools = await client.listTools()
   expect(tools.tools.map((tool) => tool.name)).toContain('anvil_get_plan')
+  const review = tools.tools.find((tool) => tool.name === 'anvil_submit_review')!
+  expect(review.description).toContain('current issue in working status')
+  expect(review.description).toContain('Success returns the issue in review status')
+  expect(review.inputSchema.required).toEqual(['id', 'checklist', 'evidence'])
+  expect(review.inputSchema.additionalProperties).toBe(false)
+  expect(review.inputSchema.properties).toMatchObject({
+    id: { type: 'string', description: expect.stringContaining('currentIssueId') },
+    checklist: { type: 'array', items: { type: 'boolean' }, description: expect.stringContaining('Exactly one true confirmation') },
+    evidence: { type: 'string', description: expect.stringContaining('commands run and their results') }
+  })
+  expect(review.inputSchema.properties?.checklist).toHaveProperty('description', expect.stringContaining('in the order'))
+
   expect(tools.tools.some((tool) => /approve|delete|claim/.test(tool.name))).toBe(false)
   const work = store.createWorkspace('Work')
   store.selectWorkspace(work.id)

@@ -29,7 +29,7 @@ beforeEach(() => {
 test('keeps planning concise and queues issues under the task parent', () => {
   expect(planning.length < 2400, `Planning prompt should stay concise: ${planning.length} characters`).toBeTruthy()
   expect(planning).toMatch(/Create issues for this task/)
-  expect(planning.includes(issue.parentId)).toBeTruthy()
+  expect(planning).not.toContain(issue.parentId)
   expect(planning).not.toMatch(/anvil-task:/)
   expect(planning).toMatch(/prerequisites first/)
   expect(planning).toMatch(/Leave the finished plan queued/)
@@ -62,20 +62,20 @@ test('preserves follow-up and review context without applying validation to hist
 test('requires submitted review through anvil_submit_review and failure evidence', () => {
   expect(implementation.length < 2400, `Implementation prompt should stay concise: ${implementation.length} characters`).toBeTruthy()
   expect(implementation).toMatch(/already claimed/)
-  expect(implementation).toMatch(/Submit it for review with anvil_submit_review/)
+  expect(implementation).toMatch(/call anvil_submit_review/)
   expect(implementation).toMatch(/anvil_submit_review/)
-  expect(implementation).toMatch(/block it/)
-  expect(implementation).toMatch(/evidence/)
+  expect(implementation).toMatch(/anvil_block_issue/)
+  expect(implementation).toMatch(/discovered MCP schema/)
   expect(implementation).toMatch(/developer review/)
 })
 
 test('recovery preserves task context and later user instructions without duplicating the plan', () => {
   const prompt = taskRecoveryPrompt(savedTask, execution)
   expect(prompt).toContain(savedTask.prompt)
-  expect(prompt).toContain(execution.parentIssueId)
+  expect(prompt).not.toContain(execution.parentIssueId)
   expect(prompt).toContain(`Continue issue ${issue.id}`)
   expect(prompt).toContain('latest user instructions in the saved conversation')
-  expect(prompt).toContain('If already submitted, report that result instead of repeating work')
+  expect(prompt).toContain('If already submitted (review or done), report that result instead of repeating work')
   const planningRecovery = taskRecoveryPrompt(savedTask, { ...execution, phase: 'planning', currentIssueId: null })
   expect(planningRecovery).toContain('Leave the finished plan queued without implementing it')
   expect(planningRecovery).not.toContain('Continue issue')
@@ -107,13 +107,49 @@ test('routes both prompts through task-scoped tools and retains issue context', 
   for (const prompt of [planning, implementation]) {
     expect(prompt.includes(task)).toBeTruthy()
     expect(prompt).toContain('anvil_get_plan')
-    expect(prompt).toContain('anvil_create_issue')
+    expect(prompt).toContain('discovered MCP schema')
     expect(prompt).not.toContain('vl ')
     expect(prompt).not.toMatch(/~\/\.config|--local/)
     expect(prompt).toMatch(/plain text/)
     expect(prompt).not.toMatch(/task-result|noChanges/)
   }
-  for (const detail of [issue.id, issue.parentId, issue.description, issue.validation, ...issue.checklist]) {
+  for (const detail of [issue.id, issue.description, issue.validation, ...issue.checklist]) {
     expect(implementation.includes(detail), `Keep required issue context: ${detail}`).toBeTruthy()
   }
+})
+
+test('tool guidance is phase-specific and keeps ownership out of arguments', () => {
+  const rework = issueReworkPrompt(savedTask.cwd, issue.id, [])
+  for (const prompt of [implementation, rework]) {
+    expect(prompt).not.toMatch(/anvil_create_issue|anvil_update_issue|anvil_requeue_issue|anvil_start_issue/)
+    expect(prompt).not.toContain(issue.parentId)
+    expect(prompt).toContain('validating, and committing')
+    expect(prompt).toContain('require a successful result')
+    expect(prompt).toContain('Prose is never a review submission')
+    expect(prompt).toContain('only the developer approves')
+    expect(prompt).toContain('Do not claim or create other issues, or change issue ownership or dependencies')
+  }
+  for (const prompt of [planning, taskRecoveryPrompt(savedTask, { ...execution, phase: 'planning' })]) {
+    expect(prompt).toContain('anvil_create_issue')
+    expect(prompt).toContain('anvil_update_issue')
+    expect(prompt).not.toMatch(/anvil_submit_review|anvil_start_issue/)
+  }
+  for (const prompt of [implementation, planning, rework]) {
+    expect(prompt).toContain('available tool search/list facility')
+    expect(prompt).not.toMatch(/checklist:|evidence:|mcp__/)
+  }
+})
+
+test('interrupted guidance distinguishes blocked, queued, working and submitted issues', () => {
+  for (const prompt of [taskRecoveryPrompt(savedTask, execution), taskFollowupPrompt(savedTask, execution, 'Continue')]) {
+    expect(prompt).toContain('If blocked, use anvil_requeue_issue then anvil_start_issue')
+    expect(prompt).toContain('If queued, use anvil_start_issue')
+    expect(prompt).toContain('If working, continue without requeueing')
+    expect(prompt).toContain('If already submitted (review or done)')
+    expect(prompt).toContain('require a successful result')
+    expect(prompt).not.toMatch(/anvil_create_issue|anvil_update_issue/)
+  }
+  const scheduling = taskFollowupPrompt(savedTask, { ...execution, currentIssueId: null }, 'Continue')
+  expect(scheduling).toContain('Do not claim new work')
+  expect(scheduling).not.toMatch(/anvil_start_issue|anvil_submit_review/)
 })
