@@ -164,16 +164,17 @@ test('snapshot reads current parent children during planning and after the execu
   const otherParent = tracker.createParent({ anvilTaskId: otherTaskId, title: 'Other task' })
   tracker.create({ ...input, parentId: otherParent.id })
   const parent = tracker.getParent(state.parentIssueId)
-  expect(read()).toEqual({ parent, children: [] })
+  const planning = { phase: 'planning', currentIssueId: null, error: null }
+  expect(read()).toEqual({ parent, children: [], execution: planning, reviewReady: false })
   const planned = tracker.create({ ...input, parentId: parent.id })
-  expect(read()).toEqual({ parent, children: [planned] })
+  expect(read()).toEqual({ parent, children: [planned], execution: planning, reviewReady: false })
   expect(store.getTaskExecution(taskId)).toEqual(state)
   expect(issues.list(taskId)).toEqual([])
   issues.finishPlanning(taskId)
   const frozen = store.getTaskExecution(taskId)
   // A fresh adapter restores the association from persisted execution metadata.
   const restarted = new TaskIssues(store)
-  expect(restarted.snapshot(taskId)).toEqual(read())
+  expect(read()).toEqual({ ...restarted.snapshot(taskId), reviewReady: false })
   const later = tracker.create({ ...input, title: 'Added later', parentId: parent.id })
   tracker.updateParent(parent.id, { description: 'Current parent summary' })
   tracker.start(planned.id)
@@ -190,7 +191,8 @@ test('snapshot reads current parent children during planning and after the execu
     expect(snapshot.parent).toEqual(tracker.getParent(parent.id))
     expect(snapshot.children).toEqual([tracker.get(planned.id), later])
     expect(snapshot.children[0].status).toBe(status)
-    expect(restarted.snapshot(taskId)).toEqual(snapshot)
+    expect(snapshot.execution).toEqual({ phase: 'working', currentIssueId: null, error: null })
+    expect(snapshot).toEqual({ ...restarted.snapshot(taskId), reviewReady: false })
     expect(tracker.list()).toEqual(before)
     expect(store.getTaskExecution(taskId)).toEqual(frozen)
     expect(issues.list(taskId).map((issue) => issue.id)).toEqual([planned.id])
@@ -269,7 +271,15 @@ test('reopened storage restores child snapshots and tagged history alongside leg
     migrationsFolder: join(process.cwd(), 'src/main/db/migrations')
   })
   onTestCleanup(() => reopened.close())
-  expect(new TaskIssues(reopened).snapshot(taskId)).toEqual(expectedSnapshot)
+  // The child and history survive, but an unfinished execution is blocked on restart.
+  expect(expectedSnapshot?.execution).toEqual({ phase: 'working', currentIssueId: null, error: null })
+  expect(new TaskIssues(reopened).snapshot(taskId)).toEqual({
+    ...expectedSnapshot,
+    execution: {
+      phase: 'blocked', currentIssueId: null,
+      error: 'Interrupted by app restart. Inspect Valence work before requeueing.'
+    }
+  })
   expect(reopened.readEvents(taskId)).toEqual(expectedEvents)
   expect(reopened.readEvents(taskId).filter((event) => event.issueId === child.id).map((event) => event.text))
     .toEqual(['Only this child output'])
