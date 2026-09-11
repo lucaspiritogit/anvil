@@ -1,3 +1,4 @@
+import { TerminalDrawer } from './components/TerminalDrawer'
 import type { JSX } from 'react'
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AppSkeleton } from './components/AppSkeleton'
@@ -18,12 +19,15 @@ const SettingsPage = lazy(async () => {
 })
 
 export function App(): JSX.Element {
-  const [terminalError, setTerminalError] = useState<string | null>(null)
+  const [terminalOpen, setTerminalOpen] = useState(false)
+  const [terminalCreated, setTerminalCreated] = useState(false)
+  const projectId = useStore((s) => s.activeProjectId ?? s.projects[0]?.id)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const suspendedDialogs = useRef<HTMLDialogElement[]>([])
   const fontSize = useStore((s) => s.settings?.fontSize)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const workspaceId = useStore((s) => s.activeWorkspaceId)
+  useEffect(() => { setTerminalOpen(false); setTerminalCreated(false) }, [workspaceId])
   const switching = useStore((s) => s.workspaceSwitching)
   const workspaceError = useStore((s) => s.workspaceError)
   const ready = useStore((s) => s.ready)
@@ -112,14 +116,14 @@ export function App(): JSX.Element {
       if (event.repeat || useStore.getState().workspaceSwitching) return
       if (isTerminalShortcut(event)) {
         event.preventDefault()
-        const state = useStore.getState()
-        const projectId = state.activeProjectId ?? state.projects[0]?.id
         if (projectId) {
-          setTerminalError(null)
-          void window.anvil.projects.openTerminal(projectId).catch(() => setTerminalError('Could not open the system terminal. Check that a terminal is installed and try the shortcut again.'))
+          setSettingsOpen(false)
+          setTerminalCreated(true)
+          setTerminalOpen((open) => !open)
         }
         return
       }
+      if ((event.target as HTMLElement)?.closest('[data-terminal]')) return
       if (event.key === 'Escape' && useStore.getState().settingsOpen) {
         event.preventDefault()
         setSettingsOpen(false)
@@ -140,7 +144,7 @@ export function App(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keybindings, toggleSidebar, focusTaskComposer, settingsOpen, setSettingsOpen])
+  }, [keybindings, toggleSidebar, focusTaskComposer, settingsOpen, setSettingsOpen, projectId])
 
   useEffect(() => {
     const offEvent = window.anvil.tasks.onEvent(applyEvent)
@@ -170,8 +174,9 @@ export function App(): JSX.Element {
       >
         <OverviewBackground />
         <div className="contents" inert={switching}><Sidebar /></div>
-        <div ref={workspaceRef} tabIndex={-1} className={cn('min-w-0 min-h-0 outline-none', settingsOpen && 'hidden')} inert={settingsOpen || switching}>
-          <Workspace key={workspaceId} />
+        <div ref={workspaceRef} tabIndex={-1} className={cn('flex flex-col min-w-0 min-h-0 outline-none', settingsOpen && 'hidden')} inert={settingsOpen || switching}>
+          <div className="min-h-0 flex-1"><Workspace key={workspaceId} /></div>
+          {terminalCreated && projectId && <TerminalDrawer key={`${workspaceId}:${projectId}`} projectId={projectId} visible={terminalOpen} onClose={() => { setTerminalCreated(false); setTerminalOpen(false) }} />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
         {settingsOpen && <div className="contents" inert={switching}><Suspense fallback={<p role="status" className="p-5 text-sm text-dim">Loading settings…</p>}><SettingsPage key={workspaceId} /></Suspense></div>}
@@ -181,7 +186,6 @@ export function App(): JSX.Element {
         <p>{workspaceError}</p>
         <button className="mt-2 text-accent" onClick={() => { if (workspaceId) void useStore.getState().selectWorkspace(workspaceId) }}>Retry workspace</button>
       </div>}
-      {terminalError && <div role="alert" className="fixed bottom-4 left-4 z-50 rounded border border-line bg-canvas p-3 text-sm shadow-lg"><p>{terminalError}</p><button className="mt-2 text-accent" onClick={() => setTerminalError(null)}>Dismiss</button></div>}
     </>
   )
 }

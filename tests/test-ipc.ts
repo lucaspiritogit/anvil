@@ -11,6 +11,7 @@ export function registerTestIpc(): ReturnType<typeof registerIpc> {
     await new Promise<void>((resolve) => setImmediate(resolve))
     const results = await Promise.allSettled([
       Promise.resolve().then(() => runtime.stopCaffeineMode()),
+      Promise.resolve().then(() => runtime.terminals.disposeAll()),
       Promise.resolve().then(() => runtime.githubPolling.close()),
       Promise.resolve().then(() => runtime.agentProcesses.close()),
       Promise.resolve().then(() => runtime.projectMemory?.close())

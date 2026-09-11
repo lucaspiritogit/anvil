@@ -59,13 +59,14 @@ test('subscription stays with its workspace through switches and can be cancelle
 })
 
 for (const method of ['api', 'subscription']) {
-  test(`OpenCode native ${method} sign-in waits for external completion and can be cancelled`, async ({ page }, testInfo) => {
+  test(`OpenCode native ${method} sign-in uses an in-app terminal and can be cancelled`, async ({ page }, testInfo) => {
     await openAccounts(page)
     const opencode = card(page, 'OpenCode')
     await opencode.getByRole('button', { name: 'Connect OpenCode for Default', exact: true }).click()
-    await expect(opencode.getByText('Complete sign-in or sign-out in the terminal window.', { exact: false })).toBeVisible()
+    await expect(opencode.locator('canvas')).toBeVisible()
+    await expect(opencode.getByText('Complete sign-in or sign-out in the terminal panel.', { exact: false })).toBeVisible()
     await expect(opencode.getByRole('button', { name: 'Connect OpenCode for Default', exact: true })).toBeDisabled()
-    await page.screenshot({ path: testInfo.outputPath(`opencode-external-${method}.png`) })
+    await page.screenshot({ path: testInfo.outputPath(`opencode-terminal-${method}.png`) })
     await page.evaluate((method) => window.dispatchEvent(new CustomEvent('fixture:account-complete', {
       detail: { workspaceId: 'default', agentId: 'opencode', success: true, method }
     })), method)

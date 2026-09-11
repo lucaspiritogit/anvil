@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import type { Store } from '../store'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { openSystemTerminal } from '../system-terminal'
+import type { TerminalSessionManager } from '../terminal-sessions'
 import type { AgentAccountTarget, AgentAccountConnect, WorkspaceAgentAccount } from '../../shared/types'
 import { CodexAppServerConnection, type ConnectionHandlers } from './codex-app-server-connection'
 import type { CodexAppServerProtocol, CodexObject } from './codex-app-server-protocol'
@@ -25,7 +25,7 @@ export interface AccountDependencies {
   connection?(workspace: WorkspaceExecutionContext, handlers: ConnectionHandlers): AccountConnection
   verifyOpenCode?(workspace: WorkspaceExecutionContext): Promise<void>
   readOpenCode?(workspace: WorkspaceExecutionContext): Promise<string>
-  openTerminal?: typeof openSystemTerminal
+  terminals: Pick<TerminalSessionManager, 'createOpenCodeAuth' | 'dispose'>
   changed?(state: WorkspaceAgentAccount): void
 }
 
@@ -34,6 +34,7 @@ interface PendingAccount {
   sessionId: string
   release(): void
   connection?: AccountConnection
+  terminalSessionId?: string
   loginId?: string
   pollTimer?: ReturnType<typeof setTimeout>
   timer?: ReturnType<typeof setTimeout>
@@ -229,15 +230,17 @@ export class WorkspaceAccounts {
         const revision = await this.openCodeAuthRevision(workspace)
         if (operation.finishing) return operation.finishing
         if (logout && !before.length) return this.finish(operation)
-        const launch = openCodeWorkspaceCommand(workspace, ['auth', logout ? 'logout' : 'login'])
-        const resolved = resolveCommand(launch.command)
-        if (!resolved || resolved.viaShell) throw new Error('OpenCode requires a directly executable CLI')
-        await (this.dependencies.openTerminal ?? openSystemTerminal)(launch.cwd, {
-          command: resolved.command, args: [...resolved.prefixArgs, ...launch.args], environment: launch.environment
+        const terminal = this.dependencies.terminals.createOpenCodeAuth(workspace, logout, (exitCode) => {
+          if (!operation.finishing) void this.finish(operation, exitCode === 0 ? undefined : 'OpenCode authentication stopped. Retry the connection.')
         })
-        if (operation.finishing) return operation.finishing
+        operation.terminalSessionId = terminal.sessionId
+        if (operation.finishing) {
+          await this.dependencies.terminals.dispose(terminal.sessionId)
+          return operation.finishing
+        }
         this.publish(this.state(target, { status: 'pending', sessionId: operation.sessionId,
-          message: `Complete ${logout ? 'sign-out' : 'sign-in'} in the terminal window. Anvil checks account status every 3 seconds.` }))
+          terminalSessionId: terminal.sessionId,
+          message: `Complete ${logout ? 'sign-out' : 'sign-in'} in the terminal panel. Anvil checks account status every 3 seconds.` }))
         this.pollOpenCode(operation, workspace, before, revision, logout)
       }
       return this.states.get(key)!
@@ -280,6 +283,7 @@ export class WorkspaceAccounts {
       clearTimeout(operation.pollTimer)
       let cleanedUp = false
       try {
+        if (operation.terminalSessionId) await this.dependencies.terminals.dispose(operation.terminalSessionId)
         if (operation.connection) {
           if (message && operation.loginId) {
             try { await operation.connection.request('account/login/cancel', { loginId: operation.loginId }) } catch { /* Close below also terminates the native callback server. */ }

@@ -1,3 +1,4 @@
+import { TerminalSessionManager } from './terminal-sessions'
 import { WorkspaceAccounts } from './agents/workspace-accounts'
 import { registerAccountHandlers } from './ipc/agent-accounts'
 import { openExternalCodexLogin } from './renderer-security'
@@ -44,6 +45,7 @@ export function registerIpc(
   rendererUrl: string,
   dataDirectory = resolveAppDataDirectory(app.getPath('home'), app.isPackaged, process.env.ANVIL_DATA_DIR)
 ): {
+  terminals: TerminalSessionManager
   agentProcesses: AgentProcessManager
   projectMemory?: ProjectMemory
   githubPolling: Pick<GitHubPRPolling, 'refreshIfStale' | 'close'>
@@ -60,6 +62,12 @@ export function registerIpc(
   const store = new Store(join(dataDirectory, 'config.json'), {
     migrationsFolder: join(app.getAppPath(), 'src', 'main', 'db', 'migrations')
   })
+  const terminals = new TerminalSessionManager(store, broadcast)
+  ipc.handle('terminals:create', (_event, input) => terminals.createProject(input))
+  ipc.handle('terminals:attach', (_event, id) => terminals.attach(id))
+  ipc.handle('terminals:dispose', (_event, id) => terminals.dispose(id))
+  ipc.on('terminals:write', (_event, input) => terminals.write(input.sessionId, input.data))
+  ipc.on('terminals:resize', (_event, input) => terminals.resize(input.sessionId, input.cols, input.rows))
   const issueTools = new IssueToolServer(store, (taskId) => {
     const task = store.getTask(taskId)
     if (task) broadcast('task:updated', task)
@@ -133,7 +141,7 @@ export function registerIpc(
       resumeAccounts?.()
       release()
     }
-  })
+  }, () => terminals.disposeProjects())
   registerAgentHandlers(ipc, store)
   const accounts = new WorkspaceAccounts(store, {
     acquire: (workspaceId) => agentProcesses.acquireAccountChange(workspaceId),
@@ -143,6 +151,7 @@ export function registerIpc(
       invalidateWorkspaceModels(workspaceId)
       broadcast('agents:models:changed', workspaceId)
     },
+    terminals,
     openBrowser: openExternalCodexLogin,
     changed: (state) => broadcast('accounts:changed', state)
   })
@@ -205,6 +214,7 @@ export function registerIpc(
   registerRebaseHandlers(ipc, reviewContext)
 
   return {
+    terminals,
     agentProcesses,
     closeAgentDiscovery: async () => {
       await accounts.close()

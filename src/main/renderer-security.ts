@@ -1,5 +1,5 @@
 import { ipcMain, shell, type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import type { IpcInvokeChannel, IpcRequests } from '../shared/ipc-requests'
+import type { IpcInvokeChannel, IpcSendChannel, IpcRequests } from '../shared/ipc-requests'
 import { validateIpcRequest } from './ipc/validation'
 import { isGitHubPullRequestUrl } from './github-repository'
 
@@ -29,6 +29,7 @@ export function isRendererSender(
 }
 
 export interface RendererIpc {
+  on<C extends IpcSendChannel>(channel: C, listener: (event: IpcMainEvent, input: IpcRequests[C]) => void): void
   handle<C extends IpcInvokeChannel>(channel: C, listener: (event: IpcMainInvokeEvent, input: IpcRequests[C]) => unknown): void
 }
 
@@ -38,6 +39,13 @@ export function createRendererIpc(
   rendererUrl: string
 ): RendererIpc {
   return {
+    on(channel, listener) {
+      ipcMain.on(channel, (event, ...args) => {
+        if (!isRendererSender(event, getWindow(), rendererUrl)) return
+        try { listener(event, validateIpcRequest(channel, args)) }
+        catch { /* Invalid or stale fire-and-forget input is ignored. */ }
+      })
+    },
     handle(channel, listener) {
       ipcMain.handle(channel, (event, ...args) => {
         if (!isRendererSender(event, getWindow(), rendererUrl)) {

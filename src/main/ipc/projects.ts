@@ -5,7 +5,6 @@ import { basename } from 'node:path'
 import type { ProjectMemory } from '../memory/project-memory'
 import type { TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
-import { openSystemTerminal } from '../system-terminal'
 import type { Project } from '../../shared/types'
 import { listProjectFiles, projectFileError } from '../project-files'
 
@@ -20,12 +19,6 @@ export function registerProjectHandlers(ipc: RendererIpc, {
   store, gitDelivery, agentProcesses, stopTask, projectMemory, getWindow, projectsChanged
 }: ProjectHandlerDependencies): void {
   ipc.handle('projects:list', () => store.getProjects())
-  ipc.handle('projects:open-terminal', (_event, projectId) => {
-    const project = store.getProjects().find((item) => item.id === projectId)
-    if (!project) throw new Error('Project not found')
-    return openSystemTerminal(project.path)
-  })
-
   ipc.handle('projects:files', async (_event, { projectId }) => {
     const project = store.getProjects().find((item) => item.id === projectId)
     if (!project) return projectFileError(projectId, 'project-not-found', 'Project not found.')

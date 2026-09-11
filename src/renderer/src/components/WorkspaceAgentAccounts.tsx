@@ -1,3 +1,4 @@
+import { GhosttyTerminal } from './GhosttyTerminal'
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { AgentAccountConnect, AgentAccountTarget, WorkspaceAgentAccount } from '@shared/types'
 import { useStore } from '../state/store'
@@ -87,7 +88,8 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
         <button className={btn.ghost} disabled={requesting || pending} onClick={() => void run(() => window.anvil.accounts.status(target))}>Refresh {label} for {workspaceName}</button>
         {pending && account.sessionId && <button className={btn.ghost} onClick={() => void run(() => window.anvil.accounts.cancel({ ...target, sessionId: account.sessionId! }))}>Cancel {label} for {workspaceName}</button>}
       </div>
-      {pending && agentId === 'opencode' && <p className="mt-3 text-xs text-dim">Complete sign-in or sign-out in the terminal window. Cancelling stops checking; close that window to stop the command.</p>}
+      {pending && agentId === 'opencode' && <p className="mt-3 text-xs text-dim">Complete sign-in or sign-out in the terminal panel. Cancelling stops the command.</p>}
+      {pending && account.terminalSessionId && <GhosttyTerminal sessionId={account.terminalSessionId} className="mt-3 h-[180px]" />}
     </section>
   )
 }

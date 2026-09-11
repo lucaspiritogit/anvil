@@ -17,7 +17,8 @@ export function registerWorkspaceHandlers(
   ipc: RendererIpc,
   store: Store,
   broadcast: (channel: string, payload: unknown) => void,
-  rename: (workspaceId: string, name: string) => ReturnType<Store['renameWorkspace']> | Promise<ReturnType<Store['renameWorkspace']>> = (workspaceId, name) => store.renameWorkspace(workspaceId, name)
+  rename: (workspaceId: string, name: string) => ReturnType<Store['renameWorkspace']> | Promise<ReturnType<Store['renameWorkspace']>> = (workspaceId, name) => store.renameWorkspace(workspaceId, name),
+  beforeSelect: () => Promise<void> = async () => {}
 ): void {
   ipc.handle('workspaces:list', () => store.getWorkspaces())
   ipc.handle('workspaces:snapshot', () => workspaceSnapshot(store))
@@ -31,7 +32,9 @@ export function registerWorkspaceHandlers(
     broadcast('workspaces:changed', store.getWorkspaces())
     return workspace
   })
-  ipc.handle('workspaces:select', (_event, workspaceId) => {
+  ipc.handle('workspaces:select', async (_event, workspaceId) => {
+    if (!store.getWorkspaces().some((workspace) => workspace.id === workspaceId)) throw new Error('Workspace not found')
+    await beforeSelect()
     store.selectWorkspace(workspaceId)
     const snapshot = workspaceSnapshot(store)
     broadcast('workspaces:selected', snapshot)

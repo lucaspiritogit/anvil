@@ -433,6 +433,7 @@ export interface AgentAccountConnect extends AgentAccountTarget {
 }
 
 export interface WorkspaceAgentAccount extends AgentAccountTarget {
+  terminalSessionId?: string
   workspaceName: string
   status: 'signed-out' | 'connected' | 'pending' | 'cancelled' | 'busy' | 'error'
   accounts: string[]

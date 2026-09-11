@@ -27,7 +27,11 @@ export interface IpcRequests {
   'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean }
   'projects:remove': string
   'projects:reveal': string
-  'projects:open-terminal': string
+  'terminals:create': { projectId: string; cols: number; rows: number }
+  'terminals:attach': string
+  'terminals:dispose': string
+  'terminals:write': { sessionId: string; data: string }
+  'terminals:resize': { sessionId: string; cols: number; rows: number }
   'projects:git-status': string
   'projects:git-init': string
   'projects:branches': string
@@ -68,5 +72,6 @@ export interface IpcRequests {
 }
 
 export type IpcChannel = keyof IpcRequests
-export type IpcInvokeChannel = IpcChannel
+export type IpcSendChannel = 'terminals:write' | 'terminals:resize'
+export type IpcInvokeChannel = Exclude<IpcChannel, IpcSendChannel>
 export type IpcArgs<C extends IpcChannel> = undefined extends IpcRequests[C] ? [input?: IpcRequests[C]] : [IpcRequests[C]]

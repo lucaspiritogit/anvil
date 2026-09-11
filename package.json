@@ -8,7 +8,7 @@
   "scripts": {
     "test:e2e": "playwright test",
     "test:issue-tracker": "vitest run",
-    "postinstall": "electron-rebuild -f -o better-sqlite3",
+    "postinstall": "electron-rebuild -f -o better-sqlite3,node-pty",
     "dev": "node scripts/dev.cjs",
     "demo": "node scripts/capture-demo.mjs",
     "build": "npm run typecheck && electron-vite build",
@@ -43,6 +43,8 @@
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.2",
     "fuzzysort": "^3.1.0",
+    "ghostty-web": "^0.4.0",
+    "node-pty": "^1.1.0",
     "pg": "^8.23.0",
     "zustand": "^5.0.2"
   },

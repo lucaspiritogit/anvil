@@ -274,6 +274,12 @@ window.composerTest = {
 }
 
 window.anvil = {
+  terminals: {
+    create: async ({ projectId }) => ({ sessionId: `terminal-${projectId}` }),
+    attach: async () => ({ data: 'Anvil terminal fixture\r\n$ ', sequence: 0 }),
+    write: () => {}, resize: () => {}, dispose: async () => {},
+    onOutput: () => () => {}, onExit: () => () => {}
+  },
   platform: query.get('platform') === 'darwin' ? 'darwin' : query.get('platform') === 'win32' ? 'win32' : 'linux',
   app: {
     onReady: (handler: () => void) => subscribeReadiness((value) => { if (value.ok) handler() }),
@@ -308,7 +314,6 @@ window.anvil = {
       return projects
     },
     reveal: async () => '',
-    openTerminal: async (projectId: string) => { window.dispatchEvent(new CustomEvent('fixture:terminal-open', { detail: projectId })) },
     gitStatus: async (id) => ({ isRepository: true, repoRoot: projects.find((project) => project.id === id)!.path, gitAvailable: true, pathExists: true }),
     gitInit: async (id) => window.anvil.projects.gitStatus(id),
     branches: async (projectId) => ({ currentBranch: projectBranches[projectId] ?? 'main', branches: [

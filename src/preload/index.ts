@@ -1,3 +1,4 @@
+import type { TerminalSnapshot, TerminalOutput, TerminalExit } from '../shared/terminal'
 import type { WorkspaceAgentAccount } from '../shared/types'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { APP_INIT_FAILED_CHANNEL, APP_READY_CHANNEL, type AppReadiness } from '../shared/app-lifecycle'
@@ -62,6 +63,15 @@ const api = {
     onInitFailed: (handler: (message: string) => void): (() => void) =>
       appReadiness.subscribe((readiness) => { if (!readiness.ok) handler(readiness.message) })
   },
+  terminals: {
+    create: (input: IpcRequests['terminals:create']): Promise<{ sessionId: string }> => invoke('terminals:create', input),
+    attach: (sessionId: string): Promise<TerminalSnapshot> => invoke('terminals:attach', sessionId),
+    write: (input: IpcRequests['terminals:write']): void => ipcRenderer.send('terminals:write', input),
+    resize: (input: IpcRequests['terminals:resize']): void => ipcRenderer.send('terminals:resize', input),
+    dispose: (sessionId: string): Promise<void> => invoke('terminals:dispose', sessionId),
+    onOutput: (handler: (output: TerminalOutput) => void): (() => void) => subscribe('terminals:output', handler),
+    onExit: (handler: (exit: TerminalExit) => void): (() => void) => subscribe('terminals:exit', handler)
+  },
   wallpapers: {
     directory: (workspaceId?: string): Promise<string> => invoke('wallpapers:directory', workspaceId),
     list: (workspaceId?: string): Promise<Wallpaper[]> => invoke('wallpapers:list', workspaceId),
@@ -125,7 +135,6 @@ const api = {
     update: (input: IpcRequests['projects:update']): Promise<Project | undefined> => invoke('projects:update', input),
     remove: (id: string): Promise<Project[]> => invoke('projects:remove', id),
     reveal: (projectId: string): Promise<string> => invoke('projects:reveal', projectId),
-    openTerminal: (projectId: string): Promise<void> => invoke('projects:open-terminal', projectId),
     gitStatus: (id: string): Promise<ProjectGitStatus> =>
       invoke('projects:git-status', id),
     gitInit: (id: string): Promise<ProjectGitStatus> => invoke('projects:git-init', id),

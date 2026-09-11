@@ -124,6 +124,7 @@ if (ownsInstance) app.whenReady().then(() => {
         showClosing: showClosingProcesses,
         cleanup: [
           () => services.stopCaffeineMode(),
+          () => services.terminals.disposeAll(),
           () => services.agentProcesses.close(),
           () => services.closeAgentDiscovery(),
           () => services.githubPolling.close(),

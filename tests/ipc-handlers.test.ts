@@ -3,8 +3,6 @@ import { WallpaperLibrary } from '../src/main/wallpapers'
 import { rendererEvent, rendererIpc, rendererFrame } from './renderer-fixture'
 import { test, expect, vi } from 'vitest'
 import { pngWithDimensions } from './image-fixtures'
-import { openSystemTerminal } from '../src/main/system-terminal'
-vi.mock('../src/main/system-terminal', () => ({ openSystemTerminal: vi.fn(async () => {}) }))
 import { TaskImageStorage } from '../src/main/task-image-storage'
 import { taskImages } from './task-image-fixture'
 import { TASK_IMAGE_LIMITS } from '../src/shared/types'
@@ -165,7 +163,7 @@ test('registers all channels and rejects foreign, subframe and navigated senders
   expect([...handlers.keys()].sort()).toStrictEqual([
     'agents:list', 'agents:models', 'comments:add', 'comments:list', 'comments:remove', 'comments:send',
     'github:credential-status', 'github:set-token', 'github:remove-token', 'github:pr-preview', 'github:open-pr', 'github:draft-pr-field', 'github:open-pr-url',
-    'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:open-terminal', 'projects:update',
+    'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:update',
     'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:compact', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:events-page', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:restack', 'tasks:settle', 'tasks:stack', 'tasks:stack-dismiss', 'tasks:start', 'tasks:steer',
     'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set', 'workspaces:composer:import',
     'wallpapers:directory', 'wallpapers:import', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set'
@@ -188,7 +186,6 @@ test('registers all channels and rejects foreign, subframe and navigated senders
     expect(() => handler(rendererEvent), channel).toThrow(/Unauthorized IPC sender/)
   }
   rendererFrame.url = appUrl
-  expect(openSystemTerminal).not.toHaveBeenCalled()
 })
 
 test('rejects malformed IPC requests before accessing dependencies or files', async () => {
@@ -243,7 +240,7 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
       { projectId: project.id, path: '/outside' }, { projectId: project.id, query: '../outside' },
       { projectId: project.id, limit: 1_000_000 }
     ]) await invalidRequest('projects:files', payload)
-    for (const channel of ['projects:remove', 'projects:reveal', 'projects:open-terminal', 'projects:git-init', 'tasks:delete', 'tasks:cancel', 'tasks:issues', 'tasks:approve-issue', 'comments:send']) {
+    for (const channel of ['projects:remove', 'projects:reveal', 'projects:git-init', 'tasks:delete', 'tasks:cancel', 'tasks:issues', 'tasks:approve-issue', 'comments:send']) {
       for (const id of ['', ' ', '../project', 'x'.repeat(129)]) await invalidRequest(channel, id)
     }
     for (const patch of [{ taskId: 'task', issueId: '' }, { taskId: 'task', issueId: 42 }, { taskId: 'task', issueId: 'ok', extra: 1 }]) {
@@ -252,7 +249,6 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
     for (const patch of [{ taskId: '' }, { taskId: 'task', comment: ' ' }, { taskId: 'task', comment: 42 }]) {
       await invalidRequest('tasks:reject-issue', patch)
     }
-    await invalidRequest('projects:open-terminal', { projectId: 'project', cwd: '/outside', command: 'bad' })
     for (const patch of [{ side: 'left' }, { lineNumber: 0 }, { lineNumber: NaN }, { lineNumber: 1.5 }, { file: '/etc/passwd' }, { file: '../outside' }, { file: 'a/../b' }, { file: 'C:\\outside' }, { file: '' }, { body: ' ' }, { body: 'x'.repeat(20_001) }]) {
       await invalidRequest('comments:add', { ...comment, ...patch })
     }
@@ -289,7 +285,6 @@ test('updates projects, validates task references and selects supported agents a
   await call('projects:reveal', project.id)
   expect(opened).toStrictEqual([project.path])
   expect(() => call('projects:reveal', 'missing')).toThrow(/Project not found/)
-  expect(() => call('projects:open-terminal', 'missing')).toThrow(/Project not found/)
   expect(() => call('comments:add', { ...comment, taskId: 'missing' })).toThrow(/Task not found/)
 
   expect(titleFor('  First line\nSecond line')).toBe('First line')
@@ -349,7 +344,6 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(tasks.get(task.id)?.costUsd).toBe(0.2)
   expect((await call('tasks:diff', task.id)).patch).toMatch(/base\.\.commit-/)
 
-  expect(() => call('projects:open-terminal', 'missing')).toThrow(/Project not found/)
   expect(() => call('comments:add', { taskId: task.id, body: ' ' })).toThrow(/Invalid IPC request/)
   const draft: TaskComment[] = call('comments:add', { taskId: task.id, file: 'file.ts', side: 'additions', lineNumber: 9, body: ' Fix this ' })
   expect(draft[0].body).toBe('Fix this')
@@ -496,17 +490,6 @@ test('blocks failed planning, cancels preparation and between issues, and forwar
   call('tasks:cancel', nonGitEffortTask.id)
   await tick()
   GitDeliveryManager.repository = true
-})
-
-test('system terminals use registered project paths and propagate launch failures', async () => {
-  const { call, project, store } = setupIpc()
-  expect(store.getTasks()).toHaveLength(0)
-  await call('projects:open-terminal', project.id)
-  expect(openSystemTerminal).toHaveBeenCalledWith(project.path)
-  vi.mocked(openSystemTerminal).mockRejectedValueOnce(new Error('No terminal'))
-  await expect(call('projects:open-terminal', project.id)).rejects.toThrow('No terminal')
-  await call('projects:remove', project.id)
-  expect(() => call('projects:open-terminal', project.id)).toThrow('Project not found')
 })
 
 test('branch selection resolves only registered project paths', async () => {
@@ -788,4 +771,17 @@ test('stacked start validates ownership and passes the parent commit to branch p
   const count = store.getTasks().length
   await expect(call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Invalid', parentTaskId: 'missing' })).rejects.toThrow('same project')
   expect(store.getTasks()).toHaveLength(count)
+})
+
+
+test('terminal send channels reject foreign senders and malformed input', () => {
+  const write = vi.fn()
+  rendererIpc.on('terminals:write', write)
+  const send = handlers.get('terminals:write')!
+  send(rendererEvent, { sessionId: 'session', data: '\x03' })
+  expect(write).toHaveBeenCalledTimes(1)
+  send({ ...rendererEvent, sender: {} }, { sessionId: 'session', data: 'bad' })
+  send({ ...rendererEvent, senderFrame: { url: rendererFrame.url } }, { sessionId: 'session', data: 'bad' })
+  send(rendererEvent, { sessionId: 'session', data: 'bad', command: 'sh' })
+  expect(write).toHaveBeenCalledTimes(1)
 })

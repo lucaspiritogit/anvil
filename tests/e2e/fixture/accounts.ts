@@ -17,7 +17,7 @@ export function fixtureAccounts(name: (id: string) => string, busy: boolean): An
     const { workspaceId, agentId, success, method } = (event as CustomEvent<AgentAccountTarget & { success: boolean; method?: string }>).detail
     const state = current({ workspaceId, agentId })
     if (state.status !== 'pending') return
-    publish({ ...state, status: success ? 'connected' : 'error', sessionId: undefined,
+    publish({ ...state, status: success ? 'connected' : 'error', sessionId: undefined, terminalSessionId: undefined,
       accounts: success ? [agentId === 'codex' ? 'ChatGPT: fixture@example.test (plus)' : method === 'api' ? 'OpenAI: API key' : 'OpenAI: subscription'] : [], message: success ? undefined : 'Sign-in failed. Retry the connection.' })
   })
   return {
@@ -31,12 +31,12 @@ export function fixtureAccounts(name: (id: string) => string, busy: boolean): An
           accounts: input.apiKey === 'fixture-fail' ? [] : ['API key'], message: input.apiKey === 'fixture-fail' ? 'Account operation failed. Retry the connection.' : undefined })
       }
       const sessionId = crypto.randomUUID()
-      return publish({ ...state, status: 'pending', sessionId, message: 'Complete the native sign-in for this workspace.' })
+      return publish({ ...state, status: 'pending', sessionId, terminalSessionId: input.agentId === 'opencode' ? `auth-${sessionId}` : undefined, message: 'Complete the native sign-in for this workspace.' })
     },
     cancel: async (input) => {
       const state = current(input)
       if (input.sessionId !== state.sessionId) return state
-      return publish({ ...state, status: 'cancelled', sessionId: undefined, message: 'Connection cancelled.' })
+      return publish({ ...state, status: 'cancelled', sessionId: undefined, terminalSessionId: undefined, message: 'Connection cancelled.' })
     },
     disconnect: async (target) => publish({ ...current(target), status: 'signed-out', accounts: [], sessionId: undefined })
   }

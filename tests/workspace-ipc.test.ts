@@ -37,7 +37,8 @@ beforeEach(() => {
 
 test('workspace IPC validates representation and existence before mutation', async () => {
   for (const id of ['', '../personal', '/tmp', 'DEFAULT', null, {}, 'a'.repeat(100), '00000000-0000-0000-0000-000000000000']) {
-    for (const channel of ['workspaces:select', 'workspaces:preferences:get']) expect(() => call(channel, id)).toThrow()
+    await expect(async () => call('workspaces:select', id)).rejects.toThrow()
+    expect(() => call('workspaces:preferences:get', id)).toThrow()
     expect(() => call('settings:set', { workspaceId: id, patch: { fontSize: 18 } })).toThrow()
     expect(() => call('workspaces:preferences:set', { workspaceId: id, patch: { composer } })).toThrow()
     await expect(async () => call('workspaces:rename', { workspaceId: id, name: 'Name' })).rejects.toThrow()
@@ -65,7 +66,7 @@ test('independent settings and composer choices survive selection, rename and SQ
   call('workspaces:preferences:set', { workspaceId: work.id, patch: { composer } })
   expect(snapshot()).toEqual({ ...original, workspaces: call('workspaces:list') })
   expect(broadcast).toHaveBeenCalledWith('settings:changed', { workspaceId: work.id, settings: expect.objectContaining(patch) })
-  const selected = call('workspaces:select', work.id)
+  const selected = await call('workspaces:select', work.id)
   expect(selected.settings).toMatchObject(patch)
   expect(selected.preferences.composer).toEqual(composer)
   expect(broadcast).toHaveBeenCalledWith('workspaces:selected', selected)

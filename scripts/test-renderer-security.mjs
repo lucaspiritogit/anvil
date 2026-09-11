@@ -48,7 +48,7 @@ try {
   const project = await page.evaluate(() => window.anvil.projects.add())
   const projectId = project.id
   await page.reload()
-  assert.match(await page.evaluate(() => window.anvil.projects.openTerminal('missing').then(() => 'unexpected success', (error) => error.message)), /Project not found/)
+  assert.match(await page.evaluate(() => window.anvil.terminals.create({ projectId: 'missing', cols: 80, rows: 24 }).then(() => 'unexpected success', (error) => error.message)), /Project not found/)
   const originalUrl = page.url()
   await page.evaluate(() => { location.href = 'https://example.com/forbidden' })
   await page.waitForTimeout(200)
@@ -62,7 +62,7 @@ try {
   const foreign = await foreignPromise
   await foreign.waitForFunction(() => Boolean(window.anvil))
   assert.match(await foreign.evaluate(() => window.anvil.settings.get().then(() => 'unexpected success', (error) => error.message)), /Unauthorized IPC sender/)
-  assert.match(await foreign.evaluate((projectId) => window.anvil.projects.openTerminal(projectId).then(() => 'unexpected success', (error) => error.message), projectId), /Unauthorized IPC sender/)
+  assert.match(await foreign.evaluate((projectId) => window.anvil.terminals.create({ projectId, cols: 80, rows: 24 }).then(() => 'unexpected success', (error) => error.message), projectId), /Unauthorized IPC sender/)
   await foreign.close()
   console.log('Navigation and real foreign-window IPC rejection passed')
 
