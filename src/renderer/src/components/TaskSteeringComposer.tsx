@@ -79,7 +79,7 @@ export function TaskSteeringComposer({ task, contextControl }: {
             type="button"
             aria-label="Stop task"
             title="Stop task"
-            className={cn(btn.danger, 'grid w-11 shrink-0 place-items-center self-stretch px-0 py-0')}
+            className={cn(btn.danger, 'grid h-10 w-14 shrink-0 place-items-center self-center px-0 py-0')}
             disabled={stopping}
             onClick={() => void stop()}
           >
@@ -92,7 +92,7 @@ export function TaskSteeringComposer({ task, contextControl }: {
             type="submit"
             aria-label="Send message"
             title="Send message"
-            className={cn(btn.primary, 'grid w-11 shrink-0 place-items-center self-stretch px-0 py-0')}
+            className={cn(btn.primary, 'grid h-10 w-14 shrink-0 place-items-center self-center px-0 py-0')}
             disabled={sending || unavailable || !message.trim()}
           >
             <Icon icon={sending ? 'loader' : 'chevron-up'} size={16} className={cn(sending && 'animate-spin')} />

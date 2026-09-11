@@ -8,6 +8,18 @@ async function captureSteering(page: Page): Promise<void> {
   })
 }
 
+async function expectActionAlignedWithInput(page: Page, actionName: 'Send message' | 'Stop task'): Promise<void> {
+  const composer = page.getByRole('form', { name: 'Steer task' })
+  const inputBounds = (await composer.getByRole('textbox', { name: 'Message to agent' }).boundingBox())!
+  const actionBounds = (await composer.getByRole('button', { name: actionName }).boundingBox())!
+  expect(actionBounds.width).toBeGreaterThan(actionBounds.height)
+  expect(actionBounds.width).toBeGreaterThanOrEqual(56)
+  expect(actionBounds.height).toBeLessThan(inputBounds.height)
+  expect(Math.abs(
+    (actionBounds.y + actionBounds.height / 2) - (inputBounds.y + inputBounds.height / 2)
+  )).toBeLessThanOrEqual(1)
+}
+
 for (const running of [false, true]) {
   test(`compact composer ${running ? 'steers an active turn' : 'continues a finished task'}`, async ({ page }) => {
     await page.goto(`/tests/e2e/fixture/?scenario=output&steering=1${running ? '&running=1' : ''}`)
@@ -68,6 +80,20 @@ test('rejected steering preserves the draft and allows retry', async ({ page }) 
   await expect(input).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Send message' })).toBeEnabled()
 })
+
+for (const viewport of [{ width: 640, height: 500 }, { width: 1100, height: 700 }]) {
+  test(`steering actions are wider and centered with the input at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport)
+    await page.goto('/tests/e2e/fixture/?scenario=output&steering=1&running=1')
+    const composer = page.getByRole('form', { name: 'Steer task' })
+    const input = composer.getByRole('textbox', { name: 'Message to agent' })
+    await expectActionAlignedWithInput(page, 'Stop task')
+    await input.fill('Check the action alignment')
+    await expectActionAlignedWithInput(page, 'Send message')
+    await expect(composer).toBeInViewport({ ratio: 1 })
+    await page.screenshot({ path: testInfo.outputPath('steering-action-layout.png') })
+  })
+}
 
 for (const viewport of [{ width: 900, height: 500 }, { width: 1100, height: 700 }]) {
   test(`long prompt is clamped inside the transcript at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
