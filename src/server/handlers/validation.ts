@@ -104,6 +104,7 @@ const stringRecord: Check<Record<string, string>> = (value, field) => {
 const composer = object({ agentId: text(128, false), modelsByAgent: stringRecord, reasoningByAgentModel: stringRecord })
 
 const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
+  'app:caffeine': none,
   'wallpapers:directory': optional(workspaceId),
   'wallpapers:list': optional(workspaceId),
   'wallpapers:import': object({ path: text(4096), workspaceId: optional(workspaceId) }),

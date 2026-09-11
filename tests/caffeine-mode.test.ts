@@ -6,6 +6,7 @@ import { registerSettingsHandlers } from '../src/server/handlers/settings'
 import { handlers } from './issue-tracker-doubles'
 import { test, expect } from 'vitest'
 import { join } from 'node:path'
+import { createCaffeineActivity } from '../src/server/caffeine-activity'
 import { registerCaffeineMode } from '../src/client/main/caffeine-mode'
 import { Store } from '../src/server/store'
 import type { Task } from '../src/shared/types'
@@ -30,7 +31,7 @@ function setupCaffeine() {
       return active.delete(id)
     }
   }
-  const stop = registerCaffeineMode(store, blocker)
+  const stop = registerCaffeineMode(createCaffeineActivity(store), blocker)
   onTestCleanup(stop)
   const task: Task = {
     workspaceId: 'default',
@@ -99,7 +100,7 @@ test('persists the preference, synchronizes registration and releases protection
     expect(restarted.getSettings().caffeineMode, 'The preference survives restart').toBe(true)
     restarted.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
     restarted.addTask(task)
-    const close = registerCaffeineMode(restarted, blocker)
+    const close = registerCaffeineMode(createCaffeineActivity(restarted), blocker)
     onTestCleanup(close)
     expect(active.size, 'Registration synchronizes existing state').toBe(1)
     close()
@@ -116,7 +117,7 @@ test('persists the preference, synchronizes registration and releases protection
 
   const recovered = new Store(database, options)
   try {
-    const close = registerCaffeineMode(recovered, blocker)
+    const close = registerCaffeineMode(createCaffeineActivity(recovered), blocker)
     onTestCleanup(close)
     expect(recovered.getTask(task.id)?.status).toBe('pending')
     expect(active.size, 'Interrupted tasks recovered at startup do not keep the computer awake').toBe(0)

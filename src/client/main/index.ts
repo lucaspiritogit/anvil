@@ -1,10 +1,12 @@
-import { app, BrowserWindow, dialog, Menu, shell } from 'electron'
+import { app, BrowserWindow, dialog, Menu, shell, powerSaveBlocker } from 'electron'
 import { showNotificationSettings } from './mac-notifications'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { createDesktopIpc, openExternalCodexLogin, openExternalPullRequest, protectRendererWindow } from './renderer-security'
 import { registerAppShutdown } from './app-shutdown'
+import { registerCaffeineMode } from './caffeine-mode'
+import { createServerCaffeineActivity } from './server-activity'
 import { connectToServer } from './server-process'
 import { resolveAppDataDirectory } from '../../shared/app-data'
 
@@ -116,9 +118,10 @@ if (ownsInstance) app.whenReady().then(async () => {
       packaged: app.isPackaged
     })
     serverUrl = connection.url
+    const stopCaffeineMode = registerCaffeineMode(createServerCaffeineActivity(serverUrl), powerSaveBlocker)
     isClosing = registerAppShutdown(app, {
       showClosing: showClosingProcesses,
-      cleanup: [() => connection.close()],
+      cleanup: [stopCaffeineMode, () => connection.close()],
       finalize: () => {},
       reportError: (error) => console.error('Could not stop Anvil server:', error)
     })

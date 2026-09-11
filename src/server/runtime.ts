@@ -1,3 +1,4 @@
+import { createCaffeineActivity } from './caffeine-activity'
 import { EventEmitter } from 'node:events'
 import { createHandlerRegistry } from './handler-registry'
 import { createCredentialEncryption } from './credential-encryption'
@@ -56,6 +57,9 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   const store = new Store(join(dataDirectory, 'config.json'), {
     migrationsFolder: options.migrationsDirectory
   })
+  const caffeineActivity = createCaffeineActivity(store)
+  ipc.handle('app:caffeine', () => caffeineActivity.snapshot())
+  const stopCaffeineActivity = caffeineActivity.subscribe((state) => broadcast('app:caffeine', state))
   const terminals = new TerminalSessionManager(store, broadcast)
   ipc.handle('terminals:create', (input) => terminals.createProject(input))
   ipc.handle('terminals:attach', (id) => terminals.attach(id))
@@ -206,6 +210,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
+      stopCaffeineActivity()
       stopAuthWatcher()
       stopPollingUpdates()
       stopRememberingWorktreeOwners()

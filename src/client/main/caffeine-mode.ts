@@ -1,9 +1,9 @@
 import type { powerSaveBlocker } from 'electron'
-import type { Store } from '../../server/store'
+import type { CaffeineActivity } from '../../shared/caffeine'
 
 /** One blocker covers all running tasks, including preparation and gaps between agent turns. */
 export function registerCaffeineMode(
-  store: Pick<Store, 'getSettings' | 'getOpenedWorkspaces' | 'hasRunningTasks' | 'subscribeActivity'>,
+  activity: CaffeineActivity,
   blocker: Pick<typeof powerSaveBlocker, 'start' | 'stop'>
 ): () => void {
   let blockerId: number | undefined
@@ -12,9 +12,9 @@ export function registerCaffeineMode(
     blocker.stop(blockerId)
     blockerId = undefined
   }
-  const sync = (): void => {
+  const unsubscribe = activity.subscribe(({ keepAwake }) => {
     try {
-      if (store.getOpenedWorkspaces().some((workspace) => store.getSettings(workspace.id).caffeineMode && store.hasRunningTasks(workspace.id))) {
+      if (keepAwake) {
         if (blockerId === undefined) blockerId = blocker.start('prevent-display-sleep')
       } else {
         stop()
@@ -22,9 +22,7 @@ export function registerCaffeineMode(
     } catch (error) {
       console.warn('Could not update caffeine mode:', error)
     }
-  }
-  const unsubscribe = store.subscribeActivity(sync)
-  sync()
+  })
   return () => {
     unsubscribe()
     stop()

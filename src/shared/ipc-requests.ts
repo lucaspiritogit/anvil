@@ -2,6 +2,7 @@ import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskIm
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
 export interface IpcRequests {
+  'app:caffeine': undefined
   'wallpapers:directory': string | undefined
   'wallpapers:list': string | undefined
   'wallpapers:import': { path: string; workspaceId?: string }
