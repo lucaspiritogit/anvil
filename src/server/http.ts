@@ -1,5 +1,6 @@
 import { serve, type HttpBindings, type ServerType } from '@hono/node-server'
 import { getConnInfo } from '@hono/node-server/conninfo'
+import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { HTTPException } from 'hono/http-exception'
@@ -48,7 +49,12 @@ async function authorized(header: string | undefined, auth: HttpServerAuth | und
     && auth.verifyPassword(decoded.slice(separator + 1))
 }
 
-export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: string; rendererOrigin?: string; auth?: HttpServerAuth }) {
+export function createAnvilHttpServer(runtime: HttpRuntime, options: {
+  version: string
+  rendererOrigin?: string
+  rendererDirectory?: string
+  auth?: HttpServerAuth
+}) {
   const app = new Hono<{ Bindings: HttpBindings }>()
   const clients = new Set<EventClient>()
   const encoder = new TextEncoder()
@@ -61,8 +67,16 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: 
   })
 
   app.use('*', async (context, next) => {
+    const requestServer = server
+    context.env.outgoing.once('finish', () => {
+      // SSE responses finish after close() has swept idle connections. Close
+      // those newly idle sockets too, so they do not delay the next listener.
+      if (requestServer && !requestServer.listening && 'closeIdleConnections' in requestServer) {
+        requestServer.closeIdleConnections()
+      }
+    })
     context.header('Cache-Control', 'no-store')
-if (!isLoopbackAddress(getConnInfo(context).remote.address) &&
+    if (!isLoopbackAddress(getConnInfo(context).remote.address) &&
       !await authorized(context.req.header('authorization'), options.auth)) {
       context.header('WWW-Authenticate', 'Basic realm="Anvil", charset="UTF-8"')
       throw new HTTPException(401, { message: 'Authentication required' })
@@ -73,7 +87,10 @@ if (!isLoopbackAddress(getConnInfo(context).remote.address) &&
     }
     const origin = context.req.header('origin')
     if (origin !== undefined) {
-      if (origin !== 'null' && origin !== options.rendererOrigin) throw new HTTPException(403, { message: 'Origin not allowed' })
+      const sameOrigin = new URL(context.req.url).origin
+      if (origin !== sameOrigin && origin !== 'null' && origin !== options.rendererOrigin) {
+        throw new HTTPException(403, { message: 'Origin not allowed' })
+      }
       context.header('Access-Control-Allow-Origin', origin)
       context.header('Vary', 'Origin')
     }
@@ -170,6 +187,10 @@ if (!isLoopbackAddress(getConnInfo(context).remote.address) &&
       return context.json(result ?? null)
     }
   )
+  if (options.rendererDirectory) {
+    app.get('/', serveStatic({ root: options.rendererDirectory, path: 'index.html' }))
+    app.get('/assets/*', serveStatic({ root: options.rendererDirectory }))
+  }
   app.notFound((context) => context.json({ error: 'Not found' }, 404))
   app.onError((error, context) => {
     const status = error instanceof HTTPException ? error.status : /^(Invalid |Unknown RPC channel)/.test(error.message) ? 400 : 500

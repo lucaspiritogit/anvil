@@ -24,7 +24,12 @@ async function main(): Promise<void> {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     }
-  }, { version, rendererOrigin: process.env.ANVIL_RENDERER_ORIGIN ?? 'http://localhost:5173', auth: serverAuth })
+  }, {
+    version,
+    rendererOrigin: process.env.ANVIL_RENDERER_ORIGIN ?? 'http://localhost:5173',
+    rendererDirectory: join(__dirname, '../browser'),
+    auth: serverAuth
+  })
   let closing = false
   const close = async (): Promise<void> => {
     if (closing) return

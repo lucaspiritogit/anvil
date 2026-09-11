@@ -1,5 +1,22 @@
 import { build } from 'esbuild'
 import { cp, mkdir } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { loadConfigFromFile } from 'electron-vite'
+import { build as buildRenderer } from 'vite'
+
+// Build the browser UI for standalone servers and LAN access during desktop
+// development. Reuse the renderer's aliases, plugins and entry point.
+const { config } = await loadConfigFromFile({ command: 'build', mode: 'production' })
+await buildRenderer({
+  ...config.renderer,
+  configFile: false,
+  base: '/',
+  build: {
+    ...config.renderer.build,
+    outDir: resolve('out/browser'),
+    emptyOutDir: true
+  }
+})
 
 await build({
   entryPoints: ['src/server/index.ts'],

@@ -183,7 +183,7 @@ export function App(): JSX.Element {
       {switching && <div role="status" className="fixed bottom-4 right-4 z-50 border border-line bg-canvas p-3 text-sm shadow-lg">Switching workspace…</div>}
       {workspaceError && <div role="alert" className="fixed bottom-4 right-4 z-50 rounded border border-line bg-canvas p-3 text-sm shadow-lg">
         <p>{workspaceError}</p>
-        <button className="mt-2 text-accent" onClick={() => { if (workspaceId) void useStore.getState().selectWorkspace(workspaceId) }}>Retry workspace</button>
+        <button className="mt-2 text-accent" onClick={() => { void load() }}>Retry workspace</button>
       </div>}
     </>
   )

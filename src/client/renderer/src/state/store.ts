@@ -302,7 +302,7 @@ export const useStore = create<AnvilState>((set, get) => ({
         if (generation !== workspaceGeneration) return
         set({ agents })
         get().applyWorkspaceSnapshot(snapshot)
-        set({ workspaceError: null })
+        set({ workspaceError: null, workspaceSwitching: false })
       })
     } catch (error) {
       if (generation !== workspaceGeneration) return

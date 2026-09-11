@@ -10,6 +10,7 @@ files:
   - "!out/main/valence-cli.js"
   - out/preload/**
   - out/renderer/**
+  - out/browser/**
   - package.json
   - out/server/**
 asarUnpack:

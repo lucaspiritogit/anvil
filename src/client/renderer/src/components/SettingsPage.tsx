@@ -34,18 +34,33 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
     setSettingPassword(false)
     setRequestError('')
     if (!workspaceId) return
+    let statusRevision = 0
     const unsubscribe = window.anvil.connections.onChanged((change) => {
       if (active && change.workspaceId === workspaceId) {
+        statusRevision += 1
         setStatus(change.status)
         setRequestError('')
       }
     })
-    void window.anvil.connections.status(workspaceId).then((next) => {
-      if (active) setStatus(next)
-    }).catch((error) => {
-      if (active) setRequestError(errorMessage(error, 'Could not load connection settings.'))
+    // Rebinding disconnects SSE, so the final connection status can be missed.
+    const unsubscribeReady = window.anvil.app.onReady(() => {
+      const revision = ++statusRevision
+      void window.anvil.connections.status(workspaceId).then((next) => {
+        if (active && revision === statusRevision) {
+          setStatus(next)
+          setRequestError('')
+        }
+      }).catch((error) => {
+        if (active && revision === statusRevision) {
+          setRequestError(errorMessage(error, 'Could not load connection settings.'))
+        }
+      })
     })
-    return () => { active = false; unsubscribe() }
+    return () => {
+      active = false
+      unsubscribe()
+      unsubscribeReady()
+    }
   }, [workspaceId])
 
   const configure = async (allowOtherDevices: boolean, nextPassword?: string): Promise<void> => {
