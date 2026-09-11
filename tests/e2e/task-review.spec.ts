@@ -5,6 +5,10 @@ type ReviewCall = { kind: string; detail: Record<string, unknown> }
 
 test('owner reviews two isolated ranges and rework before the combined final diff', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
+  await page.evaluate(async () => {
+    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'running', deliveryStatus: 'working' } }))
+  })
   await expect(page.getByRole('log')).toContainText('The sidebar spacing is updated')
   await page.evaluate(() => {
     const snapshot: TaskIssueSnapshot = {
@@ -26,6 +30,8 @@ test('owner reviews two isolated ranges and rework before the combined final dif
         snapshot.execution!.currentIssueId = 'second'
       } else {
         snapshot.execution = { phase: 'complete', currentIssueId: null, error: null }
+        const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+        window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'succeeded', deliveryStatus: 'reviewable' } }))
       }
       publish()
       return (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
@@ -90,6 +96,10 @@ test('owner reviews two isolated ranges and rework before the combined final dif
 
 test('owner handles failed and empty issue diffs with explicit legacy fallback', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
+  await page.evaluate(async () => {
+    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'running', deliveryStatus: 'working' } }))
+  })
   await page.evaluate(() => {
     let attempt = 0
     window.anvil.tasks.issueDiff = async () => {
@@ -112,6 +122,10 @@ test('owner handles failed and empty issue diffs with explicit legacy fallback',
 
 test('a late sibling diff cannot replace the current review', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
+  await page.evaluate(async () => {
+    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'running', deliveryStatus: 'working' } }))
+  })
   await expect(page.getByRole('log')).toContainText('The sidebar spacing is updated')
   await page.evaluate(() => {
     const snapshot: TaskIssueSnapshot = {
@@ -147,6 +161,10 @@ test('a late sibling diff cannot replace the current review', async ({ page }) =
 
 test('sub-task review pauses on the per-issue diff with approve and request-changes actions', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
+  await page.evaluate(async () => {
+    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'running', deliveryStatus: 'working' } }))
+  })
   await page.evaluate(() => {
     const calls: ReviewCall[] = []
     Object.assign(window, { subtaskReviewCalls: calls })
@@ -366,4 +384,188 @@ test('failed diff loads can be retried and an empty patch stays readable', async
   await expect(page.getByRole('form', { name: 'Steer task' })).toBeHidden()
   await page.getByRole('tab', { name: 'Output' }).click()
   await expect(page.getByRole('form', { name: 'Steer task' })).toBeVisible()
+})
+
+
+declare global {
+  interface Window {
+    finalizedReview: {
+      ready: (head: string) => void
+      rework: () => void
+      complete: (changed: boolean) => void
+      resolveIssue: (index: number, file: string) => void
+      resolveTask: (index: number, file: string) => void
+      issueReads: number
+      taskReads: number
+    }
+  }
+}
+
+async function deferredReview(page: import('@playwright/test').Page) {
+  await page.goto('/tests/e2e/fixture/?scenario=review')
+  await expect(page.getByRole('log')).toContainText('The sidebar spacing is updated')
+  await page.evaluate(async () => {
+    let task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    const snapshot: TaskIssueSnapshot = {
+      parent: { id: 'plan', title: 'Finalized plan', description: '' },
+      execution: { phase: 'working', currentIssueId: 'changed', error: null }, reviewReady: false,
+      children: [
+        { id: 'noop', parentId: 'plan', title: 'Verify configuration', description: '', status: 'complete', completedAt: 1,
+          checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] },
+        { id: 'changed', parentId: 'plan', title: 'Save sidebar changes', description: '', status: 'review', baseCommit: 'base',
+          checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] }
+      ]
+    }
+    const issueResponses: Array<(diff: import('../../src/shared/types').TaskDiff) => void> = []
+    const taskResponses: typeof issueResponses = []
+    const patch = (file: string) => file ? `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Finalized change\n` : ''
+    const publish = () => {
+      window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: task.id, snapshot: structuredClone(snapshot) } }))
+      window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: task }))
+    }
+    window.anvil.tasks.issueDiff = () => new Promise((resolve) => {
+      issueResponses.push(resolve)
+      window.finalizedReview.issueReads++
+    })
+    window.anvil.tasks.diff = () => new Promise((resolve) => {
+      taskResponses.push(resolve)
+      window.finalizedReview.taskReads++
+    })
+    window.finalizedReview = {
+      issueReads: 0, taskReads: 0,
+      ready(head) {
+        snapshot.children[1].status = 'review'
+        snapshot.children[1].headCommit = head
+        snapshot.execution!.phase = 'reviewing'
+        snapshot.reviewReady = true
+        task = { ...task, status: 'running', deliveryStatus: 'working', headCommit: head, filesChanged: 1, additions: 1 }
+        publish()
+      },
+      rework() {
+        snapshot.children[1].status = 'review'
+        snapshot.execution!.phase = 'working'
+        snapshot.reviewReady = false
+        task = { ...task, status: 'running', deliveryStatus: 'finalizing' }
+        publish()
+      },
+      complete(changed) {
+        snapshot.children[1].status = 'complete'
+        snapshot.children[1].completedAt = 2
+        snapshot.children[1].reviewedAt = changed ? 2 : undefined
+        snapshot.reviewReady = false
+        snapshot.execution = { phase: 'complete', currentIssueId: null, error: null }
+        task = { ...task, status: 'succeeded', deliveryStatus: changed ? 'reviewable' : 'no_changes',
+          headCommit: changed ? 'combined' : 'base', filesChanged: changed ? 1 : 0, additions: changed ? 1 : 0, deletions: 0 }
+        publish()
+      },
+      resolveIssue(index, file) { issueResponses[index]({ patch: patch(file), commits: [] }) },
+      resolveTask(index, file) { taskResponses[index]({ patch: patch(file), commits: [] }) }
+    }
+    window.finalizedReview.rework()
+  })
+}
+
+for (const width of [900, 1440]) {
+  test(`finalization shows saving, loaded review and verified no-change Done at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 })
+    await deferredReview(page)
+    const owner = page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
+    const approve = page.getByRole('button', { name: 'Approve', exact: true })
+    await expect(owner.getByRole('img', { name: 'Saving changes…', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
+    const children = page.getByRole('list', { name: 'Subtasks of Review sidebar changes' })
+    await expect(children).toContainText('Verify configurationDone')
+    await expect(children).toContainText('Save sidebar changesSaving changes…')
+    await page.getByRole('tab', { name: /^Changes/ }).click()
+    await expect(approve).toBeDisabled()
+    await expect(page.getByRole('region', { name: 'Subtask code changes' })).toContainText('Saving changes…')
+    expect(await page.evaluate(() => window.finalizedReview.issueReads)).toBe(0)
+    await page.screenshot({ path: testInfo.outputPath(`saving-${width}.png`) })
+    // Navigate immediately after readiness, while the requested committed diff is deferred.
+    await page.getByRole('button', { name: 'Open task: Build streaming support', exact: true }).click()
+    await page.evaluate(() => window.finalizedReview.ready('saved-head'))
+    await owner.click()
+    await page.getByRole('tab', { name: /^Changes/ }).click()
+    await expect.poll(() => page.evaluate(() => window.finalizedReview.issueReads)).toBe(1)
+    await expect(approve).toBeDisabled()
+    await expect(page.getByRole('combobox', { name: 'Changed file' })).toHaveCount(0)
+    await expect(page.getByText('No file changes in this range.')).toHaveCount(0)
+    await page.evaluate(() => window.finalizedReview.resolveIssue(0, 'saved.ts'))
+    await expect(page.getByRole('combobox', { name: 'Changed file' })).toHaveValue('saved.ts')
+    await expect(approve).toBeEnabled()
+    await expect(approve).toBeInViewport({ ratio: 1 })
+    await page.screenshot({ path: testInfo.outputPath(`populated-${width}.png`) })
+    await page.evaluate(() => window.finalizedReview.rework())
+    await expect(approve).toBeDisabled()
+    await page.evaluate(() => window.finalizedReview.ready('obsolete-head'))
+    await expect.poll(() => page.evaluate(() => window.finalizedReview.issueReads)).toBe(2)
+    await page.evaluate(() => window.finalizedReview.complete(false))
+    await expect(page.getByLabel('Task status', { exact: true })).toContainText('Done')
+    await expect(owner.getByRole('img', { name: 'Done', exact: true })).toBeVisible()
+    await expect(approve).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toHaveCount(0)
+    await expect(page.getByText('No code changes to review.')).toBeVisible()
+    await page.evaluate(() => window.finalizedReview.resolveIssue(1, 'obsolete.ts'))
+    await expect(page.getByRole('combobox', { name: 'Changed file' })).toHaveCount(0)
+    expect(await page.evaluate(() => window.finalizedReview.taskReads)).toBe(0)
+    await page.screenshot({ path: testInfo.outputPath(`done-${width}.png`) })
+    for (const stage of ['saving', 'populated', 'done']) {
+      await testInfo.attach(`${stage}-${width}`, { path: testInfo.outputPath(`${stage}-${width}.png`), contentType: 'image/png' })
+    }
+  })
+}
+
+test('mixed-plan aggregate rejects obsolete heads, navigation and deletion responses', async ({ page }, testInfo) => {
+  await deferredReview(page)
+  await page.evaluate(() => window.finalizedReview.complete(true))
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  await expect.poll(() => page.evaluate(() => window.finalizedReview.taskReads)).toBe(1)
+  await expect(page.getByRole('tab', { name: /^Changes/ })).toContainText('Loading…')
+  const other = page.getByRole('button', { name: 'Open task: Build streaming support', exact: true })
+  const owner = page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
+  await other.click()
+  await owner.click()
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  await expect.poll(() => page.evaluate(() => window.finalizedReview.taskReads)).toBe(2)
+  await page.evaluate(async () => {
+    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, headCommit: 'new-aggregate' } }))
+  })
+  await expect.poll(() => page.evaluate(() => window.finalizedReview.taskReads)).toBe(3)
+  await page.evaluate(() => {
+    window.finalizedReview.resolveTask(2, 'combined.ts')
+    window.finalizedReview.resolveTask(1, '')
+    window.finalizedReview.resolveTask(0, 'obsolete.ts')
+  })
+  const file = page.getByRole('combobox', { name: 'Changed file' })
+  await expect(file).toHaveValue('combined.ts')
+  await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
+  const children = page.getByRole('list', { name: 'Subtasks of Review sidebar changes' })
+  await expect(children).toContainText('Verify configurationDone')
+  await expect(children).toContainText('Save sidebar changesApproved')
+  for (const width of [900, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeInViewport({ ratio: 1 })
+    expect((await file.boundingBox())!.width).toBeGreaterThan(200)
+    await page.screenshot({ path: testInfo.outputPath(`mixed-final-${width}.png`) })
+    await testInfo.attach(`mixed-final-${width}`, { path: testInfo.outputPath(`mixed-final-${width}.png`), contentType: 'image/png' })
+  }
+  // Same head metadata updates retain the populated cache.
+  await page.evaluate(async () => {
+    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, totalTokens: 42 } }))
+  })
+  await expect(file).toHaveValue('combined.ts')
+  expect(await page.evaluate(() => window.finalizedReview.taskReads)).toBe(3)
+  await page.evaluate(async () => {
+    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, headCommit: 'deleted-head' } }))
+  })
+  await expect.poll(() => page.evaluate(() => window.finalizedReview.taskReads)).toBe(4)
+  await owner.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Delete task?' }).getByRole('button', { name: 'Delete task', exact: true }).click()
+  await page.evaluate(() => window.finalizedReview.resolveTask(3, 'deleted.ts'))
+  await expect(owner).toHaveCount(0)
+  await expect(file).toHaveCount(0)
 })

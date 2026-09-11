@@ -69,7 +69,6 @@ export function registerIpc(
   const agentProcesses = new AgentProcessManager(undefined, undefined, undefined,
     (taskId) => resolveTaskWorkspace(store, taskId), (taskId) => issueTools.open(taskId))
   const stopCaffeineMode = registerCaffeineMode(store, powerSaveBlocker)
-  const stopTaskNotifications = registerTaskNotifications(store, Notification, macNotificationOptions())
   const worktreeOwners = new Map<string, string>()
   const rememberWorktreeOwners = (): void => {
     for (const task of store.getTasks()) worktreeOwners.set(task.id, task.workspaceId)
@@ -105,6 +104,7 @@ export function registerIpc(
   const taskMemory = createTaskMemory(context, projectMemory, (workspaceId) => projectMemory.forWorkspace(workspaceId))
   const finishTask = createTaskCompletion(context, taskEvents.recordSystemEvent, taskMemory)
   const execution = registerTaskExecution({ ...context, recordSystemEvent: taskEvents.recordSystemEvent }, finishTask)
+  const stopTaskNotifications = registerTaskNotifications(store, Notification, macNotificationOptions(), execution.issueReviewReady)
 
   const wallpaperLibraries = new Map<string, WallpaperLibrary>()
   registerSettingsHandlers(ipc, store, (workspaceId) => {

@@ -1,12 +1,16 @@
+import { issuePresentation } from '@shared/task-issue-presentation'
 import { useState } from 'react'
 import type { Issue, TaskIssueSnapshot } from '@shared/types'
+import { useStore } from '../state/store'
 import { useTaskIssues } from '../hooks/use-task-issues'
 import { btn, cn, ISSUE_STATUS } from '../ui'
 
 export function TaskIssues({ taskId, active }: { taskId: string; active: boolean }): React.JSX.Element {
+  const task = useStore((state) => state.tasks.find((task) => task.id === taskId))
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const { snapshot, loading, error, refresh } = useTaskIssues(taskId, active, selectedId)
-  const card = (issue: Pick<TaskIssueSnapshot['parent'], 'id' | 'title' | 'description'>, status?: Issue['status']): React.JSX.Element => {
+  const card = (issue: Pick<TaskIssueSnapshot['parent'], 'id' | 'title' | 'description'>, child?: Issue): React.JSX.Element => {
+    const display = child && issuePresentation(child, snapshot, task)
     const expanded = selectedId === issue.id
     return <div className="border border-line bg-raised" data-issue-id={issue.id}>
       <button
@@ -18,7 +22,7 @@ export function TaskIssues({ taskId, active }: { taskId: string; active: boolean
       >
         <span aria-hidden="true" className="text-dim">{expanded ? '−' : '+'}</span>
         <span className="min-w-0 flex-1 text-sm font-medium [overflow-wrap:anywhere]">{issue.title}</span>
-        {status && <span className={cn('border border-line px-2 py-0.5 text-xs', ISSUE_STATUS[status].tone)}>{ISSUE_STATUS[status].label}</span>}
+        {display && <span className={cn('border border-line px-2 py-0.5 text-xs', ISSUE_STATUS[display.status].tone)}>{display.label}</span>}
       </button>
       <div id={`issue-summary-${issue.id}`} hidden={!expanded} className="border-t border-line p-4 text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
         {issue.description.trim() ? issue.description : 'No description provided.'}
@@ -45,7 +49,7 @@ export function TaskIssues({ taskId, active }: { taskId: string; active: boolean
       <section aria-label="Child issues" className="mt-6 border-l border-line pl-4">
         <h2 className="mb-2 text-xs font-medium text-dim">Child issues · {snapshot.children.length}</h2>
         {snapshot.children.length === 0 ? <p className="text-sm text-dim">No child issues yet.</p> :
-          <ol className="space-y-3">{snapshot.children.map((issue) => <li key={issue.id}>{card(issue, issue.status)}</li>)}</ol>}
+          <ol className="space-y-3">{snapshot.children.map((issue) => <li key={issue.id}>{card(issue, issue)}</li>)}</ol>}
       </section>
     </>}
   </section>

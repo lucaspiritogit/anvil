@@ -178,6 +178,29 @@ test('failed delivery preserves files until task deletion', async () => {
   expect(existsSync(task.cwd)).toBe(false)
 })
 
+test('cancellation between staging and committing preserves the uncommitted task files', async () => {
+  const { repo, manager } = await fixture()
+  const task = await manager.prepareBranch(repo, 'cancel-finisher', 'Task')
+  await writeFile(join(task.cwd, 'unfinished.txt'), 'keep me\n')
+  let cancelled = false
+  await expect(manager.finalizeBranch(repo, 'cancel-finisher', task.branchName, task.baseBranch, task.baseCommit, 'Task', {
+    onFinisherCommand: (command) => { if (command.includes('commit')) cancelled = true },
+    check: () => { if (cancelled) throw new Error('Cancelled') }
+  })).rejects.toThrow('Cancelled')
+  expect(git(task.cwd, 'rev-parse', 'HEAD')).toBe(task.baseCommit)
+  expect(git(task.cwd, 'diff', '--cached', '--name-only')).toBe('unfinished.txt')
+})
+
+test('rejects a successful commit whose hook leaves additional uncommitted files', async () => {
+  const { repo, manager, finish } = await fixture()
+  const task = await manager.prepareBranch(repo, 'dirty-hook', 'Task')
+  await writeFile(join(task.cwd, 'source.txt'), 'change\n')
+  await writeFile(join(repo, '.git', 'hooks', 'post-commit'), '#!/bin/sh\nprintf "generated\\n" > generated.txt\n', { mode: 0o755 })
+  await expect(finish('dirty-hook', task)).rejects.toThrow(/still has uncommitted changes/)
+  expect(git(task.cwd, 'rev-parse', 'HEAD')).not.toBe(task.baseCommit)
+  expect(await readFile(join(task.cwd, 'generated.txt'), 'utf8')).toBe('generated\n')
+})
+
 test('legacy tasks migrate from a clean project checkout and preserve dirty legacy files', async () => {
   const { repo, manager } = await fixture()
   git(repo, 'switch', '-c', 'legacy-task')

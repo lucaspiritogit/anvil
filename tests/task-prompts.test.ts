@@ -122,6 +122,9 @@ test('tool guidance is phase-specific and keeps ownership out of arguments', () 
     expect(prompt).toContain('require a successful result')
     expect(prompt).toContain('Prose is never a review submission')
     expect(prompt).toContain('only the developer approves')
+    expect(prompt).toContain('Empty changes complete automatically')
+    expect(prompt).toContain('No empty commit is needed')
+    expect(prompt).toContain('End the turn: Anvil verifies finalized changes and a clean worktree')
     expect(prompt).toContain('Do not claim or create other issues, or change issue ownership or dependencies')
   }
   for (const prompt of [planning, taskRecoveryPrompt(savedTask, { ...execution, phase: 'planning' })]) {

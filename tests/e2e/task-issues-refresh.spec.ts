@@ -17,13 +17,14 @@ test('collapsed owner surfaces every issue transition without becoming final-del
         reviewReady: false
       }
     } })), status)
-    const label = { queued: 'Queued', working: 'Working', review: 'Review', blocked: 'Blocked', complete: 'Subtask complete' }[status]
+    const label = { queued: 'Queued', working: 'Working', review: 'Saving changes…', blocked: 'Blocked', complete: 'Done' }[status]
     await expect(parent).toContainText(`${label}: Implement navigation`)
     await expect(page.getByLabel('Task status', { exact: true })).toHaveText(`${label}: Implement navigation`)
     await expect(page.getByRole('list', { name: 'Subtasks of Layout test task' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
+    if (status === 'review') await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled()
+    else await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
     if (status === 'review') {
-      await expect(page.getByLabel('Review gate')).toContainText('Waiting for the agent to stop and save changes')
+      await expect(page.getByLabel('Agent activity')).toContainText('Saving changes…')
       await expect(parent.getByRole('img', { name: 'Working', exact: true })).toHaveCount(0)
       await page.screenshot({ path: testInfo.outputPath('parent-stopping.png') })
       await page.evaluate(async () => {
@@ -35,7 +36,7 @@ test('collapsed owner surfaces every issue transition without becoming final-del
     await page.screenshot({ path: testInfo.outputPath(`parent-${status}.png`) })
   }
   await page.setViewportSize({ width: 900, height: 720 })
-  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Subtask complete')
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Done')
   await page.screenshot({ path: testInfo.outputPath('parent-narrow.png') })
 })
 

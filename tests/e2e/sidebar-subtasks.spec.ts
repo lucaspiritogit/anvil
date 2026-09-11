@@ -11,7 +11,7 @@ function snapshot(owner: string): TaskIssueSnapshot {
   }
 }
 
-const STATUS_LABEL = { queued: 'Queued', working: 'Working', blocked: 'Blocked', review: 'Review', complete: 'Finished' } as const
+const STATUS_LABEL = { queued: 'Queued', working: 'Working', blocked: 'Blocked', review: 'Review', complete: 'Done' } as const
 async function publish(page: Page, taskId: string, value: TaskIssueSnapshot) {
   await page.evaluate(({ taskId, value }) => window.dispatchEvent(new CustomEvent('fixture:issues', {
     detail: { taskId, snapshot: value }

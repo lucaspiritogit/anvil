@@ -106,15 +106,16 @@ function plan(f: ReturnType<typeof setup>) {
   return { issues, issue, tool, review: () => tool('anvil_submit_review', { id: issue.id, checklist: [true], evidence: 'Tests passed' }) }
 }
 
-test('issue tools notify immediately in a background workspace and rework permits another review', () => {
+test('issue tools wait for finalized readiness in a background workspace and rework permits another review', () => {
   const f = setup()
   const p = plan(f)
   f.store.selectWorkspace(f.store.createWorkspace('Other').id)
   p.review()
+  expect(f.notifications).toHaveLength(0)
+  p.issues.finishIssue(f.task.id)
   expect(f.notifications.map((n) => n.options)).toEqual([{
     title: 'Subtask ready for review: Repair notifications', body: `Back up files · ${p.issue.id}`
   }])
-  p.issues.finishIssue(f.task.id)
   p.issues.rejectIssue(f.task.id)
   p.review()
   p.issues.finishIssue(f.task.id)
@@ -141,6 +142,8 @@ test('rolled-back issue tools and nested task changes never alert or advance the
   })).toThrow('Rollback')
   expect(f.notifications).toHaveLength(0)
   p.review()
+  expect(f.notifications).toHaveLength(0)
+  p.issues.finishIssue(f.task.id)
   expect(f.notifications).toHaveLength(1)
   expect(() => f.store.transaction(() => {
     try { f.store.transaction(() => { p.tool('anvil_block_issue', { id: p.issue.id }); throw new Error('Nested') }) } catch {}
@@ -172,6 +175,7 @@ test('first-use grant delivers a subtask event once; denial drops it without act
   await vi.waitFor(() => expect(f.notifications).toHaveLength(1))
   p.issues.rejectIssue(f.task.id)
   p.review()
+  p.issues.finishIssue(f.task.id)
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   onTestCleanup(() => warning.mockRestore())
   resolve('denied')
@@ -203,5 +207,47 @@ test('a failing Store observer cannot roll back committed issue work or prevent 
   expect(() => p.review()).not.toThrow()
   expect(observed).toHaveBeenCalledOnce()
   expect(p.issues.snapshot(f.task.id)?.children[0].status).toBe('review')
+  expect(f.notifications).toHaveLength(0)
+  p.issues.finishIssue(f.task.id)
   expect(f.notifications).toHaveLength(1)
 })
+
+
+test('review alerts wait for the stopping guard to clear, and no-op submissions never alert', () => {
+  const f = setup()
+  f.stop()
+  let ready = false
+  onTestCleanup(registerTaskNotifications(f.store, f.FakeNotification, {}, () => ready))
+  const p = plan(f)
+  p.review()
+  p.issues.finishIssue(f.task.id)
+  expect(f.notifications).toHaveLength(0)
+  ready = true
+  f.store.activityChanged()
+  f.store.activityChanged()
+  expect(f.notifications).toHaveLength(1)
+  ready = false
+  p.issues.rejectIssue(f.task.id)
+  p.review()
+  // The verified completion transaction goes directly from submitted to complete.
+  const tracker = f.store.issueTracker(f.task.projectId, f.task.workspaceId)
+  try {
+    tracker.recordCommits(p.issue.id, { baseCommit: 'base', headCommit: 'base' })
+    tracker.completeNoChanges(p.issue.id, { baseCommit: 'base', headCommit: 'base' })
+  } finally { tracker.close() }
+  f.store.activityChanged()
+  expect(f.notifications).toHaveLength(1)
+})
+
+for (const deliveryStatus of ['reviewable', 'no_changes', 'failed'] as const) {
+  test(`parent completion waits for Git delivery: ${deliveryStatus}`, () => {
+    const f = setup()
+    f.store.updateTask(f.task.id, { branchName: 'anvil/task', baseCommit: 'base' })
+    f.store.updateTask(f.task.id, { status: 'succeeded', deliveryStatus: 'finalizing' })
+    f.store.updateTask(f.task.id, { deliveryStatus: 'did_not_commit' })
+    expect(f.notifications).toHaveLength(0)
+    f.store.updateTask(f.task.id, { deliveryStatus })
+    f.store.updateTask(f.task.id, { deliveryStatus, totalTokens: 10 })
+    expect(f.notifications.map((n) => n.options.title)).toEqual(deliveryStatus === 'failed' ? [] : ['Task completed'])
+  })
+}

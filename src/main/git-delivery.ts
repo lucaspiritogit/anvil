@@ -42,6 +42,7 @@ export interface RebasedBranch {
 
 export interface FinalizeOptions {
   onFinisherCommand?: (command: string) => void
+  check?: () => void
 }
 
 export interface FinalizedCheckout {
@@ -278,8 +279,10 @@ export class GitDeliveryManager {
   async finalizeBranch(projectPath: string, taskId: string, branchName: string, _baseBranch: string | undefined, baseCommit: string, title: string, options: FinalizeOptions = {}): Promise<FinalizedCheckout> {
     const repoRoot = await realpath((await git(projectPath, ['rev-parse', '--show-toplevel'])).stdout.trim())
     return this.withRepoLock(repoRoot, async () => {
+      options.check?.()
       const worktree = this.taskWorktree(taskId)
       await this.verifyTaskWorktree(repoRoot, worktree, branchName)
+      options.check?.()
       return this.commitCheckout(worktree, baseCommit, title, options)
     })
   }
@@ -422,20 +425,28 @@ export class GitDeliveryManager {
       // The agent was asked to commit its own work and did not, so Anvil commits
       // the remainder rather than losing it. Each command is reported as it runs.
       for (const args of [['add', '--all'], ['commit', '-m', fallbackMessage]]) {
+        options.check?.()
         onFinisherCommand?.(formatGitCommand(args))
+        options.check?.()
         await git(checkoutPath, args)
       }
     }
 
+    options.check?.()
+    if ((await git(checkoutPath, ['status', '--porcelain=v1', '--untracked-files=all'])).stdout.trim()) {
+      throw new Error('The task worktree still has uncommitted changes after finalization.')
+    }
     const headCommit = (await git(checkoutPath, ['rev-parse', 'HEAD'])).stdout.trim()
     // Include the task branch with the final diff.
     const branchName = (await git(checkoutPath, ['branch', '--show-current'])).stdout.trim()
     const numstat = await git(checkoutPath, ['diff', '--numstat', baseCommit, headCommit, '--'])
     const stats = parseNumstat(numstat.stdout)
+    const changes = await git(checkoutPath, ['diff', '--quiet', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none', baseCommit, headCommit, '--'], [0, 1])
+    options.check?.()
     return {
       headCommit,
       ...(branchName ? { branchName } : {}),
-      hasChanges: stats.filesChanged > 0,
+      hasChanges: changes.exitCode === 1,
       finisherCommitted,
       ...stats
     }
@@ -532,7 +543,7 @@ export class GitDeliveryManager {
 
   async getDiff(repoPath: string, baseCommit: string, headCommit: string): Promise<TaskDiff> {
     const [patch, log] = await Promise.all([
-      git(repoPath, ['diff', '--find-renames', '--no-color', baseCommit, headCommit, '--']),
+      git(repoPath, ['diff', '--find-renames', '--no-color', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none', baseCommit, headCommit, '--']),
       git(repoPath, ['log', '--format=%H%x09%s', `${baseCommit}..${headCommit}`])
     ])
     const commits: TaskCommit[] = log.stdout
@@ -567,13 +578,15 @@ export class GitDeliveryManager {
   /** Review diff for one issue; issues without a recorded range fall back to the whole task diff. */
   async getIssueDiff(repoPath: string, source: IssueDiffSource): Promise<TaskDiff | null> {
     if (source.baseCommit && source.headCommit) return this.getDiff(repoPath, source.baseCommit, source.headCommit)
-    if (source.taskBaseCommit && source.taskHeadCommit) return this.getDiff(repoPath, source.taskBaseCommit, source.taskHeadCommit)
+    if (!source.baseCommit && !source.headCommit && source.taskBaseCommit && source.taskHeadCommit) {
+      return this.getDiff(repoPath, source.taskBaseCommit, source.taskHeadCommit)
+    }
     return null
   }
 }
 
 export interface IssueDiffSource {
-  /** Commits recorded for the issue itself, captured at claim and submit-for-review. */
+  /** Commits recorded for the issue itself, captured at claim and turn finalization. */
   baseCommit?: string | null
   headCommit?: string | null
   /** Whole-task range; the fallback for legacy issues without a recorded range. */

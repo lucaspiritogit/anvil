@@ -22,6 +22,11 @@ const MAX_LINES_IN_MEMORY = 4000
 // A new selection invalidates asynchronous responses from the previous profile.
 const modelGenerations = new Map<string, number>()
 let workspaceGeneration = 0
+const taskDiffRequests = new Map<string, { view: CenterView; revision: string; generation: number }>()
+const taskDiffRevision = (task?: Task): string => JSON.stringify(task ? [
+  task.workspaceId, task.status, task.deliveryStatus, task.branchName, task.baseCommit, task.headCommit,
+  task.filesChanged, task.additions, task.deletions
+] : null)
 type CaffeineSave = { value: boolean; status: 'pending' | 'error' }
 
 export type CenterView = { kind: 'home' } | { kind: 'task'; taskId: string }
@@ -396,6 +401,7 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   deleteTask: async (taskId) => {
     await window.anvil.tasks.delete(taskId)
+    taskDiffRequests.delete(taskId)
     set((state) => {
       const withoutTask = <Value,>(cache: Record<string, Value>): Record<string, Value> =>
         Object.fromEntries(Object.entries(cache).filter(([id]) => id !== taskId))
@@ -421,7 +427,10 @@ export const useStore = create<AnvilState>((set, get) => ({
       get().showHome()
       return
     }
-    set({ activeProjectId: task.projectId, view: { kind: 'task', taskId } })
+    const currentView = get().view
+    if (currentView.kind !== 'task' || currentView.taskId !== taskId) {
+      set({ activeProjectId: task.projectId, view: { kind: 'task', taskId } })
+    }
     if (get().eventsByTask[taskId]) return
     const events = await window.anvil.tasks.events(taskId)
     if (!get().tasks.some((task) => task.id === taskId)) return
@@ -430,21 +439,36 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   loadTaskDiff: async (taskId) => {
     if (get().diffsByTask[taskId]) return
+    const task = get().tasks.find((task) => task.id === taskId)
+    if (!task || !['reviewable', 'approved'].includes(task.deliveryStatus)) return
+    const revision = taskDiffRevision(task)
+    const view = get().view
+    const generation = workspaceGeneration
+    const pending = taskDiffRequests.get(taskId)
+    if (pending?.view === view && pending.revision === revision && pending.generation === generation) return
+    const request = { view, revision, generation }
+    taskDiffRequests.set(taskId, request)
+    set((s) => ({ diffErrorsByTask: { ...s.diffErrorsByTask, [taskId]: '' } }))
+    const current = (): boolean => taskDiffRequests.get(taskId) === request &&
+      generation === workspaceGeneration && get().view === view &&
+      revision === taskDiffRevision(get().tasks.find((task) => task.id === taskId))
     try {
       const diff = await window.anvil.tasks.diff(taskId)
-      if (!get().tasks.some((task) => task.id === taskId)) return
+      if (!current()) return
       set((s) => ({
         diffsByTask: { ...s.diffsByTask, [taskId]: diff },
         diffErrorsByTask: { ...s.diffErrorsByTask, [taskId]: '' }
       }))
     } catch (error) {
-      if (!get().tasks.some((task) => task.id === taskId)) return
+      if (!current()) return
       set((s) => ({
         diffErrorsByTask: {
           ...s.diffErrorsByTask,
           [taskId]: error instanceof Error ? error.message : String(error)
         }
       }))
+    } finally {
+      if (taskDiffRequests.get(taskId) === request) taskDiffRequests.delete(taskId)
     }
   },
 
@@ -616,10 +640,17 @@ export const useStore = create<AnvilState>((set, get) => ({
     }),
 
   applyTaskUpdate: (task) =>
-    set((s) => ({
-      tasks: s.tasks.map((r) => (r.id === task.id ? task : r)),
-      diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== task.id))
-    })),
+    set((s) => {
+      const changed = taskDiffRevision(s.tasks.find((item) => item.id === task.id)) !== taskDiffRevision(task)
+      if (changed) taskDiffRequests.delete(task.id)
+      return {
+        tasks: s.tasks.map((r) => (r.id === task.id ? task : r)),
+        ...(changed ? {
+          diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== task.id)),
+          diffErrorsByTask: Object.fromEntries(Object.entries(s.diffErrorsByTask).filter(([id]) => id !== task.id))
+        } : {})
+      }
+    }),
 
   saveSettings: async (patch, destinationId) => {
     const workspaceId = destinationId ?? get().activeWorkspaceId

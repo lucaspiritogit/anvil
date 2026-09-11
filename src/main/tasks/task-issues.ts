@@ -4,6 +4,13 @@ import type { IssueDiffSource } from '../git-delivery'
 import type { TaskExecutionState, TaskIssueSnapshot } from '../../shared/types'
 import type { Store } from '../store'
 
+/** Supplied only by the ended-turn finisher after verifying Git, never by the agent. */
+export interface VerifiedNoChanges {
+  issueId: string
+  baseCommit: string
+  headCommit: string
+}
+
 /** Runs task-owned Valence plans on the Store connection. */
 export class TaskIssues {
   private readonly ownedClaims = new Map<string, string>()
@@ -86,15 +93,14 @@ export class TaskIssues {
 
   /**
    * Close the claimed turn. The agent must have submitted the issue for review
-   * in Valence; the task then pauses until the developer approves or rejects.
+   * in Valence; verified empty changes complete automatically, otherwise pause for review.
    * A developer approval that landed before turn end advances directly.
    */
-  finishIssue(taskId: string, headCommit?: string): boolean {
+  finishIssue(taskId: string, headCommit?: string, noChanges?: VerifiedNoChanges): boolean {
     const state = this.requireState(taskId)
     if (!state.currentIssueId) throw new Error('No issue is currently running')
     const paused = this.withTracker(state, (tracker) => {
-      const issue = tracker.get(state.currentIssueId!)
-      this.recordReviewCommit(tracker, issue, headCommit)
+      const issue = this.finalizeIssue(tracker, state.currentIssueId!, headCommit, noChanges)
       if (issue.status === 'review') {
         this.store.saveTaskExecution({ ...state, phase: 'reviewing', error: null })
         return true
@@ -162,15 +168,16 @@ export class TaskIssues {
     })
   }
 
-  finishRecovery(taskId: string, headCommit?: string): void {
+  finishRecovery(taskId: string, headCommit?: string, noChanges?: VerifiedNoChanges): void {
     const state = this.requireState(taskId)
     this.withTracker(state, (tracker) => {
       // A user message must not bypass the original checklist or finish work
       // based on an assistant's claim. Valence remains authoritative.
-      const current = state.currentIssueId ? tracker.get(state.currentIssueId) : undefined
-      if (current) this.recordReviewCommit(tracker, current, headCommit)
+      const current = state.currentIssueId
+        ? this.finalizeIssue(tracker, state.currentIssueId, headCommit, noChanges)
+        : undefined
       if (current && current.status === 'review') {
-        // An interrupted review stays in review; only the developer settles it.
+        // Changed work still needs developer review after recovery.
         this.store.saveTaskExecution({ ...state, phase: 'reviewing', error: null })
         return
       }
@@ -187,15 +194,13 @@ export class TaskIssues {
     const state = this.store.getTaskExecution(taskId)
     if (!state || state.phase === 'complete') return
     try {
-      // Only a claim recorded for this running Anvil turn can be released here.
-      if (state.phase === 'reviewing' && state.currentIssueId) this.withTracker(state, (tracker) => {
-        // A pending review cannot survive a stopped task as claimable work:
-        // block it so a resumed task requeues and re-claims deterministically.
-        if (tracker.get(state.currentIssueId!).status === 'review') tracker.block(state.currentIssueId!)
-      })
-      else if (state.currentIssueId && this.ownedClaims.get(taskId) === state.currentIssueId) this.withTracker(state, (tracker) => {
+      if (state.currentIssueId) this.withTracker(state, (tracker) => {
         const status = tracker.get(state.currentIssueId!).status
-        if (status === 'working' || status === 'review') tracker.block(state.currentIssueId!)
+        // Submitted reviews also need blocking if finalization fails during
+        // recovery, when the original process's in-memory claim is gone.
+        if (status === 'review' || status === 'working' && this.ownedClaims.get(taskId) === state.currentIssueId) {
+          tracker.block(state.currentIssueId!)
+        }
       })
     } catch (storageError) {
       error += ` Could not block the Valence issue: ${storageError instanceof Error ? storageError.message : String(storageError)}`
@@ -210,7 +215,19 @@ export class TaskIssues {
     return state
   }
 
-  /** The worktree commit at submit time anchors the per-issue review diff. */
+  /** The finalized worktree commit anchors the per-issue review diff. */
+  private finalizeIssue(tracker: IssueTracker, issueId: string, headCommit: string | undefined, noChanges?: VerifiedNoChanges): Issue {
+    const issue = tracker.get(issueId)
+    this.recordReviewCommit(tracker, issue, headCommit)
+    if (noChanges) {
+      if (noChanges.issueId !== issueId || noChanges.headCommit !== headCommit) {
+        throw new Error('No-change verification does not match the current issue turn')
+      }
+      return tracker.completeNoChanges(issueId, noChanges)
+    }
+    return issue
+  }
+
   private recordReviewCommit(tracker: IssueTracker, issue: Issue, headCommit: string | undefined): void {
     if (headCommit && (issue.status === 'review' || issue.status === 'complete') && issue.headCommit !== headCommit) {
       tracker.recordCommits(issue.id, { headCommit })

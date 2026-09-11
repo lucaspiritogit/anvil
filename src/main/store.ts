@@ -198,7 +198,8 @@ export class Store {
     return () => { this.activityListeners.delete(listener) }
   }
 
-  private activityChanged(): void {
+  /** Also publish after transient execution guards clear without a database write. */
+  activityChanged(): void {
     if (this.activityDepth) return
     for (const listener of this.activityListeners) {
       try { listener() } catch (error) { console.warn('Store activity listener failed:', error) }
@@ -572,7 +573,7 @@ export class Store {
       ...(patch.status === 'running' ? { reviewedAt: undefined, settledAt: undefined } : {})
     }
     db.update(tasks).set(toTaskRow(next)).where(eq(tasks.id, id)).run()
-    if (current.status !== next.status) this.activityChanged()
+    if (current.status !== next.status || current.deliveryStatus !== next.deliveryStatus) this.activityChanged()
     return next
   }
 

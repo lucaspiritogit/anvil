@@ -1,4 +1,4 @@
-import { taskIssuePresentation } from '@shared/task-issue-presentation'
+import { issueIsReviewReady, issuePresentation, taskIssuePresentation } from '@shared/task-issue-presentation'
 import type { JSX, ReactNode } from 'react'
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
@@ -107,7 +107,7 @@ const PatchFiles = lazy(async () => {
       return (
         <div className="flex flex-1 flex-col min-h-0 min-w-0">
           <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 border-b border-line text-xs">
-            <div className="flex min-w-0 flex-1 items-center gap-1">
+            <div className="flex min-w-0 flex-1 items-center gap-1 @max-[760px]:basis-full">
               <button className={ICON_BTN} aria-label="Previous file" disabled={selectedIndex === 0} onClick={() => selectFile(files[selectedIndex - 1].name)}>
                 <HugeiconsIcon icon={ArrowLeft01Icon} size={16} aria-hidden="true" />
               </button>
@@ -456,8 +456,8 @@ function Notice({ tone = 'danger', children }: { tone?: 'danger' | 'warn'; child
 
 export function TaskView({ task }: Props): JSX.Element {
   const { snapshot, error: issueError, refresh } = useTaskIssues(task.id, true)
-  const issue = snapshot?.children.find((child) => child.status === 'review' &&
-    (!snapshot.execution?.currentIssueId || child.id === snapshot.execution.currentIssueId))
+  const issue = task.status !== 'succeeded' && task.status !== 'cancelled' ? snapshot?.children.find((child) => child.status === 'review' &&
+    (!snapshot.execution?.currentIssueId || child.id === snapshot.execution.currentIssueId)) : undefined
   const events = useStore((s) => s.eventsByTask[task.id])
   const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? task.workspaceId)
   const project = useStore((s) => s.projects.find((item) => item.id === task.projectId))
@@ -494,7 +494,9 @@ export function TaskView({ task }: Props): JSX.Element {
   const outputRef = useRef<HTMLDivElement>(null)
   const [now, setNow] = useState(Date.now())
   const [follow, setFollow] = useState(true)
-  const reviewable = !issue && (task.deliveryStatus === 'reviewable' || approved)
+  const saving = task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit' || Boolean(issue && !issueIsReviewReady(snapshot))
+  const done = task.status === 'succeeded' && task.deliveryStatus === 'no_changes'
+  const reviewable = !issue && !saving && (task.deliveryStatus === 'reviewable' || approved)
   const [activePanel, setActivePanel] = useState<TaskPanel>('output')
 
   useEffect(() => {
@@ -513,11 +515,11 @@ export function TaskView({ task }: Props): JSX.Element {
   }, [events, follow, activePanel, task.status, task.deliveryStatus])
 
   useEffect(() => {
-    if (reviewable && !diff) void loadTaskDiff(task.id)
-  }, [diff, loadTaskDiff, reviewable, task.id])
+    if (reviewable && !diff && !diffError) void loadTaskDiff(task.id)
+  }, [diff, diffError, loadTaskDiff, reviewable, task.id, task.headCommit, task.baseCommit])
 
   const issueDiffKey = issue && (issue.status === 'review' || issue.status === 'complete')
-    ? JSON.stringify([task.id, issue.id, issue.baseCommit, issue.headCommit, snapshot?.reviewReady]) : ''
+    ? JSON.stringify([task.id, issue.id, issue.baseCommit, issue.headCommit, snapshot?.reviewReady, task.headCommit, task.deliveryStatus]) : ''
   const reviewRevision = useRef({ key: issueDiffKey, version: 0 })
   if (reviewRevision.current.key !== issueDiffKey) {
     reviewRevision.current = { key: issueDiffKey, version: reviewRevision.current.version + 1 }
@@ -532,7 +534,7 @@ export function TaskView({ task }: Props): JSX.Element {
   useEffect(() => {
     let active = true
     setIssueDiffState({ key: issueDiffKey })
-    if (issue && issueDiffKey && snapshot?.reviewReady !== false) {
+    if (issue && issueDiffKey && !saving && issueIsReviewReady(snapshot)) {
       void window.anvil.tasks.issueDiff({ taskId: task.id, issueId: issue.id }).then((diff) => {
         if (active) setIssueDiffState({ key: issueDiffKey, diff })
       }).catch((error: unknown) => {
@@ -543,7 +545,7 @@ export function TaskView({ task }: Props): JSX.Element {
   }, [issueDiffKey, diffAttempt, task.id])
 
   const retryIssueDiff = (): void => setDiffAttempt((value) => value + 1)
-  const reviewDisabled = !!reviewBusy || !!issueError || snapshot?.reviewReady === false || !issueDiff
+  const reviewDisabled = saving || !!reviewBusy || !!issueError || !issueIsReviewReady(snapshot) || !issueDiff
 
   const reviewIssue = async (action: 'approve' | 'reject'): Promise<void> => {
     if (!issue || issue.status !== 'review' || reviewDisabled) return
@@ -610,7 +612,7 @@ export function TaskView({ task }: Props): JSX.Element {
           <h1 className="min-w-0 flex-1 text-base font-medium leading-snug [overflow-wrap:anywhere]">{task.title}</h1>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs">
             {issue ? <>
-              <span aria-label="Task status" className={cn('font-medium', ISSUE_STATUS[issue.status].tone)}>{ISSUE_STATUS[issue.status].label}{`: ${issue.title}`}</span>
+              <span aria-label="Task status" className={cn('font-medium', ISSUE_STATUS[issuePresentation(issue, snapshot, task).status].tone)}>{saving ? 'Saving changes…' : issuePresentation(issue, snapshot, task).label}{`: ${issue.title}`}</span>
               {issue.status === 'review' && <>
                 <button className={cn(btn.ghost, 'ml-2')} disabled={reviewDisabled} onClick={() => void reviewIssue('reject')}>
                   {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
@@ -623,7 +625,7 @@ export function TaskView({ task }: Props): JSX.Element {
               <span aria-label="Task status" className="flex items-center gap-2">
                 {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
                 <span className={dot(task.status)} />
-                <span className={cn('font-medium', statusTone(task.status))}>{STATUS_LABEL[task.status]}</span>
+                <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : saving ? 'Saving changes…' : STATUS_LABEL[task.status]}</span>
                 <span className="text-dim">·</span>
                 <span className={deliveryTone(task.deliveryStatus)}>{DELIVERY_LABEL[task.deliveryStatus]}</span>
                 </>}
@@ -709,8 +711,8 @@ export function TaskView({ task }: Props): JSX.Element {
               {panel === 'issues' && 'Issues'}
               {panel === 'changes' && (issue ? 'Changes' : <>
                 Changes{' '}
-                <span className="font-mono font-normal tabular-nums text-dim">{task.filesChanged}</span>
-                {task.filesChanged > 0 && <>{' '}<span className="font-mono font-normal tabular-nums">
+                <span className="font-mono font-normal tabular-nums text-dim">{saving ? 'Saving…' : reviewable && !diff ? 'Loading…' : task.filesChanged}</span>
+                {!saving && (!reviewable || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono font-normal tabular-nums">
                   <span className="text-ok">+{task.additions}</span> <span className="text-danger">−{task.deletions}</span>
                 </span></>}
               </>)}
@@ -725,7 +727,7 @@ export function TaskView({ task }: Props): JSX.Element {
         {issue && <section id="task-panel-changes" aria-label="Subtask code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
           {issue.status === 'review' && <div className="shrink-0 px-4 py-2 border-b border-line bg-warn/5">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <p role="status" className="shrink-0 text-xs text-warn">Waiting for your review. The agent pauses until you approve or request changes.</p>
+              <p role="status" className="shrink-0 text-xs text-warn">{saving ? 'Saving changes…' : !issueDiff ? 'Loading code changes…' : 'Waiting for your review. The agent pauses until you approve or request changes.'}</p>
               <textarea
                 aria-label="Rework feedback"
                 disabled={reviewDisabled}
@@ -740,7 +742,7 @@ export function TaskView({ task }: Props): JSX.Element {
           </div>}
           <>
             {issueDiff && (!issue.baseCommit || !issue.headCommit) && <p className="px-4 py-2 text-xs text-dim">Legacy submission: showing the available recorded range, with task commit fallback.</p>}
-            {!issueDiff && !issueDiffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
+            {!saving && !issueDiff && !issueDiffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {issueDiffError && <div role="alert" className="p-5 text-sm text-danger">
               <p>{issueDiffError}</p>
               <button className={cn(btn.ghost, 'mt-3')} onClick={retryIssueDiff}>Retry</button>
@@ -790,8 +792,8 @@ export function TaskView({ task }: Props): JSX.Element {
               />
             </Suspense>}
           </> : <div className={EMPTY_PANEL}>
-            <p>{task.status === 'running' ? 'The agent is working on this task.' : DELIVERY_LABEL[task.deliveryStatus]}</p>
-            <p className="text-xs">{task.status === 'running' ? 'The final task diff will appear here when it is ready for review.' : 'There is no final diff available for review.'}</p>
+            <p>{saving ? 'Saving changes…' : done ? 'Done' : task.status === 'running' ? 'The agent is working on this task.' : DELIVERY_LABEL[task.deliveryStatus]}</p>
+            <p className="text-xs">{done ? 'No code changes to review.' : saving || task.status === 'running' ? 'The final task diff will appear here when it is ready for review.' : 'There is no final diff available for review.'}</p>
           </div>}
         </section>}
 

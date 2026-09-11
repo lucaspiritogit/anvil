@@ -15,13 +15,16 @@ interface Snapshot {
   task: Task
   currentIssueId: string | null
   issues: Issue[]
+  reviewReady: boolean
+  completed: boolean
 }
 
 /** Observe committed state independently of renderer windows and workspace selection. */
 export function registerTaskNotifications(
   store: Pick<Store, 'getTasks' | 'subscribeActivity' | 'getTaskExecution' | 'issueTracker'>,
   NotificationClass: NotificationApi,
-  options: NotificationDeliveryOptions = {}
+  options: NotificationDeliveryOptions = {},
+  issueReviewReady: (taskId: string) => boolean = (taskId) => store.getTaskExecution(taskId)?.phase === 'reviewing'
 ): () => void {
   const snapshot = (): Map<string, Snapshot> => new Map(store.getTasks().map((task) => {
     const state = store.getTaskExecution(task.id)
@@ -30,7 +33,12 @@ export function registerTaskNotifications(
       const tracker = store.issueTracker(task.projectId, task.workspaceId)
       try { issues = tracker.list(state.parentIssueId) } finally { tracker.close() }
     }
-    return [JSON.stringify([task.workspaceId, task.id]), { task, currentIssueId: state?.currentIssueId ?? null, issues }]
+    const completed = task.status === 'succeeded' && (!(task.baseCommit && task.branchName) ||
+      ['reviewable', 'no_changes', 'approved'].includes(task.deliveryStatus))
+    return [JSON.stringify([task.workspaceId, task.id]), {
+      task, currentIssueId: state?.currentIssueId ?? null, issues,
+      reviewReady: issueReviewReady(task.id), completed
+    }]
   }))
   let previous = snapshot()
   const delivery = createNotificationDelivery(NotificationClass, options)
@@ -54,16 +62,21 @@ export function registerTaskNotifications(
       if (cancelled) sendIssue(cancelled, 'cancelled')
       for (const issue of issues) {
         const old = oldIssues.get(issue.id)
-        if (!old || old.status === issue.status || cancelled?.id === issue.id) continue
-        if (issue.status === 'review') sendIssue(issue, 'ready for review')
-        if (issue.status === 'blocked') sendIssue(issue, 'blocked')
+        if (!old || cancelled?.id === issue.id) continue
+        if (issue.status === 'review' && issue.id === current.currentIssueId && current.reviewReady &&
+          (!before.reviewReady || before.currentIssueId !== issue.id || old.status !== 'review' || old.headCommit !== issue.headCommit)) {
+          sendIssue(issue, 'ready for review')
+        }
+        if (issue.status === 'blocked' && old.status !== 'blocked') sendIssue(issue, 'blocked')
       }
       // A failed turn pauses its parent after blocking the issue. Keep that one
       // subtask alert, while retaining unrelated parent lifecycle notifications.
       const blocked = issues.some((issue) => issue.id === current.currentIssueId && issue.status === 'blocked')
       const parentPause = blocked && before.task.status === 'running' &&
         (task.status === 'pending' || task.status === 'failed')
-      if (before.task.status !== task.status && !cancelled && !parentPause) {
+      const parentChanged = task.status === 'succeeded'
+        ? current.completed && !before.completed : before.task.status !== task.status
+      if (parentChanged && !cancelled && !parentPause) {
         delivery.send({ title: statusTitles[task.status], body: task.title })
       }
     }

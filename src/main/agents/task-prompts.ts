@@ -17,7 +17,7 @@ function issueTrackerInstructionsPrompt(): string {
 
 const PLANNING_TOOLS = 'Use anvil_create_issue and anvil_update_issue to build the queued plan. Use anvil_requeue_issue for repaired blocked planning issues and anvil_block_issue only for unfinished planning.'
 
-const REVIEW_TOOLS = 'After satisfying the checklist, validating, and committing, call anvil_submit_review and require a successful result before reporting submission. Prose is never a review submission. Anvil pauses for developer review; only the developer approves. If unfinished, use anvil_block_issue and explain why in plain text.'
+const REVIEW_TOOLS = 'After satisfying the checklist, validating, and committing any changes, call anvil_submit_review and require a successful result. Prose is never a review submission. End the turn: Anvil verifies finalized changes and a clean worktree. Empty changes complete automatically; otherwise Anvil pauses for developer review; only the developer approves. No empty commit is needed. If unfinished, use anvil_block_issue and explain why in plain text.'
 
 function interruptedIssuePrompt(issueId: string | null): string {
   if (!issueId) return 'Inspect the plan. Use anvil_requeue_issue only for blocked remaining task issues so Anvil can schedule them. Do not claim new work.'
