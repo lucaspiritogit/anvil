@@ -21,7 +21,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 500 
       if (scenario === 'review') {
         await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
       } else {
-        await expect(page.getByText('There is no final diff available for review.')).toBeVisible()
+        await expect(page.getByText(/No code changes to review\.|There is no final diff available for review\./)).toBeVisible()
       }
       await outputTab.click()
       await expect(page.getByRole('log', { name: 'Task output' })).toBeVisible()

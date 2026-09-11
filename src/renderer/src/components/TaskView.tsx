@@ -622,9 +622,9 @@ export function TaskView({ task }: Props): JSX.Element {
 
       <TaskStackStatus key={`stack-${task.id}`} task={task} />
       <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4">
-        <div className="flex items-start justify-between gap-4">
-          <h1 className="min-w-0 flex-1 text-base font-medium leading-snug [overflow-wrap:anywhere]">{task.title}</h1>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 @max-[760px]:flex-col">
+          <h1 className="min-w-0 flex-1 truncate text-base font-medium leading-snug @max-[760px]:w-full @max-[760px]:flex-none" title={task.title}>{task.title}</h1>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:justify-start">
             {issue ? <>
               <span aria-label="Task status" className={cn('font-medium', ISSUE_STATUS[issuePresentation(issue, snapshot, task).status].tone)}>{saving ? 'Saving changes…' : issuePresentation(issue, snapshot, task).label}{`: ${issue.title}`}</span>
               {issue.status === 'review' && <>
