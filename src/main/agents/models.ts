@@ -14,20 +14,25 @@ const MAX_OUTPUT_BYTES = 32 * 1024 * 1024
  * fetched once per app run. Only successful lists are kept: a CLI that was
  * still installing gets another chance next time the dropdown is opened.
  */
-const cache = new Map<string, ProviderModelList>()
+type CatalogueEntry =
+  | { kind: 'resolved'; workspaceId: string; catalogue: ProviderModelList }
+  | { kind: 'pending'; workspaceId: string; controller: AbortController; discovery: Promise<ProviderModelList> }
+
+const cache = new Map<string, CatalogueEntry>()
 const generations = new Map<string, number>()
-const discoveries = new Map<AbortController, Promise<ProviderModelList>>()
-const discoveryWorkspaces = new Map<AbortController, string>()
 const pausedWorkspaces = new Set<string>()
 let closing = false
 
 export async function pauseWorkspaceModelDiscovery(workspaceId: string): Promise<() => void> {
   pausedWorkspaces.add(workspaceId)
   const pending: Promise<ProviderModelList>[] = []
-  for (const [controller, discovery] of discoveries) {
-    if (discoveryWorkspaces.get(controller) !== workspaceId) continue
-    controller.abort()
-    pending.push(discovery)
+  for (const [key, entry] of cache) {
+    if (entry.workspaceId !== workspaceId) continue
+    cache.delete(key)
+    if (entry.kind === 'pending') {
+      entry.controller.abort()
+      pending.push(entry.discovery)
+    }
   }
   await Promise.allSettled(pending)
   invalidateWorkspaceModels(workspaceId)
@@ -36,15 +41,23 @@ export async function pauseWorkspaceModelDiscovery(workspaceId: string): Promise
 
 export async function closeModelDiscovery(): Promise<void> {
   closing = true
-  for (const controller of discoveries.keys()) controller.abort()
-  await Promise.allSettled(discoveries.values())
+  const pending: Promise<ProviderModelList>[] = []
+  for (const entry of cache.values()) {
+    if (entry.kind !== 'pending') continue
+    entry.controller.abort()
+    pending.push(entry.discovery)
+  }
+  cache.clear()
+  await Promise.allSettled(pending)
 }
 
 /** Authentication changes must not retire a different workspace's catalogue. */
 export function invalidateWorkspaceModels(workspaceId: string): void {
   generations.set(workspaceId, (generations.get(workspaceId) ?? 0) + 1)
-  for (const key of cache.keys()) {
-    if (JSON.parse(key)[0] === workspaceId) cache.delete(key)
+  for (const [key, entry] of cache) {
+    if (entry.workspaceId !== workspaceId) continue
+    cache.delete(key)
+    if (entry.kind === 'pending') entry.controller.abort()
   }
 }
 
@@ -91,22 +104,32 @@ async function fromCommand(source: Extract<ModelSource, { kind: 'command' }>, wo
 export function listModels(agent: AgentDefinition, workspace: WorkspaceExecutionContext): Promise<ProviderModelList> {
   if (closing) return Promise.resolve({ agentId: agent.id, models: [], error: 'Model discovery is shutting down' })
   if (pausedWorkspaces.has(workspace.workspaceId)) return Promise.resolve({ agentId: agent.id, models: [], error: 'Workspace is being renamed. Retry shortly.' })
+  const key = JSON.stringify([workspace.workspaceId, agent.id])
+  const cached = cache.get(key)
+  if (cached?.kind === 'resolved') return Promise.resolve(cached.catalogue)
+  if (cached?.kind === 'pending') return cached.discovery
+
   const controller = new AbortController()
-  const discovery = discoverModels(agent, workspace, controller.signal).finally(() => {
-    discoveries.delete(controller)
-    discoveryWorkspaces.delete(controller)
+  const generation = generations.get(workspace.workspaceId) ?? 0
+  let entry: Extract<CatalogueEntry, { kind: 'pending' }>
+  const discovery = discoverModels(agent, workspace, controller.signal, generation).then((catalogue) => {
+    if (cache.get(key) !== entry) return catalogue
+    if (catalogue.models.length && !catalogue.error && !controller.signal.aborted && !closing && !pausedWorkspaces.has(workspace.workspaceId)) {
+      cache.set(key, { kind: 'resolved', workspaceId: workspace.workspaceId, catalogue })
+    } else {
+      cache.delete(key)
+    }
+    return catalogue
+  }, (error) => {
+    if (cache.get(key) === entry) cache.delete(key)
+    throw error
   })
-  discoveryWorkspaces.set(controller, workspace.workspaceId)
-  discoveries.set(controller, discovery)
+  entry = { kind: 'pending', workspaceId: workspace.workspaceId, controller, discovery }
+  cache.set(key, entry)
   return discovery
 }
 
-async function discoverModels(agent: AgentDefinition, workspace: WorkspaceExecutionContext, signal: AbortSignal): Promise<ProviderModelList> {
-  const key = JSON.stringify([workspace.workspaceId, agent.id])
-  const generation = generations.get(workspace.workspaceId) ?? 0
-  const cached = cache.get(key)
-  if (cached) return cached
-
+async function discoverModels(agent: AgentDefinition, workspace: WorkspaceExecutionContext, signal: AbortSignal, generation: number): Promise<ProviderModelList> {
   if (!agent.models) return { agentId: agent.id, models: [] }
 
   try {
@@ -125,7 +148,6 @@ async function discoverModels(agent: AgentDefinition, workspace: WorkspaceExecut
     if ((generations.get(workspace.workspaceId) ?? 0) !== generation) {
       return { agentId: agent.id, models: [], error: 'Workspace authentication changed during model discovery. Retry.' }
     }
-    cache.set(key, result)
     return result
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
