@@ -9,7 +9,7 @@ import { cn, ISSUE_STATUS } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
 
 const TASK_INDICATORS = {
-  pending: { icon: 'bell-ring', label: 'Pending', tone: 'text-warn', highlight: '' },
+  queued: { icon: 'loader', label: 'Queued', tone: 'text-accent', highlight: '' },
   running: { icon: 'loader', label: 'Working', tone: 'text-accent', highlight: '' },
   saving: { icon: 'loader', label: 'Saving changes…', tone: 'text-accent', highlight: '' },
   done: { icon: 'check', label: 'Done', tone: 'text-ok', highlight: '' },
@@ -20,7 +20,7 @@ const TASK_INDICATORS = {
 
 function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
   if (task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit') return TASK_INDICATORS.saving
-  if (task.status === 'pending') return TASK_INDICATORS.pending
+  if (task.status === 'pending') return TASK_INDICATORS.queued
   if (task.status === 'running') return TASK_INDICATORS.running
   if (task.status === 'failed' || task.deliveryStatus === 'failed' || task.deliveryStatus === 'agent_failed') {
     return TASK_INDICATORS.failed
@@ -31,6 +31,24 @@ function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_IND
     if (task.deliveryStatus === 'reviewable') return TASK_INDICATORS.reviewable
   }
   return undefined
+}
+
+function taskIssueIndicator(presentation: NonNullable<ReturnType<typeof taskIssuePresentation>>) {
+  switch (presentation.status) {
+    case 'queued':
+      return { ...TASK_INDICATORS.queued, label: presentation.label }
+    case 'working':
+      return { ...TASK_INDICATORS.running, label: presentation.label }
+    case 'review':
+      return { ...TASK_INDICATORS.reviewable, label: presentation.label }
+    case 'blocked':
+      return { ...TASK_INDICATORS.failed, label: presentation.label }
+    case 'complete':
+      return {
+        ...(presentation.issue.reviewedAt != null ? TASK_INDICATORS.approved : TASK_INDICATORS.done),
+        label: presentation.label
+      }
+  }
 }
 
 const expandedSubtasks = new Set<string>()
@@ -70,10 +88,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const eligible = canSettleTask(task)
   const deadline = settlementDeadline(task)
   const presentation = taskIssuePresentation(task, snapshot)
-  const indicator = presentation ? {
-    ...(presentation.status === 'review' ? TASK_INDICATORS.reviewable : presentation.status === 'working' ? TASK_INDICATORS.running : presentation.status === 'blocked' ? TASK_INDICATORS.failed : presentation.status === 'complete' ? presentation.issue.reviewedAt != null ? TASK_INDICATORS.approved : TASK_INDICATORS.done : TASK_INDICATORS.pending),
-    label: presentation.label
-  } : taskIndicator(task)
+  const indicator = presentation ? taskIssueIndicator(presentation) : taskIndicator(task)
   const statusIcon = (
     <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex shrink-0', indicator?.tone ?? 'text-dim')}>
       <Icon
