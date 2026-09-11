@@ -166,7 +166,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
             aria-expanded={expanded}
             aria-controls={`subtasks-${task.id}`}
             aria-label={`${expanded ? 'Collapse' : 'Expand'} subtasks: ${task.title}`}
-            className="flex w-full items-center justify-between gap-2 border-t border-line px-3 py-1.5 text-xs text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent"
+            className="flex w-full items-center justify-between gap-2 border-t border-line px-3 py-1.5 text-xs text-dim hover:bg-white/5 hover:text-fg focus-visible:outline focus-visible:outline-accent"
             onClick={toggleExpanded}
           >
             <span>{childCount} {childCount === 1 ? 'subtask' : 'subtasks'}</span>
