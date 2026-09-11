@@ -12,6 +12,7 @@ const sessionId = 'session-test'
 let draftField
 let promptId
 let initialized = false
+let issueConfig
 let modelSelected = false
 let planSelected = false
 const hasModeConfig = scenario.startsWith('read-only-config')
@@ -79,6 +80,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     initialized = true
     respond(message.id, { protocolVersion: scenario === 'version' ? 999 : 1, agentCapabilities: { mcpCapabilities: { http: scenario !== 'no-http-mcp' }, loadSession: scenario !== 'no-resume', promptCapabilities: { image: scenario !== 'image-unsupported' } } })
   } else if (message.method === 'session/new' || message.method === 'session/load') {
+    if (scenario === 'mcp-branch') issueConfig = message.params.mcpServers.find((server) => server.name === 'anvil_issue_tracker')
     if (!initialized || (scenario !== 'read-only-config-draft' && (realpathSync(message.params.cwd) !== process.cwd() || realpathSync(process.env.PWD) !== process.cwd()))) process.exit(9)
     if (message.method === 'session/load') {
       text('Old turn summary from history.')
@@ -136,6 +138,21 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       code: -32603, message: 'Internal error: [Novita] model is temporarily rate-limited upstream.',
       data: { service: 'session', errorName: 'APIError' }
     } })
+    if (scenario === 'mcp-branch') {
+      void (async () => {
+        const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
+        const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js')
+        const client = new Client({ name: 'acp-transport-fixture', version: '1.0.0' })
+        try {
+          await client.connect(new StreamableHTTPClientTransport(new URL(issueConfig.url), {
+            requestInit: { headers: Object.fromEntries(issueConfig.headers.map(({ name, value }) => [name, value])) }
+          }))
+          await require('./task-branch-mcp.cjs')(client)
+          respond(message.id, { stopReason: 'end_turn' })
+        } finally { await client.close() }
+      })().catch((error) => send({ id: message.id, error: { code: -32603, message: error.message } }))
+      return
+    }
     if (scenario.startsWith('cancel')) {
       text(scenario === 'cancel-partial' ? 'Waiting' : 'Waiting\n')
       return

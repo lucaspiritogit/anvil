@@ -3,6 +3,7 @@ import { createServer, type Server as HttpServer } from 'node:http'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import type { CreateIssue, UpdateIssue, Completion } from '../../shared/valence'
 import type { Store } from '../store'
+import { taskBranchNaming, type TaskBranches } from '../tasks/task-branch'
 
 export interface IssueToolConnection {
   url: string
@@ -20,7 +21,8 @@ const fields = {
 }
 const id = { type: 'string', description: 'Issue ID from anvil_get_plan or the supplied issue context; submission must use the currentIssueId.' }
 export const ISSUE_TOOLS: Tool[] = [
-  { name: 'anvil_get_plan', description: 'Read the current Anvil task, parent issue, execution phase and all its issues. Call this before resuming work.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'anvil_get_plan', description: 'Read the current Anvil task, branchName, canNameBranch eligibility, parent issue, execution phase and all its issues. Call this before resuming work.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'anvil_set_task_branch', description: 'Choose one descriptive Git branch name when anvil_get_plan reports task.canNameBranch. Anvil supplies task/workspace ownership, renames the managed checkout and saves the accepted name. Retry invalid or colliding choices; repeating the accepted name is safe. Established branches cannot be renamed.', inputSchema: { type: 'object', properties: { branchName: { type: 'string', description: 'Proposed literal short Git branch name, outside the reserved anvil-tmp/ namespace.' } }, required: ['branchName'], additionalProperties: false } },
   { name: 'anvil_create_issue', description: 'Add a queued issue to the current task during planning. Parent and workspace are supplied by Anvil. Dependencies must belong to this task.', inputSchema: { type: 'object', properties: fields, required: ['title', 'description', 'checklist', 'validation'], additionalProperties: false } },
   { name: 'anvil_update_issue', description: 'Update an issue in the current task during planning. Ownership cannot change.', inputSchema: { type: 'object', properties: { id, patch: { type: 'object', properties: fields, additionalProperties: false } }, required: ['id', 'patch'], additionalProperties: false } },
   { name: 'anvil_submit_review', description: 'Request completion of only the current issue in working status after validating and committing any changes. No empty commit is needed. Blocked issues must be requeued and started first. Success records the submission in review status, pending turn finalization. After the agent stops, Anvil verifies a clean worktree and finalized issue diff: empty changes complete automatically; changed work pauses for developer approval. This does not approve the issue.', inputSchema: { type: 'object', properties: { id, checklist: { type: 'array', description: 'Exactly one true confirmation per issue checklist item, in the order returned by anvil_get_plan. All items must be satisfied.', items: { type: 'boolean' } }, evidence: { type: 'string', description: 'Non-empty actual validation evidence: commands run and their results, plus any required manual checks. Never claim unperformed checks passed.' } }, required: ['id', 'checklist', 'evidence'], additionalProperties: false } },
@@ -37,13 +39,19 @@ function keys(value: Record<string, unknown>, allowed: string[]): void {
   for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Unsupported argument: ${key}`)
 }
 
-/** Executes on Store's borrowed connection; agents never open a database. */
-export function callIssueTool(store: Store, taskId: string, workspaceId: string, name: string, input: unknown): unknown {
+function toolArguments(name: string, input: unknown): Record<string, unknown> {
   const definition = ISSUE_TOOLS.find((tool) => tool.name === name)
   if (!definition) throw new Error('Unknown issue tool')
   const args = object(input)
   keys(args, Object.keys(definition.inputSchema.properties ?? {}))
   for (const required of definition.inputSchema.required ?? []) if (!(required in args)) throw new Error(`Missing argument: ${required}`)
+  return args
+}
+
+/** Executes on Store's borrowed connection; agents never open a database. */
+export function callIssueTool(store: Store, taskId: string, workspaceId: string, name: string, input: unknown): unknown {
+  if (name === 'anvil_set_task_branch') throw new Error('Task branch naming requires the asynchronous task tool service')
+  const args = toolArguments(name, input)
   return store.transaction(() => {
     const task = store.getTask(taskId)
     if (!task || task.workspaceId !== workspaceId) throw new Error('Task not found in the owning workspace')
@@ -52,7 +60,7 @@ export function callIssueTool(store: Store, taskId: string, workspaceId: string,
     const tracker = store.issueTracker(task.projectId, workspaceId)
     const parent = tracker.getParent(state.parentIssueId)
     if (parent.anvilTaskId !== taskId) throw new Error('Task does not own this plan')
-    if (name === 'anvil_get_plan') return { task: { id: task.id, title: task.title, prompt: task.prompt }, parent, phase: state.phase, currentIssueId: state.currentIssueId, issues: tracker.list(parent.id) }
+    if (name === 'anvil_get_plan') return { task: { id: task.id, title: task.title, prompt: task.prompt, ...taskBranchNaming(task) }, parent, phase: state.phase, currentIssueId: state.currentIssueId, issues: tracker.list(parent.id) }
     const planning = state.phase === 'planning' || state.phase === 'blocked' && state.issueIds.length === 0
     const ownIssue = (value: unknown): string => {
       if (typeof value !== 'string') throw new Error('Issue ID must be a string')
@@ -104,16 +112,22 @@ interface TaskToolOwner {
   taskId: string
   workspaceId: string
   active: boolean
+  turn: number
 }
 
 /** A stable task capability, enabled only while its agent is running. */
 export class IssueToolServer {
   private readonly owners = new Map<string, TaskToolOwner>()
+  private readonly branchCalls = new Set<Promise<unknown>>()
   private server?: HttpServer
   private starting?: Promise<string>
   private closed = false
 
-  constructor(private readonly store: Store, private readonly changed: (taskId: string) => void = () => {}) {}
+  constructor(
+    private readonly store: Store,
+    private readonly changed: (taskId: string) => void = () => {},
+    private readonly branches?: Pick<TaskBranches, 'set'>
+  ) {}
 
   private start(): Promise<string> {
     if (this.closed) return Promise.reject(new Error('Issue tools are closed'))
@@ -144,13 +158,28 @@ export class IssueToolServer {
           response.writeHead(405, { Allow: 'POST' }).end()
           return
         }
+        const turn = owner.turn
+        const checkTurn = (): void => {
+          if (this.closed || !owner.active || owner.turn !== turn || this.owners.get(authorization) !== owner) throw new Error('Agent turn has ended')
+        }
         const protocol = new Server({ name: 'anvil_issue_tracker', version: '1.0.0' }, { capabilities: { tools: {} } })
         protocol.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: ISSUE_TOOLS }))
         protocol.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
           try {
-            if (this.closed || !owner.active || this.owners.get(authorization) !== owner) throw new Error('Agent turn has ended')
-            const result = callIssueTool(this.store, owner.taskId, owner.workspaceId, params.name, params.arguments ?? {})
-            if (params.name !== 'anvil_get_plan') this.changed(owner.taskId)
+            checkTurn()
+            const args = toolArguments(params.name, params.arguments ?? {})
+            let result: unknown
+            if (params.name === 'anvil_set_task_branch') {
+              if (!this.branches) throw new Error('Task branch naming is unavailable')
+              if (typeof args.branchName !== 'string') throw new Error('Branch name must be a string')
+              const call = this.branches.set(owner.taskId, owner.workspaceId, args.branchName, checkTurn)
+              this.branchCalls.add(call)
+              try { result = await call }
+              finally { this.branchCalls.delete(call) }
+            } else {
+              result = callIssueTool(this.store, owner.taskId, owner.workspaceId, params.name, args)
+              if (params.name !== 'anvil_get_plan') this.changed(owner.taskId)
+            }
             return { content: [{ type: 'text', text: JSON.stringify(result) }] }
           } catch (error) {
             return { isError: true, content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }] }
@@ -189,13 +218,14 @@ export class IssueToolServer {
     // task's credentials while this app is alive, but reject calls between turns.
     let entry = [...this.owners.entries()].find(([, owner]) => owner.taskId === taskId)
     if (!entry) {
-      entry = [`Bearer ${randomBytes(32).toString('hex')}`, { taskId, workspaceId: task.workspaceId, active: false }]
+      entry = [`Bearer ${randomBytes(32).toString('hex')}`, { taskId, workspaceId: task.workspaceId, active: false, turn: 0 }]
       this.owners.set(...entry)
     }
     const [authorization, owner] = entry
     if (owner.active) throw new Error('Issue tools are already active for this task')
     if (owner.workspaceId !== task.workspaceId) throw new Error('Task workspace changed')
     owner.active = true
+    owner.turn++
     let released = false
     return {
       url,
@@ -219,5 +249,8 @@ export class IssueToolServer {
         server.closeAllConnections()
       })
     }
+    // Closing HTTP connections does not stop asynchronous Git work. Let any
+    // mutation reconcile its saved name before the application closes Store.
+    await Promise.allSettled([...this.branchCalls])
   }
 }

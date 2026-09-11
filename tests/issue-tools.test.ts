@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { Store } from '../src/main/store'
@@ -12,6 +12,8 @@ import type { Issue } from '../src/shared/valence'
 import { CodexAppServerClient } from '../src/main/agents/codex-app-server'
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
+import { taskBranchFixture, branchGit } from './task-branch-fixture'
+import { OpenCodeAcpClient } from '../src/main/agents/opencode-acp'
 
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-issue-tools-'))
@@ -33,6 +35,118 @@ function fixture() {
   return { store, issues, addTask, call }
 }
 const input = { title: 'Change', description: 'Implement the change', checklist: ['Verify change'], validation: 'Run focused test' }
+
+test('MCP branch naming validates arguments and keeps connection task/workspace ownership', async () => {
+  const f = await taskBranchFixture()
+  const server = new IssueToolServer(f.store, undefined, f.branches)
+  onTestCleanup(() => server.close())
+  const connection = await server.open(f.task.id)
+  const client = new Client({ name: 'branch-test', version: '1' })
+  onTestCleanup(() => client.close())
+  await client.connect(new StreamableHTTPClientTransport(new URL(connection.url), { requestInit: { headers: connection.headers } }))
+  const tool = (await client.listTools()).tools.find((entry) => entry.name === 'anvil_set_task_branch')!
+  expect(tool.inputSchema).toMatchObject({ required: ['branchName'], additionalProperties: false })
+  const call = (args: Record<string, unknown>) => client.callTool({ name: tool.name, arguments: args })
+  for (const args of [{}, { branchName: 1 }, { branchName: null }, { branchName: [] }, { branchName: '' },
+    { branchName: 'feat/name', taskId: 'foreign' }, { branchName: 'feat/name', workspaceId: 'foreign' },
+    { branchName: 'bad name' }, { branchName: 'main' }]) expect((await call(args)).isError).toBe(true)
+  expect(branchGit(f.task.cwd, 'branch', '--show-current')).toBe(f.task.branchName)
+  const workspace = f.store.createWorkspace('Other')
+  f.store.selectWorkspace(workspace.id)
+  expect((await call({ branchName: 'feat/owned' })).isError).not.toBe(true)
+  expect(f.store.getTask(f.task.id)).toMatchObject({ workspaceId: f.task.workspaceId, branchName: 'feat/owned' })
+  const plan = await client.callTool({ name: 'anvil_get_plan' })
+  expect(plan.content).toEqual([expect.objectContaining({ text: expect.stringContaining('"canNameBranch":false') })])
+  connection.close()
+  expect((await fetch(connection.url, { method: 'POST', headers: connection.headers })).status).toBe(403)
+})
+
+test('an in-flight MCP rename cannot inherit a later turn on reused credentials', async () => {
+  const f = await taskBranchFixture()
+  const server = new IssueToolServer(f.store, undefined, f.branches)
+  onTestCleanup(() => server.close())
+  const connection = await server.open(f.task.id)
+  const client = new Client({ name: 'branch-expiry', version: '1' })
+  onTestCleanup(() => client.close())
+  await client.connect(new StreamableHTTPClientTransport(new URL(connection.url), { requestInit: { headers: connection.headers } }))
+  let release!: () => void
+  let enter!: () => void
+  const ready = new Promise<void>((resolve) => { enter = resolve })
+  const held = new Promise<void>((resolve) => { release = resolve })
+  const lock = f.manager.withRepoLock(f.repo, async () => { enter(); await held })
+  await ready
+  const rename = vi.spyOn(f.manager, 'renameTaskBranch')
+  const result = client.callTool({ name: 'anvil_set_task_branch', arguments: { branchName: 'feat/expired' } })
+  await vi.waitFor(() => expect(rename).toHaveBeenCalled())
+  connection.close()
+  const next = await server.open(f.task.id)
+  onTestCleanup(() => next.close())
+  expect(next.headers).toEqual(connection.headers)
+  release()
+  await lock
+  expect(await result).toMatchObject({ isError: true, content: [{ type: 'text', text: 'Agent turn has ended' }] })
+  expect(branchGit(f.task.cwd, 'branch', '--show-current')).toBe(f.task.branchName)
+  expect((await client.callTool({ name: 'anvil_set_task_branch', arguments: { branchName: 'feat/current' } })).isError).not.toBe(true)
+})
+
+test('MCP shutdown drains a rename that has reached Git before Store can close', async () => {
+  const f = await taskBranchFixture()
+  let entered!: () => void
+  let release!: () => void
+  const ready = new Promise<void>((resolve) => { entered = resolve })
+  const held = new Promise<void>((resolve) => { release = resolve })
+  const rename = f.manager.renameTaskBranch.bind(f.manager)
+  vi.spyOn(f.manager, 'renameTaskBranch').mockImplementation(async (project, id, branch, proposed, check, save) => {
+    // Pause after mutation, before persistence, as a slow Git subprocess would.
+    const accepted = await rename(project, id, branch, proposed, check)
+    entered()
+    await held
+    save!(accepted)
+    return accepted
+  })
+  const server = new IssueToolServer(f.store, undefined, f.branches)
+  onTestCleanup(() => server.close())
+  const connection = await server.open(f.task.id)
+  const client = new Client({ name: 'branch-shutdown', version: '1' })
+  onTestCleanup(() => client.close())
+  await client.connect(new StreamableHTTPClientTransport(new URL(connection.url), { requestInit: { headers: connection.headers } }))
+  const call = client.callTool({ name: 'anvil_set_task_branch', arguments: { branchName: 'feat/shutdown' } }).catch(() => undefined)
+  await ready
+  let closed = false
+  const closing = server.close().then(() => { closed = true })
+  await call
+  expect(closed).toBe(false)
+  expect(f.store.getTask(f.task.id)?.branchName).toBe(f.task.branchName)
+  release()
+  await closing
+  expect(f.store.getTask(f.task.id)?.branchName).toBe('feat/shutdown')
+  expect(branchGit(f.task.cwd, 'branch', '--show-current')).toBe('feat/shutdown')
+})
+
+for (const protocol of ['codex', 'acp'] as const) {
+  for (const resumed of [false, true]) {
+    test(`${protocol} forwards branch naming discovery and calls in a ${resumed ? 'resumed' : 'fresh'} session`, async () => {
+      const f = await taskBranchFixture()
+      const server = new IssueToolServer(f.store, undefined, f.branches)
+      onTestCleanup(() => server.close())
+      const connection = await server.open(f.task.id)
+      onTestCleanup(() => connection.close())
+      const executor = protocol === 'codex'
+        ? new CodexAppServerClient({ workspace: testWorkspace(), command: process.execPath,
+          args: [resolve('tests/fixtures/codex-app-server.cjs'), 'mcp-review', join(f.root, 'codex.jsonl')], requestTimeoutMs: 5000 })
+        : new OpenCodeAcpClient({ command: process.execPath,
+          args: [resolve('tests/fixtures/opencode-acp.cjs'), 'mcp-branch', join(f.root, 'acp.jsonl')], startupTimeoutMs: 5000 })
+      onTestCleanup(() => executor.close())
+      const result = await executor.execute({ workspace: testWorkspace(), taskId: f.task.id, cwd: f.task.cwd,
+        prompt: 'Implement the issue', model: protocol === 'codex' ? 'test-model' : 'provider/model', issueTools: connection,
+        resumeSessionId: resumed ? protocol === 'codex' ? 'thread-test' : 'session-test' : undefined
+      }, () => {})
+      expect(result.status, result.error).toBe('succeeded')
+      expect(f.store.getTask(f.task.id)?.branchName).toBe('feat/protocol-selected-name')
+      expect(branchGit(f.task.cwd, 'branch', '--show-current')).toBe('feat/protocol-selected-name')
+    })
+  }
+}
 
 test('tools preserve ownership, dependency scheduling and developer review', () => {
   const { store, issues, addTask, call } = fixture()

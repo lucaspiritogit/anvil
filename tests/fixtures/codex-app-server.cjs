@@ -42,6 +42,7 @@ async function exerciseIssueTools(config) {
     return JSON.parse(result.content[0].text)
   }
   const plan = await call('anvil_get_plan')
+  await require('./task-branch-mcp.cjs')(issueClient)
   if (plan.phase === 'planning') return
   const issue = plan.issues.find((issue) => issue.id === plan.currentIssueId)
   assert.ok(issue)

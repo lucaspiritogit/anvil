@@ -33,6 +33,7 @@ import type { SendToRenderer } from './tasks/context'
 import { registerTaskEvents } from './tasks/events'
 import { registerTaskExecution } from './tasks/task-execution'
 import { Store } from './store'
+import { TaskBranches } from './tasks/task-branch'
 import { IssueToolServer } from './issue-tools/server'
 import { createRendererIpc } from './renderer-security'
 import { resolveAppDataDirectory } from './app-data'
@@ -62,7 +63,7 @@ export function registerIpc(
   const issueTools = new IssueToolServer(store, (taskId) => {
     const task = store.getTask(taskId)
     if (task) broadcast('task:updated', task)
-  })
+  }, { set: (...args) => taskBranches.set(...args) })
   const agentProcesses = new AgentProcessManager(undefined, undefined, undefined,
     (taskId) => resolveTaskWorkspace(store, taskId), (taskId) => issueTools.open(taskId))
   const stopCaffeineMode = registerCaffeineMode(store, powerSaveBlocker)
@@ -81,6 +82,7 @@ export function registerIpc(
     worktreeOwners.set(taskId, workspaceId)
     return join(store.getWorkspaceDirectory(workspaceId), 'worktrees')
   })
+  const taskBranches = new TaskBranches({ store, gitDelivery, send: broadcast })
   const projectMemory = new WorkspaceProjectMemory(store, (workspaceId, settings) => createProjectMemory({
     dataDirectory: join(store.getWorkspaceDirectory(workspaceId), 'memory'),
     workspaceId,

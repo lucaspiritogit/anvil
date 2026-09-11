@@ -283,7 +283,7 @@ export class GitDeliveryManager {
   }
 
   /** Rename only an existing task checkout, accepting retries of an applied rename. */
-  async renameTaskBranch(projectPath: string, taskId: string, branchName: string, proposedName: string, check: () => void = () => {}): Promise<string> {
+  async renameTaskBranch(projectPath: string, taskId: string, branchName: string, proposedName: string, check: () => void = () => {}, save?: (name: string) => void): Promise<string> {
     return this.withRepoLock(projectPath, async () => {
       check()
       const worktree = this.taskWorktree(taskId)
@@ -307,13 +307,27 @@ export class GitDeliveryManager {
         throw new Error('Use a literal short branch name.')
       }
       check()
-      if (current === proposedName) return current
-
       // The explicit source prevents renaming an unrelated current branch, and
       // lowercase -m refuses to overwrite an existing destination ref.
-      await git(worktree, ['branch', '-m', '--', branchName, proposedName])
+      if (current !== proposedName) await git(worktree, ['branch', '-m', '--', branchName, proposedName])
       // Do not check cancellation after mutation: callers must receive the name
       // that Git accepted so they can persist it even if the task just stopped.
+      try {
+        save?.(proposedName)
+      } catch (error) {
+        if (branchName !== proposedName) {
+          try {
+            await git(worktree, ['branch', '-m', '--', proposedName, branchName])
+          } catch (rollbackError) {
+            // If Git cannot restore the original ref, reconcile the accepted
+            // name instead. Both paths run before releasing the repository lock.
+            try { save?.(proposedName) }
+            catch (saveError) { throw new AggregateError([error, rollbackError, saveError], 'Could not save or restore the task branch') }
+            return proposedName
+          }
+        }
+        throw error
+      }
       return proposedName
     })
   }

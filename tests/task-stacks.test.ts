@@ -10,6 +10,7 @@ import { TaskIssues } from '../src/main/tasks/task-issues'
 import { callIssueTool } from '../src/main/issue-tools/server'
 import type { TaskContext } from '../src/main/tasks/context'
 import { onTestCleanup } from './test-cleanup'
+import { TaskBranches, temporaryTaskBranch } from '../src/main/tasks/task-branch'
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }).trim()
 const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
@@ -57,6 +58,65 @@ async function fixture() {
   }
   return { root, repo, database, store, manager, stacks, active, add, commit, merge }
 }
+
+test('parent naming updates only owned same-project child references and preserves commit bases across restart', async () => {
+  const f = await fixture()
+  const original = await f.add('parent')
+  const temporary = temporaryTaskBranch(original.id)
+  await f.manager.renameTaskBranch(f.repo, original.id, original.branchName!, temporary)
+  const parent = f.store.updateTask(original.id, { branchName: temporary, status: 'running', deliveryStatus: 'working' })!
+  const child = await f.add('child', parent.id)
+  const target = { branch: temporary, commit: parent.baseCommit!, oldBase: child.baseCommit!, parentTaskId: parent.id }
+  f.store.updateTask(child.id, { status: 'running', restackState: 'pending', restackTarget: target })
+  const pending = await f.add('pending')
+  f.store.updateTask(pending.id, { restackState: 'pending', restackTarget: target })
+  const unrelated = await f.add('unrelated')
+  f.store.updateTask(unrelated.id, { baseBranch: temporary, restackTarget: { ...target, parentTaskId: unrelated.id } })
+  const foreign = await f.add('foreign', parent.id)
+  f.store.addProject({ ...f.store.getProjects()[0], id: 'foreign-project', path: join(f.root, 'foreign-project') })
+  f.store.updateTask(foreign.id, { projectId: 'foreign-project', restackTarget: target })
+  const otherWorkspace = f.store.createWorkspace('Other')
+  f.store.addProject(f.store.getProjects()[0], otherWorkspace.id)
+  f.store.addTask({ ...child, id: 'foreign-workspace', workspaceId: otherWorkspace.id, parentTaskId: undefined, baseBranch: temporary, restackTarget: target })
+  const send = vi.fn()
+  await new TaskBranches({ store: f.store, gitDelivery: f.manager, send }).set(parent.id, parent.workspaceId, 'feat/parent-name', () => {})
+  expect(f.store.getTask(child.id)).toMatchObject({ baseBranch: 'feat/parent-name', baseCommit: child.baseCommit,
+    restackTarget: { ...target, branch: 'feat/parent-name' }, status: 'running' })
+  expect(f.store.getTask(pending.id)).toMatchObject({ baseBranch: pending.baseBranch, restackTarget: { ...target, branch: 'feat/parent-name' } })
+  expect(f.store.getTask(unrelated.id)?.baseBranch).toBe(temporary)
+  expect(f.store.getTask(unrelated.id)?.restackTarget?.branch).toBe(temporary)
+  expect(f.store.getTask(foreign.id)?.baseBranch).toBe(temporary)
+  expect(f.store.getTask(foreign.id)?.restackTarget?.branch).toBe(temporary)
+  expect(f.store.getTask('foreign-workspace')?.restackTarget?.branch).toBe(temporary)
+  expect(send.mock.calls.map(([, task]) => task.id)).toEqual(['parent', 'child', 'pending'])
+  expect(git(child.cwd, 'rev-parse', 'HEAD')).toBe(child.baseCommit)
+  const reopened = new Store(f.database, options)
+  onTestCleanup(() => reopened.close())
+  expect(reopened.getTask(child.id)?.baseBranch).toBe('feat/parent-name')
+  expect(reopened.getTask(child.id)?.restackTarget).toEqual({ ...target, branch: 'feat/parent-name' })
+  expect(reopened.getTask(parent.id)?.branchName).toBe('feat/parent-name')
+})
+
+test('a child persistence failure rolls back every saved name and the parent Git rename', async () => {
+  const f = await fixture()
+  const parent = await f.add('parent')
+  const temporary = temporaryTaskBranch(parent.id)
+  await f.manager.renameTaskBranch(f.repo, parent.id, parent.branchName!, temporary)
+  f.store.updateTask(parent.id, { branchName: temporary, status: 'running', deliveryStatus: 'working' })
+  const child = await f.add('child', parent.id)
+  const update = f.store.updateTask.bind(f.store)
+  vi.spyOn(f.store, 'updateTask').mockImplementation((id, patch) => {
+    const result = update(id, patch)
+    if (id === child.id) throw new Error('Child write failed')
+    return result
+  })
+  const send = vi.fn()
+  await expect(new TaskBranches({ store: f.store, gitDelivery: f.manager, send }).set(parent.id, parent.workspaceId, 'feat/parent-name', () => {})).rejects.toThrow('Child write failed')
+  expect(f.store.getTask(parent.id)?.branchName).toBe(temporary)
+  expect(f.store.getTask(child.id)?.baseBranch).toBe(temporary)
+  expect(git(parent.cwd, 'branch', '--show-current')).toBe(temporary)
+  expect(send).not.toHaveBeenCalled()
+})
 
 test('creates from the parent head, enforces merge order, and restacks a clean child with a final child-only diff', async () => {
   const f = await fixture()

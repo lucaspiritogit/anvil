@@ -3,6 +3,25 @@ import type { TaskContext } from './context'
 import type { Store } from '../store'
 import { taskOperationActive, withTaskOperation } from './operations'
 
+/** Called inside the parent's naming transaction. Commit ranges do not change. */
+export function renameChildBranchReferences(store: TaskContext['store'], parent: Task, branchName: string): Task[] {
+  const updated: Task[] = []
+  for (const child of store.getTasks(parent.workspaceId)) {
+    if (child.projectId !== parent.projectId) continue
+    const patch: Partial<Task> = {}
+    if (child.parentTaskId === parent.id && child.baseBranch === parent.branchName) patch.baseBranch = branchName
+    if (child.restackTarget?.parentTaskId === parent.id && child.restackTarget.branch === parent.branchName) {
+      patch.restackTarget = { ...child.restackTarget, branch: branchName }
+    }
+    if (Object.keys(patch).length) {
+      const task = store.updateTask(child.id, patch)
+      if (!task) throw new Error('Child task was deleted')
+      updated.push(task)
+    }
+  }
+  return updated
+}
+
 export function requireStackParent(store: Store, task: Pick<Task, 'id' | 'projectId' | 'workspaceId'>, parentId: string): Task {
   const parent = store.getTask(parentId)
   if (!parent || parent.projectId !== task.projectId || parent.workspaceId !== task.workspaceId) throw new Error('Choose a parent task in the same project')
@@ -48,8 +67,8 @@ export class TaskStacks {
       const parent = requireStackParent(store, task, parentId)
       const target = await gitDelivery.stackBase(this.project(task), parent.branchName)
       check()
-      requireStackParent(store, task, parentId)
-      return this.update(taskId, { restackTarget: { ...target, parentTaskId: parentId }, restackState: 'pending', stackSuggestion: undefined })
+      const currentParent = requireStackParent(store, task, parentId)
+      return this.update(taskId, { restackTarget: { ...target, branch: currentParent.branchName!, parentTaskId: parentId }, restackState: 'pending', stackSuggestion: undefined })
     }).then(async () => {
       await this.apply(taskId)
       const task = store.getTask(taskId)

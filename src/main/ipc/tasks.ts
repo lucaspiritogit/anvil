@@ -232,7 +232,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
         const preparedTask = store.updateTask(task.id, {
           cwd: prepared.cwd,
           ...(store.getTask(task.id)?.status === 'running' ? { deliveryStatus: 'working' as const } : {}),
-          baseBranch: prepared.baseBranch,
+          baseBranch: parent ? requireStackParent(store, task, parent.id).branchName : prepared.baseBranch,
           branchName: prepared.branchName,
           baseCommit: prepared.baseCommit
         })!
