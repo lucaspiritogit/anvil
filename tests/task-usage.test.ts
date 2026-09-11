@@ -1,5 +1,5 @@
 import { testWorkspace } from './workspace-fixture'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { testHome } from './issue-tracker-doubles'
@@ -23,6 +23,8 @@ const implementation = [
   [444172, 413440, 2618], [485491, 453888, 2686], [527554, 494976, 2874]
 ]
 test('replays cumulative usage without double counting and preserves totals on restart', () => {
+  // Usage events checkpoint working time, which is tested separately in task-timing.
+  vi.spyOn(Date, 'now').mockReturnValue(1_000)
   const directory = mkdtempSync(join(testHome, 'anvil-task-usage-'))
   const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
   const database = join(directory, 'test.db')

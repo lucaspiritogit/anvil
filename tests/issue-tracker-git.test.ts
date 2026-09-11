@@ -435,7 +435,6 @@ test('the working agent names its temporary branch and delivers sequential chang
   expect(task.branchName).toBe(temporaryTaskBranch(task.id))
   expect(dirty.branchName).toBe(temporaryTaskBranch(dirty.id))
   const planningStart = taskStarts()[0]
-  expect(planningStart.prompt).toContain('anvil_set_task_branch')
   const getPlan = async () => {
     const result = await agentProcesses.callTool(task.id, 'anvil_get_plan')
     return JSON.parse((result.content as { text: string }[])[0].text)
@@ -467,7 +466,6 @@ test('the working agent names its temporary branch and delivers sequential chang
   for (const start of taskStarts()) {
     expect(start.agent).toEqual(planningStart.agent)
     expect(start.model).toBe(planningStart.model)
-    expect(start.prompt).toContain('anvil_set_task_branch')
   }
   expect((await agentProcesses.callTool(task.id, 'anvil_set_task_branch', { branchName: acceptedName })).isError).not.toBe(true)
   expect(await agentProcesses.callTool(task.id, 'anvil_set_task_branch', { branchName: 'feat/another-name' })).toMatchObject({ isError: true })

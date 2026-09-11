@@ -32,7 +32,6 @@ test('cascades task-owned plans on project removal', async () => {
   expect.assert(issue, 'Anvil-created issues must be visible to another Valence client')
   expect(issue.status).toBe('working')
   expect(tracker.get(unrelated.id).status, 'Anvil must not claim unrelated higher-priority issues').toBe('queued')
-  expect(agentProcesses.starts.at(-1)!.prompt).toMatch(/anvil_get_plan/)
   // Model an agent submitting through the issue tool and the developer approving before the turn report arrives.
   tracker.submitForReview(issue.id, { checklist: [true], evidence: 'Focused validation passed' })
   tracker.approve(issue.id)

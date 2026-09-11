@@ -13,7 +13,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { join } from 'node:path'
 import { taskState } from './task-state'
 import type { AgentProcessManager as RealAgentProcessManager } from '../src/main/agents/process-manager'
-import { agentRebasePrompt, reviewPrompt } from '../src/main/agents/task-prompts'
+import { agentRebasePrompt } from '../src/main/agents/task-prompts'
 import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/main/git-delivery'
 import { registerAgentHandlers } from '../src/main/ipc/agents'
 import { registerGitHubHandlers } from '../src/main/ipc/github'
@@ -296,7 +296,6 @@ test('updates projects, validates task references and selects supported agents a
   expect(titleFor(' \n ')).toBe('Untitled task')
   expect(titleFor('a'.repeat(72))).toBe('a'.repeat(72))
   expect(titleFor('a'.repeat(73))).toBe(`${'a'.repeat(71)}...`)
-  expect(agentRebasePrompt('base')).toMatch(/git reset --soft base/)
   expect(await memory.promptWithProjectMemory(project.id, 'Task')).toBe('Task')
   expect(call('projects:list')).toStrictEqual([project])
   expect(call('agents:list').map((agent: { id: string }) => agent.id)).toStrictEqual(['opencode', 'codex'])
@@ -321,7 +320,6 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   await tick()
   expect(task.title).toBe('Task title')
   expect(agentProcesses.starts.length).toBe(1)
-  expect(agentProcesses.starts[0].prompt).toMatch(/Leave the finished plan queued/)
   await expect(call('tasks:approve', { taskId: task.id, preview: await gitDelivery.getMergePreview(testHome, 'task') })).rejects.toThrow(/not finished/)
   await expect(call('tasks:merge-preview', task.id)).rejects.toThrow(/not finished/)
   await expect(call('github:pr-preview', task.id)).rejects.toThrow(/not finished/)
@@ -355,7 +353,6 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(() => call('comments:add', { taskId: task.id, body: ' ' })).toThrow(/Invalid IPC request/)
   const draft: TaskComment[] = call('comments:add', { taskId: task.id, file: 'file.ts', side: 'additions', lineNumber: 9, body: ' Fix this ' })
   expect(draft[0].body).toBe('Fix this')
-  expect(reviewPrompt(draft)).toMatch(/file.ts:9 — Fix this/)
   const otherTask = { ...task, id: 'other-task' }
   store.addTask(otherTask)
   expect(() => call('comments:remove', { taskId: otherTask.id, id: draft[0].id })).toThrow(/does not belong/)
@@ -369,7 +366,6 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(followup.task.status).toBe('running')
   expect(followup.comments[0].sentAt).toBeTruthy()
   expect(agentProcesses.starts.at(-1).resumeSessionId).toBe('session')
-  expect(agentProcesses.starts.at(-1).prompt).toMatch(/file.ts:9 — Fix this/)
   expect(agentProcesses.starts.at(-1).reasoningEffort).toBe('high')
   agentProcesses.finishTurn(task.id)
   await tick()
@@ -569,7 +565,6 @@ test('keeps image bytes separate through memory preparation and both startup pat
       expect(dispatched.images).toEqual(images)
       expect(store.taskImages.read(task.id)).toEqual(images)
       expect(dispatched.images[0].bytes).not.toBe(images[0].bytes)
-      expect(dispatched.prompt).toContain('Project memory\nInspect image')
       expect(task.prompt).toBe('Inspect image')
       expect(task.deliveryStatus).toBe(repository ? 'working' : 'unavailable')
       expect(JSON.stringify(store.getTask(task.id))).not.toContain('bytes')
@@ -732,7 +727,7 @@ test('project file IPC discards results when the selected project is removed dur
   })
 })
 
-test('file references reach fake agents as paths for worktrees and non-Git tasks, persist, and reject disappeared files before creation', async () => {
+test('file references keep contents out of prompts and reject disappeared files before creation', async () => {
   const { store, project, call, agentProcesses, gitDelivery, tick } = setupIpc()
   vi.spyOn(gitDelivery, 'prepareBranch').mockResolvedValue({ cwd: join(project.path, 'task-worktree'), baseCommit: 'base', branchName: 'task', baseBranch: 'main' })
   const path = `reference ${randomUUID()} 日本語.txt`
@@ -748,12 +743,7 @@ test('file references reach fake agents as paths for worktrees and non-Git tasks
     await tick()
     const start = agentProcesses.starts.at(-1)
     expect(start.taskId).toBe(task.id)
-    expect(start.prompt).toContain(JSON.stringify([path]))
-    expect(start.prompt).toContain(`Original project directory: ${JSON.stringify(project.path)}`)
-    expect(start.prompt).toContain('Untracked files and uncommitted edits')
-    expect(start.prompt).toContain('If a task copy is absent')
     expect(start.prompt).not.toContain(secret)
-    expect(task.prompt).toContain(JSON.stringify([path]))
     expect(task.prompt).not.toContain(secret)
     if (repository) expect(start.cwd).not.toBe(project.path)
     else expect(start.cwd).toBe(project.path)

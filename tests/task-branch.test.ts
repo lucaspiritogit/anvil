@@ -8,6 +8,8 @@ import { taskBranchFixture, branchGit as git } from './task-branch-fixture'
 import { onTestCleanup } from './test-cleanup'
 
 test('names once, serializes retries, keeps task identity and persists across reopening', async () => {
+  // Keep elapsed work stable while comparing the task before and after renaming.
+  vi.spyOn(Date, 'now').mockReturnValue(1_000)
   const f = await taskBranchFixture()
   expect(taskBranchNaming(f.task)).toEqual({ branchName: temporaryTaskBranch(f.task.id), canNameBranch: true })
   writeFileSync(join(f.task.cwd, 'dirty.txt'), 'Keep this work')

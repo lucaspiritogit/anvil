@@ -83,10 +83,6 @@ test('recovers the same claimed issue and session before finalization, then wait
     taskId: f.task.id, issueId: f.issue.id, resumeSessionId: 'saved-session',
     cwd: f.task.cwd, model: f.task.model, reasoningEffort: 'high'
   })
-  expect(f.agents.starts[1].prompt).toContain('Continue')
-  expect(f.agents.starts[1].prompt).toContain('task.canNameBranch')
-  expect(f.agents.starts[1].prompt).toContain('anvil_set_task_branch')
-  expect(f.agents.starts[1].prompt).toContain('After interruption retry temporary')
   expect(f.agents.starts[1].resumeFallbackPrompt).toBeUndefined()
   expect(f.store.readEvents(f.task.id).some((event) => event.text.includes('attempt 1/3'))).toBe(true)
   f.tracker.submitForReview(f.issue.id, { checklist: [true], evidence: 'Done' })

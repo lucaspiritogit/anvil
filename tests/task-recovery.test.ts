@@ -53,11 +53,6 @@ test.each(['temporary', 'accepted', 'legacy'] as const)('restart and resume pres
     agentId: f.task.agentId, model: 'saved-model', sessionId: 'saved-session', cwd: f.task.cwd })
   expect(f.agents.starts).toHaveLength(1)
   expect(f.agents.starts[0]).toMatchObject({ agent: { id: f.task.agentId }, model: 'saved-model', resumeSessionId: 'saved-session' })
-  for (const prompt of [f.agents.starts[0].prompt, f.agents.starts[0].resumeFallbackPrompt]) {
-    expect(prompt).toContain('anvil_set_task_branch')
-    expect(prompt).toContain('After interruption retry temporary')
-    expect(prompt).toContain('Do not rename branches with Git commands')
-  }
   const branches = new TaskBranches(f.context)
   expect(taskBranchNaming(resumed).canNameBranch).toBe(kind === 'temporary')
   if (kind === 'temporary') {

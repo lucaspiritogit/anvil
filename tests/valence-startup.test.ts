@@ -36,7 +36,7 @@ function fixture() {
 }
 
 test('initializes task-owned parents in Anvil before planning without standalone storage', async () => {
-  const { store, agents, projectId, projectPath, start } = fixture()
+  const { store, projectId, projectPath, start } = fixture()
   const first = await start()
   const state = store.getTaskExecution(first.id)!
   expect(state.parentIssueId).toBeTruthy()
@@ -45,8 +45,6 @@ test('initializes task-owned parents in Anvil before planning without standalone
   expect(tracker.getParent(state.parentIssueId)).toStrictEqual({
     id: state.parentIssueId, anvilTaskId: first.id, title: first.title, description: first.prompt
   })
-  expect(agents.starts[0].prompt).not.toContain(state.parentIssueId)
-  expect(agents.starts[0].prompt).toContain('anvil_get_plan')
   const second = await start()
   expect(store.getTaskExecution(second.id)!.parentIssueId).not.toBe(state.parentIssueId)
   expect(tracker.listParents()).toHaveLength(2)

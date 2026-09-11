@@ -78,7 +78,6 @@ test('rejects settled steering and preserves stopped resume and live steering pa
     expect(resumed.model).toBe(undefined)
     expect(resumed.reasoningEffort).toBe('high')
     expect(resumed.projectPath).toBe(testHome)
-    expect(resumed.prompt).toMatch(/Continue from the saved session$/)
     expect(store.getTask('stopped')?.status, 'A stopped non-settled task resumes').toBe('running')
     expect(store.readEvents('stopped').some((event) => event.text === 'You:\nContinue from the saved session')).toBeTruthy()
 

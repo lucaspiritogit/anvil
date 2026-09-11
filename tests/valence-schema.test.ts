@@ -27,7 +27,22 @@ function fixture(existing = false): { db: Database.Database; path: string } {
   db.pragma('foreign_keys = ON')
   onTestCleanup(() => { if (db.open) db.close() })
   if (!existing) seedTasks(db)
-  if (originalTasks) expect(db.prepare('SELECT * FROM tasks ORDER BY id').all()).toEqual(originalTasks.map((row) => ({ ...row, workspace_id: 'default', context_used: null, context_size: null, context_compaction_error: null, parent_task_id: null, expected_files: null, restack_state: null, restack_target: null, stack_suggestion: null })))
+  if (originalTasks) {
+    expect(db.prepare('SELECT * FROM tasks ORDER BY id').all()).toEqual(originalTasks.map((row) => ({
+      ...row,
+      workspace_id: 'default',
+      context_used: null,
+      context_size: null,
+      context_compaction_error: null,
+      parent_task_id: null,
+      expected_files: null,
+      restack_state: null,
+      restack_target: null,
+      stack_suggestion: null,
+      working_time_ms: 0,
+      working_started_at: null
+    })))
+  }
   return { db, path }
 }
 

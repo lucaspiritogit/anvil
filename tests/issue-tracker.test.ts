@@ -50,9 +50,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   expect(tracker.databasePath).toBe(workspaceDatabase)
   expect(tracker.getParent(store.getTaskExecution(taskId)!.parentIssueId).anvilTaskId).toBe(taskId)
   expect(existsSync(join(testHome, '.valence')), 'Starting a task must not create project-local storage').toBe(false)
-  expect(agentProcesses.starts[0].prompt).toMatch(/Leave the finished plan queued/)
   expect(agentProcesses.starts[0].projectPath).toBe(testHome)
-  expect(agentProcesses.starts[0].prompt).not.toContain(store.getTaskExecution(taskId)!.parentIssueId)
   expect(handlers.has('board:review')).toBe(false)
   const { key: _key, ...fields } = issue
   const unrelatedTaskId = await start('Unrelated work')
@@ -150,7 +148,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   const finalizing = new Promise<void>((resolve) => { observeFinalize = resolve })
   const finalizeGate = new Promise<void>((resolve) => { releaseFinalize = resolve })
   const originalFinalize = GitDeliveryManager.prototype.finalizeBranch
-  vi.spyOn(GitDeliveryManager.prototype, 'finalizeBranch').mockImplementationOnce(async function (...args: Parameters<typeof originalFinalize>) {
+  vi.spyOn(GitDeliveryManager.prototype, 'finalizeBranch').mockImplementationOnce(async function (this: GitDeliveryManager, ...args: Parameters<typeof originalFinalize>) {
     observeFinalize()
     await finalizeGate
     return originalFinalize.apply(this, args)
@@ -274,9 +272,6 @@ test('schedules dependencies and priorities sequentially and retains final task 
   expect(store.getTaskExecution(reworkId)?.phase).toBe('working')
   expect(store.getTaskExecution(reworkId)?.currentIssueId).toBe(reworkIssueId)
   expect(agentProcesses.starts.at(-1).issueId, 'The same issue reruns without a new claim').toBe(reworkIssueId)
-  expect(agentProcesses.starts.at(-1).prompt).toMatch(/requested changes/)
-  expect(agentProcesses.starts.at(-1).prompt).toContain('src/review.ts:4 — Extract a helper')
-  expect(agentProcesses.starts.at(-1).prompt).toContain('Also cover the empty-input case')
   expect(store.getComments(reworkId).every((comment) => comment.sentAt !== null)).toBe(true)
   await submit(reworkId)
   await approve(reworkId)

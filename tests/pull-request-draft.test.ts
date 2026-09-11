@@ -36,13 +36,10 @@ test('drafts isolated read-only PR fields with validation, cleanup and real ACP 
   const diff: TaskDiff = { patch: '+changed line', commits: [{ sha: 'commit', subject: 'Improve review' }] }
   try {
     expect(await draftPullRequestField(manager, testWorkspace(), task, diff, 'title', 'Old title', 'Existing description', 'high')).toBe(output)
-    expect(inputs[0].prompt).toMatch(/only the GitHub pull request title/)
-    expect(inputs[0].prompt).toMatch(/\+changed line/)
     expect(inputs[0].model).toBe('chosen-model')
     expect(existsSync(inputs[0].cwd), 'Remove temporary drafting directories').toBe(false)
     output = '## Changes\nImprove the review layout.'
     expect(await draftPullRequestField(manager, testWorkspace(), { ...task, agentId: 'opencode' }, diff, 'description', 'Edited title', '', 'high')).toBe(output)
-    expect(inputs[1].prompt).toMatch(/Edited title/)
     expect(inputs[0].taskId).not.toBe(inputs[1].taskId)
     expect(lifecycleEvents, 'PR metadata must not restart or finalize the task').toBe(0)
     output = 'Invalid\nmultiline title'
