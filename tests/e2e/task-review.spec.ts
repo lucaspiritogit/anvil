@@ -438,7 +438,7 @@ async function deferredReview(page: import('@playwright/test').Page) {
         snapshot.children[1].headCommit = head
         snapshot.execution!.phase = 'reviewing'
         snapshot.reviewReady = true
-        task = { ...task, status: 'running', deliveryStatus: 'working', headCommit: head, filesChanged: 1, additions: 1 }
+        task = { ...task, status: 'running', deliveryStatus: 'working', headCommit: head, filesChanged: 1, additions: 1, deletions: 0 }
         publish()
       },
       rework() {
@@ -471,12 +471,15 @@ for (const width of [900, 1440]) {
     await deferredReview(page)
     const owner = page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
     const approve = page.getByRole('button', { name: 'Approve', exact: true })
+    const changesTab = page.getByRole('tab', { name: /^Changes/ })
     await expect(owner.getByRole('img', { name: 'Saving changes…', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
     const children = page.getByRole('list', { name: 'Subtasks of Review sidebar changes' })
     await expect(children).toContainText('Verify configurationDone')
     await expect(children).toContainText('Save sidebar changesSaving changes…')
-    await page.getByRole('tab', { name: /^Changes/ }).click()
+    await expect(changesTab).toContainText('Saving…')
+    await expect(changesTab).not.toContainText('+3')
+    await changesTab.click()
     await expect(approve).toBeDisabled()
     await expect(page.getByRole('region', { name: 'Subtask code changes' })).toContainText('Saving changes…')
     expect(await page.evaluate(() => window.finalizedReview.issueReads)).toBe(0)
@@ -485,7 +488,10 @@ for (const width of [900, 1440]) {
     await page.getByRole('button', { name: 'Open task: Build streaming support', exact: true }).click()
     await page.evaluate(() => window.finalizedReview.ready('saved-head'))
     await owner.click()
-    await page.getByRole('tab', { name: /^Changes/ }).click()
+    await expect(changesTab).toContainText('Changes 1')
+    await expect(changesTab).toContainText('+1')
+    await expect(changesTab).toContainText('−0')
+    await changesTab.click()
     await expect.poll(() => page.evaluate(() => window.finalizedReview.issueReads)).toBe(1)
     await expect(approve).toBeDisabled()
     await expect(page.getByRole('combobox', { name: 'Changed file' })).toHaveCount(0)
@@ -496,8 +502,13 @@ for (const width of [900, 1440]) {
     await expect(approve).toBeInViewport({ ratio: 1 })
     await page.screenshot({ path: testInfo.outputPath(`populated-${width}.png`) })
     await page.evaluate(() => window.finalizedReview.rework())
+    await expect(changesTab).toContainText('Saving…')
+    await expect(changesTab).not.toContainText('+1')
     await expect(approve).toBeDisabled()
     await page.evaluate(() => window.finalizedReview.ready('obsolete-head'))
+    await expect(changesTab).toContainText('Changes 1')
+    await expect(changesTab).toContainText('+1')
+    await expect(changesTab).toContainText('−0')
     await expect.poll(() => page.evaluate(() => window.finalizedReview.issueReads)).toBe(2)
     await page.evaluate(() => window.finalizedReview.complete(false))
     await expect(page.getByLabel('Task status', { exact: true })).toContainText('Done')
@@ -505,6 +516,8 @@ for (const width of [900, 1440]) {
     await expect(approve).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toHaveCount(0)
     await expect(page.getByText('No code changes to review.')).toBeVisible()
+    await expect(changesTab).toContainText('Changes 0')
+    await expect(changesTab).not.toContainText('+1')
     await page.evaluate(() => window.finalizedReview.resolveIssue(1, 'obsolete.ts'))
     await expect(page.getByRole('combobox', { name: 'Changed file' })).toHaveCount(0)
     expect(await page.evaluate(() => window.finalizedReview.taskReads)).toBe(0)

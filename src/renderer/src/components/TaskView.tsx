@@ -733,13 +733,13 @@ export function TaskView({ task }: Props): JSX.Element {
               {selected && <span aria-hidden="true" className="absolute inset-x-0 -bottom-px h-0.5 bg-accent" />}
               {panel === 'output' && 'Output'}
               {panel === 'issues' && 'Issues'}
-              {panel === 'changes' && (issue ? 'Changes' : <>
+              {panel === 'changes' && <>
                 Changes{' '}
                 <span className="font-mono font-normal tabular-nums text-dim">{saving ? 'Saving…' : reviewable && !diff ? 'Loading…' : task.filesChanged}</span>
                 {!saving && (!reviewable || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono font-normal tabular-nums">
                   <span className="text-ok">+{task.additions}</span> <span className="text-danger">−{task.deletions}</span>
                 </span></>}
-              </>)}
+              </>}
             </button>
           )
         })}
