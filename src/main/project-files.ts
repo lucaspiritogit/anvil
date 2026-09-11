@@ -73,10 +73,13 @@ export async function listProjectFiles(
   const warnUnreadable = (): void => {
     if (!result.warnings.includes('unreadable')) result.warnings.push('unreadable')
   }
-  const expired = (): boolean => {
-    if (Date.now() < deadline) return false
+  const recordTimeout = (): void => {
     result.truncated = true
     result.error = { code: 'timeout', message: 'File lookup timed out. Results may be incomplete.' }
+  }
+  const expired = (): boolean => {
+    if (Date.now() < deadline) return false
+    recordTimeout()
     return true
   }
   const full = (): boolean => {
@@ -146,7 +149,7 @@ export async function listProjectFiles(
       })
       // Attach immediately so a spawn failure cannot become an unhandled rejection.
       void closed.catch(() => {})
-      const timer = setTimeout(() => { expired(); child.kill('SIGKILL') }, Math.max(1, deadline - Date.now()))
+      const timer = setTimeout(() => { recordTimeout(); child.kill('SIGKILL') }, Math.max(1, deadline - Date.now()))
       let pending = Buffer.alloc(0)
       let bytes = 0
       let stopped = false
