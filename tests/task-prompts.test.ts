@@ -27,7 +27,7 @@ beforeEach(() => {
 })
 
 test('keeps planning concise and queues issues under the task parent', () => {
-  expect(planning.length < 2400, `Planning prompt should stay concise: ${planning.length} characters`).toBeTruthy()
+  expect(planning.length < 3600, `Planning prompt should stay concise: ${planning.length} characters`).toBeTruthy()
   expect(planning).toMatch(/Create issues for this task/)
   expect(planning).not.toContain(issue.parentId)
   expect(planning).not.toMatch(/anvil-task:/)
@@ -36,11 +36,15 @@ test('keeps planning concise and queues issues under the task parent', () => {
 })
 
 test('plans targeted checks without requiring a full-validation checkpoint', () => {
-  for (const prompt of [planning]) {
-    expect(prompt).toContain('Give each issue targeted validation commands')
+  for (const prompt of [planning, taskRecoveryPrompt(savedTask, { ...execution, phase: 'planning', currentIssueId: null })]) {
+    expect(prompt).toContain('one narrow validation check or a short justified list')
+    expect(prompt).toContain('Prefer unit/integration checks; use e2e only for affected UI behavior or explicit requirements')
+    expect(prompt).toContain('Do not default to full-repository typecheck, test, and e2e stacks')
+    expect(prompt).toContain('Avoid repeating suites across dependent issues unless later changes invalidate earlier results or required checks demand it')
+    expect(prompt).toContain('Preserve required repository and user checks')
     expect(prompt).not.toMatch(/full-suite|integration checkpoint|dedicated validation issue/)
-    expect(prompt).toContain('Do not claim or implement issues')
   }
+  expect(planning).toContain('Do not claim or implement issues')
 })
 
 test('preserves review context without applying validation to history-only rebases', () => {
@@ -55,11 +59,11 @@ test('preserves review context without applying validation to history-only rebas
   const rebase = agentRebasePrompt('base-commit')
   expect(rebase).toContain('git reset --soft base-commit')
   expect(rebase).toContain('Change no files: this is only a history operation')
-  expect(rebase).not.toMatch(/targeted tests|full-suite validation/)
+  expect(rebase).not.toMatch(/targeted tests|full-suite validation|node_modules|native file/)
 })
 
 test('requires submitted review through anvil_submit_review and failure evidence', () => {
-  expect(implementation.length < 2400, `Implementation prompt should stay concise: ${implementation.length} characters`).toBeTruthy()
+  expect(implementation.length < 3600, `Implementation prompt should stay concise: ${implementation.length} characters`).toBeTruthy()
   expect(implementation).toMatch(/already claimed/)
   expect(implementation).toMatch(/call anvil_submit_review/)
   expect(implementation).toMatch(/anvil_submit_review/)
@@ -84,6 +88,7 @@ test.each([
   ['planning', () => planning],
   ['implementation', () => implementation],
   ['automatic recovery', () => taskRecoveryPrompt(savedTask, execution)],
+  ['planning recovery', () => taskRecoveryPrompt(savedTask, { ...execution, phase: 'planning', currentIssueId: null })],
   ['issue rework', () => issueReworkPrompt(savedTask.cwd, issue.id, [])],
   ['task review', () => reviewPrompt([])]
 ] as const)('%s includes observable commands and scoped validation instructions once', (_name, buildPrompt) => {
@@ -94,6 +99,18 @@ test.each([
   expect(prompt).toContain('pipefail')
   expect(prompt).toContain('Reading existing files or saved logs with tail is fine')
   expect(prompt).toContain('Use targeted tests and checks for the current issue or review changes')
+  expect(prompt).toContain('rerun or expand only for new changes, failures, affected shared behavior, or required checks')
+  expect(prompt).toContain('Cite prior results only when the relevant code and dependencies are unchanged')
+  expect(prompt).toContain('Reuse working, worktree-local node_modules when they match the current manifest and lockfile')
+  expect(prompt).toContain('Install only if dependencies are needed and missing, stale after manifest/lockfile changes, or demonstrably broken')
+  expect(prompt).toContain('Use the repository package manager, npm ci for a locked npm install')
+  expect(prompt).toContain('Do not share node_modules through symlinks')
+  expect(prompt).not.toContain('Install dependencies locally, without shared node_modules symlinks')
+  expect(prompt).toContain('Prefer available native file read, search, and edit tools')
+  expect(prompt).toContain('When shell fallback is needed, batch related reads/searches')
+  expect(prompt).toContain('quoted rg -g patterns with explicit paths')
+  expect(prompt).toContain('avoid Bash brace expansion and wildcard paths')
+  expect(prompt).toContain('Use orca only if confirmed available; do not retry unavailable tools')
   expect(prompt).not.toMatch(/full-suite|integration checkpoint/)
   expect(prompt).toContain('Honor required repository checks and issue validation; do not skip or weaken them')
 })

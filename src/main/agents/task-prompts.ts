@@ -7,7 +7,9 @@ const ANVIL_TASK_INSTRUCTIONS = [
   'Keep long-running commands observable. Do not pipe tests, builds, installs, or validation commands through tail, output-capturing substitutions, or filters that hide progress.',
   'Run commands directly or stream and save output with tee. Use a concise reporter that still shows progress. Preserve command failures in pipelines, using pipefail in shells that support it.',
   'Reading existing files or saved logs with tail is fine. Summarize saved output after the command finishes.',
-  'Use targeted tests and checks for the current issue or review changes. Expand validation when dependencies or shared behavior change.',
+  'Prefer available native file read, search, and edit tools. When shell fallback is needed, batch related reads/searches. In PowerShell, use quoted rg -g patterns with explicit paths; avoid Bash brace expansion and wildcard paths. Use orca only if confirmed available; do not retry unavailable tools.',
+  'Reuse working, worktree-local node_modules when they match the current manifest and lockfile. Install only if dependencies are needed and missing, stale after manifest/lockfile changes, or demonstrably broken. Use the repository package manager, npm ci for a locked npm install. Do not share node_modules through symlinks.',
+  'Use targeted tests and checks for the current issue or review changes. After they pass, rerun or expand only for new changes, failures, affected shared behavior, or required checks. Cite prior results only when the relevant code and dependencies are unchanged.',
   'Honor required repository checks and issue validation; do not skip or weaken them. Record the commands run and their actual results; do not claim unperformed checks passed.'
 ].join('\n')
 
@@ -16,6 +18,8 @@ function issueTrackerInstructionsPrompt(): string {
 }
 
 const PLANNING_TOOLS = 'Use anvil_create_issue and anvil_update_issue to build the queued plan. Use anvil_requeue_issue for repaired blocked planning issues and anvil_block_issue only for unfinished planning.'
+
+const PLANNING_VALIDATION = 'Give each issue one narrow validation check or a short justified list for its changed paths. Prefer unit/integration checks; use e2e only for affected UI behavior or explicit requirements. Do not default to full-repository typecheck, test, and e2e stacks. Avoid repeating suites across dependent issues unless later changes invalidate earlier results or required checks demand it. Preserve required repository and user checks; place shared checks at the relevant dependency boundary.'
 
 const REVIEW_TOOLS = 'After satisfying the checklist, validating, and committing any changes, call anvil_submit_review and require a successful result. Prose is never a review submission. End the turn: Anvil verifies finalized changes and a clean worktree. Empty changes complete automatically; otherwise Anvil pauses for developer review; only the developer approves. No empty commit is needed. If unfinished, use anvil_block_issue and explain why in plain text.'
 
@@ -36,7 +40,7 @@ export function planningPrompt(task: string, state: Pick<TaskExecutionState, 'pr
     PLANNING_TOOLS,
     'Create issues for this task with findings, paths, checklists, validation, and priorities.',
     'Create prerequisites first; dependencies use their actual issue IDs.',
-    'Give each issue targeted validation commands.',
+    PLANNING_VALIDATION,
     'Leave the finished plan queued. Do not claim or implement issues. If planning fails, block any partial issues before exiting.',
     'Summarize the plan in plain text.',
     `Task: ${task}`
@@ -52,7 +56,6 @@ export function implementationPrompt(task: string, issue: Issue, projectPath: st
     'Anvil already claimed your issue.',
     REVIEW_TOOLS,
     'Do not claim or create other issues, or change issue ownership or dependencies.',
-    'Install dependencies locally, without shared node_modules symlinks.',
     'Summarize the outcome in plain text.',
     `Task: ${task}`,
     `Issue: ${JSON.stringify({ id, title, description, checklist, validation })}`
@@ -75,7 +78,7 @@ export function taskRecoveryPrompt(task: Task, state: TaskExecutionState): strin
     'Preserve completed work. Follow the latest user instructions in the saved conversation, including any that override the original request or validation plan below.',
     `Original task: ${task.prompt}`,
     state.phase === 'planning'
-      ? `${PLANNING_TOOLS} Inspect the existing plan before adding missing issues. Do not duplicate issues. Leave the finished plan queued without implementing it.`
+      ? `${PLANNING_TOOLS}\n${PLANNING_VALIDATION}\nInspect the existing plan before adding missing issues. Do not duplicate issues. Leave the finished plan queued without implementing it.`
       : interruptedIssuePrompt(state.currentIssueId)
   ].join('\n\n')
 }
