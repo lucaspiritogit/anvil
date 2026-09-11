@@ -100,9 +100,14 @@ for (const viewport of [{ width: 900, height: 500 }, { width: 1100, height: 700 
   })
 }
 
-test('pending task shows its status and accepts a recovery prompt', async ({ page }, testInfo) => {
+test('pending task shows its queued indicator and accepts a recovery prompt', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&steering=1&pending=1')
-  await expect(page.getByText('Pending', { exact: true }).first()).toBeVisible()
+  const sidebarTask = page.getByRole('complementary', { name: 'Task sidebar' })
+    .getByRole('button', { name: 'Open task: Layout test task', exact: true })
+  const queuedIndicator = sidebarTask.getByRole('img', { name: 'Queued', exact: true })
+  await expect(sidebarTask.getByText('Queued', { exact: true })).toBeVisible()
+  await expect(queuedIndicator).toHaveClass(/text-accent/)
+  await expect(queuedIndicator.locator('svg')).toHaveClass(/animate-spin/)
   const input = page.getByRole('textbox', { name: 'Message to agent' })
   await expect(input).toBeEnabled()
   await expect(input).toHaveAttribute('placeholder', 'Help this task continue...')
