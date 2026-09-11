@@ -3,6 +3,7 @@ import type { Issue, Task, TaskComment, TaskExecutionState } from '../../shared/
 // Shared task instructions apply to both agent protocols and non-Git tasks.
 // Keep history-only rebases separate: they must not run validation or change files.
 const ANVIL_TASK_INSTRUCTIONS = [
+  'Keep plans, findings, progress notes, and validation results in Anvil issues and responses. Do not create documentation files or documentation-only issues unless the user requests them. Update existing documentation only when needed to keep it accurate for the requested change.',
   'Keep long-running commands observable. Do not pipe tests, builds, installs, or validation commands through tail, output-capturing substitutions, or filters that hide progress.',
   'Run commands directly or stream and save output with tee. Use a concise reporter that still shows progress. Preserve command failures in pipelines, using pipefail in shells that support it.',
   'Reading existing files or saved logs with tail is fine. Summarize saved output after the command finishes.',
