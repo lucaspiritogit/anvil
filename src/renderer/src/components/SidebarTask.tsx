@@ -2,11 +2,11 @@ import type { ComponentPropsWithRef, JSX } from 'react'
 import { useState } from 'react'
 import { Icon } from '../icons'
 import type { Project, Task, TaskIssueSnapshot } from '@shared/types'
-import { issuePresentation, taskIssuePresentation } from '@shared/task-issue-presentation'
+import { taskIssuePresentation } from '@shared/task-issue-presentation'
 import { canSettleTask, settlementDeadline } from '@shared/task-settlement'
 import { useStore } from '../state/store'
 import { IS_MAC } from '../keys'
-import { cn, ISSUE_STATUS } from '../ui'
+import { cn } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
 
 const TASK_INDICATORS = {
@@ -213,7 +213,6 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
             title={issue.title}
           >
             <span className="min-w-0 flex-1 truncate">{issue.title}</span>
-            <span className={cn('shrink-0 text-[10px]', ISSUE_STATUS[issuePresentation(issue, snapshot, task).status].tone)}>{issuePresentation(issue, snapshot, task).label}</span>
           </div>
         </li>)}
       </ol>}

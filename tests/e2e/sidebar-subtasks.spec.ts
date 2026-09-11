@@ -11,7 +11,6 @@ function snapshot(owner: string): TaskIssueSnapshot {
   }
 }
 
-const STATUS_LABEL = { queued: 'Queued', working: 'Working', blocked: 'Blocked', review: 'Review', complete: 'Done' } as const
 async function publish(page: Page, taskId: string, value: TaskIssueSnapshot) {
   await page.evaluate(({ taskId, value }) => window.dispatchEvent(new CustomEvent('fixture:issues', {
     detail: { taskId, snapshot: value }
@@ -38,7 +37,7 @@ for (const width of [1440, 900]) {
     await expect(children.getByRole('listitem')).toHaveCount(4)
     await expect(sidebar.getByRole('list', { name: 'Subtasks of Layout test task' }).getByRole('listitem')).toHaveCount(4)
     await expect(page.getByRole('tabpanel', { name: 'Issues' })).toHaveCount(0)
-    await expect(children.getByRole('listitem')).toHaveText(value.children.map((issue) => `${issue.title}${STATUS_LABEL[issue.status]}`))
+    await expect(children.getByRole('listitem')).toHaveText(value.children.map((issue) => issue.title))
     const parent = sidebar.getByRole('button', { name: 'Open task: Build streaming support', exact: true })
     const child = children.getByRole('listitem').first()
     const parentBox = (await parent.boundingBox())!
@@ -69,7 +68,7 @@ for (const width of [1440, 900]) {
     value.children[0].status = 'working'
     value.children.push({ ...value.children[0], id: 'new-child', title: 'Discovered live' })
     await publish(page, 'running', value)
-    await expect(children.getByRole('listitem').first()).toContainText(STATUS_LABEL.working)
+    await expect(children.getByRole('listitem').first()).toHaveText(value.children[0].title)
     await expect(children.getByRole('listitem')).toHaveCount(5)
     await expect(children.getByRole('listitem').last()).toContainText('Discovered live')
     const archived = snapshot('archived')

@@ -99,6 +99,6 @@ test('sidebar discovers issues before the panel opens and the panel reuses its s
   // Existing cached data remains available even when subsequent refreshes fail.
   await page.evaluate(() => { window.anvil.tasks.issues = async () => { throw new Error('Offline') } })
   await page.getByRole('tab', { name: 'Issues', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Created during planning Queued', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Created during planning', exact: true })).toBeVisible()
   await expect(page.getByRole('alert')).toContainText('Showing last known data.')
 })
