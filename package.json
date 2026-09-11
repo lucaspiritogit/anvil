@@ -22,6 +22,7 @@
     "start": "electron-vite preview",
     "pack": "npm run build && electron-builder --win --dir",
     "dist": "npm run build && electron-builder --win",
+    "release": "node scripts/release.mjs",
     "pack:mac": "npm run build && electron-builder --mac --dir -c.mac.identity=null",
     "dist:mac": "npm run build && electron-builder --mac dmg -c.mac.identity=null",
     "rebuild": "electron-builder install-app-deps",
