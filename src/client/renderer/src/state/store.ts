@@ -428,7 +428,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     })
     if (generation !== workspaceGeneration) return
     set((s) => ({
-      tasks: [task, ...s.tasks],
+      tasks: [task, ...s.tasks.filter((item) => item.id !== task.id)],
       ...(s.activeProjectId === projectId && s.view === view
         ? { ...evictTaskEvents(), view: { kind: 'task' as const, taskId: task.id } }
         : {})
@@ -791,10 +791,15 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   applyTaskUpdate: (task) =>
     set((s) => {
-      const changed = taskDiffRevision(s.tasks.find((item) => item.id === task.id)) !== taskDiffRevision(task)
+      if (task.workspaceId !== s.activeWorkspaceId) return s
+      const existingTask = s.tasks.find((item) => item.id === task.id)
+      const changed = taskDiffRevision(existingTask) !== taskDiffRevision(task)
       if (changed) taskDiffRequests.delete(task.id)
       return {
-        tasks: s.tasks.map((r) => (r.id === task.id ? task : r)),
+        // Other clients learn about newly created tasks through this event.
+        tasks: existingTask
+          ? s.tasks.map((item) => (item.id === task.id ? task : item))
+          : [task, ...s.tasks],
         ...(changed ? {
           diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== task.id)),
           diffErrorsByTask: Object.fromEntries(Object.entries(s.diffErrorsByTask).filter(([id]) => id !== task.id))
