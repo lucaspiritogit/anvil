@@ -1,4 +1,5 @@
-import { createAdaptorServer, type HttpBindings } from '@hono/node-server'
+import { serve, type HttpBindings, type ServerType } from '@hono/node-server'
+import { getConnInfo } from '@hono/node-server/conninfo'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { HTTPException } from 'hono/http-exception'
@@ -51,6 +52,9 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: 
   const app = new Hono<{ Bindings: HttpBindings }>()
   const clients = new Set<EventClient>()
   const encoder = new TextEncoder()
+  let boundPort: number | undefined
+  let boundHost: '127.0.0.1' | '0.0.0.0' | undefined
+  let server: ServerType | undefined
   const unsubscribe = runtime.subscribeAll((channel, payload) => {
     const message = encoder.encode(`data: ${JSON.stringify({ channel, payload })}\n\n`)
     for (const client of clients) client.send(message)
@@ -58,7 +62,7 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: 
 
   app.use('*', async (context, next) => {
     context.header('Cache-Control', 'no-store')
-    if (!isLoopbackAddress(context.env.incoming.socket.remoteAddress) &&
+if (!isLoopbackAddress(getConnInfo(context).remote.address) &&
       !await authorized(context.req.header('authorization'), options.auth)) {
       context.header('WWW-Authenticate', 'Basic realm="Anvil", charset="UTF-8"')
       throw new HTTPException(401, { message: 'Authentication required' })
@@ -74,7 +78,7 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: 
       context.header('Vary', 'Origin')
     }
     // Keep the existing exact URL and method contract, including no HEAD fallback.
-    if (context.env.incoming.url !== context.req.path || context.req.method === 'HEAD') {
+    if (new URL(context.req.url).search !== '' || context.req.method === 'HEAD') {
       throw new HTTPException(404, { message: 'Not found' })
     }
     try {
@@ -99,16 +103,17 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: 
           send(message) {
             if (closed) return
             controller.enqueue(message)
-            const backlog = EVENT_BACKLOG_LIMIT - (controller.desiredSize ?? 0) + context.env.outgoing.writableLength
-            if (backlog > EVENT_BACKLOG_LIMIT) {
-              client.close()
-              context.env.outgoing.destroy()
-            }
+            const backlog = EVENT_BACKLOG_LIMIT - (controller.desiredSize ?? 0)
+            if (backlog > EVENT_BACKLOG_LIMIT) client.close()
           },
           close() {
             if (closed) return
             cleanup()
-            controller.close()
+            try {
+              controller.close()
+            } catch {
+              return
+            }
           }
         }
         const heartbeat = setInterval(() => client.send(encoder.encode(': heartbeat\n\n')), 15_000)
@@ -116,9 +121,9 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: 
           closed = true
           clients.delete(client)
           clearInterval(heartbeat)
-          context.env.outgoing.off('close', client.close)
+          context.req.raw.signal.removeEventListener('abort', client.close)
         }
-        context.env.outgoing.once('close', client.close)
+        context.req.raw.signal.addEventListener('abort', client.close)
         clients.add(client)
         client.send(encoder.encode(': connected\n\n'))
       },
@@ -168,25 +173,26 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: 
   app.notFound((context) => context.json({ error: 'Not found' }, 404))
   app.onError((error, context) => {
     const status = error instanceof HTTPException ? error.status : /^(Invalid |Unknown RPC channel)/.test(error.message) ? 400 : 500
-    context.env.incoming.resume()
     return context.json({ error: error.message }, status)
   })
 
-  const server = createAdaptorServer({ fetch: app.fetch, overrideGlobalObjects: false })
-  let boundPort: number | undefined
-  let boundHost: '127.0.0.1' | '0.0.0.0' | undefined
   let operations = Promise.resolve()
   let closed = false
 
   const start = async (port: number, host: '127.0.0.1' | '0.0.0.0'): Promise<number> => {
     await new Promise<void>((resolve, reject) => {
-      const failed = (error: Error): void => { server.off('listening', ready); reject(error) }
-      const ready = (): void => { server.off('error', failed); resolve() }
+      const failed = (error: Error): void => { reject(error) }
+      server = serve({ fetch: app.fetch, port, hostname: host, overrideGlobalObjects: false }, (info) => {
+        server?.off('error', failed)
+        if (info.address !== host) {
+          reject(new Error(`Server did not bind to ${host}`))
+          return
+        }
+        resolve()
+      })
       server.once('error', failed)
-      server.once('listening', ready)
-      server.listen(port, host)
     })
-    const address = server.address()
+    const address = server?.address()
     if (!address || typeof address === 'string' || address.address !== host) {
       throw new Error(`Server did not bind to ${host}`)
     }
@@ -196,13 +202,15 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: 
   }
   const stop = async (): Promise<void> => {
     for (const client of [...clients]) client.close()
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') reject(error)
-        else resolve()
-      })
-      if ('closeIdleConnections' in server) server.closeIdleConnections()
-    })
+    const active = server
+    if (!active) {
+      boundHost = undefined
+      return
+    }
+    await new Promise<void>((resolve, reject) => active.close((error) => {
+      if (error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') reject(error)
+      else resolve()
+    }))
     boundHost = undefined
   }
   const serialize = <T>(operation: () => Promise<T>): Promise<T> => {
