@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { argon2id, hash, verify } from 'argon2'
@@ -27,6 +27,8 @@ function isRecord(value: unknown): value is ServerAuthRecord {
 /** Stores the LAN server credential as a one-way hash in the server data directory. */
 export class ServerAuth {
   private readonly path: string
+  private readonly verificationKey = randomBytes(32)
+  private verifiedPassword: { hash: string; fingerprint: Buffer } | undefined
 
   constructor(dataDirectory: string) {
     this.path = join(dataDirectory, SERVER_AUTH_FILENAME)
@@ -83,6 +85,7 @@ export class ServerAuth {
         flush: true
       })
       await rename(temporary, this.path)
+      this.verifiedPassword = undefined
       if (process.platform !== 'win32') await chmod(this.path, 0o600)
     } finally {
       await rm(temporary, { force: true })
@@ -93,9 +96,19 @@ export class ServerAuth {
   async verifyPassword(candidate: string): Promise<boolean> {
     if (typeof candidate !== 'string') return false
     const record = await this.readRecord()
-    if (typeof record === 'string') return false
+    if (typeof record === 'string') {
+      this.verifiedPassword = undefined
+      return false
+    }
+    // Re-read the record on every request so password changes and removal take
+    // effect immediately. Only reuse a successful check for that exact hash.
+    const fingerprint = createHmac('sha256', this.verificationKey).update(candidate).digest()
+    const cached = this.verifiedPassword
+    if (cached?.hash === record.hash && timingSafeEqual(cached.fingerprint, fingerprint)) return true
     try {
-      return await verify(record.hash, candidate)
+      const accepted = await verify(record.hash, candidate)
+      if (accepted) this.verifiedPassword = { hash: record.hash, fingerprint }
+      return accepted
     } catch {
       return false
     }
