@@ -463,7 +463,6 @@ export function TaskView({ task }: Props): JSX.Element {
   const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? task.workspaceId)
   const project = useStore((s) => s.projects.find((item) => item.id === task.projectId))
   const openTask = useStore((s) => s.openTask)
-  const cancelTask = useStore((s) => s.cancelTask)
   const diff = useStore((s) => s.diffsByTask[task.id])
   const diffError = useStore((s) => s.diffErrorsByTask[task.id])
   const loadTaskDiff = useStore((s) => s.loadTaskDiff)
@@ -623,13 +622,9 @@ export function TaskView({ task }: Props): JSX.Element {
 
       <TaskStackStatus key={`stack-${task.id}`} task={task} />
       <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4">
-        <div className="flex items-start justify-between gap-4">
-          <h1 className="min-w-0 flex-1 text-base font-medium leading-snug [overflow-wrap:anywhere]">{task.title}</h1>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs">
-            {supportsCompaction && task.sessionId && !isTaskSettled(task) && <button
-              className={btn.ghost} disabled={task.status === 'running' && !issueIsReviewReady(snapshot) || compactBusy || task.deliveryStatus === 'finalizing'}
-              onClick={() => void compact()} title="Summarize earlier model history in this task's session"
-            >{compactBusy ? 'Compacting…' : 'Compact'}</button>}
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 @max-[760px]:flex-col">
+          <h1 className="min-w-0 flex-1 truncate text-base font-medium leading-snug @max-[760px]:w-full @max-[760px]:flex-none" title={task.title}>{task.title}</h1>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:justify-start">
             {issue ? <>
               <span aria-label="Task status" className={cn('font-medium', ISSUE_STATUS[issuePresentation(issue, snapshot, task).status].tone)}>{saving ? 'Saving changes…' : issuePresentation(issue, snapshot, task).label}{`: ${issue.title}`}</span>
               {issue.status === 'review' && <>
@@ -649,9 +644,6 @@ export function TaskView({ task }: Props): JSX.Element {
                 <span className={deliveryTone(task.deliveryStatus)}>{DELIVERY_LABEL[task.deliveryStatus]}</span>
                 </>}
               </span>
-              {task.status === 'running' && (
-                <button className={cn(btn.danger, 'ml-2')} onClick={() => void cancelTask(task.id)}>Stop</button>
-              )}
               {reviewable && <span className="ml-2 flex items-center gap-2">
                 {!approved && pending.length > 0 && <button className={btn.ghost} disabled={sending} onClick={() => void sendComments(task.id)}>
                   {sending ? 'Sending…' : `Send ${pending.length} comment${pending.length === 1 ? '' : 's'}`}
@@ -710,7 +702,7 @@ export function TaskView({ task }: Props): JSX.Element {
 
       {issue && issueError && <Notice>Could not refresh subtask. Showing last known data. <button className={btn.text} onClick={refresh}>Retry</button></Notice>}
       {(task.error || task.deliveryError) && <Notice>{task.error || task.deliveryError}</Notice>}
-      {(compactError || task.contextCompactionError) && <Notice>{compactError || task.contextCompactionError}</Notice>}
+      {task.contextCompactionError && <Notice>{task.contextCompactionError}</Notice>}
       {reviewError && <Notice>{reviewError}</Notice>}
       {(reviewable || issue) && commentError && <Notice>{commentError}</Notice>}
 
@@ -834,9 +826,20 @@ export function TaskView({ task }: Props): JSX.Element {
               Jump to latest
             </button>}
           </div>
-          {!isTaskSettled(task) && <TaskSteeringComposer key={task.id} task={task} hidden={activePanel !== 'output'} />}
         </section>
       </div>
+
+      {!isTaskSettled(task) && <TaskSteeringComposer
+        key={`composer-${task.id}`}
+        task={task}
+        compact={{
+          visible: Boolean(supportsCompaction && task.sessionId),
+          busy: compactBusy,
+          disabled: task.status === 'running' && !issueIsReviewReady(snapshot) || compactBusy || task.deliveryStatus === 'finalizing',
+          error: compactError,
+          onCompact: () => void compact()
+        }}
+      />}
     </div>
   )
 }

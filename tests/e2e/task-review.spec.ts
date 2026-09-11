@@ -236,7 +236,8 @@ test('review gives Pierre the full width, with file navigation and a preserved o
   await expect(review.locator('[data-diff-type="single"][data-overflow="wrap"]')).toBeVisible()
   await expect(review.locator('[data-line]').filter({ hasText: 'spacing: 12' })).toBeVisible()
   await expect(output).toBeHidden()
-  await expect(page.getByRole('form', { name: 'Steer task' })).toBeHidden()
+  // The steering bar stays available across panels while the task is live.
+  await expect(page.getByRole('form', { name: 'Steer task' })).toBeVisible()
   const reviewBounds = (await review.boundingBox())!
   const mainBounds = (await page.getByRole('main').boundingBox())!
   expect(reviewBounds.width).toBeGreaterThanOrEqual(mainBounds.width - 2)
@@ -252,7 +253,7 @@ test('review gives Pierre the full width, with file navigation and a preserved o
   await page.screenshot({ path: testInfo.outputPath('task-review.png') })
   await page.getByRole('tab', { name: 'Output' }).click()
   await expect(output.getByRole('log', { name: 'Task output' })).toBeVisible()
-  await expect(output.getByRole('textbox')).toHaveValue('Keep this draft while reviewing')
+  await expect(page.getByRole('textbox', { name: 'Message to agent' })).toHaveValue('Keep this draft while reviewing')
   expect(errors).toEqual([])
 })
 
@@ -381,7 +382,7 @@ test('failed diff loads can be retried and an empty patch stays readable', async
   await page.goto('/tests/e2e/fixture/?scenario=review&emptyDiff=1')
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByText('No file changes in this range.')).toBeVisible()
-  await expect(page.getByRole('form', { name: 'Steer task' })).toBeHidden()
+  await expect(page.getByRole('form', { name: 'Steer task' })).toBeVisible()
   await page.getByRole('tab', { name: 'Output' }).click()
   await expect(page.getByRole('form', { name: 'Steer task' })).toBeVisible()
 })

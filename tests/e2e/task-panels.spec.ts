@@ -21,7 +21,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 500 
       if (scenario === 'review') {
         await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
       } else {
-        await expect(page.getByText('There is no final diff available for review.')).toBeVisible()
+        await expect(page.getByText(/No code changes to review\.|There is no final diff available for review\./)).toBeVisible()
       }
       await outputTab.click()
       await expect(page.getByRole('log', { name: 'Task output' })).toBeVisible()
@@ -38,6 +38,33 @@ test('switching to another task resets the active tab to Output', async ({ page 
   await expect(page.getByRole('tab', { name: /^Changes/ })).toBeEnabled()
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByText('The final task diff will appear here when it is ready for review.')).toBeVisible()
+})
+
+test('long task titles truncate to one line and the composer persists across panels', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 500 })
+  await page.goto('/tests/e2e/fixture/?scenario=output&steering=1')
+  const longTitle = 'A very long task title that must never wrap one letter per line'.repeat(4)
+  await page.evaluate(async (title) => {
+    const { useStore } = await import('/src/renderer/src/state/store.ts')
+    useStore.setState((state) => ({
+      tasks: state.tasks.map((task) => task.id === 'output' ? { ...task, title } : task)
+    }))
+  }, longTitle)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveText(longTitle)
+  await expect(heading).toHaveAttribute('title', longTitle)
+  const headingBox = (await heading.boundingBox())!
+  // One line at 16px/leading-snug is ~22px; two lines would exceed 40px.
+  expect(headingBox.height).toBeLessThan(40)
+  const metrics = await heading.evaluate((element) => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }))
+  expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth)
+  const composer = page.getByRole('form', { name: 'Steer task' })
+  await expect(composer).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('long-title-output.png') })
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
+  await expect(composer).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('long-title-changes.png') })
 })
 
 test('stale child selection renders its owner with continuous output', async ({ page }) => {
