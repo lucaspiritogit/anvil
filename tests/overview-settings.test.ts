@@ -7,7 +7,9 @@ import { join } from 'node:path'
 import { imageFixture } from './image-fixtures'
 import { Store } from '../src/server/store'
 import { WallpaperLibrary } from '../src/server/wallpapers'
-import { registerSettingsHandlers } from '../src/server/handlers/settings'
+import { registerConnectionsHandlers, registerSettingsHandlers } from '../src/server/handlers/settings'
+import { createHandlerRegistry } from '../src/server/handler-registry'
+import { ServerAuth } from '../src/server/server-auth'
 import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { handlers } from './issue-tracker-doubles'
 
@@ -36,6 +38,7 @@ test('loads settings defaults', () => {
   expect(store.getSettings().overviewBackgroundMode).toBe('color')
   expect(store.getSettings().overviewBackgroundColor).toBe('#0d0f12')
   expect(store.getSettings().overviewWallpaperId).toBe(null)
+  expect(store.getSettings().allowOtherDevices).toBe(false)
 })
 
 test('wallpaper IPC reads the requested workspace even when another workspace is selected', async () => {
@@ -70,7 +73,7 @@ test('rejects invalid wallpaper and settings payloads', () => {
 })
 
 test('persists settings and wallpaper selection across restarts', async () => {
-  call('settings:set', { fontSize: 16, memoryEnabled: true, memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://127.0.0.1:11434/v1' })
+  call('settings:set', { fontSize: 16, memoryEnabled: true, memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://127.0.0.1:11434/v1', allowOtherDevices: true })
   writeFileSync(join(root, 'wallpaper', 'test.png'), imageFixture())
   expect(await call('wallpapers:list')).toStrictEqual([{ id: 'test.png', name: 'test.png', width: 4, height: 3 }])
   expect(await call('wallpapers:read', 'test.png')).toMatch(/^data:image\/png;base64,/)
@@ -89,6 +92,7 @@ test('persists settings and wallpaper selection across restarts', async () => {
   expect(store.getSettings().overviewBackgroundColor).toBe('#123456')
   expect(store.getSettings().overviewWallpaperId).toBe('test.png')
   expect(store.getSettings().caffeineMode, 'Existing settings survive').toBe(true)
+  expect(store.getSettings().allowOtherDevices).toBe(true)
   store.setSettings({ overviewWallpaperId: null })
   store.close()
   store = new Store(database, options)
@@ -117,4 +121,55 @@ test('recovers corrupt and legacy settings while preserving other preferences', 
   store = new Store(database, options)
   expect(store.getSettings().overviewBackgroundColor, 'Older databases receive defaults').toBe('#0d0f12')
   expect(store.getSettings().caffeineMode).toBe(true)
+})
+
+test('configures authenticated connections after the response and rolls back failed transitions', async () => {
+  const ipc = createHandlerRegistry()
+  const deferred: Array<() => void | Promise<void>> = []
+  const modes: boolean[] = []
+  const statuses: unknown[] = []
+  let fail = false
+  registerConnectionsHandlers(ipc, store, new ServerAuth(root), async (enabled) => {
+    modes.push(enabled)
+    if (fail) throw new Error('Port unavailable')
+  }, (_workspaceId, status) => statuses.push(status))
+  const invoke = (channel: 'connections:status' | 'connections:configure', input: unknown) => ipc.invoke(channel, input, {
+    deferUntilResponse: (action) => deferred.push(action)
+  })
+
+  await expect(invoke('connections:configure', { workspaceId: 'default', allowOtherDevices: true })).rejects.toThrow(/password/)
+  const enabling = await invoke('connections:configure', { workspaceId: 'default', allowOtherDevices: true, password: 'LAN secret' })
+  expect(enabling).toEqual({ allowOtherDevices: false, passwordConfigured: true, pending: true })
+  expect(JSON.stringify(enabling)).not.toContain('LAN secret')
+  expect(modes).toEqual([])
+  await deferred.shift()!()
+  expect(await invoke('connections:status', 'default')).toEqual({ allowOtherDevices: true, passwordConfigured: true, pending: false })
+  expect(store.getSettings().allowOtherDevices).toBe(true)
+
+  await invoke('connections:configure', { workspaceId: 'default', allowOtherDevices: false })
+  fail = true
+  await deferred.shift()!()
+  expect(modes).toEqual([true, false])
+  expect(await invoke('connections:status', 'default')).toMatchObject({ allowOtherDevices: false, passwordConfigured: true, pending: false, error: 'Port unavailable' })
+  expect(store.getSettings().allowOtherDevices).toBe(false)
+  expect(JSON.stringify(statuses)).not.toContain('LAN secret')
+})
+
+test('startup enables LAN only when both persisted intent and valid authentication exist', async () => {
+  store.setSettings({ allowOtherDevices: true })
+  const missingAuthModes: boolean[] = []
+  const missingAuth = registerConnectionsHandlers(createHandlerRegistry(), store, new ServerAuth(root), async (enabled) => {
+    missingAuthModes.push(enabled)
+  })
+  expect(await missingAuth.initialize()).toMatchObject({ allowOtherDevices: false, passwordConfigured: false, error: expect.stringContaining('disabled') })
+  expect(store.getSettings().allowOtherDevices).toBe(false)
+  expect(missingAuthModes).toEqual([])
+
+  const auth = new ServerAuth(root)
+  await auth.setPassword('startup secret')
+  store.setSettings({ allowOtherDevices: true })
+  const modes: boolean[] = []
+  const configured = registerConnectionsHandlers(createHandlerRegistry(), store, auth, async (enabled) => { modes.push(enabled) })
+  expect(await configured.initialize()).toEqual({ allowOtherDevices: true, passwordConfigured: true, pending: false })
+  expect(modes).toEqual([true])
 })

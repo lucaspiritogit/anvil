@@ -62,7 +62,7 @@ test('creates one Default workspace and starts new profiles with independent app
     memoryEnabled: true, memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://127.0.0.1:1234/v1',
     fontSize: 18, overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'test.png',
     defaultAgentId: 'codex', defaultModel: 'custom-model', rebaseMode: 'agent', confirmRebase: false,
-    caffeineMode: true, keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K' }
+    caffeineMode: true, allowOtherDevices: true, keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K' }
   }
   expect(Object.keys(custom).sort()).toEqual(Object.keys(defaults).sort())
   store.setSettings(custom)

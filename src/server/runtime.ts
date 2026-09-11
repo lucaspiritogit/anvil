@@ -1,6 +1,6 @@
 import { createCaffeineActivity } from './caffeine-activity'
 import { EventEmitter } from 'node:events'
-import { createHandlerRegistry } from './handler-registry'
+import { createHandlerRegistry, type HandlerContext } from './handler-registry'
 import { createCredentialEncryption } from './credential-encryption'
 import { TerminalSessionManager } from './terminal-sessions'
 import { WorkspaceAccounts } from './agents/workspace-accounts'
@@ -24,7 +24,8 @@ import { registerReviewHandlers } from './handlers/review'
 import { registerTaskHandlers } from './handlers/tasks'
 import { registerSteeringHandlers } from './handlers/steering'
 import { registerWorkspaceHandlers } from './handlers/workspaces'
-import { registerSettingsHandlers } from './handlers/settings'
+import { registerConnectionsHandlers, registerSettingsHandlers } from './handlers/settings'
+import { ServerAuth } from './server-auth'
 import { createProjectMemory } from './memory/project-memory'
 import { WorkspaceProjectMemory } from './memory/workspace-project-memory'
 import { createTaskMemory } from './memory/task-memory'
@@ -42,6 +43,8 @@ export interface RuntimeOptions {
   memoryMigrationsDirectory: string
   encryption?: CredentialEncryption
   openUrl?(url: string): Promise<void>
+  rebindHttp?(allowOtherDevices: boolean): Promise<void>
+  serverAuth?: ServerAuth
 }
 
 /** Owns the domain services independently of Electron and HTTP. */
@@ -114,6 +117,13 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     projectMemory.settingsChanged(change.workspaceId)
     broadcast('settings:changed', change)
   })
+  const connections = registerConnectionsHandlers(
+    ipc,
+    store,
+    options.serverAuth ?? new ServerAuth(dataDirectory),
+    options.rebindHttp ?? (async () => {}),
+    (workspaceId, status) => broadcast('connections:changed', { workspaceId, status })
+  )
   registerWorkspaceHandlers(ipc, store, broadcast, async (workspaceId, name) => {
     const release = agentProcesses.acquireAccountChange(workspaceId)
     let resumeAccounts: (() => void) | undefined
@@ -135,7 +145,9 @@ export function createAnvilRuntime(options: RuntimeOptions) {
       resumeAccounts?.()
       release()
     }
-  }, () => terminals.disposeProjects())
+  }, () => terminals.disposeProjects(), (workspaceId, handlerContext) => {
+    handlerContext.deferUntilResponse(async () => { await connections.activate(workspaceId) })
+  })
   registerAgentHandlers(ipc, store)
   const accounts = new WorkspaceAccounts(store, {
     acquire: (workspaceId) => agentProcesses.acquireAccountChange(workspaceId),
@@ -232,9 +244,9 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   }
 
   return {
-    invoke: (channel: string, input?: unknown): unknown => {
+    invoke: (channel: string, input?: unknown, context?: HandlerContext): unknown => {
       if (closing) throw new Error('Anvil runtime is closing')
-      return ipc.invoke(channel, input)
+      return ipc.invoke(channel, input, context)
     },
     channels: ipc.channels,
     subscribe(channel: string, listener: (payload: unknown) => void): () => void {
@@ -247,6 +259,8 @@ export function createAnvilRuntime(options: RuntimeOptions) {
       return () => { events.off('event', listener) }
     },
     close,
+    initializeConnections: connections.initialize,
+    connectionsStatus: connections.status,
     terminals,
     agentProcesses,
     projectMemory

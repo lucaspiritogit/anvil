@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { request } from 'node:http'
+import { networkInterfaces } from 'node:os'
 import { EventEmitter } from 'node:events'
 import { createAnvilHttpServer, isLoopbackAddress, RPC_BODY_LIMIT } from '../src/server/http'
 import { createHandlerRegistry } from '../src/server/handler-registry'
@@ -65,7 +66,62 @@ test('HTTP rejects foreign origins, DNS rebinding, malformed JSON and oversized 
   expect((await fetch(`${url}/rpc`, { method: 'POST', body: '{}' })).status).toBe(415)
   expect((await fetch(`${url}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: ' '.repeat(RPC_BODY_LIMIT + 1) })).status).toBe(413)
   expect(isLoopbackAddress('127.0.0.1')).toBe(true)
-  for (const address of ['0.0.0.0', '192.168.1.2', '::1', undefined]) expect(isLoopbackAddress(address)).toBe(false)
+  expect(isLoopbackAddress('::1')).toBe(true)
+  for (const address of ['0.0.0.0', '192.168.1.2', undefined]) expect(isLoopbackAddress(address)).toBe(false)
+})
+
+const lanAddress = Object.values(networkInterfaces()).flat().find((address) => address?.family === 'IPv4' && !address.internal)?.address
+
+test.skipIf(!lanAddress)('LAN mode authenticates every non-loopback route and keeps loopback compatible', async () => {
+  const http = createAnvilHttpServer(registerTestIpc(), {
+    version: 'test',
+    rendererOrigin: 'http://localhost:5173',
+    auth: { verifyPassword: async (candidate) => candidate === 'secret' }
+  })
+  const loopbackUrl = await http.listen(0)
+  onTestCleanup(() => http.close())
+  await http.rebind(true)
+  const port = new URL(loopbackUrl).port
+  const remoteUrl = `http://${lanAddress}:${port}`
+  const credentials = `Basic ${Buffer.from('anvil:secret').toString('base64')}`
+
+  for (const [path, init] of [
+    ['/health', undefined],
+    ['/events', undefined],
+    ['/rpc', { method: 'OPTIONS' }],
+    ['/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }],
+    ['/missing', undefined]
+  ] as const) {
+    const response = await fetch(`${remoteUrl}${path}`, init)
+    expect(response.status).toBe(401)
+    expect(response.headers.get('www-authenticate')).toContain('Basic realm="Anvil"')
+  }
+  expect((await fetch(`${remoteUrl}/health`, { headers: { Authorization: 'Basic broken' } })).status).toBe(401)
+  expect((await fetch(`${remoteUrl}/health`, { headers: { Authorization: `Basic ${Buffer.from('other:secret').toString('base64')}` } })).status).toBe(401)
+  expect((await fetch(`${remoteUrl}/health`, { headers: { Authorization: credentials } })).status).toBe(200)
+  expect((await fetch(`${loopbackUrl}/health`)).status).toBe(200)
+
+  const rejectedHost = await new Promise<number | undefined>((resolve, reject) => {
+    const probe = request(`${remoteUrl}/health`, { headers: { Authorization: credentials, Host: 'evil.example' } }, (response) => {
+      response.resume()
+      response.on('end', () => resolve(response.statusCode))
+    })
+    probe.on('error', reject)
+    probe.end()
+  })
+  expect(rejectedHost).toBe(403)
+  const missing = await fetch(`${remoteUrl}/missing`, { headers: { Authorization: credentials } })
+  expect(missing.status).toBe(404)
+  const preflight = await fetch(`${remoteUrl}/rpc`, { method: 'OPTIONS', headers: { Authorization: credentials } })
+  expect(preflight.status).toBe(204)
+  expect(preflight.headers.get('access-control-allow-headers')).toContain('Authorization')
+
+  const events = await fetch(`${remoteUrl}/events`, { headers: { Authorization: credentials } })
+  expect(events.status).toBe(200)
+  await events.body?.cancel()
+  await http.rebind(false)
+  await expect(fetch(`${remoteUrl}/health`)).rejects.toThrow()
+  expect((await fetch(`${loopbackUrl}/health`)).status).toBe(200)
 })
 
 test('SSE receives runtime broadcasts and disconnects cleanly', async () => {

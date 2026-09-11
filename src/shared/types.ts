@@ -284,6 +284,19 @@ export interface WorkspaceSettingsChange {
   settings: Settings
 }
 
+export interface ConnectionsStatus {
+  allowOtherDevices: boolean
+  passwordConfigured: boolean
+  pending: boolean
+  error?: string
+}
+
+export interface ConnectionsConfigure {
+  workspaceId: string
+  allowOtherDevices: boolean
+  password?: string
+}
+
 export interface WorkspacePreferences {
   composer: ComposerPreferences
   lastProjectId: string | null
@@ -418,6 +431,8 @@ export interface Settings {
   confirmRebase: boolean
   /** Keep the system and display awake while tasks are running. */
   caffeineMode: boolean
+  /** Allow authenticated HTTP clients on other devices to reach the server. */
+  allowOtherDevices: boolean
   /** Accelerator per shortcut, e.g. `{ toggleSidebar: 'Mod+B' }`. */
   keybindings: Keybindings
 }

@@ -164,7 +164,7 @@ window.outputTest = {
   release: (fail = false) => { releaseOutput?.(fail); releaseOutput = null }
 }
 
-let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-embed-large', ollamaBaseUrl: 'http://localhost:11434/v1', fontSize: 14, overviewBackgroundMode: 'color', overviewBackgroundColor: '#0d0f12', overviewWallpaperId: null, defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, caffeineMode: false, keybindings: DEFAULT_KEYBINDINGS }
+let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-embed-large', ollamaBaseUrl: 'http://localhost:11434/v1', fontSize: 14, overviewBackgroundMode: 'color', overviewBackgroundColor: '#0d0f12', overviewWallpaperId: null, defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, caffeineMode: false, allowOtherDevices: false, keybindings: DEFAULT_KEYBINDINGS }
 
 declare global {
   interface Window {

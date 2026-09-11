@@ -1,4 +1,4 @@
-import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, ComposerPreferences, WorkspacePreferences, TaskComment, TaskMergePreview } from './types'
+import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, ComposerPreferences, WorkspacePreferences, TaskComment, TaskMergePreview, ConnectionsConfigure } from './types'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
 export interface IpcRequests {
@@ -9,6 +9,8 @@ export interface IpcRequests {
   'wallpapers:read': string | { workspaceId: string; id: string }
   'settings:get': string | undefined
   'settings:set': { workspaceId: string; patch: Partial<Settings> }
+  'connections:status': string | undefined
+  'connections:configure': ConnectionsConfigure
   'workspaces:list': undefined
   'workspaces:snapshot': undefined
   'workspaces:create': string

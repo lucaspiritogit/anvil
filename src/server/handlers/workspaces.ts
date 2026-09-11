@@ -1,5 +1,5 @@
 import type { WorkspaceSnapshot } from '../../shared/types'
-import type { HandlerRegistry } from '../handler-registry'
+import type { HandlerContext, HandlerRegistry } from '../handler-registry'
 import type { Store } from '../store'
 import { availableSettings } from './settings'
 
@@ -18,7 +18,8 @@ export function registerWorkspaceHandlers(
   store: Store,
   broadcast: (channel: string, payload: unknown) => void,
   rename: (workspaceId: string, name: string) => ReturnType<Store['renameWorkspace']> | Promise<ReturnType<Store['renameWorkspace']>> = (workspaceId, name) => store.renameWorkspace(workspaceId, name),
-  beforeSelect: () => Promise<void> = async () => {}
+  beforeSelect: () => Promise<void> = async () => {},
+  afterSelect: (workspaceId: string, context: HandlerContext) => void = () => {}
 ): void {
   ipc.handle('workspaces:list', () => store.getWorkspaces())
   ipc.handle('workspaces:snapshot', () => workspaceSnapshot(store))
@@ -32,10 +33,11 @@ export function registerWorkspaceHandlers(
     broadcast('workspaces:changed', store.getWorkspaces())
     return workspace
   })
-  ipc.handle('workspaces:select', async (workspaceId) => {
+  ipc.handle('workspaces:select', async (workspaceId, context) => {
     if (!store.getWorkspaces().some((workspace) => workspace.id === workspaceId)) throw new Error('Workspace not found')
     await beforeSelect()
     store.selectWorkspace(workspaceId)
+    afterSelect(workspaceId, context)
     const snapshot = workspaceSnapshot(store)
     broadcast('workspaces:selected', snapshot)
     return snapshot

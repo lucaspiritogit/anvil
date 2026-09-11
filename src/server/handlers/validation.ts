@@ -92,6 +92,7 @@ const settingsPatch = object<IpcRequests['settings:set']['patch']>({
   defaultAgentId: optional(id), defaultModel: optional(text(512, false)),
   autoCompactContext: optional(boolean), contextCompactionThreshold: optional(number(1, 100, true)),
   rebaseMode: optional(oneOf('manual', 'agent')), confirmRebase: optional(boolean), caffeineMode: optional(boolean),
+  allowOtherDevices: optional(boolean),
   keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false) }))
 })
 
@@ -121,6 +122,8 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'workspaces:composer:import': composer,
   'settings:get': optional(workspaceId),
   'settings:set': object({ workspaceId, patch: settingsPatch }),
+  'connections:status': optional(workspaceId),
+  'connections:configure': object({ workspaceId, allowOtherDevices: boolean, password: optional(text(1024)) }),
   'accounts:status': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
   'accounts:disconnect': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
   'accounts:cancel': object({ workspaceId, agentId: oneOf('codex', 'opencode'), sessionId: id }),
