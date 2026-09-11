@@ -33,6 +33,24 @@ function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_IND
   return undefined
 }
 
+function taskIssueIndicator(presentation: NonNullable<ReturnType<typeof taskIssuePresentation>>) {
+  switch (presentation.status) {
+    case 'queued':
+      return { ...TASK_INDICATORS.queued, label: presentation.label }
+    case 'working':
+      return { ...TASK_INDICATORS.running, label: presentation.label }
+    case 'review':
+      return { ...TASK_INDICATORS.reviewable, label: presentation.label }
+    case 'blocked':
+      return { ...TASK_INDICATORS.failed, label: presentation.label }
+    case 'complete':
+      return {
+        ...(presentation.issue.reviewedAt != null ? TASK_INDICATORS.approved : TASK_INDICATORS.done),
+        label: presentation.label
+      }
+  }
+}
+
 const expandedSubtasks = new Set<string>()
 
 function relativeAge(timestamp: number, now: number): string {
@@ -70,10 +88,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const eligible = canSettleTask(task)
   const deadline = settlementDeadline(task)
   const presentation = taskIssuePresentation(task, snapshot)
-  const indicator = presentation ? {
-    ...(presentation.status === 'review' ? TASK_INDICATORS.reviewable : presentation.status === 'working' ? TASK_INDICATORS.running : presentation.status === 'blocked' ? TASK_INDICATORS.failed : presentation.status === 'complete' ? presentation.issue.reviewedAt != null ? TASK_INDICATORS.approved : TASK_INDICATORS.done : TASK_INDICATORS.queued),
-    label: presentation.label
-  } : taskIndicator(task)
+  const indicator = presentation ? taskIssueIndicator(presentation) : taskIndicator(task)
   const statusIcon = (
     <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex shrink-0', indicator?.tone ?? 'text-dim')}>
       <Icon
