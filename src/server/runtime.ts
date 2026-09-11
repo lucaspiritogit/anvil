@@ -34,6 +34,7 @@ import type { PublishEvent } from './tasks/context'
 import { registerTaskEvents } from './tasks/events'
 import { registerTaskExecution } from './tasks/task-execution'
 import { Store } from './store'
+import type { TailscaleConnection } from './tailscale'
 import { TaskBranches } from './tasks/task-branch'
 import { IssueToolServer } from './issue-tools/server'
 
@@ -45,6 +46,7 @@ export interface RuntimeOptions {
   openUrl?(url: string): Promise<void>
   rebindHttp?(allowOtherDevices: boolean): Promise<void>
   serverAuth?: ServerAuth
+  tailscale?: TailscaleConnection
 }
 
 /** Owns the domain services independently of Electron and HTTP. */
@@ -122,7 +124,8 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     store,
     options.serverAuth ?? new ServerAuth(dataDirectory),
     options.rebindHttp ?? (async () => {}),
-    (workspaceId, status) => broadcast('connections:changed', { workspaceId, status })
+    (workspaceId, status) => broadcast('connections:changed', { workspaceId, status }),
+    options.tailscale
   )
   registerWorkspaceHandlers(ipc, store, broadcast, async (workspaceId, name) => {
     const release = agentProcesses.acquireAccountChange(workspaceId)
@@ -227,6 +230,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
       stopPollingUpdates()
       stopRememberingWorktreeOwners()
       const results = await Promise.allSettled([
+        connections.close(),
         Promise.resolve().then(() => terminals.disposeAll()),
         Promise.resolve().then(() => agentProcesses.close()),
         Promise.resolve().then(() => accounts.close()),

@@ -54,6 +54,8 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: {
   rendererOrigin?: string
   rendererDirectory?: string
   auth?: HttpServerAuth
+  requireAuthentication?: boolean
+  externalOrigin?: string
 }) {
   const app = new Hono<{ Bindings: HttpBindings }>()
   const clients = new Set<EventClient>()
@@ -76,19 +78,21 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: {
       }
     })
     context.header('Cache-Control', 'no-store')
-    if (!isLoopbackAddress(getConnInfo(context).remote.address) &&
+    if ((options.requireAuthentication || !isLoopbackAddress(getConnInfo(context).remote.address)) &&
       !await authorized(context.req.header('authorization'), options.auth)) {
       context.header('WWW-Authenticate', 'Basic realm="Anvil", charset="UTF-8"')
       throw new HTTPException(401, { message: 'Authentication required' })
     }
     const socket = context.env.incoming.socket
-    if (context.req.header('host') !== expectedHost(socket.localAddress, socket.localPort)) {
+    const host = context.req.header('host')
+    const externalHost = options.externalOrigin ? new URL(options.externalOrigin).host : undefined
+    if (host !== expectedHost(socket.localAddress, socket.localPort) && (!externalHost || host !== externalHost)) {
       throw new HTTPException(403, { message: 'Invalid Host header' })
     }
     const origin = context.req.header('origin')
     if (origin !== undefined) {
-      const sameOrigin = new URL(context.req.url).origin
-      if (origin !== sameOrigin && origin !== 'null' && origin !== options.rendererOrigin) {
+      const sameOrigin = options.externalOrigin ?? new URL(context.req.url).origin
+      if (origin !== sameOrigin && (options.externalOrigin || (origin !== 'null' && origin !== options.rendererOrigin))) {
         throw new HTTPException(403, { message: 'Origin not allowed' })
       }
       context.header('Access-Control-Allow-Origin', origin)

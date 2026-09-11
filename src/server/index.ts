@@ -6,6 +6,8 @@ import { resolveAppDataDirectory } from '../shared/app-data'
 import { restoreShellPath } from './shell-path'
 import { version } from '../../package.json'
 import { ServerAuth } from './server-auth'
+import { createTailscaleConnection } from './tailscale'
+import type { HttpRuntime } from './http'
 
 async function main(): Promise<void> {
   const port = Number(process.env.ANVIL_SERVER_PORT ?? 4780)
@@ -15,7 +17,7 @@ async function main(): Promise<void> {
   const serverAuth = new ServerAuth(dataDirectory)
   let runtime: ReturnType<typeof createAnvilRuntime> | undefined
   const listeners = new Set<(channel: string, payload: unknown) => void>()
-  const http = createAnvilHttpServer({
+  const httpRuntime: HttpRuntime = {
     invoke: (channel, input, context) => {
       if (!runtime) throw new Error('Anvil server is starting')
       return runtime.invoke(channel, input, context)
@@ -24,11 +26,29 @@ async function main(): Promise<void> {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     }
-  }, {
+  }
+  const httpOptions = {
     version,
     rendererOrigin: process.env.ANVIL_RENDERER_ORIGIN ?? 'http://localhost:5173',
     rendererDirectory: join(__dirname, '../browser'),
     auth: serverAuth
+  }
+  const http = createAnvilHttpServer(httpRuntime, httpOptions)
+  let tailscaleHttp: ReturnType<typeof createAnvilHttpServer> | undefined
+  const tailscale = createTailscaleConnection({
+    async start(origin) {
+      tailscaleHttp = createAnvilHttpServer(httpRuntime, {
+        ...httpOptions,
+        requireAuthentication: true,
+        externalOrigin: origin
+      })
+      return tailscaleHttp.listen(0)
+    },
+    async stop() {
+      const active = tailscaleHttp
+      tailscaleHttp = undefined
+      await active?.close()
+    }
   })
   let closing = false
   const close = async (): Promise<void> => {
@@ -56,12 +76,14 @@ async function main(): Promise<void> {
       migrationsDirectory: join(__dirname, 'db', 'migrations'),
       memoryMigrationsDirectory: join(__dirname, 'memory', 'migrations'),
       serverAuth,
-      rebindHttp: http.rebind
+      rebindHttp: http.rebind,
+      tailscale
     })
     runtime.subscribeAll((channel, payload) => {
       for (const listener of listeners) listener(channel, payload)
     })
-    await runtime.initializeConnections()
+    // HTTPS setup can wait on Tailscale. Keep the desktop available while it runs.
+    void runtime.initializeConnections().catch((error) => console.error('Could not initialize connection settings:', error))
     console.log(`Anvil server listening at ${url}`)
     process.send?.({ type: 'anvil-server-ready', url })
   } catch (error) {

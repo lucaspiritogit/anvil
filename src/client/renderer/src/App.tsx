@@ -172,7 +172,13 @@ export function App(): JSX.Element {
         )}
       >
         <OverviewBackground />
-        <div className="contents" inert={switching}><Sidebar /></div>
+        <div className="contents" inert={switching}>
+          <Sidebar terminalAvailable={Boolean(projectId)} onOpenTerminal={() => {
+            if (!projectId) return
+            setTerminalCreated(true)
+            setTerminalOpen(true)
+          }} />
+        </div>
         <div ref={workspaceRef} tabIndex={-1} className={cn('flex flex-col min-w-0 min-h-0 outline-none', settingsOpen && 'hidden')} inert={settingsOpen || switching}>
           <div className="min-h-0 flex-1"><Workspace key={workspaceId} /></div>
           {terminalCreated && projectId && <TerminalDrawer key={`${workspaceId}:${projectId}`} projectId={projectId} visible={terminalOpen} onClose={() => { setTerminalCreated(false); setTerminalOpen(false) }} />}

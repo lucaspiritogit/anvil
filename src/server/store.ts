@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS: Settings = {
   confirmRebase: true,
   caffeineMode: false,
   allowOtherDevices: false,
+  tailscaleHttps: false,
   keybindings: DEFAULT_KEYBINDINGS
 }
 
@@ -54,6 +55,7 @@ const SETTING_KEYS = [
   'confirmRebase',
   'caffeineMode',
   'allowOtherDevices',
+  'tailscaleHttps',
   'keybindings',
   'overviewBackgroundMode',
   'overviewBackgroundColor',
@@ -61,7 +63,7 @@ const SETTING_KEYS = [
 ] as const
 
 function encodeSetting(key: keyof Settings, value: Settings[keyof Settings]): string {
-  if (key === 'autoCompactContext' || key === 'confirmRebase' || key === 'caffeineMode' || key === 'memoryEnabled' || key === 'allowOtherDevices') return String(value === true)
+  if (key === 'autoCompactContext' || key === 'confirmRebase' || key === 'caffeineMode' || key === 'memoryEnabled' || key === 'allowOtherDevices' || key === 'tailscaleHttps') return String(value === true)
   if (key === 'keybindings') return JSON.stringify(value)
   if (key === 'overviewWallpaperId') return isWallpaperId(value) ? value : ''
   return String(value)
@@ -503,7 +505,7 @@ export class Store {
       .all()
       .reduce<Settings>(
         (current, row) => {
-          if (row.key === 'autoCompactContext' || row.key === 'confirmRebase' || row.key === 'caffeineMode' || row.key === 'memoryEnabled' || row.key === 'allowOtherDevices') current[row.key] = row.value === 'true'
+          if (row.key === 'autoCompactContext' || row.key === 'confirmRebase' || row.key === 'caffeineMode' || row.key === 'memoryEnabled' || row.key === 'allowOtherDevices' || row.key === 'tailscaleHttps') current[row.key] = row.value === 'true'
           else if (row.key === 'overviewBackgroundMode') current.overviewBackgroundMode = row.value === 'image' ? 'image' : 'color'
           else if (row.key === 'overviewBackgroundColor') current.overviewBackgroundColor = OVERVIEW_COLOR_PATTERN.test(row.value) ? row.value : DEFAULT_OVERVIEW_COLOR
           else if (row.key === 'overviewWallpaperId') current.overviewWallpaperId = isWallpaperId(row.value) ? row.value : null
@@ -527,6 +529,7 @@ export class Store {
     const db = this.workspaceConnection(workspaceId).db
     this.requireWorkspace(workspaceId)
     if (next.autoCompactContext !== undefined && typeof next.autoCompactContext !== 'boolean') throw new Error('Auto-compaction must be a boolean')
+    if (next.tailscaleHttps !== undefined && typeof next.tailscaleHttps !== 'boolean') throw new Error('Tailscale HTTPS must be a boolean')
     if (next.allowOtherDevices !== undefined && typeof next.allowOtherDevices !== 'boolean') throw new Error('Allow other devices must be a boolean')
     if (next.contextCompactionThreshold !== undefined && (!Number.isInteger(next.contextCompactionThreshold) || next.contextCompactionThreshold < 1 || next.contextCompactionThreshold > 100)) throw new Error('Context threshold must be an integer from 1 to 100')
     const rows = SETTING_KEYS.filter((key) => next[key] !== undefined).map((key) => ({

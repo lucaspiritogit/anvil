@@ -285,6 +285,9 @@ export interface WorkspaceSettingsChange {
 }
 
 export interface ConnectionsStatus {
+  tailscaleHttps: boolean
+  tailscaleUrl?: string
+  tailscaleSetupUrl?: string
   allowOtherDevices: boolean
   passwordConfigured: boolean
   pending: boolean
@@ -295,6 +298,7 @@ export interface ConnectionsConfigure {
   workspaceId: string
   allowOtherDevices: boolean
   password?: string
+  tailscaleHttps?: boolean
 }
 
 export interface ConnectionsStatusChange {
@@ -438,6 +442,8 @@ export interface Settings {
   caffeineMode: boolean
   /** Allow authenticated HTTP clients on other devices to reach the server. */
   allowOtherDevices: boolean
+  /** Serve Anvil over HTTPS within the connected Tailscale network. */
+  tailscaleHttps: boolean
   /** Accelerator per shortcut, e.g. `{ toggleSidebar: 'Mod+B' }`. */
   keybindings: Keybindings
 }

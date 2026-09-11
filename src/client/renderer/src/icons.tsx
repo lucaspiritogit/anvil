@@ -1,5 +1,7 @@
 import type { JSX, SVGProps } from 'react'
 import archive from './icons/archive.svg?raw'
+import arrowLeftToLine from './icons/arrow-left-to-line.svg?raw'
+import arrowRightToLine from './icons/arrow-right-to-line.svg?raw'
 import ban from './icons/ban.svg?raw'
 import bellRing from './icons/bell-ring.svg?raw'
 import bot from './icons/bot.svg?raw'
@@ -21,6 +23,7 @@ import pencil from './icons/pencil.svg?raw'
 import search from './icons/search.svg?raw'
 import settings from './icons/settings.svg?raw'
 import sparkles from './icons/sparkles.svg?raw'
+import terminal from './icons/terminal.svg?raw'
 import waypoints from './icons/waypoints.svg?raw'
 import x from './icons/x.svg?raw'
 
@@ -36,6 +39,8 @@ function body(svg: string): string {
 
 const artwork = {
   archive: body(archive),
+  'arrow-left-to-line': body(arrowLeftToLine),
+  'arrow-right-to-line': body(arrowRightToLine),
   ban: body(ban),
   'bell-ring': body(bellRing),
   bot: body(bot),
@@ -59,6 +64,7 @@ const artwork = {
   search: body(search),
   settings: body(settings),
   sparkles: body(sparkles),
+  terminal: body(terminal),
   waypoints: body(waypoints),
   x: body(x)
 }

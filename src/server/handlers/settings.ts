@@ -5,6 +5,7 @@ import type { Settings, WorkspaceSettingsChange } from '../../shared/types'
 import type { ConnectionsStatus } from '../../shared/types'
 import { BUILTIN_AGENTS, getAgent } from '../agents/registry'
 import type { ServerAuth } from '../server-auth'
+import type { TailscaleConnection } from '../tailscale'
 
 export function availableSettings(settings: Settings): Settings {
   if (getAgent(settings.defaultAgentId)) return settings
@@ -31,6 +32,7 @@ export function registerSettingsHandlers(ipc: HandlerRegistry, store: Store, wal
 }
 
 export interface ConnectionsController {
+  close(): Promise<void>
   initialize(): Promise<ConnectionsStatus>
   activate(workspaceId: string): Promise<ConnectionsStatus>
   status(workspaceId?: string): Promise<ConnectionsStatus>
@@ -41,10 +43,13 @@ export function registerConnectionsHandlers(
   store: Store,
   auth: ServerAuth,
   rebind: (allowOtherDevices: boolean) => Promise<void>,
-  changed: (workspaceId: string, status: ConnectionsStatus) => void = () => {}
+  changed: (workspaceId: string, status: ConnectionsStatus) => void = () => {},
+  tailscale?: TailscaleConnection
 ): ConnectionsController {
   let allowOtherDevices = false
   let desiredAllowOtherDevices = false
+  let desiredTailscaleHttps = false
+  let closed = false
   let pending = false
   let queuedTransitions = 0
   let lastError: string | undefined
@@ -53,6 +58,7 @@ export function registerConnectionsHandlers(
   const passwordConfigured = async (): Promise<boolean> => (await auth.status()).configured
   const snapshot = async (): Promise<ConnectionsStatus> => ({
     allowOtherDevices,
+    ...(tailscale?.status() ?? { tailscaleHttps: false }),
     passwordConfigured: await passwordConfigured(),
     pending,
     ...(lastError ? { error: lastError } : {})
@@ -62,15 +68,38 @@ export function registerConnectionsHandlers(
     changed(workspaceId, status)
     return status
   }
-  const enqueue = (workspaceId: string, requested: boolean): Promise<void> => {
+  const unsubscribeTailscale = tailscale?.onStopped((message) => {
+    if (closed) return
+    const workspaceId = store.getActiveWorkspace().id
+    desiredTailscaleHttps = false
+    store.setSettings({ tailscaleHttps: false }, workspaceId)
+    lastError = message
+    void publish(workspaceId).catch((error) => console.error('Could not publish Tailscale status:', error))
+  })
+  const configureTailscale = async (workspaceId: string, requested: boolean): Promise<void> => {
+    try {
+      if (requested && !tailscale) throw new Error('Tailscale HTTPS is unavailable in this server.')
+      await tailscale?.configure(requested)
+    } catch (error) {
+      desiredTailscaleHttps = false
+      store.setSettings({ tailscaleHttps: false }, workspaceId)
+      lastError = error instanceof Error ? error.message : 'Could not configure Tailscale HTTPS.'
+    }
+  }
+  const enqueue = (workspaceId: string, requested: boolean, requestedTailscale: boolean): Promise<void> => {
     transitions = transitions.catch(() => {}).then(async () => {
+      if (closed) return
       try {
+        if (!requestedTailscale) await configureTailscale(workspaceId, false)
         await rebind(requested)
         allowOtherDevices = requested
+        if (requestedTailscale) await configureTailscale(workspaceId, true)
       } catch (error) {
         allowOtherDevices = false
         desiredAllowOtherDevices = false
-        store.setSettings({ allowOtherDevices: false }, workspaceId)
+        desiredTailscaleHttps = false
+        await configureTailscale(workspaceId, false)
+        store.setSettings({ allowOtherDevices: false, tailscaleHttps: false }, workspaceId)
         lastError = error instanceof Error ? error.message : 'Could not change server connection mode.'
       } finally {
         queuedTransitions -= 1
@@ -85,18 +114,22 @@ export function registerConnectionsHandlers(
     store.getSettings(workspaceId)
     return snapshot()
   })
-  ipc.handle('connections:configure', async ({ workspaceId, allowOtherDevices: requested, password }, context) => {
+  ipc.handle('connections:configure', async ({ workspaceId, allowOtherDevices: requested, password, tailscaleHttps }, context) => {
+    if (closed) throw new Error('Anvil server is closing.')
+    if (pending) throw new Error('Connection settings are still changing. Try again when the change finishes.')
     if (store.getActiveWorkspace().id !== workspaceId) throw new Error('Workspace changed; reload Connections and try again.')
     if (password !== undefined) await auth.setPassword(password)
     if (requested && !await passwordConfigured()) throw new Error('Set a valid server password before allowing other devices.')
 
-    store.setSettings({ allowOtherDevices: requested }, workspaceId)
+    const requestedTailscale = requested && (tailscaleHttps ?? desiredTailscaleHttps)
+    store.setSettings({ allowOtherDevices: requested, tailscaleHttps: requestedTailscale }, workspaceId)
     lastError = undefined
-    if (requested !== desiredAllowOtherDevices) {
+    if (requested !== desiredAllowOtherDevices || requestedTailscale !== desiredTailscaleHttps) {
       desiredAllowOtherDevices = requested
+      desiredTailscaleHttps = requestedTailscale
       queuedTransitions += 1
       pending = true
-      context.deferUntilResponse(() => enqueue(workspaceId, requested))
+      context.deferUntilResponse(() => enqueue(workspaceId, requested, requestedTailscale))
     } else {
       changed(workspaceId, await snapshot())
     }
@@ -104,11 +137,18 @@ export function registerConnectionsHandlers(
   })
 
   const activateNow = async (workspaceId: string): Promise<ConnectionsStatus> => {
-    const requested = store.getSettings(workspaceId).allowOtherDevices
+    const settings = store.getSettings(workspaceId)
+    const requested = settings.allowOtherDevices
+    const requestedTailscale = requested && settings.tailscaleHttps
     desiredAllowOtherDevices = requested
+    desiredTailscaleHttps = requestedTailscale
+    lastError = undefined
+    if (!requestedTailscale) await configureTailscale(workspaceId, false)
     if (requested && !await passwordConfigured()) {
-      store.setSettings({ allowOtherDevices: false }, workspaceId)
+      store.setSettings({ allowOtherDevices: false, tailscaleHttps: false }, workspaceId)
       desiredAllowOtherDevices = false
+      desiredTailscaleHttps = false
+      await configureTailscale(workspaceId, false)
       lastError = 'The stored server password is missing or invalid; LAN access was disabled.'
       if (allowOtherDevices) {
         try {
@@ -120,26 +160,44 @@ export function registerConnectionsHandlers(
       allowOtherDevices = false
       return publish(workspaceId)
     }
-    if (requested === allowOtherDevices) return publish(workspaceId)
     try {
-      await rebind(requested)
+      if (requested !== allowOtherDevices) await rebind(requested)
       allowOtherDevices = requested
-      lastError = undefined
+      if (requestedTailscale) await configureTailscale(workspaceId, true)
     } catch (error) {
-      store.setSettings({ allowOtherDevices: false }, workspaceId)
+      store.setSettings({ allowOtherDevices: false, tailscaleHttps: false }, workspaceId)
       desiredAllowOtherDevices = false
+      desiredTailscaleHttps = false
       allowOtherDevices = false
+      await configureTailscale(workspaceId, false)
       lastError = error instanceof Error ? error.message : 'Could not change server connection mode.'
     }
     return publish(workspaceId)
   }
   const activate = (workspaceId: string): Promise<ConnectionsStatus> => {
-    const result = transitions.catch(() => {}).then(() => activateNow(workspaceId))
+    queuedTransitions += 1
+    pending = true
+    const result = transitions.catch(() => {}).then(async () => {
+      if (closed) return snapshot()
+      try {
+        await activateNow(workspaceId)
+      } finally {
+        queuedTransitions -= 1
+        pending = queuedTransitions > 0
+      }
+      return publish(workspaceId)
+    })
     transitions = result.then(() => {}, () => {})
     return result
   }
 
   return {
+    async close() {
+      closed = true
+      unsubscribeTailscale?.()
+      await tailscale?.close()
+      await transitions.catch(() => {})
+    },
     initialize: () => activate(store.getActiveWorkspace().id),
     activate,
     status(workspaceId) {

@@ -14,7 +14,10 @@ import { CaffeineToggle } from './CaffeineToggle'
 
 const ICON_BUTTON = 'grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent'
 
-export function Sidebar(): JSX.Element {
+export function Sidebar({ onOpenTerminal, terminalAvailable }: {
+  onOpenTerminal: () => void
+  terminalAvailable: boolean
+}): JSX.Element {
   const fontSize = useStore((state) => state.settings?.fontSize)
   const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
   // Native traffic lights do not scale with the renderer's font-size zoom.
@@ -32,6 +35,7 @@ export function Sidebar(): JSX.Element {
   const setSettingsOpen = useStore((state) => state.setSettingsOpen)
   const focusTaskComposer = useStore((state) => state.focusTaskComposer)
   const sidebarCollapsed = useStore((state) => state.sidebarCollapsed)
+  const toggleSidebar = useStore((state) => state.toggleSidebar)
   const [projectFilter, setProjectFilter] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [settledOpen, setSettledOpen] = useState(false)
@@ -109,6 +113,15 @@ export function Sidebar(): JSX.Element {
     >
       <div style={titlebarStyle} className={cn('flex shrink-0 items-center h-11 px-4 text-[11px] font-semibold tracking-[0.12em] text-dim', IS_MAC && 'drag-region')}>
         ANVIL
+        <button
+          className={cn(ICON_BUTTON, 'no-drag ml-auto')}
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar"
+          aria-expanded={true}
+          onClick={toggleSidebar}
+        >
+          <Icon icon="arrow-left-to-line" size={18} aria-hidden="true" />
+        </button>
       </div>
 
       <div className="flex shrink-0 flex-col gap-2 px-2.5 pb-3">
@@ -121,6 +134,16 @@ export function Sidebar(): JSX.Element {
         >
           <Icon icon="pencil" size={16} aria-hidden="true" />
           New Task
+        </button>
+        <button
+          className="flex h-9 shrink-0 items-center gap-2 border border-line px-2.5 text-xs text-fg hover:bg-hover disabled:opacity-40 focus-visible:outline focus-visible:outline-accent"
+          aria-label="Open terminal"
+          title="Open terminal"
+          disabled={!terminalAvailable}
+          onClick={onOpenTerminal}
+        >
+          <Icon icon="terminal" size={16} aria-hidden="true" />
+          Terminal
         </button>
         <div className="flex items-center gap-2 h-9 px-2.5 border border-line focus-within:border-dim/60">
           <Icon icon="search" size={16} className="shrink-0 text-dim" aria-hidden="true" />

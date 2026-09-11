@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { IS_MAC } from '../keys'
+import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import { btn, cn } from '../ui'
 import { TaskView } from './TaskView'
@@ -16,13 +17,12 @@ export function Workspace(): JSX.Element {
   const fontSize = useStore((s) => s.settings?.fontSize)
 
   const project = projects.find((p) => p.id === activeProjectId)
-  const dragStrip = IS_MAC && sidebarCollapsed
   const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
 
   if (!project) {
     return (
       <main className="flex flex-col min-w-0 h-full">
-        {dragStrip && <DragStrip scale={scale} />}
+        {sidebarCollapsed && <CollapsedSidebarHeader scale={scale} />}
         <div className="grid place-content-center justify-items-center gap-2.5 h-full text-center">
           <h1 className="text-lg font-semibold">Add a project</h1>
           <p className="max-w-[360px] mb-2 text-dim">
@@ -44,11 +44,11 @@ export function Workspace(): JSX.Element {
     <main className={cn('relative flex flex-col min-w-0 min-h-0 h-full overflow-hidden',
       // Keep the overview centered in the full window, with fixed clearance for
       // traffic lights even when its content needs to scroll in a short window.
-      IS_MAC && overview && 'py-11'
+      (IS_MAC || sidebarCollapsed) && overview && 'py-11'
     )}>
-      {dragStrip && (overview
-        ? <div className="absolute inset-x-0 top-0"><DragStrip scale={scale} /></div>
-        : <DragStrip scale={scale} />)}
+      {sidebarCollapsed && (overview
+        ? <div className="absolute inset-x-0 top-0"><CollapsedSidebarHeader scale={scale} /></div>
+        : <CollapsedSidebarHeader scale={scale} />)}
       <section className="relative flex-1 min-w-0 min-h-0 overflow-hidden">
         {overview && (
           <ProjectOverview project={project} />
@@ -64,13 +64,23 @@ export function Workspace(): JSX.Element {
  * the sidebar collapsed they land here instead, so a slim strip takes over as
  * the window's drag handle and keeps the gutter clear.
  */
-function DragStrip({ scale }: { scale: number }): JSX.Element {
+function CollapsedSidebarHeader({ scale }: { scale: number }): JSX.Element {
+  const toggleSidebar = useStore((state) => state.toggleSidebar)
   return (
     <div
-      style={{ height: 44 / scale, paddingLeft: 78 / scale }}
-      className="drag-region flex shrink-0 items-center h-11 pl-[78px] text-[11px] font-semibold tracking-[0.12em] text-dim"
+      style={IS_MAC ? { height: 44 / scale, paddingLeft: 78 / scale } : undefined}
+      className={cn('flex shrink-0 items-center gap-3 h-11 px-4 text-[11px] font-semibold tracking-[0.12em] text-dim', IS_MAC && 'drag-region')}
     >
       ANVIL
+      <button
+        className="no-drag grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent"
+        aria-label="Expand sidebar"
+        title="Expand sidebar"
+        aria-expanded={false}
+        onClick={toggleSidebar}
+      >
+        <Icon icon="arrow-right-to-line" size={18} aria-hidden="true" />
+      </button>
     </div>
   )
 }

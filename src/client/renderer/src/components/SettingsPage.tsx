@@ -26,6 +26,8 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
   const [password, setPassword] = useState('')
   const [settingPassword, setSettingPassword] = useState(false)
   const [requestError, setRequestError] = useState('')
+  const statusRevision = useRef(0)
+  const requestInFlight = useRef(false)
 
   useEffect(() => {
     let active = true
@@ -34,37 +36,66 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
     setSettingPassword(false)
     setRequestError('')
     if (!workspaceId) return
-    let statusRevision = 0
+    statusRevision.current += 1
     const unsubscribe = window.anvil.connections.onChanged((change) => {
       if (active && change.workspaceId === workspaceId) {
-        statusRevision += 1
+        statusRevision.current += 1
         setStatus(change.status)
         setRequestError('')
       }
     })
     // Rebinding disconnects SSE, so the final connection status can be missed.
     const unsubscribeReady = window.anvil.app.onReady(() => {
-      const revision = ++statusRevision
+      const revision = ++statusRevision.current
       void window.anvil.connections.status(workspaceId).then((next) => {
-        if (active && revision === statusRevision) {
+        if (active && revision === statusRevision.current) {
           setStatus(next)
           setRequestError('')
         }
       }).catch((error) => {
-        if (active && revision === statusRevision) {
+        if (active && revision === statusRevision.current) {
           setRequestError(errorMessage(error, 'Could not load connection settings.'))
         }
       })
     })
     return () => {
       active = false
+      statusRevision.current += 1
       unsubscribe()
       unsubscribeReady()
     }
   }, [workspaceId])
 
-  const configure = async (allowOtherDevices: boolean, nextPassword?: string): Promise<void> => {
-    if (!workspaceId || !status) return
+  useEffect(() => {
+    if (!workspaceId || !status?.pending) return
+    let active = true
+    let refreshing = false
+    const timer = setInterval(() => {
+      if (refreshing || requestInFlight.current) return
+      refreshing = true
+      const revision = statusRevision.current
+      void window.anvil.connections.status(workspaceId).then((next) => {
+        if (active && revision === statusRevision.current) {
+          statusRevision.current += 1
+          setStatus(next)
+          setRequestError('')
+        }
+      }).catch((error) => {
+        if (active && revision === statusRevision.current) {
+          setRequestError(errorMessage(error, 'Could not refresh connection settings.'))
+        }
+      }).finally(() => { refreshing = false })
+    }, 2_000)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [workspaceId, status?.pending])
+
+  const configure = async (allowOtherDevices: boolean, nextPassword?: string, tailscaleHttps?: boolean): Promise<void> => {
+    if (!workspaceId || !status || requestInFlight.current) return
+    requestInFlight.current = true
+    const revision = ++statusRevision.current
     const previous = status
     setRequestError('')
     setStatus({ ...status, pending: true, error: undefined })
@@ -72,14 +103,19 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
       const next = await window.anvil.connections.configure({
         workspaceId,
         allowOtherDevices,
+        ...(tailscaleHttps !== undefined ? { tailscaleHttps } : {}),
         ...(nextPassword !== undefined ? { password: nextPassword } : {})
       })
-      setStatus(next)
+      // A completion event can arrive before the configure response.
+      if (revision === statusRevision.current) setStatus(next)
       if (nextPassword !== undefined) setSettingPassword(false)
     } catch (error) {
-      setStatus({ ...previous, pending: false })
-      setRequestError(errorMessage(error, 'Could not change connection settings.'))
+      if (revision === statusRevision.current) {
+        setStatus({ ...previous, pending: false })
+        setRequestError(errorMessage(error, 'Could not change connection settings.'))
+      }
     } finally {
+      requestInFlight.current = false
       if (nextPassword !== undefined) setPassword('')
     }
   }
@@ -115,6 +151,27 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
           <small className={field.hint}>Make Anvil available on port 4780 to devices on this local network. Remote requests require the username <code>anvil</code> and your password.</small>
         </span>
       </label>
+
+      <label className={modal.toggle}>
+        <input
+          type="checkbox"
+          checked={status?.tailscaleHttps ?? false}
+          disabled={!status?.allowOtherDevices || pending}
+          onChange={(event) => { void configure(true, undefined, event.target.checked) }}
+        />
+        <span>
+          <strong className="block">Tailscale HTTPS</strong>
+          <small className={field.hint}>Access Anvil from another network using Tailscale. Install and connect Tailscale on this computer and your phone. Your Anvil password is still required.</small>
+          {!status?.allowOtherDevices && <small className="block text-xs text-dim">Enable Allow other devices first.</small>}
+        </span>
+      </label>
+      {status?.tailscaleUrl && (
+        <label className={field.wrap}>
+          <span className={field.label}>Tailscale HTTPS address</span>
+          <input className={field.sized} readOnly value={status.tailscaleUrl} onFocus={(event) => event.target.select()} />
+          <small className={field.hint}>Open this address on your phone while connected to Tailscale.</small>
+        </label>
+      )}
 
       {!status && !requestError && <p role="status" className="text-xs text-dim">Loading connection settings…</p>}
       {status && <div className="mb-4 text-xs text-dim">
@@ -156,6 +213,13 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
         </form>
       )}
 
+      {status?.tailscaleSetupUrl && (
+        <label className={field.wrap}>
+          <span className={field.label}>Tailscale setup link</span>
+          <input className={field.sized} readOnly value={status.tailscaleSetupUrl} onFocus={(event) => event.target.select()} />
+          <small className={field.hint}>Open this link in your browser to approve HTTPS, then enable Tailscale HTTPS again.</small>
+        </label>
+      )}
       {pending && <p role="status" className="mt-4 text-xs text-dim">Changing connection access…</p>}
       {(requestError || status?.error) && <p role="alert" className="mt-4 text-xs text-danger">{requestError || status?.error}</p>}
     </div>
