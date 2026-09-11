@@ -7,6 +7,7 @@ import { useStore } from '../state/store'
 import { useComposerPreferences } from '../state/composer-preferences'
 import { ComposerFilePicker } from './ComposerFilePicker'
 import { useComposerFileMentions } from '../state/composer-file-mentions'
+import { useTaskComposerDraft } from '../state/task-composer-drafts'
 import { useComposerImages } from '../state/composer-images'
 import { cn } from '../ui'
 import { ComposerModelPicker } from './ComposerModelPicker'
@@ -17,10 +18,12 @@ const compactSelect = 'min-w-0 field-sizing-content appearance-none bg-transpare
 
 export function TaskComposer(): JSX.Element {
   const projectId = useStore((state) => state.activeProjectId)
-  return <TaskComposerDraft key={projectId} projectId={projectId} />
+  const workspaceId = useStore((state) => state.activeWorkspaceId)
+  const draftKey = JSON.stringify([workspaceId, projectId])
+  return <TaskComposerDraft key={draftKey} projectId={projectId} draftKey={draftKey} />
 }
 
-function TaskComposerDraft({ projectId }: { projectId: string | null }): JSX.Element {
+function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; draftKey: string }): JSX.Element {
   const agents = useStore((state) => state.agents)
   const modelsByAgent = useStore((state) => state.modelsByAgent)
   const loadingModelsAgentId = useStore((state) => state.loadingModelsAgentId)
@@ -34,9 +37,10 @@ function TaskComposerDraft({ projectId }: { projectId: string | null }): JSX.Ele
   const agent = agents.find((candidate) => candidate.id === preferences.agentId)
   const agentId = agent?.id ?? ''
   const model = preferences.modelsByAgent[agentId] ?? ''
-  const [prompt, setPrompt] = useState('')
+  const draft = useTaskComposerDraft(draftKey)
+  const { prompt, setPrompt } = draft
   const attachments = useComposerImages()
-  const mentions = useComposerFileMentions(projectId, prompt, setPrompt, promptRef)
+  const mentions = useComposerFileMentions(projectId, prompt, setPrompt, promptRef, draft)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -84,10 +88,9 @@ function TaskComposerDraft({ projectId }: { projectId: string | null }): JSX.Ele
         ...(attachments.ready.length ? { images: attachments.ready } : {}),
         ...(reasoningEffort !== undefined ? { reasoningEffort } : {})
       })
+      draft.clearSubmitted()
       if (mounted.current) {
-        setPrompt('')
         attachments.reset()
-        mentions.reset()
       }
     } catch (error) {
       if (mounted.current) setError(error instanceof Error ? error.message : String(error))

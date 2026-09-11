@@ -12,6 +12,80 @@ test.describe(() => {
     await expect(prompt(page)).toBeVisible()
   })
 
+  test('navigation and repeated focus retain whitespace and file references', async ({ page }, testInfo) => {
+    await prompt(page).fill('@tskc')
+    await page.getByRole('option', { name: 'src/TaskComposer.tsx', exact: true }).click()
+    const text = '  First line\n\n@"src/TaskComposer.tsx"  \n'
+    await prompt(page).fill(text)
+    for (const sidebar of [false, true]) {
+      await page.getByText('Build streaming support', { exact: true }).click()
+      await expect(composer(page)).toHaveCount(0)
+      if (sidebar) await page.getByRole('button', { name: 'New task', exact: true }).click()
+      else await page.keyboard.press('Control+n')
+      await expect(prompt(page)).toHaveValue(text)
+      await expect(prompt(page)).toBeFocused()
+    }
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.press('Control+n')
+      await expect(prompt(page)).toHaveValue(text)
+      await expect(prompt(page)).toBeFocused()
+    }
+    expect(await page.evaluate(() => window.composerTest.starts)).toEqual([])
+    await page.screenshot({ path: testInfo.outputPath('retained-draft.png') })
+    await prompt(page).press('Enter')
+    await expect.poll(() => page.evaluate(() => window.composerTest.starts[0]?.fileReferences)).toEqual(['src/TaskComposer.tsx'])
+    await page.keyboard.press('Control+n')
+    await expect(prompt(page)).toHaveValue('')
+  })
+
+  test('project drafts keep their own text and selected references', async ({ page }) => {
+    await prompt(page).fill('@tskc')
+    await page.getByRole('option', { name: 'src/TaskComposer.tsx', exact: true }).click()
+    const original = await prompt(page).inputValue()
+    await page.evaluate(() => window.composerTest.selectProject('project-1'))
+    await expect(prompt(page)).toHaveValue('')
+    await prompt(page).fill('Other project')
+    await page.evaluate(() => window.composerTest.selectProject('project-0'))
+    await expect(prompt(page)).toHaveValue(original)
+    await page.evaluate(() => window.composerTest.selectProject('project-1'))
+    await expect(prompt(page)).toHaveValue('Other project')
+    await prompt(page).press('Enter')
+    await expect.poll(() => page.evaluate(() => window.composerTest.starts.length)).toBe(1)
+    expect(await page.evaluate(() => window.composerTest.starts[0].fileReferences)).toBeUndefined()
+  })
+
+  for (const outcome of ['success', 'failure', 'newer'] as const) {
+    test(`late ${outcome} submission preserves the correct draft`, async ({ page }) => {
+      await page.evaluate((outcome) => {
+        const start = window.anvil.tasks.start
+        window.anvil.tasks.start = async (input) => {
+          await new Promise<void>((resolve) => window.addEventListener('fixture:finish', () => resolve(), { once: true }))
+          if (outcome === 'failure') {
+            window.dispatchEvent(new Event('fixture:failed'))
+            throw new Error('Start failed')
+          }
+          return start(input)
+        }
+      }, outcome)
+      await prompt(page).fill('Submitted draft')
+      await prompt(page).press('Enter')
+      await expect(prompt(page)).toBeDisabled()
+      await page.getByText('Build streaming support', { exact: true }).click()
+      await page.keyboard.press('Control+n')
+      await expect(prompt(page)).toHaveValue('Submitted draft')
+      if (outcome === 'newer') await prompt(page).fill('Newer draft')
+      await page.evaluate(async (outcome) => {
+        const failed = outcome === 'failure'
+          ? new Promise<void>((resolve) => window.addEventListener('fixture:failed', () => resolve(), { once: true }))
+          : Promise.resolve()
+        window.dispatchEvent(new Event('fixture:finish'))
+        await failed
+      }, outcome)
+      if (outcome !== 'failure') await expect.poll(() => page.evaluate(() => window.composerTest.starts.length)).toBe(1)
+      await expect(prompt(page)).toHaveValue(outcome === 'success' ? '' : outcome === 'newer' ? 'Newer draft' : 'Submitted draft')
+    })
+  }
+
   test('Shift+Enter edits at the caret and Enter sends the multiline draft intact', async ({ page }, testInfo) => {
     await prompt(page).fill('FirstLast')
     await prompt(page).evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(5, 5))

@@ -137,7 +137,7 @@ test('switching restores project, preferences and history while background tasks
   await selectWorkspace(page, 'Default')
   await expect(page.getByTestId('composer-project-name')).toHaveText('Workbench')
   await expect(composer.getByRole('button', { name: 'Model: GPT 5 Mini', exact: true })).toBeVisible()
-  await expect(composer.getByRole('textbox')).toHaveValue('')
+  await expect(composer.getByRole('textbox')).toHaveValue('Private draft')
   await page.getByRole('button', { name: 'Open task: Background work continues', exact: true }).click()
   await expect(page.getByLabel('Task workspace', { exact: true })).toHaveText('Default')
   await page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true }).click()

@@ -3,7 +3,7 @@ import type { KeyboardEvent, RefObject } from 'react'
 import type { ProjectFileList } from '@shared/types'
 import { activeFileMention, fileReference, rankFiles, selectedFilePaths } from '../components/composer-file-mentions'
 
-export function useComposerFileMentions(projectId: string | null, prompt: string, setPrompt: (text: string) => void, textarea: RefObject<HTMLTextAreaElement | null>) {
+export function useComposerFileMentions(projectId: string | null, prompt: string, setPrompt: (text: string) => void, textarea: RefObject<HTMLTextAreaElement | null>, retained?: { chosen: string[]; setChosen: (paths: string[]) => void }) {
   const id = useId()
   const pendingCaret = useRef<number | null>(null)
   useLayoutEffect(() => {
@@ -15,7 +15,9 @@ export function useComposerFileMentions(projectId: string | null, prompt: string
   const [selection, setSelection] = useState([0, 0])
   const [dismissed, setDismissed] = useState('')
   const [composing, setComposing] = useState(false)
-  const [chosen, setChosen] = useState<string[]>([])
+  const [localChosen, setLocalChosen] = useState<string[]>([])
+  const chosen = retained?.chosen ?? localChosen
+  const setChosen = retained?.setChosen ?? setLocalChosen
   const [result, setResult] = useState<ProjectFileList | null>(null)
   const [loading, setLoading] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -51,7 +53,7 @@ export function useComposerFileMentions(projectId: string | null, prompt: string
     const token = fileReference(path)
     const text = prompt.slice(0, mention.start) + token + ' ' + prompt.slice(mention.end)
     const caret = mention.start + token.length + 1
-    setChosen((previous) => [...new Set([...selectedFilePaths(prompt, previous), path])])
+    setChosen([...new Set([...selectedFilePaths(prompt, chosen), path])])
     pendingCaret.current = caret
     setPrompt(text)
     setSelection([caret, caret])
