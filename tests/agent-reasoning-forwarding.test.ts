@@ -19,10 +19,15 @@ class RecordingExecutor implements AgentExecutor {
   }
 }
 
-const agent: AgentDefinition = {
-  id: 'fixture', label: 'Fixture', description: 'Recording executor fixture',
-  command: 'unused',
-  args: []
+const agents: Record<NonNullable<AgentDefinition['executionProtocol']>, AgentDefinition> = {
+  acp: {
+    id: 'opencode', label: 'OpenCode', description: 'Recording ACP executor fixture',
+    command: 'unused', args: [], executionProtocol: 'acp'
+  },
+  'codex-app-server': {
+    id: 'codex', label: 'Codex', description: 'Recording Codex executor fixture',
+    command: 'unused', args: [], executionProtocol: 'codex-app-server'
+  }
 }
 
 test('forwards explicit and omitted reasoning effort to both protocols', async () => {
@@ -35,23 +40,23 @@ test('forwards explicit and omitted reasoning effort to both protocols', async (
   })
   try {
     const exits: Promise<unknown>[] = []
-    const run = (taskId: string, reasoningEffort?: TaskInput['reasoningEffort'], protocol?: AgentDefinition['executionProtocol']): void => {
+    const run = (taskId: string, protocol: NonNullable<AgentDefinition['executionProtocol']>, reasoningEffort?: TaskInput['reasoningEffort']): void => {
       exits.push(new Promise<void>((resolve) => agentProcesses.once('exit', resolve)))
       agentProcesses.start({
         workspace: testWorkspace(),
         taskId,
-        agent: { ...agent, executionProtocol: protocol },
+        agent: agents[protocol],
         prompt: 'prompt',
         cwd: process.cwd(),
         ...(reasoningEffort !== undefined ? { reasoningEffort } : {})
       })
     }
 
-    run('acp-level', 'high', 'acp')
-    run('acp-native-effort', 'native-max', 'acp')
-    run('codex-level', 'native-max', 'codex-app-server')
-    run('acp-default', undefined, 'acp')
-    run('codex-default', undefined, 'codex-app-server')
+    run('acp-level', 'acp', 'high')
+    run('acp-native-effort', 'acp', 'native-max')
+    run('codex-level', 'codex-app-server', 'native-max')
+    run('acp-default', 'acp')
+    run('codex-default', 'codex-app-server')
     await Promise.all(exits)
 
     expect(acpExecutor.inputs.map((input) => [input.taskId, input.reasoningEffort])).toStrictEqual([
