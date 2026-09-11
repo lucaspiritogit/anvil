@@ -3,19 +3,11 @@ import type { Task } from '@shared/types'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import { btn, cn, field } from '../ui'
+import { TaskContextControl, type TaskContextControlProps } from './TaskContextControl'
 
-/** The Compact affordance the task view hands down to the bottom bar. */
-export interface CompactControl {
-  visible: boolean
-  busy: boolean
-  disabled: boolean
-  error: string
-  onCompact: () => void
-}
-
-export function TaskSteeringComposer({ task, compact }: {
+export function TaskSteeringComposer({ task, contextControl }: {
   task: Task
-  compact?: CompactControl
+  contextControl?: TaskContextControlProps
 }): JSX.Element {
   const supported = useStore((state) => state.agents.find((agent) => agent.id === task.agentId)?.supportsSteering)
   const steerTask = useStore((state) => state.steerTask)
@@ -63,6 +55,7 @@ export function TaskSteeringComposer({ task, compact }: {
       className="shrink-0 px-5 py-2.5 border-t border-line bg-raised"
       onSubmit={(event) => { event.preventDefault(); void send() }}
     >
+      {contextControl && <TaskContextControl {...contextControl} />}
       <div className="flex items-stretch gap-2">
         <textarea
           aria-label="Message to agent"
@@ -106,23 +99,11 @@ export function TaskSteeringComposer({ task, compact }: {
           </button>
         )}
       </div>
-      {(compact?.visible || task.status === 'running') && (
+      {task.status === 'running' && (
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-dim">
-          {compact?.visible && (
-            <button
-              type="button"
-              className={cn(btn.ghost, 'px-2 py-0.5 text-[11px]')}
-              disabled={compact.disabled}
-              title="Summarize earlier model history in this task's session"
-              onClick={compact.onCompact}
-            >
-              {compact.busy ? 'Compacting…' : 'Compact'}
-            </button>
-          )}
-          {task.status === 'running' && <span>{stopMode ? 'The agent is working. Type to steer it, or press the square to stop.' : 'Press Enter to send.'}</span>}
+          <span>{stopMode ? 'The agent is working. Type to steer it, or press the square to stop.' : 'Press Enter to send.'}</span>
         </div>
       )}
-      {compact?.error && <p role="alert" className="mt-1.5 max-h-16 overflow-y-auto text-xs text-danger">{compact.error}</p>}
       {error && <p role="alert" className="mt-1.5 max-h-16 overflow-y-auto text-xs text-danger">{error}</p>}
     </form>
   )

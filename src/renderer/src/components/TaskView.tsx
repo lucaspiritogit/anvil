@@ -17,7 +17,6 @@ import { TaskIssues } from './TaskIssues'
 import { useTaskIssues } from '../hooks/use-task-issues'
 import { TaskActivity } from './TaskActivity'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
-import { contextOccupancy } from '@shared/task-context'
 import { isTaskSettled } from '@shared/task-settlement'
 import type {
   DeliveryStatus,
@@ -487,8 +486,6 @@ export function TaskView({ task }: Props): JSX.Element {
   const [compacting, setCompacting] = useState(false)
   const [compactError, setCompactError] = useState('')
   const compactBusy = compacting || task.contextCompacting === true
-  const occupancy = contextOccupancy(task.contextUsed, task.contextSize)
-  const contextPercent = occupancy.contextSize !== null && occupancy.contextUsed !== null ? Math.round(occupancy.contextUsed / occupancy.contextSize * 100) : null
   const compact = async (): Promise<void> => {
     setCompacting(true)
     setCompactError('')
@@ -690,10 +687,6 @@ export function TaskView({ task }: Props): JSX.Element {
                 <span>{formatTokens(task.outputTokens)} <span className="text-dim">out</span></span>
               </span>
             } />
-            {contextPercent !== null && <StatBlock label="Context" value={<span className={
-              task.contextCompactionError || /context[._ ]window|context window|context length/i.test(task.error ?? '') ? 'text-danger'
-                : contextPercent >= (settings?.contextCompactionThreshold ?? 75) ? 'text-warn' : undefined
-            }>{contextPercent}%</span>} detail={`${formatTokens(task.contextUsed!)} / ${formatTokens(task.contextSize!)} in the current session. Token totals are billed usage, not window fill.`} />}
             <StatBlock label="Cached" value={formatTokens(task.cachedTokens)} detail={`${formatTokens(task.cachedTokens)} cached input`} />
             <StatBlock label="Cost" value={formatCost(task.costUsd)} />
           </div>
@@ -832,11 +825,15 @@ export function TaskView({ task }: Props): JSX.Element {
       {!isTaskSettled(task) && <TaskSteeringComposer
         key={`composer-${task.id}`}
         task={task}
-        compact={{
-          visible: Boolean(supportsCompaction && task.sessionId),
+        contextControl={{
+          compactVisible: Boolean(supportsCompaction && task.sessionId),
           busy: compactBusy,
           disabled: task.status === 'running' && !issueIsReviewReady(snapshot) || compactBusy || task.deliveryStatus === 'finalizing',
           error: compactError,
+          contextUsed: task.contextUsed,
+          contextSize: task.contextSize,
+          warningThreshold: settings?.contextCompactionThreshold,
+          danger: Boolean(task.contextCompactionError || /context[._ ]window|context window|context length/i.test(task.error ?? '')),
           onCompact: () => void compact()
         }}
       />}
