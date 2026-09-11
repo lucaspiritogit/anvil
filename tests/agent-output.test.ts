@@ -4,14 +4,14 @@ import { expect, test, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { Store } from '../src/main/store'
+import { Store } from '../src/server/store'
 import { EventEmitter } from 'node:events'
-import { registerTaskEvents } from '../src/main/tasks/events'
-import type { TaskContext } from '../src/main/tasks/context'
+import { registerTaskEvents } from '../src/server/tasks/events'
+import type { TaskContext } from '../src/server/tasks/context'
 import type { TaskEvent as OutputEvent } from '../src/shared/types'
-import { CodexAppServerOutput } from '../src/main/agents/codex-app-server-output'
-import { AcpOutput } from '../src/main/agents/acp-output'
-import type { TaskEvent, TaskInput } from '../src/main/agents/agent-executor'
+import { CodexAppServerOutput } from '../src/server/agents/codex-app-server-output'
+import { AcpOutput } from '../src/server/agents/acp-output'
+import type { TaskEvent, TaskInput } from '../src/server/agents/agent-executor'
 
 test('reconciles tool and text snapshots and persists row identity', () => {
   const input: TaskInput = { workspace: testWorkspace(), taskId: 'output-test', issueId: 'first-issue', prompt: 'hello', cwd: '/tmp' }
@@ -102,7 +102,7 @@ test('reconciles tool and text snapshots and persists row identity', () => {
 
   // Both protocols persist snapshots in place, including success-to-error transitions.
   const directory = mkdtempSync(join(tmpdir(), 'anvil-output-'))
-  const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   let store: Store | undefined
   try {
     const database = join(directory, 'test.db')

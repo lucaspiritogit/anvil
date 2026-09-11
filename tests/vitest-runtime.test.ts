@@ -4,10 +4,10 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { internalTrackerFixture } from './fixtures/internal-valence'
 import { ClientSideConnection, ndJsonStream } from '@agentclientprotocol/sdk'
-import { Store } from '../src/main/store'
-import { AgentProcessManager } from '../src/main/agents/process-manager'
-import { listModels } from '../src/main/agents/models'
-import { GitDeliveryManager } from '../src/main/git-delivery'
+import { Store } from '../src/server/store'
+import { AgentProcessManager } from '../src/server/agents/process-manager'
+import { listModels } from '../src/server/agents/models'
+import { GitDeliveryManager } from '../src/server/git-delivery'
 import { AgentProcessManager as DoubleAgent, GitDeliveryManager as DoubleGit, listModels as doubleModels, testHome } from './issue-tracker-doubles'
 import { onTestCleanup, cleanupTestResources } from './test-cleanup'
 import { registerTestIpc } from './test-ipc'
@@ -19,7 +19,7 @@ describe('Vitest runtime', () => {
     expect(process.env.ANVIL_DATA_DIR).toBeUndefined()
     expect(process.env.ANVIL_TEST_NODE).toBe(process.execPath)
     const store = new Store(join(testHome, '.anvil-composer', 'anvil.db'), {
-      migrationsFolder: join(process.cwd(), 'src/main/db/migrations')
+      migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
     })
     onTestCleanup(() => store.close())
     expect(store.getSettings().fontSize).toBeGreaterThan(0)

@@ -128,7 +128,7 @@ test('task, Home and project navigation evict history and reopen fresh at the ta
   await page.getByRole('button', { name: 'Older output', exact: true }).click()
   await expect(rows(page)).toHaveCount(1000)
   await page.evaluate(async () => {
-    const { useStore } = await import('/src/renderer/src/state/store.ts')
+    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
     await useStore.getState().openTask('running')
   })
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Build streaming support')
@@ -136,22 +136,22 @@ test('task, Home and project navigation evict history and reopen fresh at the ta
   await expect.poll(() => atBottom(page)).toBe(true)
   await emit(page, 'background', 'Background task persisted', 'output')
   expect(await page.evaluate(async () => {
-    const { useStore } = await import('/src/renderer/src/state/store.ts')
+    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
     return Object.keys(useStore.getState().eventsByTask)
   })).toEqual(['running'])
   for (const destination of ['home', 'project']) {
     await page.evaluate(async (destination) => {
-      const { useStore } = await import('/src/renderer/src/state/store.ts')
+      const { useStore } = await import('/src/client/renderer/src/state/store.ts')
       if (destination === 'home') useStore.getState().showHome()
       else useStore.getState().selectProject('project-0')
     }, destination)
     expect(await page.evaluate(async () => {
-      const { useStore } = await import('/src/renderer/src/state/store.ts')
+      const { useStore } = await import('/src/client/renderer/src/state/store.ts')
       const { eventsByTask, taskEventHistory } = useStore.getState()
       return { eventsByTask, taskEventHistory }
     })).toEqual({ eventsByTask: {}, taskEventHistory: null })
     await page.evaluate(async () => {
-      const { useStore } = await import('/src/renderer/src/state/store.ts')
+      const { useStore } = await import('/src/client/renderer/src/state/store.ts')
       await useStore.getState().openTask('output')
     })
     await expect(rows(page)).toHaveCount(500)
@@ -208,7 +208,7 @@ test('event-only bursts commit output without TaskView, review/header owner, dif
   // still commit that owner and update both its status and available actions.
   await expect(page.getByRole('button', { name: 'Merge', exact: true })).toBeVisible()
   await page.evaluate(async () => {
-    const { useStore } = await import('/src/renderer/src/state/store.ts')
+    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
     const task = useStore.getState().tasks.find((task) => task.id === 'review')!
     window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'failed', deliveryStatus: 'agent_failed' } }))
   })

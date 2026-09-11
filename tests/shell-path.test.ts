@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { restoreShellPath } from '../src/main/shell-path'
-import { resolveCommand } from '../src/main/agents/resolve'
+import { restoreShellPath } from '../src/server/shell-path'
+import { resolveCommand } from '../src/server/agents/resolve'
 
 test('leaves PATH unchanged outside macOS', async () => {
   const untouched = { PATH: '/test/bin', SHELL: '/missing-shell' }

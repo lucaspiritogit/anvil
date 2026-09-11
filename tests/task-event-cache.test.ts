@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { useStore } from '../src/renderer/src/state/store'
-import { enqueueWorkspaceRequest } from '../src/renderer/src/state/workspace-requests'
+import { useStore } from '../src/client/renderer/src/state/store'
+import { enqueueWorkspaceRequest } from '../src/client/renderer/src/state/workspace-requests'
 import type { Project, Task, TaskEvent, TaskEventsPage, TaskEventsRequest, WorkspaceSnapshot } from '../src/shared/types'
 import { pageTaskEvents } from './e2e/fixture/task-events'
 

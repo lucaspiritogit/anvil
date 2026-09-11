@@ -7,7 +7,7 @@ import type { BatchIssue, Completion, Issue } from '../src/shared/valence'
 import { openTaskTracker as openIssueTracker } from './task-state'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import type { IssueToolConnection } from '../src/main/issue-tools/server'
+import type { IssueToolConnection } from '../src/server/issue-tools/server'
 
 export const testHome = process.env.ANVIL_TEST_HOME ?? realpathSync(mkdtempSync(join(tmpdir(), 'anvil-issue-tracker-test-')))
 export const handlers = new Map<string, (...args: any[]) => any>()

@@ -2,6 +2,7 @@ const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 
 async function main() {
+  await import('./build-server.mjs')
   delete process.env.ELECTRON_RUN_AS_NODE
 
   // Electron 44 downloads its binary on require. electron-vite reads path.txt

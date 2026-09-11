@@ -3,9 +3,9 @@ import { onTestCleanup } from './test-cleanup'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitHubClient } from '../src/main/github-client'
-import { GitHubCredentials } from '../src/main/github-credentials'
-import { GitHubPullRequests } from '../src/main/github-pull-requests'
+import { GitHubClient } from '../src/server/github-client'
+import { GitHubCredentials } from '../src/server/github-credentials'
+import { GitHubPullRequests } from '../src/server/github-pull-requests'
 import type { PullRequestPreview } from '../src/shared/types'
 
 test('stores encrypted credentials and creates or recovers PRs with account and failure guards', async () => {

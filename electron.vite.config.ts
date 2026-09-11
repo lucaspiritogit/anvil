@@ -10,30 +10,30 @@ export default defineConfig({
         exclude: ['@agentclientprotocol/sdk']
       },
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/main/index.ts') }
+        input: { index: resolve(__dirname, 'src/client/main/index.ts') }
       }
     }
   },
   preload: {
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/preload/index.ts') }
+        input: { index: resolve(__dirname, 'src/client/preload/index.ts') }
       }
     }
   },
   renderer: {
-    root: resolve(__dirname, 'src/renderer'),
+    root: resolve(__dirname, 'src/client/renderer'),
     resolve: {
       alias: {
         '@shared': resolve(__dirname, 'src/shared'),
-        '@renderer': resolve(__dirname, 'src/renderer/src'),
+        '@renderer': resolve(__dirname, 'src/client/renderer/src'),
         '@public': resolve(__dirname, 'public')
       }
     },
     plugins: [react(), tailwindcss()],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/renderer/index.html') }
+        input: { index: resolve(__dirname, 'src/client/renderer/index.html') }
       }
     }
   }

@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { expect, test, vi } from 'vitest'
-import { listProjectFiles, PROJECT_FILE_LIMITS, projectFileParts } from '../src/main/project-files'
+import { listProjectFiles, PROJECT_FILE_LIMITS, projectFileParts } from '../src/server/project-files'
 import { onTestCleanup } from './test-cleanup'
 
 vi.mock('node:fs/promises', async (importOriginal) => {

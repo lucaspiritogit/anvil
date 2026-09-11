@@ -21,7 +21,7 @@ test.beforeAll(async () => {
 test.beforeEach(async ({ page }) => {
   await restoreComposerSelection(page)
   // Exercise production image CSP while allowing Vite's development script injection.
-  const imagePolicy = readFileSync('src/renderer/index.html', 'utf8').match(/img-src[^";]+/)![0]
+  const imagePolicy = readFileSync('src/client/renderer/index.html', 'utf8').match(/img-src[^";]+/)![0]
   await page.route('**/tests/e2e/fixture/', async (route) => {
     const response = await route.fetch()
     await route.fulfill({ response, headers: { ...response.headers(), 'content-security-policy': imagePolicy } })

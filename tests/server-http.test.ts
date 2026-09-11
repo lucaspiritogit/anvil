@@ -1,0 +1,125 @@
+import { expect, test } from 'vitest'
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { request } from 'node:http'
+import { EventEmitter } from 'node:events'
+import { createAnvilHttpServer, isLoopbackAddress, RPC_BODY_LIMIT } from '../src/server/http'
+import { createHandlerRegistry } from '../src/server/handler-registry'
+import { createCredentialEncryption } from '../src/server/credential-encryption'
+import { encodeRpcInput } from '../src/shared/rpc-codec'
+import { TASK_IMAGE_LIMITS } from '../src/shared/types'
+import { registerTestIpc } from './test-ipc'
+import { onTestCleanup } from './test-cleanup'
+import { pngWithDimensions } from './image-fixtures'
+import { testHome } from './issue-tracker-doubles'
+
+async function serve(runtime = registerTestIpc()) {
+  const http = createAnvilHttpServer(runtime, { version: 'test', rendererOrigin: 'http://localhost:5173' })
+  const url = await http.listen(0)
+  onTestCleanup(() => http.close())
+  const rpc = (channel: string, input?: unknown) => fetch(`${url}/rpc`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel, input })
+  })
+  return { url, rpc }
+}
+
+test('HTTP exposes health, snapshots and validated domain handlers on loopback', async () => {
+  const { url, rpc } = await serve()
+  expect(await (await fetch(`${url}/health`)).json()).toEqual({ ok: true, version: 'test' })
+  expect(await (await rpc('workspaces:snapshot')).json()).toMatchObject({ workspaces: expect.any(Array) })
+  const invalid = await rpc('workspaces:rename', { workspaceId: '../outside', name: 'invalid' })
+  expect(invalid.status).toBe(400)
+  expect(await invalid.json()).toMatchObject({ error: expect.stringContaining('Invalid IPC request') })
+  expect((await rpc('__proto__')).status).toBe(400)
+  const path = mkdtempSync(join(testHome, 'http-project-'))
+  const project = await (await rpc('projects:add', { path })).json() as { id: string; path: string }
+  expect(project.path).toBe(path)
+  expect(await (await rpc('projects:reveal', project.id)).json()).toBe(path)
+  expect(await (await rpc('github:open-pr-url', 'https://github.com/o/r/pull/1')).json()).toBe('https://github.com/o/r/pull/1')
+  expect((await rpc('projects:add')).status).toBe(400)
+  const wallpaperPath = join(path, 'wallpaper.png')
+  writeFileSync(wallpaperPath, pngWithDimensions(2, 3))
+  const wallpaper = await (await rpc('wallpapers:import', { path: wallpaperPath, workspaceId: 'default' })).json() as { id: string }
+  expect(wallpaper).toMatchObject({ width: 2, height: 3 })
+  expect(await (await rpc('wallpapers:read', wallpaper.id)).json()).toEqual(expect.stringMatching(/^data:image\/png;base64,/))
+})
+
+test('HTTP rejects foreign origins, DNS rebinding, malformed JSON and oversized bodies', async () => {
+  const { url } = await serve()
+  expect((await fetch(`${url}/health`, { headers: { Origin: 'https://evil.example' } })).status).toBe(403)
+  const rebindingStatus = await new Promise<number | undefined>((resolve, reject) => {
+    const probe = request(`${url}/health`, { headers: { Host: 'evil.example' } }, (response) => {
+      response.resume()
+      response.on('end', () => resolve(response.statusCode))
+    })
+    probe.on('error', reject)
+    probe.end()
+  })
+  expect(rebindingStatus).toBe(403)
+  for (const origin of ['null', 'http://localhost:5173']) {
+    const response = await fetch(`${url}/rpc`, { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST' } })
+    expect(response.status).toBe(204)
+    expect(response.headers.get('access-control-allow-origin')).toBe(origin)
+  }
+  expect((await fetch(`${url}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' })).status).toBe(400)
+  expect((await fetch(`${url}/rpc`, { method: 'POST', body: '{}' })).status).toBe(415)
+  expect((await fetch(`${url}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: ' '.repeat(RPC_BODY_LIMIT + 1) })).status).toBe(413)
+  expect(isLoopbackAddress('127.0.0.1')).toBe(true)
+  for (const address of ['0.0.0.0', '192.168.1.2', '::1', undefined]) expect(isLoopbackAddress(address)).toBe(false)
+})
+
+test('SSE receives runtime broadcasts and disconnects cleanly', async () => {
+  const runtime = registerTestIpc()
+  const { url, rpc } = await serve(runtime)
+  const controller = new AbortController()
+  onTestCleanup(() => controller.abort())
+  const response = await fetch(`${url}/events`, { signal: controller.signal })
+  expect(response.headers.get('content-type')).toBe('text/event-stream')
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  expect(decoder.decode((await reader.read()).value)).toContain(': connected')
+  await rpc('workspaces:create', 'HTTP workspace')
+  const event = decoder.decode((await reader.read()).value)
+  expect(event).toContain('"channel":"workspaces:changed"')
+  expect(event).toContain('HTTP workspace')
+  await reader.cancel()
+})
+
+test('HTTP decodes base64 before validation, including the complete 20 MiB image budget', async () => {
+  const registry = createHandlerRegistry()
+  let received: Uint8Array[] = []
+  registry.handle('tasks:start', (input) => { received = input.images!.map((image) => image.bytes); return { count: received.length } })
+  const events = new EventEmitter()
+  const http = createAnvilHttpServer({ invoke: registry.invoke, subscribeAll: (listener) => {
+    events.on('event', listener)
+    return () => { events.off('event', listener) }
+  } }, { version: 'test' })
+  const url = await http.listen(0)
+  onTestCleanup(() => http.close())
+  const bytes = new Uint8Array(TASK_IMAGE_LIMITS.perImageBytes).fill(253)
+  const input = { projectId: 'project', agentId: 'codex', prompt: 'Images', images: [
+    { filename: 'one.png', mimeType: 'image/png', bytes }, { filename: 'two.png', mimeType: 'image/png', bytes }
+  ] }
+  const body = JSON.stringify({ channel: 'tasks:start', input: encodeRpcInput('tasks:start', input) })
+  expect(body.length).toBeLessThan(RPC_BODY_LIMIT)
+  const response = await fetch(`${url}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+  expect(await response.json()).toEqual({ count: 2 })
+  expect(received.every((image) => image instanceof Uint8Array && Buffer.from(image).equals(Buffer.from(bytes)))).toBe(true)
+  input.images[0].bytes = new Uint8Array([1])
+  const encoded = encodeRpcInput('tasks:start', input) as { images: { bytes: string }[] }
+  encoded.images[0].bytes = '!invalid!'
+  const invalid = await fetch(`${url}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: 'tasks:start', input: encoded }) })
+  expect(invalid.status).toBe(400)
+})
+
+test('server credential encryption persists a private key and authenticates ciphertext', () => {
+  const path = join(mkdtempSync(join(testHome, 'encryption-')), 'credentials.key')
+  const encryption = createCredentialEncryption(path)
+  const ciphertext = encryption.encryptString('fixture-token')
+  expect(ciphertext.includes(Buffer.from('fixture-token'))).toBe(false)
+  expect(statSync(path).mode & 0o777).toBe(0o600)
+  expect(readFileSync(path)).toHaveLength(32)
+  expect(createCredentialEncryption(path).decryptString(ciphertext)).toBe('fixture-token')
+  ciphertext[ciphertext.length - 1] ^= 1
+  expect(() => encryption.decryptString(ciphertext)).toThrow()
+})

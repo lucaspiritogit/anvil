@@ -2,17 +2,17 @@ import { EventEmitter } from 'node:events'
 import { join } from 'node:path'
 import type { NotificationConstructorOptions } from 'electron'
 import { expect, test, vi } from 'vitest'
-import { TaskIssues } from '../src/main/tasks/task-issues'
-import { callIssueTool } from '../src/main/issue-tools/server'
-import type { NotificationDeliveryOptions, NotificationAuthorization } from '../src/main/notification-delivery'
-import { Store } from '../src/main/store'
-import { registerTaskNotifications } from '../src/main/task-notifications'
+import { TaskIssues } from '../src/server/tasks/task-issues'
+import { callIssueTool } from '../src/server/issue-tools/server'
+import type { NotificationDeliveryOptions, NotificationAuthorization } from '../src/client/main/notification-delivery'
+import { Store } from '../src/server/store'
+import { registerTaskNotifications } from '../src/client/main/task-notifications'
 import type { Task } from '../src/shared/types'
 import { onTestCleanup } from './test-cleanup'
 
 function setup(options: NotificationDeliveryOptions = {}) {
   const store = new Store(':memory:', {
-    migrationsFolder: join(process.cwd(), 'src/main/db/migrations')
+    migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
   })
   onTestCleanup(() => store.close())
   const notifications: FakeNotification[] = []

@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../src/main/agents/workspace-execution'
+import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../src/server/agents/workspace-execution'
 
 /** Profiles live under the suite's temporary home and are removed by Vitest setup. */
 export function testWorkspace(workspaceId = 'default'): WorkspaceExecutionContext {

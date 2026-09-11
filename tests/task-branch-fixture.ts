@@ -3,10 +3,10 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { vi } from 'vitest'
-import { Store } from '../src/main/store'
-import { GitDeliveryManager } from '../src/main/git-delivery'
-import { TaskBranches } from '../src/main/tasks/task-branch'
-import { TaskIssues } from '../src/main/tasks/task-issues'
+import { Store } from '../src/server/store'
+import { GitDeliveryManager } from '../src/server/git-delivery'
+import { TaskBranches } from '../src/server/tasks/task-branch'
+import { TaskIssues } from '../src/server/tasks/task-issues'
 import { onTestCleanup } from './test-cleanup'
 
 export const branchGit = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], {
@@ -23,7 +23,7 @@ export async function taskBranchFixture() {
   branchGit(repo, 'config', 'user.email', 'test@example.invalid')
   branchGit(repo, 'commit', '--allow-empty', '-m', 'Base')
   const database = join(root, 'config.json')
-  const options = { migrationsFolder: resolve('src/main/db/migrations') }
+  const options = { migrationsFolder: resolve('src/server/db/migrations') }
   const store = new Store(database, options)
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Project', path: repo, createdAt: 0,

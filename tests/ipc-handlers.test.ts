@@ -1,41 +1,41 @@
 import { onTestCleanup } from './test-cleanup'
-import { WallpaperLibrary } from '../src/main/wallpapers'
-import { rendererEvent, rendererIpc, rendererFrame } from './renderer-fixture'
+import { WallpaperLibrary } from '../src/server/wallpapers'
+import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { test, expect, vi } from 'vitest'
 import { pngWithDimensions } from './image-fixtures'
-import { TaskImageStorage } from '../src/main/task-image-storage'
+import { TaskImageStorage } from '../src/server/task-image-storage'
 import { taskImages } from './task-image-fixture'
 import { TASK_IMAGE_LIMITS } from '../src/shared/types'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { taskState } from './task-state'
-import type { AgentProcessManager as RealAgentProcessManager } from '../src/main/agents/process-manager'
-import { agentRebasePrompt } from '../src/main/agents/task-prompts'
-import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/main/git-delivery'
-import { registerAgentHandlers } from '../src/main/ipc/agents'
-import { registerGitHubHandlers } from '../src/main/ipc/github'
-import { GitHubClient } from '../src/main/github-client'
-import { GitHubCredentials } from '../src/main/github-credentials'
-import { registerProjectHandlers } from '../src/main/ipc/projects'
-import { registerRebaseHandlers } from '../src/main/ipc/rebase'
-import { registerReviewHandlers } from '../src/main/ipc/review'
-import { registerTaskHandlers } from '../src/main/ipc/tasks'
-import { registerSteeringHandlers } from '../src/main/ipc/steering'
-import { registerWorkspaceHandlers } from '../src/main/ipc/workspaces'
-import { registerSettingsHandlers } from '../src/main/ipc/settings'
-import { createTaskMemory } from '../src/main/memory/task-memory'
-import { createTaskCompletion } from '../src/main/tasks/completion'
-import { registerTaskEvents } from '../src/main/tasks/events'
-import { registerTaskExecution } from '../src/main/tasks/task-execution'
-import { titleFor } from '../src/main/tasks/task-title'
-import { Store } from '../src/main/store'
+import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
+import { agentRebasePrompt } from '../src/server/agents/task-prompts'
+import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git-delivery'
+import { registerAgentHandlers } from '../src/server/handlers/agents'
+import { registerGitHubHandlers } from '../src/server/handlers/github'
+import { GitHubClient } from '../src/server/github-client'
+import { GitHubCredentials } from '../src/server/github-credentials'
+import { registerProjectHandlers } from '../src/server/handlers/projects'
+import { registerRebaseHandlers } from '../src/server/handlers/rebase'
+import { registerReviewHandlers } from '../src/server/handlers/review'
+import { registerTaskHandlers } from '../src/server/handlers/tasks'
+import { registerSteeringHandlers } from '../src/server/handlers/steering'
+import { registerWorkspaceHandlers } from '../src/server/handlers/workspaces'
+import { registerSettingsHandlers } from '../src/server/handlers/settings'
+import { createTaskMemory } from '../src/server/memory/task-memory'
+import { createTaskCompletion } from '../src/server/tasks/completion'
+import { registerTaskEvents } from '../src/server/tasks/events'
+import { registerTaskExecution } from '../src/server/tasks/task-execution'
+import { titleFor } from '../src/server/tasks/task-title'
+import { Store } from '../src/server/store'
 import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent } from '../src/shared/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome, shell, dialog } from './issue-tracker-doubles'
 
 function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise<string>) {
   const databaseFile = join(testHome, `ipc-${randomUUID()}`, 'anvil.db')
-  const store = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') })
+  const store = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
   onTestCleanup(() => store.close())
   const tasks = { get: (id: string) => store.getTask(id), has: (id: string) => !!store.getTask(id) }
   const trackers = { get: (id: string) => taskState(store, id) }
@@ -111,7 +111,7 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   registerWorkspaceHandlers(rendererIpc, store, context.send)
   registerSettingsHandlers(rendererIpc, context.store, new WallpaperLibrary(testHome))
   registerAgentHandlers(rendererIpc, store)
-  registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, getWindow: () => null })
+  registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask })
   const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, name === 'settings:set' ? { workspaceId: 'default', patch: input } : input)
   const tick = async (): Promise<void> => {
     for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve))
@@ -158,7 +158,7 @@ test('persists task ownership before preparation and retains it when selection c
   expect(call('tasks:list').map((entry: Task) => entry.id)).toEqual([task.id])
 })
 
-test('registers all channels and rejects foreign, subframe and navigated senders', () => {
+test('registers all domain channels', () => {
   setupIpc()
   expect([...handlers.keys()].sort()).toStrictEqual([
     'agents:list', 'agents:models', 'comments:add', 'comments:list', 'comments:remove', 'comments:send',
@@ -168,24 +168,7 @@ test('registers all channels and rejects foreign, subframe and navigated senders
     'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set', 'workspaces:composer:import',
     'wallpapers:directory', 'wallpapers:import', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set'
   ].sort())
-  // Each registered handler must reject foreign windows and same-URL subframes
-  // before touching its payload or any service dependency.
-  for (const event of [
-    { sender: {}, senderFrame: rendererEvent.senderFrame },
-    { sender: rendererEvent.sender, senderFrame: { url: rendererFrame.url } },
-    { sender: rendererEvent.sender, senderFrame: null }
-  ]) {
-    for (const [channel, handler] of handlers) {
-      expect(() => handler(event), channel).toThrow(/Unauthorized IPC sender/)
-    }
-  }
-  const appUrl = rendererFrame.url
-  onTestCleanup(() => { rendererFrame.url = appUrl })
-  rendererFrame.url = 'https://example.com/'
-  for (const [channel, handler] of handlers) {
-    expect(() => handler(rendererEvent), channel).toThrow(/Unauthorized IPC sender/)
-  }
-  rendererFrame.url = appUrl
+
 })
 
 test('rejects malformed IPC requests before accessing dependencies or files', async () => {
@@ -282,8 +265,8 @@ test('updates projects, validates task references and selects supported agents a
   expect(store.getProjects()).toStrictEqual([project])
   const opened: string[] = []
   Object.assign(shell, { openPath: async (path: string) => { opened.push(path); return '' } })
-  await call('projects:reveal', project.id)
-  expect(opened).toStrictEqual([project.path])
+  expect(await call('projects:reveal', project.id)).toBe(project.path)
+  expect(opened).toEqual([])
   expect(() => call('projects:reveal', 'missing')).toThrow(/Project not found/)
   expect(() => call('comments:add', { ...comment, taskId: 'missing' })).toThrow(/Task not found/)
 
@@ -318,7 +301,7 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   await expect(call('tasks:approve', { taskId: task.id, preview: await gitDelivery.getMergePreview(testHome, 'task') })).rejects.toThrow(/not finished/)
   await expect(call('tasks:merge-preview', task.id)).rejects.toThrow(/not finished/)
   await expect(call('github:pr-preview', task.id)).rejects.toThrow(/not finished/)
-  await expect(call('github:open-pr-url', 'file:///etc/passwd')).rejects.toThrow(/Invalid GitHub PR URL/)
+  expect(() => call('github:open-pr-url', 'file:///etc/passwd')).toThrow(/Invalid GitHub PR URL/)
   await expect(call('tasks:rebase-agent', task.id)).rejects.toThrow(/not finished/)
   const issue = { key: 'first', title: 'Change', description: 'One change', labels: [], priority: 'medium' as const, dependencies: [], checklist: ['Test'], validation: 'Run test' }
   agentProcesses.plan(task.id, [issue, { ...issue, key: 'second', dependencies: ['first'] }])
@@ -662,7 +645,7 @@ test('reloads original image bytes when the app restarts during planning', async
   const images = await taskImages()
   const task: Task = await call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Inspect image', images })
   await tick()
-  const reopened = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') })
+  const reopened = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
   onTestCleanup(() => reopened.close())
   expect(reopened.getTask(task.id)?.status).toBe('pending')
   expect(reopened.getTaskExecution(task.id)?.hasImages).toBe(true)
@@ -774,14 +757,12 @@ test('stacked start validates ownership and passes the parent commit to branch p
 })
 
 
-test('terminal send channels reject foreign senders and malformed input', () => {
+test('terminal RPC handlers validate payloads without Electron events', () => {
   const write = vi.fn()
   rendererIpc.on('terminals:write', write)
   const send = handlers.get('terminals:write')!
-  send(rendererEvent, { sessionId: 'session', data: '\x03' })
-  expect(write).toHaveBeenCalledTimes(1)
-  send({ ...rendererEvent, sender: {} }, { sessionId: 'session', data: 'bad' })
-  send({ ...rendererEvent, senderFrame: { url: rendererFrame.url } }, { sessionId: 'session', data: 'bad' })
-  send(rendererEvent, { sessionId: 'session', data: 'bad', command: 'sh' })
+  send(undefined, { sessionId: 'session', data: '\x03' })
+  expect(write).toHaveBeenCalledWith({ sessionId: 'session', data: '\x03' })
+  expect(() => send(undefined, { sessionId: 'session', data: 'bad', command: 'sh' })).toThrow('Invalid IPC request')
   expect(write).toHaveBeenCalledTimes(1)
 })

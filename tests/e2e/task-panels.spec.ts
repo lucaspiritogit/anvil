@@ -45,7 +45,7 @@ test('long task titles truncate to one line and the composer persists across pan
   await page.goto('/tests/e2e/fixture/?scenario=output&steering=1')
   const longTitle = 'A very long task title that must never wrap one letter per line'.repeat(4)
   await page.evaluate(async (title) => {
-    const { useStore } = await import('/src/renderer/src/state/store.ts')
+    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'output' ? { ...task, title } : task)
     }))
@@ -70,7 +70,7 @@ test('long task titles truncate to one line and the composer persists across pan
 test('stale child selection renders its owner with continuous output', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
-    const { useStore } = await import('/src/renderer/src/state/store.ts')
+    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
     const read = window.anvil.tasks.eventsPage
     window.anvil.tasks.eventsPage = async (input) => {
       const page = await read(input)

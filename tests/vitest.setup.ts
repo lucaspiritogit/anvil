@@ -45,7 +45,7 @@ vi.doMock('electron', () => import('./issue-tracker-doubles'))
 const realGitSuites = new Set(['task-branch', 'task-recovery', 'issue-tools', 'task-stacks', 'issue-tracker-git', 'git-delivery', 'git-merge', 'github-git', 'vitest-runtime'])
 const suite = basename(expect.getState().testPath ?? '', '.test.ts')
 if (!realGitSuites.has(suite)) {
-  vi.doMock('../src/main/git-delivery', () => import('./issue-tracker-doubles'))
+  vi.doMock('../src/server/git-delivery', () => import('./issue-tracker-doubles'))
 }
 
 async function cleanup(): Promise<void> {

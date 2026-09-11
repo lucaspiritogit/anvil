@@ -1,14 +1,14 @@
 import { rendererEvent } from './renderer-fixture'
 import { expect, test, vi } from 'vitest'
 import { join } from 'node:path'
-import { Store } from '../src/main/store'
-import { TaskIssues } from '../src/main/tasks/task-issues'
+import { Store } from '../src/server/store'
+import { TaskIssues } from '../src/server/tasks/task-issues'
 import { registerTestIpc } from './test-ipc'
 import type { Task } from '../src/shared/types'
 import { handlers, testHome } from './issue-tracker-doubles'
 
 test('settles eligible tasks at the review TTL and persists manual settlement', async () => {
-  const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   const database = join(testHome, '.anvil-composer/anvil.db')
   const store = new Store(database, options)
   registerTestIpc()

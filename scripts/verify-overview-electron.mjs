@@ -20,8 +20,8 @@ delete env.ELECTRON_RUN_AS_NODE
 let server
 if (!executablePath) {
   server = await createServer({
-    configFile: false, root: resolve('src/renderer'),
-    resolve: { alias: { '@shared': resolve('src/shared'), '@renderer': resolve('src/renderer/src'), '@public': resolve('public') } },
+    configFile: false, root: resolve('src/client/renderer'),
+    resolve: { alias: { '@shared': resolve('src/shared'), '@renderer': resolve('src/client/renderer/src'), '@public': resolve('public') } },
     plugins: [react(), tailwindcss()], server: { host: '127.0.0.1', port: 0 }
   })
   await server.listen()

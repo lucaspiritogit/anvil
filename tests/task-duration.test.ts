@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { formatDuration } from '../src/renderer/src/format'
+import { formatDuration } from '../src/client/renderer/src/format'
 
 test('paused totals ignore review time and historical task timestamps', () => {
   const task = { workingTimeMs: 65000, startedAt: 0, endedAt: 900000 }

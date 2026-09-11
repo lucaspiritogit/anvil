@@ -2,15 +2,15 @@ import { expect, test, vi } from 'vitest'
 import { onTestCleanup } from './test-cleanup'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { GitHubClient } from '../src/main/github-client'
-import { GitHubPRPolling } from '../src/main/github-pr-polling'
-import { Store } from '../src/main/store'
+import { GitHubClient } from '../src/server/github-client'
+import { GitHubPRPolling } from '../src/server/github-pr-polling'
+import { Store } from '../src/server/store'
 import type { Task } from '../src/shared/types'
 import { testHome } from './issue-tracker-doubles'
 
 test('recovers persisted PRs and handles caching, stale tasks, credentials, rate limits and shutdown', async () => {
   const database = join(testHome, 'polling.db')
-  const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   let store = new Store(database, options)
   store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
   const base: Task = {

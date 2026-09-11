@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
-import { EmbeddingProjectMemory, type EmbeddingOptions, type IndexedProjectMemory } from '../src/main/memory/embedding-project-memory'
-import type { ProjectMemoryMatch } from '../src/main/memory/project-memory'
+import { EmbeddingProjectMemory, type EmbeddingOptions, type IndexedProjectMemory } from '../src/server/memory/embedding-project-memory'
+import type { ProjectMemoryMatch } from '../src/server/memory/project-memory'
 import { onTestCleanup } from './test-cleanup'
 
 class Memory extends EmbeddingProjectMemory {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { internalTrackerFixture } from './fixtures/internal-valence'
 import type { TaskIssueSnapshot } from '../src/shared/types'
-import { createTaskIssuesCache, selectedTaskIssue } from '../src/renderer/src/state/task-issues'
+import { createTaskIssuesCache, selectedTaskIssue } from '../src/client/renderer/src/state/task-issues'
 import { onTestCleanup } from './test-cleanup'
 import { issuePresentation, taskIssuePresentation } from '../src/shared/task-issue-presentation'
 

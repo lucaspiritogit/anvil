@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { describeModel, groupModelsByProvider } from '../src/renderer/src/model-options'
+import { describeModel, groupModelsByProvider } from '../src/client/renderer/src/model-options'
 
 test('groups routed models by credential provider and retains submitted IDs', () => {
   const claudeModels = [

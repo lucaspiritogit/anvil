@@ -1,4 +1,4 @@
-import type { AnvilApi } from '../../../src/preload'
+import type { AnvilApi } from '../../../src/client/preload'
 import type { AgentAccountTarget, WorkspaceAgentAccount } from '../../../src/shared/types'
 
 export function fixtureAccounts(name: (id: string) => string, busy: boolean): AnvilApi['accounts'] {

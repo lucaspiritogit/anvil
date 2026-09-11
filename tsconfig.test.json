@@ -3,7 +3,7 @@
   "include": [
     "vitest.config.mts",
     "tests/**/*.ts",
-    "src/renderer/src/env.d.ts"
+    "src/client/renderer/src/env.d.ts"
   ],
   "exclude": [
     "tests/e2e/**"

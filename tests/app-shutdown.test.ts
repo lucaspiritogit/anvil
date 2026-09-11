@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
-import { registerAppShutdown } from '../src/main/app-shutdown'
+import { registerAppShutdown } from '../src/client/main/app-shutdown'
 import { onTestCleanup } from './test-cleanup'
 
 class TestApplication extends EventEmitter {

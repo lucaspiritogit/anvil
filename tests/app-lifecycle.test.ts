@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest'
-import { APP_INIT_FAILED_CHANNEL, APP_READY_CHANNEL, type AppReadiness } from '../src/shared/app-lifecycle'
+import { type AppReadiness } from '../src/shared/app-lifecycle'
 import { createEventLatch } from '../src/shared/event-latch'
 
 test('delivers a value to subscribers present at delivery time exactly once', () => {
@@ -34,11 +34,9 @@ test('stops delivering after unsubscribe and tolerates a double unsubscribe', ()
   expect(handler).not.toHaveBeenCalled()
 })
 
-test('readiness channels and payload describe success and failure', () => {
+test('readiness payload describes connection success and failure', () => {
   const success: AppReadiness = { ok: true }
   const failure: AppReadiness = { ok: false, message: 'service failed' }
-  expect(APP_READY_CHANNEL).toBe('app:ready')
-  expect(APP_INIT_FAILED_CHANNEL).toBe('app:init-failed')
   expect(success).toEqual({ ok: true })
   expect(failure).toEqual({ ok: false, message: 'service failed' })
 })

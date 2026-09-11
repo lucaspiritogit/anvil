@@ -1,8 +1,8 @@
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test } from 'vitest'
-import { AgentProcessManager } from '../src/main/agents/process-manager'
-import type { AgentExecutor, TaskEvent as ExecutorEvent, TaskInput, TaskResult } from '../src/main/agents/agent-executor'
+import { AgentProcessManager } from '../src/server/agents/process-manager'
+import type { AgentExecutor, TaskEvent as ExecutorEvent, TaskInput, TaskResult } from '../src/server/agents/agent-executor'
 import type { AgentDefinition } from '../src/shared/types'
 
 class RecordingExecutor implements AgentExecutor {

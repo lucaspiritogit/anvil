@@ -1,13 +1,13 @@
 import { expect, test, vi } from 'vitest'
-import { TerminalSessionManager } from '../src/main/terminal-sessions'
-import { validateIpcRequest } from '../src/main/ipc/validation'
-import type { Store } from '../src/main/store'
+import { TerminalSessionManager } from '../src/server/terminal-sessions'
+import { validateIpcRequest } from '../src/server/handlers/validation'
+import type { Store } from '../src/server/store'
 
 const native = vi.hoisted(() => ({ spawn: vi.fn() }))
 vi.mock('node-pty', () => native)
-vi.mock('../src/main/process-tree', () => ({ closeProcessTree: async (_pid: number, _closed: Promise<void>, terminate: (force: boolean) => void) => terminate(false) }))
-vi.mock('../src/main/agents/resolve', () => ({ resolveCommand: () => ({ command: '/bin/opencode', prefixArgs: [], viaShell: false }) }))
-vi.mock('../src/main/agents/opencode-workspace', () => ({
+vi.mock('../src/server/process-tree', () => ({ closeProcessTree: async (_pid: number, _closed: Promise<void>, terminate: (force: boolean) => void) => terminate(false) }))
+vi.mock('../src/server/agents/resolve', () => ({ resolveCommand: () => ({ command: '/bin/opencode', prefixArgs: [], viaShell: false }) }))
+vi.mock('../src/server/agents/opencode-workspace', () => ({
   openCodeWorkspaceCommand: (workspace: { home: string; environment: NodeJS.ProcessEnv }, args: string[]) => ({
     command: 'opencode', args, cwd: workspace.home, environment: workspace.environment
   })

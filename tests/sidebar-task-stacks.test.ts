@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import type { Task } from '../src/shared/types'
-import { sidebarTaskStacks } from '../src/renderer/src/components/sidebar-task-stacks'
+import { sidebarTaskStacks } from '../src/client/renderer/src/components/sidebar-task-stacks'
 
 function task(id: string, parentTaskId?: string): Task {
   return {

@@ -2,7 +2,7 @@ import { onTestCleanup } from './test-cleanup'
 import { test, expect } from 'vitest'
 import { EventEmitter } from 'node:events'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
-import { isCodexLoginUrl, openExternalCodexLogin, createRendererIpc, isRendererSender, isRendererUrl, openExternalPullRequest, protectRendererWindow } from '../src/main/renderer-security'
+import { isCodexLoginUrl, openExternalCodexLogin, createDesktopIpc, isRendererSender, isRendererUrl, openExternalPullRequest, protectRendererWindow } from '../src/client/main/renderer-security'
 import { handlers, shell } from './issue-tracker-doubles'
 import { rendererContents, rendererEvent, rendererFrame, rendererUrl, rendererWindow } from './renderer-fixture'
 
@@ -31,22 +31,15 @@ test('validates renderer URLs and exact sender frame identity', async () => {
   rendererFrame.url = rendererUrl
 })
 
-test('rejects secondary renderers even for settings channels', async () => {
-  const settingsFrame = { url: `${rendererUrl}#settings` }
-  const settingsContents = { isDestroyed: () => false, mainFrame: settingsFrame }
-  const settingsEvent = { sender: settingsContents, senderFrame: settingsFrame } as unknown as IpcMainInvokeEvent
-  const multiWindowIpc = createRendererIpc(() => rendererWindow, rendererUrl)
-  multiWindowIpc.handle('settings:get', () => 'settings allowed')
-  multiWindowIpc.handle('tasks:start', () => 'task started')
-  multiWindowIpc.handle('tasks:issues', () => null)
-  expect(() => handlers.get('tasks:issues')!(settingsEvent, 'task')).toThrow(/Unauthorized IPC sender/)
-  expect(() => handlers.get('settings:get')!(settingsEvent)).toThrow(/Unauthorized IPC sender/)
-  expect(handlers.get('settings:get')!(rendererEvent)).toBe('settings allowed')
-  expect(() => handlers.get('tasks:start')!(settingsEvent, { projectId: 'p', agentId: 'codex', prompt: 'denied' })).toThrow(/Unauthorized IPC sender/)
-  settingsFrame.url = 'https://example.com/'
-  expect(() => handlers.get('settings:get')!(settingsEvent)).toThrow(/Unauthorized IPC sender/)
-  settingsFrame.url = `${rendererUrl}#settings`
-  expect(() => handlers.get('settings:get')!({ ...settingsEvent, sender: { ...settingsContents } })).toThrow(/Unauthorized IPC sender/)
+test('desktop IPC rejects secondary renderers and malformed shell inputs', async () => {
+  const ipc = createDesktopIpc(() => rendererWindow, rendererUrl)
+  ipc.handle('desktop:open-path', (path) => path)
+  ipc.handle('desktop:pick-project', () => '/project')
+  const open = handlers.get('desktop:open-path')!
+  expect(open(rendererEvent, '/project')).toBe('/project')
+  expect(() => open({ ...rendererEvent, senderFrame: null }, '/project')).toThrow('Unauthorized IPC sender')
+  expect(() => open(rendererEvent, { path: '/project' })).toThrow('Invalid desktop request')
+  expect(() => handlers.get('desktop:pick-project')!(rendererEvent, '/injected')).toThrow('Invalid desktop request')
 })
 
 test('validates PR URLs and blocks navigation, subframes and popups', async () => {
@@ -107,18 +100,4 @@ test('Codex browser login allows only canonical HTTPS native account hosts', asy
     expect(isCodexLoginUrl(url)).toBe(false)
     await expect(openExternalCodexLogin(url)).rejects.toThrow('Invalid Codex sign-in URL')
   }
-})
-
-test('account IPC requires explicit workspace, supported methods and no injected credential paths', () => {
-  const ipc = createRendererIpc(() => rendererWindow, rendererUrl)
-  ipc.handle('accounts:connect', (_event, input) => ({ workspaceId: input.workspaceId }))
-  const handle = handlers.get('accounts:connect')!
-  const input = { workspaceId: 'default', agentId: 'codex', method: 'apiKey', apiKey: 'fixture-secret' }
-  expect(handle(rendererEvent, input)).toEqual({ workspaceId: 'default' })
-  for (const bad of [
-    { ...input, workspaceId: undefined }, { ...input, workspaceId: '../global' },
-    { ...input, method: 'chatgpt' }, { ...input, agentId: 'opencode' },
-    { ...input, CODEX_HOME: '/global' }, { ...input, apiKey: undefined }
-  ]) expect(() => handle(rendererEvent, bad)).toThrow('Invalid IPC request')
-  expect(() => handle({ ...rendererEvent, senderFrame: null }, input)).toThrow('Unauthorized IPC sender')
 })

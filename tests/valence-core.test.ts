@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { build } from 'esbuild'
-import { Store } from '../src/main/store'
-import { IssueTracker } from '../src/main/valence/tracker'
+import { Store } from '../src/server/store'
+import { IssueTracker } from '../src/server/valence/tracker'
 import type { CreateIssue, CreateParentIssue, IssueSelection, UpdateIssue, UpdateParentIssue } from '../src/shared/valence'
 import { onTestCleanup } from './test-cleanup'
 
@@ -14,7 +14,7 @@ function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-valence-core-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
   const registryPath = join(directory, 'anvil.db')
-  const store = new Store(registryPath, { migrationsFolder: resolve('src/main/db/migrations') })
+  const store = new Store(registryPath, { migrationsFolder: resolve('src/server/db/migrations') })
   onTestCleanup(() => store.close())
   const path = store.getWorkspaceDatabasePath('default')
   const db = new Database(path)
@@ -191,7 +191,7 @@ test('records the first issue start in Unix milliseconds and preserves it throug
   expect(a.start(dependent.id).startedAt).toBe(completedAt + 1_000)
   a.close()
   store.close()
-  const reopened = new Store(registryPath, { migrationsFolder: resolve('src/main/db/migrations') })
+  const reopened = new Store(registryPath, { migrationsFolder: resolve('src/server/db/migrations') })
   onTestCleanup(() => reopened.close())
   expect(reopened.issueTracker('a').get(issue.id)).toMatchObject({ startedAt: firstStartedAt, completedAt })
   expect(reopened.issueTracker('a').list().find((entry) => entry.id === dependent.id)?.startedAt).toBe(completedAt + 1_000)
@@ -328,7 +328,7 @@ test('independent SQLite connections contend and claim each issue exactly once',
   const issues = a.createMany(Array.from({ length: 30 }, (_, index) => ({ ...input(), key: `${index}` })))
   const bundle = join(directory, 'tracker.cjs')
   await build({
-    entryPoints: [resolve('src/main/valence/tracker.ts')], outfile: bundle, bundle: true, platform: 'node', format: 'cjs',
+    entryPoints: [resolve('src/server/valence/tracker.ts')], outfile: bundle, bundle: true, platform: 'node', format: 'cjs',
     plugins: [{ name: 'host-sqlite', setup(build) {
       build.onResolve({ filter: /^better-sqlite3$/ }, () => ({ path: resolve('node_modules/.anvil-vitest-native/better-sqlite3/lib/index.js'), external: true }))
     } }]

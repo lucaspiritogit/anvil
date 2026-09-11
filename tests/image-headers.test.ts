@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { readImageHeaders, validateImageHeaders } from '../src/shared/image-headers'
-import { validateTaskImages } from '../src/main/task-images'
+import { validateTaskImages } from '../src/server/task-images'
 import { imageFixture, pngWithDimensions } from './image-fixtures'
 
 test.each(['sample.png', 'sample.jpeg', 'progressive.jpeg', 'sample.webp', 'lossless.webp'])('reads %s dimensions from bounded headers', (name) => {

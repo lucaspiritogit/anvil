@@ -11,9 +11,7 @@ files:
   - out/preload/**
   - out/renderer/**
   - package.json
-  # The desktop Store migrates each workspace when it is first opened.
-  - src/main/db/migrations/**
-  - src/main/memory/migrations/**
+  - out/server/**
 asarUnpack:
   - node_modules/node-pty/**
   - node_modules/better-sqlite3/**

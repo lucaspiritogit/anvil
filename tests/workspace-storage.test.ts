@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Store } from '../src/main/store'
+import { Store } from '../src/server/store'
 import { migrateBefore, migrationsFolder } from './migration-fixture'
 import { onTestCleanup } from './test-cleanup'
 

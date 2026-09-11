@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitDeliveryManager, type PreparedCheckout } from '../src/main/git-delivery'
+import { GitDeliveryManager, type PreparedCheckout } from '../src/server/git-delivery'
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 

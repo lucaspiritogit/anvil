@@ -1,10 +1,10 @@
 import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, ComposerPreferences, WorkspacePreferences, TaskComment, TaskMergePreview } from './types'
 
-/** The renderer supplies identities, never paths for privileged project actions. */
+/** Shared domain request contracts for the runtime and HTTP clients. */
 export interface IpcRequests {
   'wallpapers:directory': string | undefined
   'wallpapers:list': string | undefined
-  'wallpapers:import': string | undefined
+  'wallpapers:import': { path: string; workspaceId?: string }
   'wallpapers:read': string | { workspaceId: string; id: string }
   'settings:get': string | undefined
   'settings:set': { workspaceId: string; patch: Partial<Settings> }
@@ -23,7 +23,7 @@ export interface IpcRequests {
   'agents:list': undefined
   'agents:models': { agentId: string; workspaceId?: string }
   'projects:list': undefined
-  'projects:add': undefined
+  'projects:add': { path: string }
   'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean }
   'projects:remove': string
   'projects:reveal': string
@@ -73,5 +73,5 @@ export interface IpcRequests {
 
 export type IpcChannel = keyof IpcRequests
 export type IpcSendChannel = 'terminals:write' | 'terminals:resize'
-export type IpcInvokeChannel = Exclude<IpcChannel, IpcSendChannel>
+export type IpcInvokeChannel = IpcChannel
 export type IpcArgs<C extends IpcChannel> = undefined extends IpcRequests[C] ? [input?: IpcRequests[C]] : [IpcRequests[C]]

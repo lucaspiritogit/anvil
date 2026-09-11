@@ -11,7 +11,7 @@
     "postinstall": "electron-rebuild -f -o better-sqlite3,node-pty",
     "dev": "node scripts/dev.cjs",
     "demo": "node scripts/capture-demo.mjs",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "npm run typecheck && npm run build:server && electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/drizzle.cjs migrate",
@@ -20,7 +20,7 @@
     "memory:inspect": "node scripts/memory-inspect.mjs",
     "db:drop": "node scripts/db-drop.cjs",
     "db:reset": "npm run db:drop && npm run db:migrate",
-    "start": "electron-vite preview",
+    "start": "npm run build:server && electron-vite preview",
     "pack": "npm run build && electron-builder --win --dir",
     "dist": "npm run build && electron-builder --win",
     "release": "node scripts/release.mjs",
@@ -31,7 +31,9 @@
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:server": "node scripts/build-server.mjs",
+    "serve": "npm run build:server && node scripts/serve.cjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",

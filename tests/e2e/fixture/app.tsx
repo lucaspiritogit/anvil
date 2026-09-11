@@ -1,14 +1,14 @@
 import { pageTaskEvents } from './task-events'
 import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
-import { useTaskIssues } from '../../../src/renderer/src/hooks/use-task-issues'
+import { useTaskIssues } from '../../../src/client/renderer/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
 import type { Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergePreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList } from '../../../src/shared/types'
 import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import type { IpcRequests } from '../../../src/shared/ipc-requests'
-import { useStore } from '../../../src/renderer/src/state/store'
-import '../../../src/renderer/src/styles.css'
+import { useStore } from '../../../src/client/renderer/src/state/store'
+import '../../../src/client/renderer/src/styles.css'
 
 // Only the Electron bridge is replaced. Tests interact with the real App through Playwright.
 const noop = () => {}
@@ -262,7 +262,7 @@ const projectBranches: Record<string, string> = Object.fromEntries(projects.map(
 
 window.fileMentionTest = {
   paths: {
-    'project-0': ['src/TaskComposer.tsx', 'src/TaskCompletion.ts', 'src/main/index.ts', 'src/renderer/index.ts', 'docs/My notes 日本語.md', 'new-untracked.txt'],
+    'project-0': ['src/TaskComposer.tsx', 'src/TaskCompletion.ts', 'src/client/main/index.ts', 'src/client/renderer/index.ts', 'docs/My notes 日本語.md', 'new-untracked.txt'],
     'project-1': ['workbench/OnlyHere.ts']
   }, delay: {}, error: null, calls: []
 }
@@ -277,7 +277,7 @@ window.anvil = {
   terminals: {
     create: async ({ projectId }) => ({ sessionId: `terminal-${projectId}` }),
     attach: async () => ({ data: 'Anvil terminal fixture\r\n$ ', sequence: 0 }),
-    write: () => {}, resize: () => {}, dispose: async () => {},
+    write: async () => {}, resize: async () => {}, dispose: async () => {},
     onOutput: () => () => {}, onExit: () => () => {}
   },
   platform: query.get('platform') === 'darwin' ? 'darwin' : query.get('platform') === 'win32' ? 'win32' : 'linux',
@@ -637,7 +637,7 @@ const stopInitialView = useStore.subscribe((state) => {
     useStore.setState({ activeProjectId: projects[0].id, view: { kind: 'task', taskId: 'review' } })
   }
 })
-const { App } = await import('../../../src/renderer/src/App')
+const { App } = await import('../../../src/client/renderer/src/App')
 // Opt-in hook harness until the Issues panel is added. Existing scenarios use App.
 function IssuesRefreshFixture(): React.JSX.Element {
   const [taskId, setTaskId] = useState('output')

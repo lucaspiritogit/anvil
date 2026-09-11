@@ -9,7 +9,7 @@ const archive = join(application, 'Contents/Resources/app.asar')
 const entries = listPackage(archive)
 assert(!entries.some((entry) => /^\/out\/valence(?:\/|$)/.test(entry)), 'Package still ships the obsolete standalone Valence distribution')
 assert(!entries.some((entry) => entry.endsWith('/valence-cli.js')), 'Package still ships the removed CLI')
-for (const path of ['out/main/index.js']) {
+for (const path of ['out/server/index.js']) {
   const code = extractFile(archive, path).toString()
   assert(!/importLegacyPlans|Legacy parent missing|legacy-import\.ts/.test(code), `${path} still contains the standalone importer`)
   assert(!/['"]\.config['"],\s*['"]valence['"]|\.config\/valence/.test(code), `${path} still references standalone config storage`)

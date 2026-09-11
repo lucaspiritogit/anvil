@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { readdirSync } from 'node:fs'
-import { GitDeliveryManager } from '../src/main/git-delivery'
+import { GitDeliveryManager } from '../src/server/git-delivery'
 import { GitDeliveryManager as DoubleGit, AgentProcessManager, app, handlers, testHome } from './issue-tracker-doubles'
 import { onTestCleanup } from './test-cleanup'
 

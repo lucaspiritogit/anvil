@@ -5,9 +5,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { imageFixture } from './image-fixtures'
-import { Store } from '../src/main/store'
-import { WallpaperLibrary } from '../src/main/wallpapers'
-import { registerSettingsHandlers } from '../src/main/ipc/settings'
+import { Store } from '../src/server/store'
+import { WallpaperLibrary } from '../src/server/wallpapers'
+import { registerSettingsHandlers } from '../src/server/handlers/settings'
 import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { handlers } from './issue-tracker-doubles'
 
@@ -15,7 +15,7 @@ let root: string
 let database: string
 let store: Store
 let wallpapers: WallpaperLibrary
-const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
+const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
 const call = (channel: string, value?: unknown): any => handlers.get(channel)!(rendererEvent, channel === 'settings:set' ? { workspaceId: 'default', patch: value } : value)
 
 beforeEach(() => {
@@ -51,10 +51,7 @@ test('wallpaper IPC reads the requested workspace even when another workspace is
   expect(() => call('wallpapers:read', { workspaceId: work.id, id: '../secret.png' })).toThrow(/Invalid IPC request/)
 })
 
-test('rejects unauthorized wallpaper senders and invalid settings payloads', () => {
-  for (const channel of ['wallpapers:directory', 'wallpapers:list', 'wallpapers:read']) {
-    expect(() => handlers.get(channel)!({ sender: {}, senderFrame: null })).toThrow(/Unauthorized IPC sender/)
-  }
+test('rejects invalid wallpaper and settings payloads', () => {
   for (const id of ['../escape.png', '/escape.png', 'a\\b.png', 'x.png\0', 'file:///a.png', 'x'.repeat(256) + '.png', 'x.svg', null]) {
     expect(() => call('wallpapers:read', id)).toThrow(/Invalid IPC request/)
   }

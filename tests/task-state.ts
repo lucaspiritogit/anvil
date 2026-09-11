@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3'
 import { join } from 'node:path'
-import { IssueTracker } from '../src/main/valence/tracker'
+import { IssueTracker } from '../src/server/valence/tracker'
 import { testHome } from './issue-tracker-doubles'
-import type { Store } from '../src/main/store'
+import type { Store } from '../src/server/store'
 
 /** Read both clients' public interfaces without querying either database directly. */
 export function taskState(store: Store, taskId: string) {

@@ -1,12 +1,23 @@
 {
-  "include": ["electron.vite.config.ts", "scripts/build-valence.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"],
+  "include": [
+    "electron.vite.config.ts",
+    "src/server/**/*",
+    "src/client/main/**/*",
+    "src/client/preload/**/*",
+    "src/shared/**/*"
+  ],
   "compilerOptions": {
     "composite": true,
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022"],
-    "types": ["node"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "types": [
+      "node"
+    ],
     "strict": true,
     "noUnusedLocals": true,
     "skipLibCheck": true,

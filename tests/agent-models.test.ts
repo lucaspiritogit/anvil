@@ -4,8 +4,8 @@ import { test, expect, vi } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseOpenCodeModels, requireOpenCodeImageModel } from '../src/main/agents/opencode-models'
-import { openCodeAdapter } from '../src/main/agents/adapters'
+import { parseOpenCodeModels, requireOpenCodeImageModel } from '../src/server/agents/opencode-models'
+import { openCodeAdapter } from '../src/server/agents/adapters'
 import type { AgentDefinition } from '../src/shared/types'
 
 const verboseOutput = [
@@ -57,8 +57,8 @@ process.exit(0)
 test('discovers adapter models, preserves cached effort metadata and reports failures', async () => {
   vi.resetModules()
   onTestCleanup(() => { vi.resetModules() })
-  const { registerAgentAdapter, getAgentAdapter } = await import('../src/main/agents/adapters')
-  const { listModels } = await import('../src/main/agents/models')
+  const { registerAgentAdapter, getAgentAdapter } = await import('../src/server/agents/adapters')
+  const { listModels } = await import('../src/server/agents/models')
   const directory = await mkdtemp(join(tmpdir(), 'anvil-models-'))
   try {
     const fixture = join(directory, 'models.cjs')
@@ -105,8 +105,8 @@ test('discovers adapter models, preserves cached effort metadata and reports fai
 test('coalesces concurrent catalogue discovery and reuses reasoning metadata', async () => {
   vi.resetModules()
   onTestCleanup(() => { vi.resetModules() })
-  const { registerAgentAdapter } = await import('../src/main/agents/adapters')
-  const { listModels } = await import('../src/main/agents/models')
+  const { registerAgentAdapter } = await import('../src/server/agents/adapters')
+  const { listModels } = await import('../src/server/agents/models')
   let respond!: (catalogue: typeof expected) => void
   const discover = vi.fn(() => new Promise<typeof expected>((resolve) => { respond = resolve }))
   registerAgentAdapter({ id: 'coalesced', createExecutor: () => { throw new Error('unused') }, listModels: discover })

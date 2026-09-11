@@ -2,24 +2,24 @@ import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { expect, test } from 'vitest'
 import { onTestCleanup } from './test-cleanup'
 import { join } from 'node:path'
-import type { AgentProcessManager as RealAgentProcessManager } from '../src/main/agents/process-manager'
-import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/main/git-delivery'
-import { getAgent } from '../src/main/agents/registry'
-import { registerTaskHandlers } from '../src/main/ipc/tasks'
-import { registerReviewHandlers } from '../src/main/ipc/review'
-import { registerSteeringHandlers } from '../src/main/ipc/steering'
-import { createTaskMemory } from '../src/main/memory/task-memory'
-import { createTaskCompletion } from '../src/main/tasks/completion'
-import { registerTaskEvents } from '../src/main/tasks/events'
-import { registerTaskExecution } from '../src/main/tasks/task-execution'
-import { TaskIssues } from '../src/main/tasks/task-issues'
-import { Store } from '../src/main/store'
+import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
+import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git-delivery'
+import { getAgent } from '../src/server/agents/registry'
+import { registerTaskHandlers } from '../src/server/handlers/tasks'
+import { registerReviewHandlers } from '../src/server/handlers/review'
+import { registerSteeringHandlers } from '../src/server/handlers/steering'
+import { createTaskMemory } from '../src/server/memory/task-memory'
+import { createTaskCompletion } from '../src/server/tasks/completion'
+import { registerTaskEvents } from '../src/server/tasks/events'
+import { registerTaskExecution } from '../src/server/tasks/task-execution'
+import { TaskIssues } from '../src/server/tasks/task-issues'
+import { Store } from '../src/server/store'
 import type { Task } from '../src/shared/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome } from './issue-tracker-doubles'
 
 test('serializes steering and comments through resume, completion and recovery', async () => {
   const databasePath = join(testHome, 'steering.db')
-  const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   const store = new Store(databasePath, options)
   {
     store.addProject({

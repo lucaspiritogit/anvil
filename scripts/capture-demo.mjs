@@ -105,7 +105,7 @@ try {
   const parentId = await typePrompt('Add task keyboard shortcuts')
   await emit(parentId, 'message', 'I’ll add next-task and previous-task shortcuts using the existing keybinding registry.')
   await capture(1.4, { x: 1120, y: 680 })
-  await emit(parentId, 'tool_use', 'Read files\nsrc/shared/keybindings.ts · src/renderer/src/components/Sidebar.tsx')
+  await emit(parentId, 'tool_use', 'Read files\nsrc/shared/keybindings.ts · src/client/renderer/src/components/Sidebar.tsx')
   await capture(0.8)
   await emit(parentId, 'tool_result', 'Task navigation and keybindings are ready to extend.')
   await emit(parentId, 'tool_use', 'Edit files\nAdd next-task and previous-task shortcuts')

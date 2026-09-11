@@ -11,7 +11,8 @@ const unitSuites = [
   'tests/model-options.test.ts',
   'tests/notification-delivery.test.ts',
   'tests/sidebar-task-stacks.test.ts',
-  'tests/startup.test.ts',
+  'tests/server-process.test.ts',
+  'tests/http-client.test.ts',
   'tests/task-duration.test.ts',
   'tests/wallpaper-cache.test.ts',
   'tests/wallpapers.test.ts'
@@ -23,7 +24,7 @@ export default defineConfig({
     enforce: 'pre',
     resolveId(source, importer) {
       // Only orchestration imports used these doubles in the legacy runner.
-      // Direct tests of src/main/agents/{process-manager,models} stay real.
+      // Direct tests of src/server/agents/{process-manager,models} stay real.
       if (importer && !importer.endsWith('/agents/workspace-accounts.ts') && /^(\.{1,2}\/agents\/(process-manager|models)|\.{1,2}\/memory\/project-memory)$/.test(source)) {
         return resolve('tests/issue-tracker-doubles.ts')
       }

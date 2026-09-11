@@ -5,15 +5,15 @@ import { join } from 'node:path'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { onTestCleanup } from './test-cleanup'
-import { TaskIssues } from '../src/main/tasks/task-issues'
-import { IssueTracker } from '../src/main/valence/tracker'
-import { Store } from '../src/main/store'
+import { TaskIssues } from '../src/server/tasks/task-issues'
+import { IssueTracker } from '../src/server/valence/tracker'
+import { Store } from '../src/server/store'
 import { registerTestIpc } from './test-ipc'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
 
 test('cascades task-owned plans on project removal', async () => {
   const store = new Store(join(testHome, '.anvil-composer/anvil.db'), {
-    migrationsFolder: join(process.cwd(), 'src/main/db/migrations')
+    migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
   })
   store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
   const tracker = store.issueTracker('project')
@@ -58,7 +58,7 @@ function snapshotFixture() {
   const directory = mkdtempSync(join(testHome, 'snapshot-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
   const store = new Store(join(testHome, '.anvil-composer/anvil.db'), {
-    migrationsFolder: join(process.cwd(), 'src/main/db/migrations')
+    migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
   })
   onTestCleanup(() => store.close())
   const projectId = randomUUID()
@@ -137,7 +137,7 @@ test.each(['missing', 'changed'] as const)('recovers embedded plans with %s stan
   const receipt = connection.prepare('SELECT * FROM valence_imports').all()
   store.close()
 
-  const reopened = new Store(join(testHome, '.anvil-composer/anvil.db'), { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') })
+  const reopened = new Store(join(testHome, '.anvil-composer/anvil.db'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
   onTestCleanup(() => reopened.close())
   const recovered = new TaskIssues(reopened)
   expect(recovered.snapshot(taskId)?.children[0].id).toBe(child.id)
@@ -267,7 +267,7 @@ test('reopened storage restores child snapshots and tagged history alongside leg
   const expectedEvents = store.readEvents(taskId)
   store.close()
   const reopened = new Store(join(testHome, '.anvil-composer/anvil.db'), {
-    migrationsFolder: join(process.cwd(), 'src/main/db/migrations')
+    migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
   })
   onTestCleanup(() => reopened.close())
   // The child and history survive, but an unfinished execution is blocked on restart.
@@ -372,7 +372,7 @@ test('reuses an existing task parent and recovers a persisted interrupted claim'
   issues.claim(taskId)
   store.close()
   const reopened = new Store(join(testHome, '.anvil-composer/anvil.db'), {
-    migrationsFolder: join(process.cwd(), 'src/main/db/migrations')
+    migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
   })
   onTestCleanup(() => reopened.close())
   const recovered = new TaskIssues(reopened)

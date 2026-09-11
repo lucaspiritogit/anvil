@@ -3,7 +3,7 @@ import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Store } from '../src/main/store'
+import { Store } from '../src/server/store'
 import { onTestCleanup } from './test-cleanup'
 import { migrateBefore, migrationsFolder } from './migration-fixture'
 

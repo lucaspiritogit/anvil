@@ -1,5 +1,5 @@
 {
-  "include": ["src/renderer/src/**/*", "src/preload/*.d.ts", "src/shared/**/*", "tests/e2e/fixture/app.tsx", "tests/e2e/fixture/accounts.ts", "tests/e2e/fixture/task-events.ts"],
+  "include": ["src/client/renderer/src/**/*", "src/client/preload/**/*", "src/shared/**/*", "tests/e2e/fixture/app.tsx", "tests/e2e/fixture/accounts.ts", "tests/e2e/fixture/task-events.ts"],
   "compilerOptions": {
     "composite": true,
     "target": "ES2022",
@@ -15,7 +15,7 @@
     "noEmit": true,
     "paths": {
       "@shared/*": ["./src/shared/*"],
-      "@renderer/*": ["./src/renderer/src/*"],
+      "@renderer/*": ["./src/client/renderer/src/*"],
       "@public/*": ["./public/*"]
     }
   }

@@ -2,7 +2,7 @@ import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test } from 'vitest'
 import { once } from 'node:events'
-import { AgentProcessManager, type ExitInfo } from '../src/main/agents/process-manager'
+import { AgentProcessManager, type ExitInfo } from '../src/server/agents/process-manager'
 import type { AgentDefinition, TaskEvent } from '../src/shared/types'
 
 test('captures process output, cancels tasks and awaits shutdown', async () => {
@@ -106,11 +106,11 @@ test('captures process output, cancels tasks and awaits shutdown', async () => {
 }, 30_000)
 
 test('captures immutable issue ownership for sequential CLI and server turns', async () => {
-  const executor: import('../src/main/agents/agent-executor').AgentExecutor = {
+  const executor: import('../src/server/agents/agent-executor').AgentExecutor = {
     async execute(input, emit) {
       await Promise.resolve()
       if (input.prompt === 'fail') throw new Error('transport failed')
-      const output = new (await import('../src/main/agents/acp-output')).AcpOutput(input, emit)
+      const output = new (await import('../src/server/agents/acp-output')).AcpOutput(input, emit)
       output.line('turn started', 'system', 'system')
       output.update({ sessionUpdate: 'tool_call', toolCallId: 'same-tool', title: 'Shell', status: 'pending' })
       output.update({ sessionUpdate: 'tool_call_update', toolCallId: 'same-tool', status: 'completed', rawOutput: 'done' })
@@ -155,8 +155,8 @@ test('captures immutable issue ownership for sequential CLI and server turns', a
 
 test('passes images intact to both server adapters and rejects text-only executors', async () => {
   const images = [{ filename: 'image.png', mimeType: 'image/png' as const, bytes: new Uint8Array([0, 128, 255]) }]
-  const received: import('../src/main/agents/agent-executor').TaskInput[] = []
-  const executor: import('../src/main/agents/agent-executor').AgentExecutor = {
+  const received: import('../src/server/agents/agent-executor').TaskInput[] = []
+  const executor: import('../src/server/agents/agent-executor').AgentExecutor = {
     execute: async (input) => {
       received.push(input)
       input.onStarted?.()
@@ -183,7 +183,7 @@ test('passes images intact to both server adapters and rejects text-only executo
 
 test('enables issue tools for server turns and releases them after success, failure or cancellation', async () => {
   const active = new Set<string>()
-  const executor: import('../src/main/agents/agent-executor').AgentExecutor = {
+  const executor: import('../src/server/agents/agent-executor').AgentExecutor = {
     async execute(input) {
       expect(active.has(input.taskId)).toBe(true)
       expect(input.issueTools?.headers.Authorization).toBe(input.taskId)

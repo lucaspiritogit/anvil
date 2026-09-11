@@ -4,10 +4,10 @@ import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { testHome } from './issue-tracker-doubles'
 import { join } from 'node:path'
-import { CodexAppServerOutput } from '../src/main/agents/codex-app-server-output'
-import { Store } from '../src/main/store'
-import { registerTaskEvents } from '../src/main/tasks/events'
-import type { TaskContext } from '../src/main/tasks/context'
+import { CodexAppServerOutput } from '../src/server/agents/codex-app-server-output'
+import { Store } from '../src/server/store'
+import { registerTaskEvents } from '../src/server/tasks/events'
+import type { TaskContext } from '../src/server/tasks/context'
 
 // Numeric-only cumulative snapshots from task 369e05db's two Codex rollouts.
 // Each tuple is input, cached input, output. No prompts or personal data.
@@ -26,7 +26,7 @@ test('replays cumulative usage without double counting and preserves totals on r
   // Usage events checkpoint working time, which is tested separately in task-timing.
   vi.spyOn(Date, 'now').mockReturnValue(1_000)
   const directory = mkdtempSync(join(testHome, 'anvil-task-usage-'))
-  const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   const database = join(directory, 'test.db')
   let store = new Store(database, options)
   try {

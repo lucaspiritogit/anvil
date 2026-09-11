@@ -1,19 +1,19 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { beforeEach, expect, test, vi } from 'vitest'
-import { Store } from '../src/main/store'
-import { WallpaperLibrary } from '../src/main/wallpapers'
-import { registerSettingsHandlers } from '../src/main/ipc/settings'
-import { registerWorkspaceHandlers } from '../src/main/ipc/workspaces'
+import { Store } from '../src/server/store'
+import { WallpaperLibrary } from '../src/server/wallpapers'
+import { registerSettingsHandlers } from '../src/server/handlers/settings'
+import { registerWorkspaceHandlers } from '../src/server/handlers/workspaces'
 import { handlers, testHome } from './issue-tracker-doubles'
 import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { onTestCleanup } from './test-cleanup'
 import type { ComposerPreferences, Settings, WorkspaceSnapshot } from '../src/shared/types'
-import { useStore } from '../src/renderer/src/state/store'
-import { importLegacyComposer, useComposerPreferences } from '../src/renderer/src/state/composer-preferences'
-import { enqueueWorkspaceRequest } from '../src/renderer/src/state/workspace-requests'
+import { useStore } from '../src/client/renderer/src/state/store'
+import { importLegacyComposer, useComposerPreferences } from '../src/client/renderer/src/state/composer-preferences'
+import { enqueueWorkspaceRequest } from '../src/client/renderer/src/state/workspace-requests'
 
-const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
+const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
 const composer: ComposerPreferences = {
   agentId: 'codex', modelsByAgent: { codex: 'work-model', opencode: 'provider/model' },
   reasoningByAgentModel: { '["codex","work-model"]': 'high', '["opencode","provider/model"]': 'low' }

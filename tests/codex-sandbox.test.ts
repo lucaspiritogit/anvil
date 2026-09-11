@@ -6,8 +6,8 @@ import { createInterface } from 'node:readline'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { closeAgentServer } from '../src/main/agents/agent-server-process'
-import { codexSandboxPolicy } from '../src/main/agents/codex-sandbox'
+import { closeAgentServer } from '../src/server/agents/agent-server-process'
+import { codexSandboxPolicy } from '../src/server/agents/codex-sandbox'
 
 test('allows unrestricted commands with the Codex sandbox policy', async () => {
   const policy = codexSandboxPolicy()

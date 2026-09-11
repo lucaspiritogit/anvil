@@ -5,20 +5,20 @@ import { join, resolve } from 'node:path'
 import { expect, test, vi } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { Store } from '../src/main/store'
-import { TaskIssues } from '../src/main/tasks/task-issues'
-import { callIssueTool, IssueToolServer } from '../src/main/issue-tools/server'
+import { Store } from '../src/server/store'
+import { TaskIssues } from '../src/server/tasks/task-issues'
+import { callIssueTool, IssueToolServer } from '../src/server/issue-tools/server'
 import type { Issue } from '../src/shared/valence'
-import { CodexAppServerClient } from '../src/main/agents/codex-app-server'
+import { CodexAppServerClient } from '../src/server/agents/codex-app-server'
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { taskBranchFixture, branchGit } from './task-branch-fixture'
-import { OpenCodeAcpClient } from '../src/main/agents/opencode-acp'
+import { OpenCodeAcpClient } from '../src/server/agents/opencode-acp'
 
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-issue-tools-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
-  const store = new Store(join(directory, 'config.json'), { migrationsFolder: resolve('src/main/db/migrations') })
+  const store = new Store(join(directory, 'config.json'), { migrationsFolder: resolve('src/server/db/migrations') })
   onTestCleanup(() => store.close())
   const issues = new TaskIssues(store)
   const addTask = (id: string) => {

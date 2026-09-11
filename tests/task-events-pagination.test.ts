@@ -2,10 +2,10 @@ import { expect, test, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { Store } from '../src/main/store'
-import { createTaskMemory } from '../src/main/memory/task-memory'
-import type { ProjectMemory, CompletedTaskMemory } from '../src/main/memory/project-memory'
-import type { TaskContext } from '../src/main/tasks/context'
+import { Store } from '../src/server/store'
+import { createTaskMemory } from '../src/server/memory/task-memory'
+import type { ProjectMemory, CompletedTaskMemory } from '../src/server/memory/project-memory'
+import type { TaskContext } from '../src/server/tasks/context'
 import type { TaskEvent, TaskEventsPage, TaskEventsRequest } from '../src/shared/types'
 import { DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '../src/shared/types'
 import { handlers, testHome } from './issue-tracker-doubles'
@@ -13,7 +13,7 @@ import { rendererEvent } from './renderer-fixture'
 import { registerTestIpc } from './test-ipc'
 import { onTestCleanup } from './test-cleanup'
 
-const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
+const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
 function setup(database = join(testHome, randomUUID(), 'anvil.db')) {
   const store = new Store(database, options)
   onTestCleanup(() => store.close())
@@ -106,8 +106,7 @@ test('concurrent appends and snapshot updates preserve cursors and latest naviga
 
 test('registered IPC validates limits and task-scoped cursors and handles empty and deleted tasks', () => {
   const { store } = setup(join(testHome, '.anvil-composer/anvil.db'))
-  const runtime = registerTestIpc()
-  onTestCleanup(() => runtime.closeStore())
+  registerTestIpc()
   const call = (input: unknown): TaskEventsPage => handlers.get('tasks:events-page')!(rendererEvent, input)
   append(store, 4105)
   expect(call({ taskId: 'task' }).events).toHaveLength(500)

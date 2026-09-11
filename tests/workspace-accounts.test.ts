@@ -1,17 +1,17 @@
 import { expect, test, vi } from 'vitest'
 import { join } from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import type { TerminalSessionManager } from '../src/main/terminal-sessions'
-import { WorkspaceAccounts, parseOpenCodeAccounts } from '../src/main/agents/workspace-accounts'
-import { AgentProcessManager } from '../src/main/agents/process-manager'
-import type { ConnectionHandlers } from '../src/main/agents/codex-app-server-connection'
-import type { CodexAccount, CodexAppServerRequests } from '../src/main/agents/codex-app-server-protocol'
+import type { TerminalSessionManager } from '../src/server/terminal-sessions'
+import { WorkspaceAccounts, parseOpenCodeAccounts } from '../src/server/agents/workspace-accounts'
+import { AgentProcessManager } from '../src/server/agents/process-manager'
+import type { ConnectionHandlers } from '../src/server/agents/codex-app-server-connection'
+import type { CodexAccount, CodexAppServerRequests } from '../src/server/agents/codex-app-server-protocol'
 import type { AgentAccountTarget } from '../src/shared/types'
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
-import { getAgent } from '../src/main/agents/registry'
+import { getAgent } from '../src/server/agents/registry'
 
-vi.mock('../src/main/agents/resolve', () => ({ resolveCommand: () => ({ command: '/fake/opencode', prefixArgs: [], viaShell: false }) }))
+vi.mock('../src/server/agents/resolve', () => ({ resolveCommand: () => ({ command: '/fake/opencode', prefixArgs: [], viaShell: false }) }))
 
 const work: AgentAccountTarget = { workspaceId: 'work', agentId: 'codex' }
 const personal: AgentAccountTarget = { workspaceId: 'personal', agentId: 'codex' }

@@ -1,19 +1,19 @@
 import { onTestCleanup } from './test-cleanup'
 import { randomUUID } from 'node:crypto'
-import { WallpaperLibrary } from '../src/main/wallpapers'
+import { WallpaperLibrary } from '../src/server/wallpapers'
 import { rendererEvent, rendererIpc } from './renderer-fixture'
-import { registerSettingsHandlers } from '../src/main/ipc/settings'
+import { registerSettingsHandlers } from '../src/server/handlers/settings'
 import { handlers } from './issue-tracker-doubles'
 import { test, expect } from 'vitest'
 import { join } from 'node:path'
-import { registerCaffeineMode } from '../src/main/caffeine-mode'
-import { Store } from '../src/main/store'
+import { registerCaffeineMode } from '../src/client/main/caffeine-mode'
+import { Store } from '../src/server/store'
 import type { Task } from '../src/shared/types'
 import { testHome } from './issue-tracker-doubles'
 
 function setupCaffeine() {
   const database = join(testHome, `caffeine-${randomUUID()}`, 'anvil.db')
-  const options = { migrationsFolder: join(process.cwd(), 'src/main/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   const store = new Store(database, options)
   onTestCleanup(() => store.close())
   const active = new Set<number>()

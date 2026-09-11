@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { expect, test, vi } from 'vitest'
-import { createNotificationDelivery, type NotificationAuthorization, type NotificationDeliveryOptions } from '../src/main/notification-delivery'
+import { createNotificationDelivery, type NotificationAuthorization, type NotificationDeliveryOptions } from '../src/client/main/notification-delivery'
 import { onTestCleanup } from './test-cleanup'
 
 function setup(options: NotificationDeliveryOptions = {}) {

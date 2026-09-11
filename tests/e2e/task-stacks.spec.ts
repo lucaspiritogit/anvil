@@ -14,7 +14,7 @@ test('suggestion accepts stacking and links the parent in the view and sidebar',
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
-    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, stackSuggestion: { parentTaskId: 'running', paths: ['src/main/store.ts'] } } }))
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, stackSuggestion: { parentTaskId: 'running', paths: ['src/server/store.ts'] } } }))
   })
   await expect(page.getByText('This task expects to modify files')).toBeVisible()
   await page.getByRole('button', { name: 'Stack', exact: true }).click()

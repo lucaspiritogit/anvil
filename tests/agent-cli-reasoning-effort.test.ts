@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { buildArgs } from '../src/main/agents/process-manager'
+import { buildArgs } from '../src/server/agents/process-manager'
 
 test('substitutes reasoning effort and removes unset arguments', () => {
   const template = ['run', '--model', '{{model}}', '--effort', '{{reasoningEffort}}', '--session', '{{session}}', '{{prompt}}']
