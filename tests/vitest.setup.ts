@@ -42,7 +42,7 @@ const TestDatabase = new Proxy(HostDatabase, {
 sqliteModule.exports = TestDatabase
 vi.doMock('better-sqlite3', () => ({ default: TestDatabase }))
 vi.doMock('electron', () => import('./issue-tracker-doubles'))
-const realGitSuites = new Set(['task-branch', 'issue-tools', 'task-stacks', 'issue-tracker-git', 'git-delivery', 'git-merge', 'github-git', 'vitest-runtime'])
+const realGitSuites = new Set(['task-branch', 'task-recovery', 'issue-tools', 'task-stacks', 'issue-tracker-git', 'git-delivery', 'git-merge', 'github-git', 'vitest-runtime'])
 const suite = basename(expect.getState().testPath ?? '', '.test.ts')
 if (!realGitSuites.has(suite)) {
   vi.doMock('../src/main/git-delivery', () => import('./issue-tracker-doubles'))

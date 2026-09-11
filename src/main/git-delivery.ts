@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { promisify } from 'node:util'
 import { githubRepository } from './github-repository'
+import { temporaryTaskBranch } from '../shared/task-branch'
 import type {
   ProjectGitStatus,
   ProjectBranches,
@@ -77,15 +78,6 @@ async function git(cwd: string, args: string[], acceptedCodes: number[] = [0], e
 function formatGitCommand(args: string[]): string {
   const rendered = args.map((arg) => (/[\s"]/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')
   return `$ git ${rendered}`
-}
-
-function slug(value: string): string {
-  const clean = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 36)
-  return clean || 'task'
 }
 
 interface RebaseGroup {
@@ -225,7 +217,7 @@ export class GitDeliveryManager {
     return cwd
   }
 
-  async prepareBranch(projectPath: string, taskId: string, title: string, check: () => void = () => {}, base?: { commit: string; branch: string }): Promise<PreparedCheckout> {
+  async prepareBranch(projectPath: string, taskId: string, check: () => void = () => {}, base?: { commit: string; branch: string }): Promise<PreparedCheckout> {
     const repoRoot = await realpath((await git(projectPath, ['rev-parse', '--show-toplevel'])).stdout.trim())
     return this.withRepoLock(repoRoot, async () => {
       check()
@@ -238,7 +230,7 @@ export class GitDeliveryManager {
       }
       const baseCommit = base?.commit ?? (await git(repoRoot, ['rev-parse', 'HEAD'])).stdout.trim()
       const baseBranch = base?.branch ?? ((await git(repoRoot, ['branch', '--show-current'])).stdout.trim() || baseCommit)
-      const branchName = `${slug(title)}-${taskId}`
+      const branchName = temporaryTaskBranch(taskId)
       check()
       const worktree = this.taskWorktree(taskId)
       await mkdir(dirname(this.taskWorktree(taskId)), { recursive: true })

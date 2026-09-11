@@ -225,7 +225,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
 
         const parent = input.parentTaskId ? requireStackParent(store, task, input.parentTaskId) : undefined
         const base = parent ? await gitDelivery.stackBase(project.path, parent.branchName) : undefined
-        const prepared = await gitDelivery.prepareBranch(project.path, task.id, task.title, () => {
+        const prepared = await gitDelivery.prepareBranch(project.path, task.id, () => {
           requireRunningTask()
           if (input.parentTaskId) requireStackParent(store, task, input.parentTaskId)
         }, base)

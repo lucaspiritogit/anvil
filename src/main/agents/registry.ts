@@ -10,7 +10,7 @@ export const GIT_SYSTEM_PROMPT = [
   'Staging is not committing — run `git commit`, not just `git add`.',
   'Prefix the subject with fix:, feat:, chore:, or docs: when the category is clear.',
   'Your working directory is an isolated worktree with a unique branch for this task.',
-  'Keep that branch name. Do not switch branches, modify another checkout, or create another worktree.',
+  'Preserve established branch names. Name temporary task branches only through anvil_set_task_branch as instructed. Do not rename branches with Git commands, switch branches, modify another checkout, or create another worktree.',
   'Do not push; the branch stays local for review.'
 ].join('\n')
 

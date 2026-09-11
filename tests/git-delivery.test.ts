@@ -37,7 +37,8 @@ for (const staged of [false, true]) {
     if (staged) git(repo, 'add', '.')
     const status = git(repo, 'status', '--porcelain=v1')
     const index = staged ? await readFile(join(repo, '.git', 'index')) : undefined
-    const task = await manager.prepareBranch(repo, 'empty', 'Empty task')
+    const task = await manager.prepareBranch(repo, 'empty')
+    expect(task.branchName).toBe('anvil-tmp/empty')
     expect(task.initializedRepository).toBe(true)
     expect(git(repo, 'ls-tree', '-r', 'HEAD')).toBe('')
     expect(existsSync(join(task.cwd, '.env'))).toBe(false)
@@ -58,8 +59,8 @@ test('parallel tasks use independent branches and worktrees through nested and s
   await writeFile(join(repo, 'local.txt'), 'untracked project work\n')
   const index = await readFile(join(repo, '.git', 'index'))
   const [one, two] = await Promise.all([
-    manager.prepareBranch(repo, 'one', 'Task'),
-    manager.prepareBranch(join(alias, 'app'), 'two', 'Task')
+    manager.prepareBranch(repo, 'one'),
+    manager.prepareBranch(join(alias, 'app'), 'two')
   ])
   expect(one.cwd).not.toBe(two.cwd)
   expect(one.baseCommit).toBe(two.baseCommit)
@@ -83,7 +84,7 @@ test('parallel tasks use independent branches and worktrees through nested and s
 
 test('restart preserves unfinished work and follow-ups retain the cumulative diff and rebase', async () => {
   const { repo, manager, worktrees } = await fixture()
-  const task = await manager.prepareBranch(repo, 'resume', 'Task')
+  const task = await manager.prepareBranch(repo, 'resume')
   await writeFile(join(task.cwd, 'app', 'source.ts'), 'interrupted change\n')
   const restarted = new GitDeliveryManager(worktrees)
   const resumed = await restarted.checkoutBranch(repo, 'resume', task.branchName, task.baseBranch)
@@ -107,7 +108,7 @@ test('restart preserves unfinished work and follow-ups retain the cumulative dif
 
 test('per-issue diff uses the recorded range and falls back to the task diff for legacy issues', async () => {
   const { repo, manager } = await fixture()
-  const task = await manager.prepareBranch(repo, 'ranges', 'Ranges')
+  const task = await manager.prepareBranch(repo, 'ranges')
   await writeFile(join(task.cwd, 'one.txt'), 'one\n')
   git(task.cwd, 'add', 'one.txt')
   git(task.cwd, 'commit', '-m', 'feat: one')
@@ -144,13 +145,13 @@ test('project branch selection changes the next task base without affecting runn
   git(repo, 'commit', '-am', 'Feature base')
   const featureCommit = git(repo, 'rev-parse', 'HEAD')
   git(repo, 'switch', 'main')
-  const one = await manager.prepareBranch(repo, 'one', 'Task')
+  const one = await manager.prepareBranch(repo, 'one')
   const branches = await manager.branches(repo)
   expect(branches.currentBranch).toBe('main')
   expect(branches.branches).toContainEqual({ name: one.branchName, checkedOut: true })
   expect((await manager.switchProjectBranch(repo, 'feature')).currentBranch).toBe('feature')
   expect(git(one.cwd, 'rev-parse', 'HEAD')).toBe(one.baseCommit)
-  const two = await manager.prepareBranch(repo, 'two', 'Task')
+  const two = await manager.prepareBranch(repo, 'two')
   expect(two.baseBranch).toBe('feature')
   expect(two.baseCommit).toBe(featureCommit)
   await expect(manager.switchProjectBranch(repo, one.branchName)).rejects.toThrow()
@@ -166,21 +167,21 @@ test('project branch selection changes the next task base without affecting runn
 
 test('failed delivery preserves files until task deletion', async () => {
   const { repo, manager, finish } = await fixture()
-  const task = await manager.prepareBranch(repo, 'dirty', 'Task')
+  const task = await manager.prepareBranch(repo, 'dirty')
   await writeFile(join(task.cwd, 'unfinished.txt'), 'keep me\n')
   expect(await readFile(join(task.cwd, 'unfinished.txt'), 'utf8')).toBe('keep me\n')
   git(task.cwd, 'switch', '-c', 'unexpected')
   await expect(finish('dirty', task)).rejects.toThrow(/switched away/)
   expect(await readFile(join(task.cwd, 'unfinished.txt'), 'utf8')).toBe('keep me\n')
   await expect(manager.checkoutBranch(repo, 'dirty', task.branchName, task.baseBranch)).rejects.toThrow(/switched away/)
-  await expect(manager.prepareBranch(repo, '../escape', 'Task')).rejects.toThrow(/Invalid task ID/)
+  await expect(manager.prepareBranch(repo, '../escape')).rejects.toThrow(/Invalid task ID/)
   await manager.releaseWorktree('dirty')
   expect(existsSync(task.cwd)).toBe(false)
 })
 
 test('renaming preserves committed and dirty work, nested checkout location, and later delivery after restart', async () => {
   const { repo, manager, worktrees } = await fixture()
-  const task = await manager.prepareBranch(join(repo, 'app'), 'rename', 'Task')
+  const task = await manager.prepareBranch(join(repo, 'app'), 'rename')
   const worktree = join(worktrees, 'rename')
   await writeFile(join(task.cwd, 'committed.txt'), 'task commit\n')
   git(task.cwd, 'add', '.')
@@ -230,8 +231,8 @@ test('renaming preserves committed and dirty work, nested checkout location, and
 
 test('renaming rejects invalid or nonliteral short names and existing refs without changing work', async () => {
   const { repo, manager } = await fixture()
-  const task = await manager.prepareBranch(repo, 'invalid-rename', 'Task')
-  const other = await manager.prepareBranch(repo, 'other', 'Other task')
+  const task = await manager.prepareBranch(repo, 'invalid-rename')
+  const other = await manager.prepareBranch(repo, 'other')
   git(repo, 'branch', 'existing')
   await writeFile(join(task.cwd, 'dirty.txt'), 'keep me\n')
   const refs = git(repo, 'show-ref')
@@ -251,7 +252,7 @@ test('renaming rejects invalid or nonliteral short names and existing refs witho
 test('renaming rejects stale, detached, missing, and foreign task worktrees', async () => {
   const { repo, manager, worktrees } = await fixture()
   const foreign = await fixture()
-  const task = await manager.prepareBranch(repo, 'stale', 'Task')
+  const task = await manager.prepareBranch(repo, 'stale')
   await writeFile(join(task.cwd, 'dirty.txt'), 'keep me\n')
   await expect(manager.renameTaskBranch(foreign.repo, 'stale', task.branchName, 'renamed')).rejects.toThrow(/does not belong/)
   await expect(manager.renameTaskBranch(repo, 'missing', task.branchName, 'renamed')).rejects.toThrow()
@@ -273,7 +274,7 @@ test('renaming rejects stale, detached, missing, and foreign task worktrees', as
 
 test('concurrent renames serialize through repository aliases and reject stale requests', async () => {
   const { repo, manager, directory } = await fixture()
-  const task = await manager.prepareBranch(repo, 'concurrent-rename', 'Task')
+  const task = await manager.prepareBranch(repo, 'concurrent-rename')
   const alias = join(directory, 'alias')
   await symlink(repo, alias, 'junction')
   const results = await Promise.allSettled([
@@ -292,7 +293,7 @@ test('concurrent renames serialize through repository aliases and reject stale r
 
 test('renaming checks cancellation under the lock and immediately before mutation', async () => {
   const { repo, manager } = await fixture()
-  const task = await manager.prepareBranch(repo, 'cancel-rename', 'Task')
+  const task = await manager.prepareBranch(repo, 'cancel-rename')
   await writeFile(join(task.cwd, 'dirty.txt'), 'keep me\n')
   let release!: () => void
   let entered!: () => void
@@ -325,7 +326,7 @@ test('renaming checks cancellation under the lock and immediately before mutatio
 
 test('cancellation between staging and committing preserves the uncommitted task files', async () => {
   const { repo, manager } = await fixture()
-  const task = await manager.prepareBranch(repo, 'cancel-finisher', 'Task')
+  const task = await manager.prepareBranch(repo, 'cancel-finisher')
   await writeFile(join(task.cwd, 'unfinished.txt'), 'keep me\n')
   let cancelled = false
   await expect(manager.finalizeBranch(repo, 'cancel-finisher', task.branchName, task.baseBranch, task.baseCommit, 'Task', {
@@ -338,7 +339,7 @@ test('cancellation between staging and committing preserves the uncommitted task
 
 test('rejects a successful commit whose hook leaves additional uncommitted files', async () => {
   const { repo, manager, finish } = await fixture()
-  const task = await manager.prepareBranch(repo, 'dirty-hook', 'Task')
+  const task = await manager.prepareBranch(repo, 'dirty-hook')
   await writeFile(join(task.cwd, 'source.txt'), 'change\n')
   await writeFile(join(repo, '.git', 'hooks', 'post-commit'), '#!/bin/sh\nprintf "generated\\n" > generated.txt\n', { mode: 0o755 })
   await expect(finish('dirty-hook', task)).rejects.toThrow(/still has uncommitted changes/)
@@ -361,7 +362,7 @@ test('legacy tasks migrate from a clean project checkout and preserve dirty lega
 
 test('ignored task files survive finalization, restart and manual rebase', async () => {
   const { repo, manager, finish, worktrees } = await fixture()
-  const task = await manager.prepareBranch(repo, 'ignored', 'Task')
+  const task = await manager.prepareBranch(repo, 'ignored')
   await writeFile(join(task.cwd, '.gitignore'), 'local.env\n')
   await writeFile(join(task.cwd, 'local.env'), 'KEEP=task-local\n')
   const first = await finish('ignored', task)

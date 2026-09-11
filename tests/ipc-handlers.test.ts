@@ -794,7 +794,7 @@ test('stacked start validates ownership and passes the parent commit to branch p
   const child = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Child', parentTaskId: parent.id }) as Task
   expect(child.parentTaskId).toBe(parent.id)
   expect(store.getTask(child.id)?.parentTaskId).toBe(parent.id)
-  expect(prepare).toHaveBeenCalledWith(testHome, child.id, child.title, expect.any(Function), { commit: 'parent-tip', branch: parent.branchName })
+  expect(prepare).toHaveBeenCalledWith(testHome, child.id, expect.any(Function), { commit: 'parent-tip', branch: parent.branchName })
   const count = store.getTasks().length
   await expect(call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Invalid', parentTaskId: 'missing' })).rejects.toThrow('same project')
   expect(store.getTasks()).toHaveLength(count)

@@ -14,7 +14,10 @@ const ANVIL_TASK_INSTRUCTIONS = [
 ].join('\n')
 
 function issueTrackerInstructionsPrompt(): string {
-  return 'Use the supplied anvil_issue_tracker tools. If not visible, discover them through the available tool search/list facility. Call anvil_get_plan for current issue context and status. Follow the discovered MCP schema for arguments and call the tool directly. The connection supplies task ownership; no database access, credentials, or hand-written HTTP is needed.'
+  return [
+    'Use anvil_issue_tracker tools; discover them through the available tool search/list facility if needed. Call anvil_get_plan for context and status. Follow the discovered MCP schema. The connection supplies ownership; no database access, credentials, or hand-written HTTP is needed.',
+    'Check task.branchName and task.canNameBranch. If eligible, choose a concise descriptive name via anvil_set_task_branch now; retry invalid/colliding names. After interruption retry temporary anvil-tmp/<task-id> names; no prompt fallback. Keep accepted/legacy names; skip non-Git/ineligible tasks. Use this agent/model/session, never a separate naming request.'
+  ].join('\n')
 }
 
 const PLANNING_TOOLS = 'Declare expectedFiles for every issue using repo-relative paths, or [] when no files are expected. Use anvil_create_issue and anvil_update_issue to build the queued plan. Use anvil_requeue_issue for repaired blocked planning issues and anvil_block_issue only for unfinished planning.'
@@ -63,11 +66,11 @@ export function implementationPrompt(task: string, issue: Issue, projectPath: st
 }
 
 export function taskFollowupPrompt(state: TaskExecutionState, message: string): string {
-  if (state.phase === 'complete') return message
+  if (state.phase === 'complete') return `${issueTrackerInstructionsPrompt()}\n\n${message}`
   const instruction = state.currentIssueId
     ? `Resume issue ${state.currentIssueId}`
     : 'Resume task with anvil_get_plan'
-  return `${instruction}\n\n${message}`
+  return `${instruction}\n\n${issueTrackerInstructionsPrompt()}\n\n${message}`
 }
 
 export function taskRecoveryPrompt(task: Task, state: TaskExecutionState): string {
@@ -118,6 +121,7 @@ export function reviewPrompt(comments: TaskComment[]): string {
   const notes = commentNotes(comments)
   return [
     ANVIL_TASK_INSTRUCTIONS,
+    issueTrackerInstructionsPrompt(),
     'The developer reviewed your changes and left the notes below.',
     'Address each one in the code, then commit.',
     '',

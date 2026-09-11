@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { vi } from 'vitest'
 import { Store } from '../src/main/store'
 import { GitDeliveryManager } from '../src/main/git-delivery'
-import { TaskBranches, temporaryTaskBranch } from '../src/main/tasks/task-branch'
+import { TaskBranches } from '../src/main/tasks/task-branch'
 import { TaskIssues } from '../src/main/tasks/task-issues'
 import { onTestCleanup } from './test-cleanup'
 
@@ -29,9 +29,8 @@ export async function taskBranchFixture() {
   store.addProject({ id: 'project', name: 'Project', path: repo, createdAt: 0,
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
   const manager = new GitDeliveryManager(join(root, 'worktrees'))
-  const prepared = await manager.prepareBranch(repo, 'task-a', 'A prompt-derived legacy name')
-  const branchName = temporaryTaskBranch('task-a')
-  if (prepared.branchName !== branchName) await manager.renameTaskBranch(repo, 'task-a', prepared.branchName, branchName)
+  const prepared = await manager.prepareBranch(repo, 'task-a')
+  const branchName = prepared.branchName
   const task = store.addTask({ cwd: prepared.cwd, baseBranch: prepared.baseBranch, baseCommit: prepared.baseCommit,
     branchName, id: 'task-a', projectId: 'project', agentId: 'codex', agentLabel: 'Codex',
     title: 'Title remains unchanged', prompt: 'Implement a change', status: 'running', deliveryStatus: 'working', startedAt: 1,

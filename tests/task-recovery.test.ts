@@ -1,11 +1,99 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { join } from 'node:path'
 import { Store } from '../src/main/store'
 import type { Task } from '../src/shared/types'
 import { migrateBefore, migrationsFolder } from './migration-fixture'
 import { onTestCleanup } from './test-cleanup'
-import { testHome } from './issue-tracker-doubles'
+import { testHome, AgentProcessManager } from './issue-tracker-doubles'
+import type { AgentProcessManager as RealAgentProcessManager } from '../src/main/agents/process-manager'
+import { taskBranchFixture, branchGit } from './task-branch-fixture'
+import { TaskBranches, taskBranchNaming } from '../src/main/tasks/task-branch'
+import { GitDeliveryManager } from '../src/main/git-delivery'
+import { resumeTaskTurn } from '../src/main/tasks/resume'
+import { taskRecoveryPrompt } from '../src/main/agents/task-prompts'
+import { TaskIssues } from '../src/main/tasks/task-issues'
+
+async function resumedFixture(kind: 'temporary' | 'accepted' | 'legacy' | 'unprepared' | 'non-Git') {
+  const f = await taskBranchFixture()
+  if (kind === 'accepted' || kind === 'legacy') await f.set(kind === 'accepted' ? 'feat/saved-name' : 'old-prompt-title-task-a')
+  if (kind === 'unprepared' || kind === 'non-Git') {
+    await f.manager.releaseWorktree(f.task.id)
+    branchGit(f.repo, 'branch', '-D', f.task.branchName!)
+    f.store.updateTask(f.task.id, { branchName: undefined, baseBranch: undefined, baseCommit: undefined })
+  }
+  if (kind === 'temporary') await expect(f.set('invalid name')).rejects.toThrow()
+  new TaskIssues(f.store).stop(f.task.id, 'Interrupted before dispatch or branch acceptance')
+  f.store.updateTask(f.task.id, { status: 'pending', sessionId: 'saved-session', model: 'saved-model',
+    deliveryStatus: kind === 'non-Git' ? 'unavailable' : 'agent_failed' })
+  f.store.close()
+  const store = new Store(f.database, f.options)
+  onTestCleanup(() => store.close())
+  const gitDelivery = new GitDeliveryManager(join(f.root, 'worktrees'))
+  const agents = new AgentProcessManager()
+  onTestCleanup(() => agents.close())
+  const context = { store, gitDelivery, agentProcesses: agents as unknown as RealAgentProcessManager, send: vi.fn() }
+  const issues = new TaskIssues(store)
+  const resume = () => resumeTaskTurn(context, {
+    check: () => store.getTask(f.task.id)!, validate: () => {},
+    prompt: (task, state) => taskRecoveryPrompt(task, state!),
+    resumeExecution: (id) => issues.resume(id), acceptExecution: (id) => issues.acceptResume(id),
+    rollbackExecution: (id, state) => issues.rollbackResume(id, state)
+  })
+  return { ...f, store, gitDelivery, agents, context, resume }
+}
+
+test.each(['temporary', 'accepted', 'legacy'] as const)('restart and resume preserve %s names and the executing agent settings', async (kind) => {
+  const f = await resumedFixture(kind)
+  const saved = f.store.getTask(f.task.id)!
+  const prepare = vi.spyOn(f.gitDelivery, 'prepareBranch')
+  const resumed = await f.resume()
+  expect(prepare).not.toHaveBeenCalled()
+  expect(resumed).toMatchObject({ branchName: saved.branchName, title: f.task.title, prompt: f.task.prompt,
+    agentId: f.task.agentId, model: 'saved-model', sessionId: 'saved-session', cwd: f.task.cwd })
+  expect(f.agents.starts).toHaveLength(1)
+  expect(f.agents.starts[0]).toMatchObject({ agent: { id: f.task.agentId }, model: 'saved-model', resumeSessionId: 'saved-session' })
+  for (const prompt of [f.agents.starts[0].prompt, f.agents.starts[0].resumeFallbackPrompt]) {
+    expect(prompt).toContain('anvil_set_task_branch')
+    expect(prompt).toContain('After interruption retry temporary')
+    expect(prompt).toContain('Do not rename branches with Git commands')
+  }
+  const branches = new TaskBranches(f.context)
+  expect(taskBranchNaming(resumed).canNameBranch).toBe(kind === 'temporary')
+  if (kind === 'temporary') {
+    await branches.set(resumed.id, resumed.workspaceId, 'fix/recovered-name', () => {})
+    expect(f.store.getTask(resumed.id)?.branchName).toBe('fix/recovered-name')
+  } else {
+    await expect(branches.set(resumed.id, resumed.workspaceId, 'fix/replacement', () => {})).rejects.toThrow('established')
+  }
+  expect(branchGit(resumed.cwd, 'branch', '--show-current')).toBe(f.store.getTask(resumed.id)?.branchName)
+})
+
+test('failed resumed dispatch retains a new temporary checkout for a retry without a title fallback', async () => {
+  const f = await resumedFixture('unprepared')
+  const prepare = vi.spyOn(f.gitDelivery, 'prepareBranch')
+  vi.spyOn(f.agents, 'startResumed').mockRejectedValueOnce(new Error('Dispatch interrupted'))
+  await expect(f.resume()).rejects.toThrow('Dispatch interrupted')
+  expect(f.store.getTask(f.task.id)).toMatchObject({ status: 'pending', branchName: f.task.branchName, baseCommit: f.task.baseCommit })
+  expect(branchGit(f.task.cwd, 'branch', '--show-current')).toBe(f.task.branchName)
+  const resumed = await f.resume()
+  expect(prepare).toHaveBeenCalledTimes(1)
+  expect(prepare).toHaveBeenCalledWith(f.repo, f.task.id, expect.any(Function), undefined)
+  expect(taskBranchNaming(resumed).canNameBranch).toBe(true)
+  await new TaskBranches(f.context).set(resumed.id, resumed.workspaceId, 'fix/resumed-checkout', () => {})
+  expect(f.store.getTask(resumed.id)).toMatchObject({ branchName: 'fix/resumed-checkout', title: f.task.title })
+})
+
+test('non-Git delivery skips branch preparation and naming on resume', async () => {
+  const f = await resumedFixture('non-Git')
+  const prepare = vi.spyOn(f.gitDelivery, 'prepareBranch')
+  const resumed = await f.resume()
+  expect(prepare).not.toHaveBeenCalled()
+  expect(resumed.deliveryStatus).toBe('unavailable')
+  expect(taskBranchNaming(resumed)).toEqual({ branchName: null, canNameBranch: false })
+  await expect(new TaskBranches(f.context).set(resumed.id, resumed.workspaceId, 'feat/no-git', () => {})).rejects.toThrow('unavailable')
+  expect(f.agents.starts).toHaveLength(1)
+})
 
 test('migrates interrupted tasks while retaining sessions, output and execution state', () => {
   const database = join(testHome, 'recovery.db')

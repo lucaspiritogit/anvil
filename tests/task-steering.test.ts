@@ -147,7 +147,8 @@ test('serializes steering and comments through resume, completion and recovery',
     expect(resumed.resumeSessionId).toBe('newest-session')
     expect(resumed.projectPath).toBe(testHome)
     expect(resumed.cwd).toBe(testHome)
-    expect(resumed.prompt).toBe('Use the saved settings')
+    expect(resumed.prompt).toContain('anvil_set_task_branch')
+    expect(resumed.prompt).toMatch(/\n\nUse the saved settings$/)
     expect(resumed.resumeFallbackPrompt, 'Completed-task follow-ups must not silently lose conversation history').toBe(undefined)
     expect(resumed.prompt).not.toMatch(/Do not change project files/)
     expect(store.getTaskExecution(task.id)?.phase, 'Follow-ups do not replan the task').toBe('complete')
@@ -173,7 +174,8 @@ test('serializes steering and comments through resume, completion and recovery',
     gitDelivery.checkoutBranch = originalReopen
     await steer('interrupted', 'Fix the already running error')
     expect(agentProcesses.starts.at(-1).resumeSessionId).toBe(finished.sessionId)
-    expect(agentProcesses.starts.at(-1).resumeFallbackPrompt).toBe('Resume task with anvil_get_plan\n\nFix the already running error')
+    expect(agentProcesses.starts.at(-1).resumeFallbackPrompt).toMatch(/^Resume task with anvil_get_plan\n\n[\s\S]+\n\nFix the already running error$/)
+    expect(agentProcesses.starts.at(-1).resumeFallbackPrompt).toContain('anvil_set_task_branch')
     expect(agentProcesses.starts.at(-1).prompt).toBe(agentProcesses.starts.at(-1).resumeFallbackPrompt)
     agentProcesses.finishTurn('interrupted')
     await tick()
@@ -203,8 +205,10 @@ test('serializes steering and comments through resume, completion and recovery',
     const recovery = agentProcesses.starts.at(-1)
     expect(recovery.workspace.workspaceId).toBe(work.id)
     expect(recovery.resumeSessionId, 'Always attempt the original conversation first').toBe(finished.sessionId)
-    expect(recovery.prompt).toBe(`Resume issue ${interrupted.id}\n\nKeep going`)
-    expect(recovery.resumeFallbackPrompt).toBe(`Resume issue ${interrupted.id}\n\nKeep going`)
+    expect(recovery.prompt).toContain(`Resume issue ${interrupted.id}\n\n`)
+    expect(recovery.prompt).toContain('anvil_set_task_branch')
+    expect(recovery.prompt).toMatch(/\n\nKeep going$/)
+    expect(recovery.resumeFallbackPrompt).toBe(recovery.prompt)
     expect(recovery.issueId).toBe(interrupted.id)
     expect(store.getTaskExecution('unfinished')).toMatchObject({
       phase: 'recovering', issueIds: [completed.id, interrupted.id], currentIssueId: interrupted.id
@@ -238,7 +242,8 @@ test('serializes steering and comments through resume, completion and recovery',
     store.saveTaskExecution({ ...new TaskIssues(store).initialize('unmanaged', testHome), phase: 'complete' })
     await steer('unmanaged', 'Continue without Git')
     const unmanagedPrompt = agentProcesses.starts.at(-1).prompt
-    expect(unmanagedPrompt).toBe('Continue without Git')
+    expect(unmanagedPrompt).toMatch(/\n\nContinue without Git$/)
+    expect(unmanagedPrompt).toContain('skip non-Git/ineligible tasks')
     expect(agentProcesses.starts.at(-1).resumeSessionId).toBe(finished.sessionId)
     agentProcesses.finishTurn('unmanaged')
     await tick()

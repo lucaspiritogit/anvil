@@ -18,6 +18,7 @@ import { registerTaskExecution } from '../src/main/tasks/task-execution'
 import { TaskIssues } from '../src/main/tasks/task-issues'
 import { createTaskCompletion } from '../src/main/tasks/completion'
 import { onTestCleanup } from './test-cleanup'
+import { temporaryTaskBranch } from '../src/shared/task-branch'
 
 const runGit = (cwd: string, ...args: string[]): string => execFileSync('git', args, {
   cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']
@@ -45,7 +46,7 @@ async function turnFixture(issueCount = 2) {
   store.addProject({ id: 'project', name: 'Project', path: repo, createdAt: 0,
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
   const git = new GitDeliveryManager(join(root, 'worktrees'))
-  const checkout = await git.prepareBranch(repo, 'task', 'Task')
+  const checkout = await git.prepareBranch(repo, 'task')
   const task = store.addTask({ id: 'task', projectId: 'project', agentId: 'codex', agentLabel: 'Codex',
     prompt: 'Change files', title: 'Task changes', ...checkout, status: 'running', startedAt: 0,
     deliveryStatus: 'working', filesChanged: 0, additions: 0, deletions: 0,
@@ -391,7 +392,7 @@ test('recovery and rework finalize remaining files while retaining the original 
   expect(f.snapshots.at(-1)?.ready).toBe(true)
 })
 
-test('runs parallel tasks in separate worktrees and delivers sequential changes as one final task diff', async () => {
+test('the working agent names its temporary branch and delivers sequential changes as one final task diff', async () => {
   const projectPath = join(testHome, 'project')
   mkdirSync(projectPath)
   const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -406,7 +407,9 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   const seed = new Store(database, options)
   seed.addProject({ id: 'project', name: 'Git test', path: projectPath, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
 
-  const { agentProcesses: realAgentProcesses } = registerTestIpc()
+  const runtime = registerTestIpc()
+  onTestCleanup(() => runtime.closeAgentDiscovery())
+  const { agentProcesses: realAgentProcesses } = runtime
   const agentProcesses = realAgentProcesses as unknown as AgentProcessManager
   const call = (name: string, input: unknown): any => handlers.get(name)!(rendererEvent, input)
   const waitFor = async (condition: () => boolean): Promise<void> => {
@@ -429,6 +432,24 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   expect(git(projectPath, 'branch', '--show-current')).toBe('main')
   await waitFor(() => agentProcesses.starts.length === 2)
   const taskStarts = () => agentProcesses.starts.filter((start) => start.taskId === task.id)
+  expect(task.branchName).toBe(temporaryTaskBranch(task.id))
+  expect(dirty.branchName).toBe(temporaryTaskBranch(dirty.id))
+  const planningStart = taskStarts()[0]
+  expect(planningStart.prompt).toContain('anvil_set_task_branch')
+  const getPlan = async () => {
+    const result = await agentProcesses.callTool(task.id, 'anvil_get_plan')
+    return JSON.parse((result.content as { text: string }[])[0].text)
+  }
+  expect((await getPlan()).task).toMatchObject({ branchName: task.branchName, canNameBranch: true, title: task.title })
+  for (const branchName of ['invalid name', 'main']) {
+    expect(await agentProcesses.callTool(task.id, 'anvil_set_task_branch', { branchName })).toMatchObject({ isError: true })
+    expect((await getPlan()).task).toMatchObject({ branchName: task.branchName, canNameBranch: true })
+  }
+  const acceptedName = 'feat/independent-file-delivery'
+  expect((await agentProcesses.callTool(task.id, 'anvil_set_task_branch', { branchName: acceptedName })).isError).not.toBe(true)
+  expect((await getPlan()).task).toMatchObject({ branchName: acceptedName, canNameBranch: false, title: task.title, prompt: task.prompt })
+  expect(taskStarts()).toEqual([planningStart])
+  expect(git(task.cwd, 'branch', '--show-current')).toBe(acceptedName)
   const item = { key: 'first', labels: ['files'], priority: 'medium' as const, dependencies: [], title: 'Add one file', description: 'One file per review', checklist: ['File exists'], validation: 'Read the file' }
   agentProcesses.plan(task.id, [item, { ...item, key: 'second', dependencies: ['first'] }])
   await waitFor(() => taskStarts().length === 2)
@@ -442,7 +463,14 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   seed.issueTracker('project').approve(board.items[0].id)
   agentProcesses.finishTurn(task.id, 'Submitted through the issue tool')
   await waitFor(() => taskStarts().length === 3)
-  expect(git(firstCwd, 'branch', '--show-current')).toBe(task.branchName)
+  expect(git(firstCwd, 'branch', '--show-current')).toBe(acceptedName)
+  for (const start of taskStarts()) {
+    expect(start.agent).toEqual(planningStart.agent)
+    expect(start.model).toBe(planningStart.model)
+    expect(start.prompt).toContain('anvil_set_task_branch')
+  }
+  expect((await agentProcesses.callTool(task.id, 'anvil_set_task_branch', { branchName: acceptedName })).isError).not.toBe(true)
+  expect(await agentProcesses.callTool(task.id, 'anvil_set_task_branch', { branchName: 'feat/another-name' })).toMatchObject({ isError: true })
   expect(seed.getTask(task.id)?.deliveryStatus).toBe('working')
   const secondCwd = taskStarts()[2].cwd
   expect(existsSync(join(secondCwd, 'first.txt')), 'Next issue continues on the same task branch').toBeTruthy()
@@ -470,6 +498,7 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   expect(preview.commitCount).toBe(2)
   await call('tasks:approve', { taskId: task.id, preview })
   expect(seed.getTask(task.id)?.deliveryStatus).toBe('approved')
+  expect(seed.getTask(task.id)).toMatchObject({ branchName: acceptedName, title: task.title, prompt: task.prompt })
   expect(seed.getTaskExecution(task.id)!.phase).toBe('complete')
   expect(git(projectPath, 'branch', '--show-current')).toBe('user-current')
   expect(existsSync(join(projectPath, 'first.txt'))).toBe(true)
@@ -493,7 +522,7 @@ test('runs parallel tasks in separate worktrees and delivers sequential changes 
   expect(existsSync(task.cwd), 'Settling another task leaves this worktree intact').toBe(true)
   await call('tasks:delete', task.id)
   await waitFor(() => !existsSync(task.cwd))
-  expect(git(projectPath, 'rev-parse', task.branchName), 'Deleting a task preserves its committed branch').toBeTruthy()
+  expect(git(projectPath, 'rev-parse', acceptedName), 'Deleting a task preserves its accepted committed branch').toBeTruthy()
   seed.close()
 })
 

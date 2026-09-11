@@ -2,12 +2,8 @@ import type { Task } from '../../shared/types'
 import type { TaskContext } from './context'
 import { withTaskOperation } from './operations'
 import { renameChildBranchReferences } from './task-stacks'
-
-// Reserved for new task checkouts. Titles/prompts must never enter this name.
-const temporaryPrefix = 'anvil-tmp/'
-export function temporaryTaskBranch(taskId: string): string {
-  return `${temporaryPrefix}${taskId}`
-}
+import { temporaryTaskBranch, temporaryTaskBranchPrefix } from '../../shared/task-branch'
+export { temporaryTaskBranch } from '../../shared/task-branch'
 
 export function taskBranchNaming(task: Task): { branchName: string | null; canNameBranch: boolean } {
   return {
@@ -29,7 +25,7 @@ export class TaskBranches {
 
   async set(taskId: string, workspaceId: string, proposedName: string, checkTurn: () => void): Promise<ReturnType<typeof taskBranchNaming>> {
     if (typeof proposedName !== 'string' || !proposedName.trim() || proposedName !== proposedName.trim()) throw new Error('Branch name must be a non-empty literal string')
-    if (proposedName.startsWith(temporaryPrefix)) throw new Error('Choose a descriptive name outside the reserved temporary branch namespace')
+    if (proposedName.startsWith(temporaryTaskBranchPrefix)) throw new Error('Choose a descriptive name outside the reserved temporary branch namespace')
     // Serialize even identical retries, so each caller rechecks its own turn.
     const previous = this.pending.get(taskId)
     const operation = (async () => {

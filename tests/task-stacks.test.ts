@@ -38,7 +38,7 @@ async function fixture() {
   const add = async (id: string, parentTaskId?: string) => {
     const parent = parentTaskId ? store.getTask(parentTaskId)! : undefined
     const base = parent ? await manager.stackBase(repo, parent.branchName) : undefined
-    const prepared = await manager.prepareBranch(repo, id, id, undefined, base)
+    const prepared = await manager.prepareBranch(repo, id, undefined, base)
     return store.addTask({ ...prepared, id, parentTaskId, projectId: 'project', agentId: 'codex', agentLabel: 'Codex', prompt: id, title: id,
       status: 'succeeded', deliveryStatus: 'reviewable', startedAt: 0, exitCode: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,
       filesChanged: 0, additions: 0, deletions: 0 })

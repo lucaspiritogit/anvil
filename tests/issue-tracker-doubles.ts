@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BatchIssue, Completion, Issue } from '../src/shared/valence'
 import { openTaskTracker as openIssueTracker } from './task-state'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { IssueToolConnection } from '../src/main/issue-tools/server'
 
 export const testHome = process.env.ANVIL_TEST_HOME ?? realpathSync(mkdtempSync(join(tmpdir(), 'anvil-issue-tracker-test-')))
 export const handlers = new Map<string, (...args: any[]) => any>()
@@ -31,7 +34,8 @@ export const invalidateWorkspaceModels = () => {}
 export const closeModelDiscovery = async () => {}
 const agentInstances = new Set<AgentProcessManager>()
 export class AgentProcessManager extends EventEmitter {
-  constructor(private readonly databasePath?: string) {
+  constructor(private readonly databasePath?: string, _parse?: unknown, _executor?: unknown, _workspace?: unknown,
+    private readonly openIssueTools?: (taskId: string) => Promise<IssueToolConnection>) {
     super()
     if (process.env.ANVIL_TEST_HOME) agentInstances.add(this)
   }
@@ -40,6 +44,19 @@ export class AgentProcessManager extends EventEmitter {
     this.removeAllListeners()
   }
   starts: any[] = []
+  /** Simulate a tool call from the dispatched agent using its real IPC wiring. */
+  async callTool(taskId: string, name: string, args: Record<string, unknown> = {}) {
+    if (!this.active.has(taskId) || !this.openIssueTools) throw new Error('No active task tool connection')
+    const connection = await this.openIssueTools(taskId)
+    const client = new Client({ name: 'task-agent-test', version: '1' })
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(connection.url), { requestInit: { headers: connection.headers } }))
+      return await client.callTool({ name, arguments: args })
+    } finally {
+      connection.close()
+      await client.close()
+    }
+  }
   steering: { taskId: string; sessionId: string; message: string }[] = []
   async steer(input: { taskId: string; sessionId: string; message: string }): Promise<void> {
     if (!this.active.has(input.taskId)) throw new Error('No active turn')

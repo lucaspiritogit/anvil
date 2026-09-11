@@ -52,12 +52,16 @@ export async function resumeTaskTurn(
       guard()
       const parent = task.parentTaskId ? requireStackParent(store, task, task.parentTaskId) : undefined
       const base = parent ? await gitDelivery.stackBase(project.path, parent.branchName) : undefined
-      const prepared = await gitDelivery.prepareBranch(project.path, task.id, task.title, () => {
+      const prepared = await gitDelivery.prepareBranch(project.path, task.id, () => {
         guard()
         if (task.parentTaskId) requireStackParent(store, task, task.parentTaskId)
       }, base)
       location = { cwd: prepared.cwd, baseCommit: prepared.baseCommit,
-        baseBranch: prepared.baseBranch, branchName: prepared.branchName }
+        baseBranch: parent ? requireStackParent(store, task, parent.id).branchName : prepared.baseBranch,
+        branchName: prepared.branchName }
+      // Retain the temporary checkout even if dispatch is interrupted. The
+      // next attempt must reuse it instead of creating another branch.
+      if (store.getTask(task.id)) store.updateTask(task.id, location)
     }
     const current = guard()
     const previousState = store.getTaskExecution(task.id)
@@ -83,7 +87,7 @@ export async function resumeTaskTurn(
         prompt: executionPrompt,
         images,
         resumeFallbackPrompt: resumeExecution && state?.phase !== 'complete' && (!state?.hasImages || images)
-          ? message
+          ? executionPrompt
           : undefined
       })
       acceptExecution?.(task.id)
@@ -99,7 +103,7 @@ export async function resumeTaskTurn(
             else store.saveTaskExecution(previousState)
           }
           return store.updateTask(task.id, {
-            ...current, sessionId: latest.sessionId,
+            ...current, ...location, branchName: latest.branchName, sessionId: latest.sessionId,
             contextUsed: latest.contextUsed, contextSize: latest.contextSize, contextCompactionError: latest.contextCompactionError,
             inputTokens: latest.inputTokens, outputTokens: latest.outputTokens, cachedTokens: latest.cachedTokens,
             totalTokens: latest.totalTokens, costUsd: latest.costUsd

@@ -1,6 +1,7 @@
 import { test, expect, beforeEach } from 'vitest'
 import type { Issue, Task, TaskExecutionState } from '../src/shared/types'
 import { planningPrompt, implementationPrompt, taskFollowupPrompt, taskRecoveryPrompt, issueReworkPrompt, reviewPrompt, agentRebasePrompt } from '../src/main/agents/task-prompts'
+import { GIT_SYSTEM_PROMPT } from '../src/main/agents/registry'
 
 const task = 'Use the existing OpenAI SVG'
 const issue: Issue = {
@@ -168,9 +169,31 @@ test('interrupted guidance distinguishes blocked, queued, working and submitted 
 })
 
 test('follow-ups send a concise resume instruction and the developer message', () => {
-  expect(taskFollowupPrompt(execution, 'Keep going')).toBe(`Resume issue ${issue.id}\n\nKeep going`)
+  expect(taskFollowupPrompt(execution, 'Keep going')).toMatch(new RegExp(`^Resume issue ${issue.id}\\n\\n`))
+  expect(taskFollowupPrompt(execution, 'Keep going')).toMatch(/\n\nKeep going$/)
   expect(taskFollowupPrompt({ ...execution, phase: 'planning', currentIssueId: null }, 'Continue'))
-    .toBe('Resume task with anvil_get_plan\n\nContinue')
+    .toMatch(/^Resume task with anvil_get_plan\n\n[\s\S]+\n\nContinue$/)
   expect(taskFollowupPrompt({ ...execution, phase: 'complete', currentIssueId: null }, 'Fix this'))
-    .toBe('Fix this')
+    .toMatch(/\n\nFix this$/)
+})
+
+test('the executing agent names eligible branches once across planning, work, recovery and follow-ups', () => {
+  for (const prompt of [planning, implementation, taskRecoveryPrompt(savedTask, execution),
+    taskRecoveryPrompt(savedTask, { ...execution, phase: 'planning' }),
+    taskFollowupPrompt(execution, 'Continue'), taskFollowupPrompt({ ...execution, phase: 'complete' }, 'Fix'),
+    issueReworkPrompt(savedTask.cwd, issue.id, []), reviewPrompt([])]) {
+    expect(prompt).toContain('task.branchName and task.canNameBranch')
+    expect(prompt).toContain('choose a concise descriptive name')
+    expect(prompt).toContain('via anvil_set_task_branch now')
+    expect(prompt).toContain('retry invalid/colliding names')
+    expect(prompt).toContain('After interruption retry temporary anvil-tmp/<task-id> names')
+    expect(prompt).toContain('no prompt fallback')
+    expect(prompt).toContain('Keep accepted/legacy names')
+    expect(prompt).toContain('skip non-Git/ineligible tasks')
+    expect(prompt).toContain('Use this agent/model/session')
+    expect(prompt).toContain('never a separate naming request')
+  }
+  expect(GIT_SYSTEM_PROMPT).not.toContain('Keep that branch name')
+  expect(GIT_SYSTEM_PROMPT).toContain('Name temporary task branches only through anvil_set_task_branch')
+  expect(agentRebasePrompt('base')).not.toContain('anvil_set_task_branch')
 })
