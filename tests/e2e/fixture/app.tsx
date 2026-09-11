@@ -3,7 +3,7 @@ import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
 import { useTaskIssues } from '../../../src/client/renderer/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
-import type { Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergePreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList } from '../../../src/shared/types'
+import type { Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergePreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure } from '../../../src/shared/types'
 import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import type { IpcRequests } from '../../../src/shared/ipc-requests'
@@ -192,6 +192,11 @@ declare global {
       release: (reject?: boolean) => void
       finishLoading: () => void
     }
+    connectionsTest: {
+      calls: Array<{ allowOtherDevices: boolean; passwordProvided: boolean }>
+      failNextRequest: boolean
+      failNextRebind: boolean
+    }
   }
 }
 
@@ -231,6 +236,12 @@ window.settingsTest = {
   },
   finishLoading
 }
+let connectionStatus: ConnectionsStatus = {
+  allowOtherDevices: false,
+  passwordConfigured: query.has('connectionConfigured'),
+  pending: false
+}
+window.connectionsTest = { calls: [], failNextRequest: false, failNextRebind: false }
 if (query.has('settingsLoading')) {
   settings.caffeineMode = true
   // Exercise a Settings modal mounted before the initial settings read finishes.
@@ -480,6 +491,41 @@ window.anvil = {
       if (selectedWorkspace === workspaceId) settings = workspaceSettings[workspaceId]
       persistWorkspaces()
       return workspaceSettings[workspaceId]
+    }
+  },
+  connections: {
+    status: async () => structuredClone(connectionStatus),
+    configure: async ({ allowOtherDevices, password }: ConnectionsConfigure) => {
+      window.connectionsTest.calls.push({ allowOtherDevices, passwordProvided: password !== undefined })
+      if (window.connectionsTest.failNextRequest) {
+        window.connectionsTest.failNextRequest = false
+        throw new Error('Connection request failed for testing')
+      }
+      if (password !== undefined) connectionStatus.passwordConfigured = true
+      if (allowOtherDevices && !connectionStatus.passwordConfigured) throw new Error('Set a valid server password before allowing other devices.')
+      if (allowOtherDevices === connectionStatus.allowOtherDevices) {
+        connectionStatus = { ...connectionStatus, pending: false, error: undefined }
+        return structuredClone(connectionStatus)
+      }
+      connectionStatus = { ...connectionStatus, pending: true, error: undefined }
+      const response = structuredClone(connectionStatus)
+      window.setTimeout(() => {
+        if (window.connectionsTest.failNextRebind) {
+          window.connectionsTest.failNextRebind = false
+          connectionStatus = { ...connectionStatus, allowOtherDevices: false, pending: false, error: 'Port unavailable for testing' }
+        } else {
+          connectionStatus = { ...connectionStatus, allowOtherDevices, pending: false, error: undefined }
+        }
+        window.dispatchEvent(new CustomEvent('fixture:connections-changed', {
+          detail: { workspaceId: selectedWorkspace, status: structuredClone(connectionStatus) }
+        }))
+      }, 50)
+      return response
+    },
+    onChanged: (listener) => {
+      const receive = (event: Event): void => listener((event as CustomEvent).detail)
+      window.addEventListener('fixture:connections-changed', receive)
+      return () => window.removeEventListener('fixture:connections-changed', receive)
     }
   },
   tasks: {

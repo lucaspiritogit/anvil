@@ -170,7 +170,7 @@ test('project selection keeps All separate from composer context and survives se
   await sidebar.getByRole('searchbox', { name: 'Search tasks' }).fill('layout')
   await sidebar.getByRole('button', { name: 'Settings', exact: true }).click()
   await expect(sidebar).toHaveCount(0)
-  await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button')).toHaveCount(6)
+  await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button')).toHaveCount(7)
   await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
   await expect(selector).toHaveValue('Workbench')
   await expect(sidebar.getByRole('searchbox', { name: 'Search tasks' })).toHaveValue('layout')

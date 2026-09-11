@@ -297,6 +297,11 @@ export interface ConnectionsConfigure {
   password?: string
 }
 
+export interface ConnectionsStatusChange {
+  workspaceId: string
+  status: ConnectionsStatus
+}
+
 export interface WorkspacePreferences {
   composer: ComposerPreferences
   lastProjectId: string | null

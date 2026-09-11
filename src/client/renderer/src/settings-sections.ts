@@ -4,6 +4,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'source-control', icon: 'git-branch', label: 'Source control', description: 'Connect GitHub and choose how to handle task branches.' },
   { id: 'shortcuts', icon: 'keyboard', label: 'Keyboard shortcuts', description: 'Make Anvil work with your keyboard.' },
   { id: 'memory', icon: 'brain', label: 'Memory', description: 'Reuse context from completed tasks in the same project.' },
+  { id: 'connections', icon: 'waypoints', label: 'Connections', description: 'Control access to Anvil from other devices on your network.' },
   { id: 'display', icon: 'monitor', label: 'Display', description: 'Adjust text size and the background of your workspace.' }
 ] as const
 

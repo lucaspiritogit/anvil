@@ -14,7 +14,137 @@ import { DEFAULT_KEYBINDINGS, formatAccelerator, SHORTCUTS } from '@shared/keybi
 import type { Keybindings, ShortcutDefinition } from '@shared/keybindings'
 import { DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { DEFAULT_EMBEDDING_MODEL, DEFAULT_OLLAMA_BASE_URL } from '@shared/memory-settings'
-import type { RebaseMode, Settings } from '@shared/types'
+import type { ConnectionsStatus, RebaseMode, Settings } from '@shared/types'
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
+}
+
+function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): JSX.Element {
+  const [status, setStatus] = useState<ConnectionsStatus | null>(null)
+  const [password, setPassword] = useState('')
+  const [settingPassword, setSettingPassword] = useState(false)
+  const [requestError, setRequestError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    setStatus(null)
+    setPassword('')
+    setSettingPassword(false)
+    setRequestError('')
+    if (!workspaceId) return
+    const unsubscribe = window.anvil.connections.onChanged((change) => {
+      if (active && change.workspaceId === workspaceId) {
+        setStatus(change.status)
+        setRequestError('')
+      }
+    })
+    void window.anvil.connections.status(workspaceId).then((next) => {
+      if (active) setStatus(next)
+    }).catch((error) => {
+      if (active) setRequestError(errorMessage(error, 'Could not load connection settings.'))
+    })
+    return () => { active = false; unsubscribe() }
+  }, [workspaceId])
+
+  const configure = async (allowOtherDevices: boolean, nextPassword?: string): Promise<void> => {
+    if (!workspaceId || !status) return
+    const previous = status
+    setRequestError('')
+    setStatus({ ...status, pending: true, error: undefined })
+    try {
+      const next = await window.anvil.connections.configure({
+        workspaceId,
+        allowOtherDevices,
+        ...(nextPassword !== undefined ? { password: nextPassword } : {})
+      })
+      setStatus(next)
+      if (nextPassword !== undefined) setSettingPassword(false)
+    } catch (error) {
+      setStatus({ ...previous, pending: false })
+      setRequestError(errorMessage(error, 'Could not change connection settings.'))
+    } finally {
+      if (nextPassword !== undefined) setPassword('')
+    }
+  }
+
+  const submitPassword = (): void => {
+    if (!password) {
+      setRequestError('Enter a password before continuing.')
+      return
+    }
+    void configure(status?.passwordConfigured ? status.allowOtherDevices : true, password)
+  }
+
+  const pending = status?.pending ?? false
+  const showPasswordForm = status !== null && (!status.passwordConfigured || settingPassword)
+  return (
+    <div>
+      <label className={modal.toggle}>
+        <input
+          type="checkbox"
+          checked={status?.allowOtherDevices ?? false}
+          disabled={!status || pending}
+          onChange={(event) => {
+            if (event.target.checked && !status?.passwordConfigured) {
+              setSettingPassword(true)
+              setRequestError('')
+            } else {
+              void configure(event.target.checked)
+            }
+          }}
+        />
+        <span>
+          <strong className="block">Allow other devices</strong>
+          <small className={field.hint}>Make Anvil available on port 4780 to devices on this local network. Remote requests require the username <code>anvil</code> and your password.</small>
+        </span>
+      </label>
+
+      {!status && !requestError && <p role="status" className="text-xs text-dim">Loading connection settings…</p>}
+      {status && <div className="mb-4 text-xs text-dim">
+        <p>{status.passwordConfigured ? 'A server password is configured.' : 'Set a server password before allowing other devices.'}</p>
+        {status.passwordConfigured && !settingPassword && (
+          <button className={cn(btn.ghost, 'mt-3')} disabled={pending} onClick={() => {
+            setPassword('')
+            setSettingPassword(true)
+            setRequestError('')
+          }}>Replace password</button>
+        )}
+      </div>}
+
+      {showPasswordForm && (
+        <form className="mt-5 border-t border-line pt-5" onSubmit={(event) => { event.preventDefault(); submitPassword() }}>
+          <label className={field.wrap}>
+            <span className={field.label}>{status.passwordConfigured ? 'New server password' : 'Server password'}</span>
+            <input
+              aria-label={status.passwordConfigured ? 'New server password' : 'Server password'}
+              className={field.sized}
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              disabled={pending}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            <small className={field.hint}>Stored only as an Argon2id hash. Anvil never saves the plaintext password.</small>
+          </label>
+          <div className="flex items-center gap-3">
+            <button className={btn.primary} type="submit" disabled={pending || password.length === 0}>
+              {status.passwordConfigured ? 'Save new password' : 'Set password and allow'}
+            </button>
+            {status.passwordConfigured && <button className={btn.ghost} type="button" disabled={pending} onClick={() => {
+              setPassword('')
+              setSettingPassword(false)
+              setRequestError('')
+            }}>Cancel</button>}
+          </div>
+        </form>
+      )}
+
+      {pending && <p role="status" className="mt-4 text-xs text-dim">Changing connection access…</p>}
+      {(requestError || status?.error) && <p role="alert" className="mt-4 text-xs text-danger">{requestError || status?.error}</p>}
+    </div>
+  )
+}
 
 /** Click, then press the chord you want. Escape leaves the binding alone. */
 function ShortcutField({
@@ -318,6 +448,7 @@ export function SettingsPage(): JSX.Element {
                 </label>
               </div>}
             </>}
+            {section === 'connections' && <ConnectionsSettings workspaceId={workspaceId} />}
             {section === 'display' && <>
               <label className={field.wrap}>
                 <span className={field.label}>Font size</span>

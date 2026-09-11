@@ -9,9 +9,9 @@ test('settings sidebar separates controls and retains drafts across sections', a
   await prompt.fill('Keep my task draft')
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const navigation = page.getByRole('navigation', { name: 'Settings sections' })
-  await expect(navigation.getByRole('button')).toHaveText(['General', 'Providers', 'Source control', 'Keyboard shortcuts', 'Memory', 'Display'])
+  await expect(navigation.getByRole('button')).toHaveText(['General', 'Providers', 'Source control', 'Keyboard shortcuts', 'Memory', 'Connections', 'Display'])
   await expect(page.getByRole('complementary', { name: 'Sidebar', exact: true }).getByRole('navigation')).toBeVisible()
-  await expect(navigation.locator('svg[aria-hidden="true"]')).toHaveCount(6)
+  await expect(navigation.locator('svg[aria-hidden="true"]')).toHaveCount(7)
   await expect(navigation.getByRole('button', { name: 'General', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(prompt).toBeHidden()
   await navigation.getByRole('button', { name: 'Providers', exact: true }).click()
@@ -85,6 +85,62 @@ test('memory starts disabled and saves its model and Ollama URL', async ({ page 
   await expect.poll(() => page.evaluate(() => window.anvil.settings.get())).toMatchObject({
     memoryEnabled: false, memoryEmbeddingModel: 'custom-embedding-model', ollamaBaseUrl: 'http://127.0.0.1:11434/v1'
   })
+})
+
+test('Connections gates first enablement on a password and supports later changes', async ({ page }) => {
+  await page.goto(fixture)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  const navigation = page.getByRole('navigation', { name: 'Settings sections' })
+  const connectionsButton = navigation.getByRole('button', { name: 'Connections', exact: true })
+  await expect(connectionsButton.locator('svg')).toHaveCount(1)
+  await connectionsButton.click()
+
+  const toggle = page.getByRole('checkbox', { name: /Allow other devices/ })
+  await expect(toggle).not.toBeChecked()
+  await expect(page.getByText('Set a server password before allowing other devices.')).toBeVisible()
+  await toggle.click()
+  const password = page.getByLabel('Server password', { exact: true })
+  await expect(password).toHaveAttribute('type', 'password')
+  await password.fill('fixture-secret')
+  await page.getByRole('button', { name: 'Set password and allow', exact: true }).click()
+  await expect(toggle).toBeChecked()
+  await expect(page.getByText('A server password is configured.')).toBeVisible()
+  await expect(password).toHaveCount(0)
+  expect(await page.evaluate(() => window.connectionsTest.calls)).toEqual([
+    { allowOtherDevices: true, passwordProvided: true }
+  ])
+
+  await toggle.click()
+  await expect(toggle).not.toBeChecked()
+  await toggle.click()
+  await expect(toggle).toBeChecked()
+  await expect(page.getByLabel('Server password', { exact: true })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Replace password', exact: true }).click()
+  const replacement = page.getByLabel('New server password', { exact: true })
+  await replacement.fill('replacement-secret')
+  await page.evaluate(() => { window.connectionsTest.failNextRequest = true })
+  await page.getByRole('button', { name: 'Save new password', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Connection request failed for testing')
+  await expect(replacement).toHaveValue('')
+  await replacement.fill('replacement-secret-2')
+  await page.getByRole('button', { name: 'Save new password', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Replace password', exact: true })).toBeVisible()
+  await expect(toggle).toBeChecked()
+})
+
+test('Connections reflects a failed rebind and recovers on retry', async ({ page }) => {
+  await page.goto(`${fixture}?connectionConfigured`)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Connections', exact: true }).click()
+  const toggle = page.getByRole('checkbox', { name: /Allow other devices/ })
+  await page.evaluate(() => { window.connectionsTest.failNextRebind = true })
+  await toggle.click()
+  await expect(page.getByRole('alert')).toHaveText('Port unavailable for testing')
+  await expect(toggle).not.toBeChecked()
+  await toggle.click()
+  await expect(toggle).toBeChecked()
+  await expect(page.getByRole('alert')).toHaveCount(0)
 })
 
 for (const collapsed of [false, true]) {
@@ -235,7 +291,7 @@ test('all settings sections fit narrow windows with enlarged text and no action 
   const settings = page.getByTestId('settings-page')
   await expect(settings.locator('footer')).toHaveCount(0)
   await expect(settings.getByRole('button', { name: /^(Save|Close)$/ })).toHaveCount(0)
-  for (const section of ['General', 'Providers', 'Source control', 'Keyboard shortcuts', 'Memory', 'Display']) {
+  for (const section of ['General', 'Providers', 'Source control', 'Keyboard shortcuts', 'Memory', 'Connections', 'Display']) {
     await navigation.getByRole('button', { name: section, exact: true }).click()
     await expect(page.getByRole('heading', { name: section, exact: true })).toBeInViewport()
     await expect(settings.getByRole('status').filter({ hasText: /^Saved$/ })).toBeInViewport()

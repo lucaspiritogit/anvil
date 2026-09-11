@@ -21,6 +21,7 @@ import pencil from './icons/pencil.svg?raw'
 import search from './icons/search.svg?raw'
 import settings from './icons/settings.svg?raw'
 import sparkles from './icons/sparkles.svg?raw'
+import waypoints from './icons/waypoints.svg?raw'
 import x from './icons/x.svg?raw'
 
 // Only bundled artwork enters this map. Inline SVG keeps currentColor and sizing
@@ -58,6 +59,7 @@ const artwork = {
   search: body(search),
   settings: body(settings),
   sparkles: body(sparkles),
+  waypoints: body(waypoints),
   x: body(x)
 }
 

@@ -14,6 +14,8 @@ import type {
   WorkspaceSettingsChange,
   AgentDefinition,
   GitHubCredentialStatus,
+  ConnectionsStatus,
+  ConnectionsStatusChange,
   PullRequestInfo,
   PullRequestPreview,
   ProviderModelList,
@@ -93,6 +95,11 @@ const api = {
     onChanged: (handler: (change: WorkspaceSettingsChange) => void): (() => void) => subscribe('settings:changed', handler),
     get: (workspaceId?: string): Promise<Settings> => invoke('settings:get', workspaceId),
     set: (workspaceId: string, patch: Partial<Settings>): Promise<Settings> => invoke('settings:set', { workspaceId, patch })
+  },
+  connections: {
+    status: (workspaceId?: string): Promise<ConnectionsStatus> => invoke('connections:status', workspaceId),
+    configure: (input: IpcRequests['connections:configure']): Promise<ConnectionsStatus> => invoke('connections:configure', input),
+    onChanged: (handler: (change: ConnectionsStatusChange) => void): (() => void) => subscribe('connections:changed', handler)
   },
   workspaces: {
     list: (): Promise<Workspace[]> => invoke('workspaces:list'),
