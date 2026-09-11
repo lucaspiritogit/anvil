@@ -93,16 +93,18 @@ export async function resumeTaskTurn(
       // Do not resurrect a deleted task or overwrite a newer lifecycle transition.
       const latest = store.getTask(task.id)
       if (latest && (!running || latest.status === 'running' && latest.deliveryStatus === running.deliveryStatus)) {
-        const restored = store.updateTask(task.id, {
-          ...current, sessionId: latest.sessionId,
-          contextUsed: latest.contextUsed, contextSize: latest.contextSize, contextCompactionError: latest.contextCompactionError,
-          inputTokens: latest.inputTokens, outputTokens: latest.outputTokens, cachedTokens: latest.cachedTokens,
-          totalTokens: latest.totalTokens, costUsd: latest.costUsd
-        })!
-        if (previousState) {
-          if (rollbackExecution) rollbackExecution(task.id, previousState)
-          else store.saveTaskExecution(previousState)
-        }
+        const restored = store.transaction(() => {
+          if (previousState) {
+            if (rollbackExecution) rollbackExecution(task.id, previousState)
+            else store.saveTaskExecution(previousState)
+          }
+          return store.updateTask(task.id, {
+            ...current, sessionId: latest.sessionId,
+            contextUsed: latest.contextUsed, contextSize: latest.contextSize, contextCompactionError: latest.contextCompactionError,
+            inputTokens: latest.inputTokens, outputTokens: latest.outputTokens, cachedTokens: latest.cachedTokens,
+            totalTokens: latest.totalTokens, costUsd: latest.costUsd
+          }, current)!
+        }, current.workspaceId)
         send('task:updated', restored)
       }
       throw error

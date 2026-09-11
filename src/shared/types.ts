@@ -287,6 +287,10 @@ export interface Task {
   status: TaskStatus
   startedAt: number
   endedAt?: number
+  /** Measured working milliseconds through the last checkpoint. Legacy records start at zero. */
+  workingTimeMs?: number
+  /** Open working interval, absent while paused. Recovery discards uncheckpointed intervals. */
+  workingStartedAt?: number
   reviewedAt?: number
   settledAt?: number
   exitCode?: number | null

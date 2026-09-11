@@ -5,7 +5,7 @@ import { normalizeWorkspaceName, readRootConfig, writeRootConfig, type RootConfi
 import { archiveLegacyRoot, migrateLegacyRoot, relocateTaskPaths } from './legacy-root-storage'
 import { TaskImageStorage } from './task-image-storage'
 import type { PullRequestMerged } from '../shared/github-pull-request-state'
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto'
 import { DEFAULT_WORKSPACE_ID } from '../shared/types'
 import * as schema from './db/schema'
 import { canSettleTask, settlementDeadline } from '../shared/task-settlement'
+import { advanceTaskWorkingTime, isTaskWorking, type TaskWorkingTime } from '../shared/task-timing'
 import { DEFAULT_KEYBINDINGS, normalizeKeybindings } from '../shared/keybindings'
 import type { Project, Task, TaskComment, TaskEvent, Settings, TaskExecutionState, Workspace, WorkspacePreferences, ComposerPreferences } from '../shared/types'
 import { DEFAULT_FONT_SIZE, normalizeFontSize, DEFAULT_OVERVIEW_COLOR, OVERVIEW_COLOR_PATTERN, isWallpaperId } from '../shared/appearance'
@@ -110,6 +111,8 @@ function toTask(row: TaskRow): Task {
     cwd: row.cwd,
     status: row.status,
     startedAt: row.startedAt,
+    workingTimeMs: row.workingTimeMs,
+    ...(row.workingStartedAt === null ? {} : { workingStartedAt: row.workingStartedAt }),
     ...(row.endedAt === null ? {} : { endedAt: row.endedAt }),
     ...(row.reviewedAt === null ? {} : { reviewedAt: row.reviewedAt }),
     ...(row.settledAt === null ? {} : { settledAt: row.settledAt }),
@@ -195,6 +198,8 @@ function toTaskRow(task: Task): typeof tasks.$inferInsert {
     stackSuggestion: task.stackSuggestion ?? null,
     model: task.model ?? null,
     endedAt: task.endedAt ?? null,
+    workingTimeMs: task.workingTimeMs ?? 0,
+    workingStartedAt: task.workingStartedAt ?? null,
     reviewedAt: task.reviewedAt ?? null,
     settledAt: task.settledAt ?? null,
     exitCode: task.exitCode ?? null,
@@ -228,6 +233,7 @@ export class Store {
   private readonly storage: WorkspaceStorage
   private readonly initializedWorkspaces = new Set<string>()
   private activityDepth = 0
+  private closed = false
   private readonly activityListeners = new Set<() => void>()
 
   /** Observe committed task/issue state and settings that control task activity. */
@@ -588,7 +594,10 @@ export class Store {
   }
 
   addTask(task: Omit<Task, 'workspaceId'> & { workspaceId?: string }): Task {
-    const ownedTask: Task = { ...task, workspaceId: task.workspaceId ?? this.getActiveWorkspace().id }
+    const ownedTask: Task = {
+      ...task, workspaceId: task.workspaceId ?? this.getActiveWorkspace().id,
+      ...advanceTaskWorkingTime({ workingTimeMs: task.workingTimeMs }, isTaskWorking(task), Date.now())
+    }
     const connection = this.workspaceConnection(ownedTask.workspaceId)
     if (this.getTask(ownedTask.id)) throw new Error('Task already exists')
     connection.db.insert(tasks).values(toTaskRow(ownedTask)).run()
@@ -605,7 +614,7 @@ export class Store {
     this.activityChanged()
   }
 
-  updateTask(id: string, patch: Partial<Omit<Task, 'workspaceId' | 'pullRequest'>>): Task | undefined {
+  updateTask(id: string, patch: Partial<Omit<Task, 'workspaceId' | 'pullRequest'>>, restoreTiming?: TaskWorkingTime): Task | undefined {
     const current = this.getTask(id)
     if (!current) return undefined
     const db = this.workspaceConnection(current.workspaceId).db
@@ -616,6 +625,9 @@ export class Store {
       ...withoutPullRequest(current), ...patch,
       ...(patch.status === 'running' ? { reviewedAt: undefined, settledAt: undefined } : {})
     }
+    // Full task snapshots are used by callers; only explicit dispatch rollback
+    // may restore a timing snapshot instead of advancing the current measurement.
+    Object.assign(next, advanceTaskWorkingTime(restoreTiming ?? current, isTaskWorking(next, this.getTaskExecution(id)), Date.now()))
     db.update(tasks).set(toTaskRow(next)).where(eq(tasks.id, id)).run()
     if (current.status !== next.status || current.deliveryStatus !== next.deliveryStatus) this.activityChanged()
     const link = db.select().from(schema.taskPullRequests).where(eq(schema.taskPullRequests.taskId, id)).get()
@@ -753,6 +765,9 @@ export class Store {
     this.initializedWorkspaces.add(workspaceId)
     try {
       this.seedWorkspace(workspaceId, connection.db)
+      // An open interval has no reliable end after a crash. Retain checkpoints,
+      // but never turn closed-app downtime into measured work during recovery.
+      connection.db.update(tasks).set({ workingStartedAt: null }).where(isNotNull(tasks.workingStartedAt)).run()
       this.recoverInterruptedTasks(workspaceId)
       new TaskImageStorage(join(this.getWorkspaceDirectory(workspaceId), 'anvil.db.images')).prune(
         new Set(this.getTasks(workspaceId).filter((task) => task.status !== 'cancelled' && task.deliveryStatus !== 'failed').map((task) => task.id))
@@ -778,7 +793,19 @@ export class Store {
   }
 
   close(): void {
+    if (this.closed) return
+    const now = Date.now()
+    for (const workspaceId of this.initializedWorkspaces) {
+      const db = this.storage.open(workspaceId).db
+      db.transaction(() => {
+        for (const row of db.select().from(tasks).where(isNotNull(tasks.workingStartedAt)).all()) {
+          const timing = advanceTaskWorkingTime(toTask(row), false, now)
+          db.update(tasks).set({ workingTimeMs: timing.workingTimeMs, workingStartedAt: null }).where(eq(tasks.id, row.id)).run()
+        }
+      })
+    }
     this.storage.close()
+    this.closed = true
     if (this.temporaryDirectory) rmSync(this.dataDirectory, { recursive: true, force: true })
   }
 
@@ -789,11 +816,15 @@ export class Store {
   }
 
   saveTaskExecution(state: TaskExecutionState): TaskExecutionState {
-    const db = this.taskConnection(state.taskId).db
-    db.insert(schema.taskExecutions).values({ taskId: state.taskId, state })
-      .onConflictDoUpdate({ target: schema.taskExecutions.taskId, set: { state } }).run()
-    this.activityChanged()
-    return state
+    const task = this.getTask(state.taskId)
+    if (!task) throw new Error('Task not found')
+    return this.transaction(() => {
+      const db = this.taskConnection(state.taskId).db
+      db.insert(schema.taskExecutions).values({ taskId: state.taskId, state })
+        .onConflictDoUpdate({ target: schema.taskExecutions.taskId, set: { state } }).run()
+      this.updateTask(state.taskId, {})
+      return state
+    }, task.workspaceId)
   }
 
 }
