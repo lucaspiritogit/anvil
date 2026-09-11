@@ -42,9 +42,14 @@ test('migrates interrupted tasks while retaining sessions, output and execution 
       phase: id === 'running' ? 'working' : id === 'review' ? 'reviewing' : 'blocked',
       issueIds: ['saved-issue'], currentIssueId: 'saved-issue', error: null }))
   }
+  legacyDb.prepare("UPDATE tasks SET ended_at = 9000000 WHERE id = 'finished'").run()
   legacyDb.close()
   const store = new Store(database, { migrationsFolder })
   try {
+    for (const task of store.getTasks()) {
+      expect(task.workingTimeMs, 'Legacy lifetimes cannot reconstruct historical review gaps').toBe(0)
+      expect(task.workingStartedAt).toBeUndefined()
+    }
     for (const id of ['running', 'finalizing', 'legacy']) {
       expect(store.getTask(id)?.status).toBe('pending')
       expect(store.getTask(id)?.deliveryStatus).toBe('agent_failed')

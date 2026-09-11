@@ -319,7 +319,9 @@ test('upgrades a legacy database twice without losing settings, sessions, execut
       stack_suggestion: null,
       context_used: null,
       context_size: null,
-      context_compaction_error: null
+      context_compaction_error: null,
+      working_time_ms: 0,
+      working_started_at: null
     })
     expect(store.getTaskExecution('task')).toEqual(state)
     const migrated = tables.map((table) => workspaceDb.prepare(`SELECT * FROM ${table}`).all())

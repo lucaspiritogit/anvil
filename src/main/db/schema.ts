@@ -112,6 +112,8 @@ export const tasks = sqliteTable(
     status: text('status').$type<TaskStatus>().notNull(),
     startedAt: integer('started_at').notNull(),
     endedAt: integer('ended_at'),
+    workingTimeMs: integer('working_time_ms').notNull().default(0),
+    workingStartedAt: integer('working_started_at'),
     reviewedAt: integer('reviewed_at'),
     settledAt: integer('settled_at'),
     exitCode: integer('exit_code'),
