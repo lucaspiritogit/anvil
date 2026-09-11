@@ -82,7 +82,7 @@ test('a newly created task discovers planning children and keeps execution and r
     await expect((index ? second : first)).toContainText('Review')
     // The run indicator becomes a review gate while the agent waits.
     await expect(page.getByRole('status', { name: 'Review gate' })).toBeVisible()
-    await page.getByRole('tab', { name: 'Changes', exact: true }).click()
+    await page.getByRole('tab', { name: /^Changes/ }).click()
     const review = page.getByRole('region', { name: 'Subtask code changes' })
     await expect(review.getByRole('status')).toContainText('Waiting for your review')
     await expect(review.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
@@ -133,5 +133,5 @@ test('a newly created task discovers planning children and keeps execution and r
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled()
 })

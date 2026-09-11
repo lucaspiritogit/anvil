@@ -1,6 +1,6 @@
 import { issueIsReviewReady, issuePresentation, taskIssuePresentation } from '@shared/task-issue-presentation'
 import type { JSX, ReactNode } from 'react'
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
 import { TaskStackStatus } from './TaskStackStatus'
@@ -15,7 +15,7 @@ import { RebaseModal } from './RebaseModal'
 import { TaskSteeringComposer } from './TaskSteeringComposer'
 import { TaskIssues } from './TaskIssues'
 import { useTaskIssues } from '../hooks/use-task-issues'
-import { TaskActivity } from './TaskActivity'
+import { TaskOutput } from './TaskOutput'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
 import { isTaskSettled } from '@shared/task-settlement'
 import type {
@@ -23,8 +23,6 @@ import type {
   Task,
   TaskComment,
   TaskDiff,
-  TaskEvent,
-  TaskEventCategory,
   TaskStatus
 } from '@shared/types'
 
@@ -51,7 +49,6 @@ interface PatchFilesProps {
   onRemove: (id: string) => void
 }
 
-const PLACEHOLDER = 'mx-2 my-1 text-xs text-dim'
 /** The note and its composer share a card that hangs off a coloured spine. */
 const NOTE_CARD = 'px-3 py-2.5 my-1.5 bg-raised border-l-2'
 const EMPTY_PANEL = 'grid flex-1 place-content-center gap-2 p-6 text-center text-sm text-dim'
@@ -303,115 +300,6 @@ function CommitsMenu({ diff, disabled, rebasing, onRebase }: {
   )
 }
 
-/**
- * The prompt opens the transcript rather than sitting above it: long prompts
- * clamp instead of squeezing the output, and reading one is a scroll away.
- */
-function PromptBlock({ label, text }: { label: string; text: string }): JSX.Element {
-  const ref = useRef<HTMLDivElement>(null)
-  const [expanded, setExpanded] = useState(false)
-  const [clamped, setClamped] = useState(false)
-
-  useLayoutEffect(() => {
-    const element = ref.current
-    if (!element) return
-    const measure = (): void => {
-      if (!expanded) setClamped(element.scrollHeight > element.clientHeight + 1)
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [expanded, text])
-
-  return (
-    <section role="region" aria-label="Task prompt" tabIndex={0} className="my-3 border-l-2 border-accent/50 pl-3.5 font-sans focus-visible:outline focus-visible:outline-accent">
-      <div className="mb-1 flex items-center gap-3 text-[11px] text-dim">
-        <span className="font-medium">{label}</span>
-        {(clamped || expanded) && <button className="text-accent hover:underline" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
-          {expanded ? 'Show less' : 'Show more'}
-        </button>}
-      </div>
-      <div ref={ref} className={cn('text-[13px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]', !expanded && 'line-clamp-6')}>
-        {text}
-      </div>
-    </section>
-  )
-}
-
-const CATEGORY_LABEL: Record<TaskEventCategory, string> = {
-  message: 'message',
-  thinking: 'thinking',
-  tool_use: 'tool_use',
-  tool_result: 'tool_result',
-  system: 'system',
-  error: 'error'
-}
-
-/* One colour per stream, so a log skims by kind. A row that reports the agent
- * never committing is amber whatever category carried it. */
-const KIND_TONE: Record<TaskEventCategory, string> = {
-  message: 'text-dim',
-  thinking: 'text-violet',
-  tool_use: 'text-accent',
-  tool_result: 'text-cyan',
-  system: 'text-ok',
-  error: 'text-danger'
-}
-
-const TEXT_TONE: Record<TaskEventCategory, string> = {
-  message: '',
-  thinking: 'italic text-dim',
-  tool_use: '',
-  tool_result: 'text-dim',
-  system: 'text-dim',
-  error: 'text-danger'
-}
-
-function LogRow({ event }: { event: TaskEvent }): JSX.Element {
-  const [expanded, setExpanded] = useState(false)
-  const uncommitted = event.kind === 'did_not_commit'
-  const [toolName, ...toolDescription] = event.category === 'tool_use' ? event.text.split('\n') : []
-  const tool = toolName ? { name: toolName, description: toolDescription.join('\n') } : undefined
-  const toolResult = event.category === 'tool_result' || event.id.startsWith('tool-result:')
-  return (
-    <div
-      data-output-category={event.category}
-      role="button"
-      tabIndex={0}
-      aria-expanded={expanded}
-      className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 cursor-pointer border-b border-line/55 last:border-b-0 hover:bg-hover/45"
-      onClick={() => setExpanded((value) => !value)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          setExpanded((value) => !value)
-        }
-      }}
-    >
-      <span className={cn('text-[11px] select-none', uncommitted ? 'text-warn' : KIND_TONE[event.category])}>
-        {CATEGORY_LABEL[event.category]}
-      </span>
-      <span className="min-w-0">
-        {tool ? <>
-          <span className="block break-words">{tool.name}</span>
-          {tool.description && <span className={cn('whitespace-pre-wrap break-words text-dim', expanded ? 'block' : 'line-clamp-2')}>
-            {tool.description}
-          </span>}
-        </> : <span
-          className={cn(
-            'min-w-0 whitespace-pre-wrap break-words',
-            expanded ? 'block' : toolResult ? 'line-clamp-1' : 'line-clamp-3',
-            uncommitted ? 'text-warn' : TEXT_TONE[event.category]
-          )}
-        >
-          {event.text || ' '}
-        </span>}
-      </span>
-    </div>
-  )
-}
-
 const STATUS_LABEL: Record<TaskStatus, string> = {
   pending: 'Pending',
   running: 'Running',
@@ -458,10 +346,8 @@ export function TaskView({ task }: Props): JSX.Element {
   const { snapshot, error: issueError, refresh } = useTaskIssues(task.id, true)
   const issue = task.status !== 'succeeded' && task.status !== 'cancelled' ? snapshot?.children.find((child) => child.status === 'review' &&
     (!snapshot.execution?.currentIssueId || child.id === snapshot.execution.currentIssueId)) : undefined
-  const events = useStore((s) => s.eventsByTask[task.id])
   const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? task.workspaceId)
   const project = useStore((s) => s.projects.find((item) => item.id === task.projectId))
-  const openTask = useStore((s) => s.openTask)
   const diff = useStore((s) => s.diffsByTask[task.id])
   const diffError = useStore((s) => s.diffErrorsByTask[task.id])
   const loadTaskDiff = useStore((s) => s.loadTaskDiff)
@@ -502,28 +388,17 @@ export function TaskView({ task }: Props): JSX.Element {
   const approved = task.deliveryStatus === 'approved'
   const openPullRequest = task.deliveryStatus === 'reviewable' ? task.pullRequest : undefined
 
-  const outputRef = useRef<HTMLDivElement>(null)
   const [now, setNow] = useState(Date.now())
-  const [follow, setFollow] = useState(true)
   const saving = task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit' || Boolean(issue && !issueIsReviewReady(snapshot))
   const done = task.status === 'succeeded' && task.deliveryStatus === 'no_changes'
   const reviewable = !issue && !saving && (task.deliveryStatus === 'reviewable' || approved)
   const [activePanel, setActivePanel] = useState<TaskPanel>('output')
 
   useEffect(() => {
-    if (!events) void openTask(task.id)
-  }, [events, openTask, task.id])
-
-  useEffect(() => {
     if (task.status !== 'running') return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [task.status])
-
-  useEffect(() => {
-    const output = outputRef.current
-    if (follow && output) output.scrollTop = output.scrollHeight
-  }, [events, follow, activePanel, task.status, task.deliveryStatus])
 
   useEffect(() => {
     if (reviewable && !diff && !diffError) void loadTaskDiff(task.id)
@@ -594,12 +469,6 @@ export function TaskView({ task }: Props): JSX.Element {
   const pending = (comments ?? []).filter((comment) => comment.sentAt === null)
   // Submission is visible immediately, even while the turn is still stopping.
   const presentation = taskIssuePresentation(task, snapshot)
-
-  const onScroll = (e: React.UIEvent<HTMLDivElement>): void => {
-    const el = e.currentTarget
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-    setFollow(atBottom)
-  }
 
   const panels: readonly TaskPanel[] = ['output', 'changes', 'issues']
 
@@ -810,20 +679,7 @@ export function TaskView({ task }: Props): JSX.Element {
           </div>}
         </section>}
 
-        <section id="task-panel-output" aria-label="Output" className={cn('flex flex-col flex-1 min-h-0 min-w-0', activePanel !== 'output' && 'hidden')}>
-          <div className="relative flex-1 min-h-0 min-w-0">
-            <div ref={outputRef} role="log" aria-label="Task output" className="h-full min-w-0 px-5 pb-3 overflow-y-auto overscroll-contain font-mono text-[12.5px] leading-[1.55]" onScroll={onScroll}>
-              <PromptBlock label="Prompt" text={task.prompt} />
-              {!events && <p className={PLACEHOLDER}>Loading output…</p>}
-              {events?.length === 0 && task.status !== 'running' && <p className={PLACEHOLDER}>No output recorded.</p>}
-              {events?.map((event) => <LogRow key={event.id} event={event} />)}
-              <TaskActivity task={task} presentation={presentation} event={events?.at(-1)} />
-            </div>
-            {!follow && <button className="absolute right-5 bottom-3 px-3 py-1.5 text-xs bg-hover border border-line" onClick={() => setFollow(true)}>
-              Jump to latest
-            </button>}
-          </div>
-        </section>
+        <TaskOutput key={task.id} task={task} visible={activePanel === 'output'} presentation={presentation} />
       </div>
 
       {!isTaskSettled(task) && <TaskSteeringComposer

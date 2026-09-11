@@ -130,6 +130,10 @@ let githubTokenConfigured = false
 let comments: TaskComment[] = []
 let diffRequests = 0
 const events = (taskId: string): TaskEvent[] => {
+  if (query.has('historySize')) return Array.from({ length: Number(query.get('historySize')) }, (_, index) => ({
+    id: `history-${index + 1}`, taskId, ts: index, stream: 'stdout', kind: 'output', category: 'message',
+    text: `History row ${index + 1}`
+  }))
   if (taskId === 'review') return [
     { id: 'review-user', taskId, ts: now - 2000, stream: 'system', kind: 'output', category: 'system', text: 'You:\nKeep existing keyboard shortcuts working.' },
     { id: 'review-agent', taskId, ts: now - 1000, stream: 'stdout', kind: 'output', category: 'message', text: 'The sidebar spacing is updated. Keyboard shortcuts are unchanged and the changes are ready for review.' }
@@ -151,10 +155,25 @@ const taskHistory = (taskId: string): TaskEvent[] => {
   return eventHistories.get(taskId)!
 }
 
+let releaseOutput: ((fail: boolean) => void) | null = null
+window.outputTest = {
+  hold: false,
+  failNext: query.has('outputFailure'),
+  requests: [],
+  release: (fail = false) => { releaseOutput?.(fail); releaseOutput = null }
+}
+
 let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-embed-large', ollamaBaseUrl: 'http://localhost:11434/v1', fontSize: 14, overviewBackgroundMode: 'color', overviewBackgroundColor: '#0d0f12', overviewWallpaperId: null, defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, caffeineMode: false, keybindings: DEFAULT_KEYBINDINGS }
 
 declare global {
   interface Window {
+    outputCommits: Record<string, number>
+    outputTest: {
+      hold: boolean
+      failNext: boolean
+      requests: import('../../../src/shared/types').TaskEventsRequest[]
+      release: (fail?: boolean) => void
+    }
     workspaceTest: { select: (id: string) => Promise<void>; create: (name: string) => Promise<void> }
     fileMentionTest: { paths: Record<string, string[]>; delay: Record<string, number>; error: string | null; calls: string[] }
     composerTest: {
@@ -491,7 +510,17 @@ window.anvil = {
       update({ ...task, status: 'running', deliveryStatus: 'working', endedAt: undefined })
     },
     events: async (taskId: string) => taskHistory(taskId),
-    eventsPage: async (input) => pageTaskEvents(taskHistory(input.taskId), input),
+    eventsPage: async (input) => {
+      window.outputTest.requests.push(input)
+      if (window.outputTest.hold) await new Promise<void>((resolve, reject) => {
+        releaseOutput = (fail) => fail ? reject(new Error('Output history unavailable')) : resolve()
+      })
+      if (window.outputTest.failNext) {
+        window.outputTest.failNext = false
+        throw new Error('Output history unavailable')
+      }
+      return pageTaskEvents(taskHistory(input.taskId), input)
+    },
     diff: async () => {
       diffRequests += 1
       if (query.has('diffFailure') && diffRequests === 1) throw new Error('Could not load the task diff')

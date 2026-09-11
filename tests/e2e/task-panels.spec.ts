@@ -89,7 +89,7 @@ test('stale child selection renders its owner with continuous output', async ({ 
   await expect(page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByRole('tab', { name: 'Issues', exact: true })).toBeVisible()
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('fixture:output', { detail: {
-    id: 'live', taskId: 'review', issueId: 'blocked', ts: 2, stream: 'stdout', kind: 'output',
+    id: 'live', taskId: 'review', issueId: 'blocked', sequence: 5, ts: 2, stream: 'stdout', kind: 'output',
     category: 'message', text: 'Live blocked'
   } })))
   await expect(page.getByRole('log')).toContainText('Live blocked')

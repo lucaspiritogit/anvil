@@ -300,7 +300,7 @@ test('upgrades a legacy database twice without losing settings, sessions, execut
   db.prepare("INSERT INTO task_comments VALUES ('comment', 'task', 'file.ts', 'additions', 1, 'Saved comment', 2, NULL)").run()
   db.prepare("INSERT INTO task_pull_requests VALUES ('task', 'owner/repo', 1, 'sha', 'branch', 'main')").run()
   const tables = ['projects', 'parent_issues', 'issues', 'issue_dependencies', 'task_executions', 'task_events', 'task_comments', 'task_pull_requests']
-  const preserved = tables.map((table) => db.prepare(`SELECT * FROM ${table}`).all())
+  const preserved = tables.map((table) => db.prepare<[], Record<string, unknown>>(`SELECT * FROM ${table}`).all())
   const originalTask = db.prepare<[], Record<string, unknown>>('SELECT * FROM tasks').get()!
   db.close()
   for (let attempt = 0; attempt < 2; attempt++) {
