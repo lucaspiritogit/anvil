@@ -2,7 +2,7 @@ import { constants, mkdirSync, realpathSync } from 'node:fs'
 import { lstat, open, readdir, realpath, writeFile } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import sharp from 'sharp'
+import { validateImageHeaders } from '../shared/image-headers'
 import { isWallpaperId } from '../shared/appearance'
 import type { Wallpaper } from '../shared/types'
 
@@ -29,7 +29,7 @@ export class WallpaperLibrary {
     try { mkdirSync(this.directory, { recursive: true }) } catch { /* Unavailable libraries are empty. */ }
   }
 
-  // Serialize decoding across requests so concurrent IPC cannot multiply decode memory.
+  // Serialize reads so concurrent IPC cannot multiply image buffer memory.
   private serialize<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.pending.then(operation)
     this.pending = result.catch(() => undefined)
@@ -68,17 +68,8 @@ export class WallpaperLibrary {
       } finally {
         await handle.close()
       }
-      const image = sharp(bytes, { limitInputPixels: MAX_WALLPAPER_PIXELS, failOn: 'warning', sequentialRead: true })
-      const metadata = await image.metadata()
-      const { width, height, format } = metadata
-      if (!format || !['png', 'jpeg', 'webp'].includes(format) || !width || !height ||
-        width > MAX_WALLPAPER_DIMENSION || height > MAX_WALLPAPER_DIMENSION ||
-        width * height > MAX_WALLPAPER_PIXELS || (metadata.pages ?? 1) > 1) return null
-      // Full decoding rejects corrupt payloads. Normalize orientation and cap IPC output.
-      const output = await image.rotate().resize({ width: 2560, height: 2560, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 85 }).toBuffer()
-      if (output.length > MAX_WALLPAPER_BYTES) return null
-      return { wallpaper: { id, name: id, width, height }, dataUrl: `data:image/webp;base64,${output.toString('base64')}`, bytes }
+      const { width, height, mimeType } = validateImageHeaders(bytes, { pixels: MAX_WALLPAPER_PIXELS, dimension: MAX_WALLPAPER_DIMENSION })
+      return { wallpaper: { id, name: id, width, height }, dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}`, bytes }
     } catch {
       return null
     }

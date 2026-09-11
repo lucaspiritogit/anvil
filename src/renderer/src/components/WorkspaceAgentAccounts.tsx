@@ -1,52 +1,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
 import type { AgentAccountConnect, AgentAccountTarget, WorkspaceAgentAccount } from '@shared/types'
 import { useStore } from '../state/store'
 import { btn, field } from '../ui'
-
-function AccountTerminal({ target, sessionId }: { target: AgentAccountTarget; sessionId: string }): JSX.Element {
-  const host = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!host.current) return
-    const terminal = new Terminal({ cols: 80, rows: 18, scrollback: 500, fontSize: 13, cursorBlink: true,
-      theme: { background: '#0d0f12', foreground: '#d7dbe0' } })
-    const fit = new FitAddon()
-    terminal.loadAddon(fit)
-    terminal.open(host.current)
-    let disposed = false
-    let reading = false
-    let previous = ''
-    let sequence = -1
-    const refresh = async (): Promise<void> => {
-      if (reading || disposed) return
-      reading = true
-      try {
-        const snapshot = await window.anvil.accounts.terminal({ ...target, sessionId })
-        if (disposed || snapshot.sequence === sequence) return
-        if (snapshot.data.startsWith(previous)) terminal.write(snapshot.data.slice(previous.length))
-        else { terminal.reset(); terminal.write(snapshot.data) }
-        previous = snapshot.data
-        sequence = snapshot.sequence
-      } catch { /* Status controls report connection failures without echoing terminal input. */ }
-      finally { reading = false }
-    }
-    const input = terminal.onData((data) => {
-      void window.anvil.accounts.terminal({ ...target, sessionId, data }).catch(() => {})
-    })
-    const observer = new ResizeObserver(() => {
-      if (!host.current?.clientWidth) return
-      fit.fit()
-      void window.anvil.accounts.terminal({ ...target, sessionId, cols: terminal.cols, rows: terminal.rows }).catch(() => {})
-    })
-    observer.observe(host.current)
-    void refresh()
-    const timer = setInterval(() => { void refresh() }, 200)
-    terminal.focus()
-    return () => { disposed = true; clearInterval(timer); observer.disconnect(); input.dispose(); terminal.dispose() }
-  }, [target.workspaceId, target.agentId, sessionId])
-  return <div ref={host} className="mt-3 h-72 overflow-hidden rounded border border-line bg-[#0d0f12] p-2" aria-label="Native provider login terminal" />
-}
 
 function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget & { workspaceName: string }): JSX.Element {
   const [account, setAccount] = useState<WorkspaceAgentAccount | null>(null)
@@ -121,7 +76,7 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
         <button className={btn.ghost} disabled={requesting || pending} onClick={() => void run(() => window.anvil.accounts.status(target))}>Refresh {label} for {workspaceName}</button>
         {pending && account.sessionId && <button className={btn.ghost} onClick={() => void run(() => window.anvil.accounts.cancel({ ...target, sessionId: account.sessionId! }))}>Cancel {label} for {workspaceName}</button>}
       </div>
-      {pending && account.terminal && account.sessionId && <AccountTerminal target={target} sessionId={account.sessionId} />}
+      {pending && agentId === 'opencode' && <p className="mt-3 text-xs text-dim">Complete sign-in or sign-out in the terminal window. Cancelling stops checking; close that window to stop the command.</p>}
     </section>
   )
 }

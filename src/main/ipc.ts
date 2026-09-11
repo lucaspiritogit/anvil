@@ -25,7 +25,6 @@ import { registerTaskHandlers } from './ipc/tasks'
 import { registerSteeringHandlers } from './ipc/steering'
 import { registerWorkspaceHandlers } from './ipc/workspaces'
 import { registerSettingsHandlers } from './ipc/settings'
-import { registerTerminalHandlers } from './ipc/terminals'
 import { createProjectMemory, type ProjectMemory } from './memory/project-memory'
 import { WorkspaceProjectMemory } from './memory/workspace-project-memory'
 import { createTaskMemory } from './memory/task-memory'
@@ -35,7 +34,6 @@ import { registerTaskEvents } from './tasks/events'
 import { registerTaskExecution } from './tasks/task-execution'
 import { Store } from './store'
 import { IssueToolServer } from './issue-tools/server'
-import { TerminalManager } from './terminal'
 import { createRendererIpc } from './renderer-security'
 import { resolveAppDataDirectory } from './app-data'
 
@@ -46,7 +44,6 @@ export function registerIpc(
   dataDirectory = resolveAppDataDirectory(app.getPath('home'), app.isPackaged, process.env.ANVIL_DATA_DIR)
 ): {
   agentProcesses: AgentProcessManager
-  terminals: TerminalManager
   projectMemory?: ProjectMemory
   githubPolling: Pick<GitHubPRPolling, 'refreshIfStale' | 'close'>
   stopCaffeineMode(): void
@@ -94,11 +91,6 @@ export function registerIpc(
   const send: SendToRenderer = (channel, payload) => {
     getWindow()?.webContents.send(channel, payload)
   }
-  const terminals = new TerminalManager({
-    onData: (id, data, sequence) => broadcast('terminal:data', { id, data, sequence }),
-    onExit: (id, code) => broadcast('terminal:exit', { id, code })
-  })
-
   const context = { store, agentProcesses, gitDelivery, send }
   const taskEvents = registerTaskEvents(context)
   const taskMemory = createTaskMemory(context, projectMemory, (workspaceId) => projectMemory.forWorkspace(workspaceId))
@@ -157,7 +149,7 @@ export function registerIpc(
     invalidateWorkspaceModels(workspaceId)
     broadcast('agents:models:changed', workspaceId)
   })
-  registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask, terminals, projectMemory, getWindow, projectsChanged: (workspaceId) => {
+  registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask, projectMemory, getWindow, projectsChanged: (workspaceId) => {
     if (workspaceId === store.getActiveWorkspace().id) broadcast('projects:changed', store.getProjects(workspaceId))
   } })
   registerTaskHandlers(ipc, {
@@ -209,7 +201,6 @@ export function registerIpc(
     githubCredentialsChanged: (workspaceId) => { void workspacePolling(workspaceId).credentialsChanged() }
   })
   registerRebaseHandlers(ipc, reviewContext)
-  registerTerminalHandlers(ipc, terminals, store)
 
   return {
     agentProcesses,
@@ -218,7 +209,7 @@ export function registerIpc(
       await closeModelDiscovery()
       await issueTools.close()
     },
-    terminals, githubPolling, stopCaffeineMode,
+    githubPolling, stopCaffeineMode,
     closeStore: () => {
       stopTaskNotifications()
       stopAuthWatcher()

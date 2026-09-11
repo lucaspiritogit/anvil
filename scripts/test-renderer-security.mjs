@@ -48,28 +48,7 @@ try {
   const project = await page.evaluate(() => window.anvil.projects.add())
   const projectId = project.id
   await page.reload()
-  await page.evaluate(async (projectId) => {
-    window.securityProjectId = projectId
-    window.securityOutput = ''
-    window.anvil.terminal.onData(({ data }) => { window.securityOutput += data })
-    await window.anvil.terminal.ensure({ projectId, cols: 80, rows: 24 })
-    window.anvil.terminal.resize(projectId, 79, 23)
-    window.anvil.terminal.write(projectId, 'stty size; echo SECURITY_TERMINAL_OK\r')
-  }, projectId)
-  assert.equal(await page.evaluate(async () => (await window.anvil.settings.set({ caffeineMode: true })).caffeineMode), true)
-  assert.equal(await page.evaluate(async () => (await window.anvil.settings.set({ caffeineMode: false })).caffeineMode), false)
-  await page.waitForFunction(() => window.securityOutput.includes('23 79') && window.securityOutput.includes('SECURITY_TERMINAL_OK'))
-  console.log('Terminal create, write, resize and output passed')
-
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+t' : 'Control+t')
-  await page.locator('.xterm-helper-textarea').pressSequentially('echo MERGED_TERMINAL_UI_OK')
-  await page.locator('.xterm-helper-textarea').press('Enter')
-  await page.waitForFunction(() => window.securityOutput.includes('MERGED_TERMINAL_UI_OK'))
-  const screenshotPath = join(tmpdir(), 'anvil-renderer-security.png')
-  await page.screenshot({ path: screenshotPath })
-  console.log('Terminal UI checked:', screenshotPath)
-  await page.evaluate(() => window.anvil.terminal.resize(window.securityProjectId, 79, 23))
-
+  assert.match(await page.evaluate(() => window.anvil.projects.openTerminal('missing').then(() => 'unexpected success', (error) => error.message)), /Project not found/)
   const originalUrl = page.url()
   await page.evaluate(() => { location.href = 'https://example.com/forbidden' })
   await page.waitForTimeout(200)
@@ -83,20 +62,9 @@ try {
   const foreign = await foreignPromise
   await foreign.waitForFunction(() => Boolean(window.anvil))
   assert.match(await foreign.evaluate(() => window.anvil.settings.get().then(() => 'unexpected success', (error) => error.message)), /Unauthorized IPC sender/)
-  await foreign.evaluate((projectId) => {
-    window.anvil.terminal.write(projectId, 'echo FOREIGN_WRITE_WAS_ACCEPTED\r')
-    window.anvil.terminal.resize(projectId, 99, 33)
-  }, projectId)
-  await page.waitForTimeout(100)
-  assert.equal(await page.evaluate(() => window.securityOutput.includes('FOREIGN_WRITE_WAS_ACCEPTED')), false)
-  await page.evaluate(() => {
-    window.securityOutput = ''
-    window.anvil.terminal.write(window.securityProjectId, 'stty size; echo IPC_REJECTION_CHECKED\r')
-  })
-  await page.waitForFunction(() => window.securityOutput.includes('23 79') && window.securityOutput.includes('IPC_REJECTION_CHECKED'))
-  assert.equal(await page.evaluate(() => window.securityOutput.includes('FOREIGN_WRITE_WAS_ACCEPTED')), false)
+  assert.match(await foreign.evaluate((projectId) => window.anvil.projects.openTerminal(projectId).then(() => 'unexpected success', (error) => error.message), projectId), /Unauthorized IPC sender/)
   await foreign.close()
-  console.log('Navigation and real foreign-window invoke/terminal rejection passed')
+  console.log('Navigation and real foreign-window IPC rejection passed')
 
   // Observe the OS opener boundary without opening a browser during automated runs.
   await application.evaluate(({ shell }) => {
@@ -125,7 +93,7 @@ try {
       const panel = document.createElement('aside')
       panel.style.cssText = 'position:fixed;top:60px;right:30px;padding:20px;background:#20252c;color:white;z-index:9999'
       const output = document.createElement('pre')
-      output.textContent = 'Security fixture: sandbox and preload passed\nTerminal output:\n' + window.securityOutput
+      output.textContent = 'Security fixture: sandbox, preload and IPC checks passed'
       const button = document.createElement('button')
       button.id = 'open-pr-fixture'
       button.textContent = 'Open GitHub PR fixture'

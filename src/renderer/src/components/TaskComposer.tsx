@@ -1,7 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowDown01Icon, ArrowUp01Icon, AiBrain01Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import { hasTaskContent } from '@shared/task-images'
 import { useStore } from '../state/store'
 import { useComposerPreferences } from '../state/composer-preferences'
@@ -170,7 +169,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
             />
             <ComposerOverflowOptions containerRef={composerRef}>
               <label className="relative flex items-center" title="Reasoning effort">
-                <HugeiconsIcon icon={AiBrain01Icon} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
+                <Icon icon="brain-circuit" size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
                 <select
                   aria-label="Reasoning effort"
                   className={cn(compactSelect, 'pl-8')}
@@ -181,7 +180,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                   {!reasoningOptions.length && <option value="">{loadingEfforts ? 'Loading efforts…' : catalogue?.error || (model && !capabilities) ? 'Reasoning unavailable' : 'Agent default'}</option>}
                   {reasoningOptions.map((option) => <option className="bg-raised text-fg" key={option.id} value={option.id}>{option.label}</option>)}
                 </select>
-                <HugeiconsIcon icon={ArrowDown01Icon} size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
+                <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
               </label>
             </ComposerOverflowOptions>
             <div className="ml-auto flex shrink-0 items-center gap-3 pl-2">
@@ -192,7 +191,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 className="grid size-8 shrink-0 place-items-center bg-accent text-canvas transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
                 disabled={!projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || busy || switchingBranch}
               >
-                <HugeiconsIcon icon={ArrowUp01Icon} size={18} aria-hidden="true" />
+                <Icon icon="chevron-up" size={18} aria-hidden="true" />
               </button>
             </div>
           </div>

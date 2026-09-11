@@ -1,8 +1,7 @@
 import type { JSX } from 'react'
 import { flushSync } from 'react-dom'
 import { useEffect, useId, useRef, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowDown01Icon, Folder01Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import type { Project } from '@shared/types'
 import { cn } from '../ui'
 
@@ -51,7 +50,7 @@ export function ProjectPicker({ projects, value, onChange }: {
     }}>
       <label htmlFor={id} className="mb-1 block text-[11px] text-dim">Project</label>
       <div className="flex h-9 items-center gap-2 border border-line px-2.5 focus-within:border-accent">
-        <HugeiconsIcon icon={Folder01Icon} size={16} className="shrink-0 text-dim" aria-hidden="true" />
+        <Icon icon="folder" size={16} className="shrink-0 text-dim" aria-hidden="true" />
         <input
           id={id}
           ref={inputRef}
@@ -88,7 +87,7 @@ export function ProjectPicker({ projects, value, onChange }: {
           }}
           className="w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-dim outline-none"
         />
-        <HugeiconsIcon icon={ArrowDown01Icon} size={14} className="pointer-events-none shrink-0 text-dim" aria-hidden="true" />
+        <Icon icon="chevron-down" size={14} className="pointer-events-none shrink-0 text-dim" aria-hidden="true" />
       </div>
       {open && (
         <div className="absolute inset-x-0 top-full z-30 mt-1 border border-line bg-raised shadow-lg">

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { validateImageHeaders } from '@shared/image-headers'
 import { parseTaskImages, TASK_IMAGE_FORMATS } from '@shared/task-images'
 import { TASK_IMAGE_LIMITS, type TaskImageAttachment } from '@shared/types'
 
@@ -16,26 +17,7 @@ async function readImage(file: File): Promise<TaskImageAttachment> {
   const [image] = parseTaskImages([{
     filename: file.name, mimeType: file.type, bytes: new Uint8Array(await file.arrayBuffer())
   }])
-  const bytes = image.bytes
-  const matches = (offset: number, signature: number[]): boolean => signature.every((byte, index) => bytes[offset + index] === byte)
-  const png = matches(0, [137, 80, 78, 71, 13, 10, 26, 10])
-  const jpeg = matches(0, [255, 216, 255])
-  const webp = matches(0, [82, 73, 70, 70]) && matches(8, [87, 69, 66, 80])
-  if (!(image.mimeType === 'image/png' ? png : image.mimeType === 'image/jpeg' ? jpeg : webp)) {
-    throw new Error('The image bytes do not match its MIME type')
-  }
-  // Reject animation before the browser can quietly decode just its first frame.
-  if (png || webp) {
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-    for (let offset = png ? 8 : 12; offset + 8 <= bytes.length;) {
-      const length = view.getUint32(png ? offset : offset + 4, webp)
-      if (png && matches(offset + 4, [97, 99, 84, 76]) ||
-        webp && matches(offset, [86, 80, 56, 88]) && (bytes[offset + 8] & 2)) {
-        throw new Error('Animated images are not supported; paste a still image')
-      }
-      offset += png ? length + 12 : length + 8 + length % 2
-    }
-  }
+  validateImageHeaders(image.bytes, { mimeType: image.mimeType, pixels: TASK_IMAGE_LIMITS.pixels })
   const bitmap = await createImageBitmap(file)
   try {
     if (bitmap.width * bitmap.height > TASK_IMAGE_LIMITS.pixels) {

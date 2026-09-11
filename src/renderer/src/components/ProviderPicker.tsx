@@ -1,7 +1,6 @@
 import type { JSX } from 'react'
 import { useRef, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import type { AgentDefinition } from '@shared/types'
 import { AgentIcon } from './AgentIcon'
 import { ChoicePickerDialog } from './ChoicePickerDialog'
@@ -30,7 +29,7 @@ export function ProviderPicker({ agents, value, onChange, label = 'Agent' }: {
       >
         <AgentIcon agentId={value} label={selected?.label ?? 'Agent'} size={16} />
         <span className="truncate">{selected?.label ?? 'Choose a provider'}</span>
-        <HugeiconsIcon icon={ArrowDown01Icon} size={12} className="shrink-0" aria-hidden="true" />
+        <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
       </button>
       {open && <ChoicePickerDialog
         anchorRef={triggerRef}

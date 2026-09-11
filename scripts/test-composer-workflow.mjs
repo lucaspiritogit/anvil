@@ -5,7 +5,6 @@ import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { _electron as electron, expect } from '@playwright/test'
-import sharp from 'sharp'
 
 // Run after npm run build. Uses a temporary repo/profile and fake agent by default.
 // --manual leaves the tested app open. --live-codex /absolute/path observes only
@@ -83,7 +82,7 @@ try {
     }
     return saved
   })
-  const png = await sharp({ create: { width: 48, height: 32, channels: 4, background: '#6789ab' } }).png().toBuffer()
+  const png = await readFile('tests/fixtures/images/sample.png')
   const entries = async () => (await readFile(transcript, 'utf8')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
   {
     const surface = page.getByTestId('project-overview')
@@ -120,7 +119,17 @@ try {
     }, Array.from(png))
     await prompt.press('ControlOrMeta+V')
     const expectedBytes = await page.evaluate(() => window.smokePastedImage)
-    assert.deepEqual(await sharp(Buffer.from(expectedBytes)).ensureAlpha().raw().toBuffer(), await sharp(png).ensureAlpha().raw().toBuffer())
+    const pixels = await page.evaluate(async (samples) => Promise.all(samples.map(async (bytes) => {
+      const bitmap = await createImageBitmap(new Blob([Uint8Array.from(bytes)], { type: 'image/png' }))
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = bitmap.width; canvas.height = bitmap.height
+        const context = canvas.getContext('2d')
+        context.drawImage(bitmap, 0, 0)
+        return { width: bitmap.width, height: bitmap.height, data: Array.from(context.getImageData(0, 0, bitmap.width, bitmap.height).data) }
+      } finally { bitmap.close() }
+    })), [expectedBytes, Array.from(png)])
+    assert.deepEqual(pixels[0], pixels[1])
     await expect(composer.getByRole('img')).toHaveCount(1)
     await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
     for (const width of [1280, 600]) {

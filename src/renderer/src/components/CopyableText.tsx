@@ -1,6 +1,5 @@
 import { useEffect, useState, type JSX } from 'react'
-import { Copy01Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
+import { Icon } from '../icons'
 import { btn, cn } from '../ui'
 
 export function CopyableText({ label, value }: { label: string; value: string }): JSX.Element {
@@ -35,7 +34,7 @@ export function CopyableText({ label, value }: { label: string; value: string })
         title={`Copy ${label}`}
         onClick={() => void copy()}
       >
-        <HugeiconsIcon icon={Copy01Icon} size={14} aria-hidden="true" />
+        <Icon icon="copy" size={14} aria-hidden="true" />
       </button>
       <span role="status" className={feedback ? 'absolute right-0 bottom-full z-10 mb-1 w-max max-w-64 border border-line bg-hover px-2 py-1 text-xs text-fg shadow-lg' : 'sr-only'}>
         {feedback}

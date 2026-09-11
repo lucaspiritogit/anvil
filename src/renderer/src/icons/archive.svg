@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Made with RuneIcon — https://runeicon.com -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 24 24" preserveAspectRatio="xMidYMid meet" fill="none">
+  <rect x="0" y="0" width="24" height="24" rx="2.250" ry="2.250" fill="transparent"/>
+  <g transform="translate(0.75, 0.75) scale(0.9375)">
+    <g transform="translate(12, 12) rotate(0) scale(1, 1) translate(-12, -12)" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <g class="icon-anim-container icon-anim-group">
+        <path d="M4 8V19C4 19.5304 4.21071 20.0391 4.58579 20.4142C4.96086 20.7893 5.46957 21 6 21H18C18.5304 21 19.0391 20.7893 19.4142 20.4142C19.7893 20.0391 20 19.5304 20 19V8M10 12H14M3 3H21C21.5523 3 22 3.44772 22 4V7C22 7.55228 21.5523 8 21 8H3C2.44772 8 2 7.55228 2 7V4C2 3.44772 2.44772 3 3 3Z" stroke="currentColor"/>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -3,7 +3,7 @@ import { test, expect } from 'vitest'
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, truncate, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import sharp from 'sharp'
+import { imageFixture, pngWithDimensions } from './image-fixtures'
 import { WallpaperLibrary, MAX_WALLPAPER_BYTES, MAX_WALLPAPER_DIMENSION, MAX_WALLPAPER_PIXELS } from '../src/main/wallpapers'
 
 async function setupWallpapers() {
@@ -13,14 +13,14 @@ async function setupWallpapers() {
   const folder = join(config, 'wallpaper')
   const library = new WallpaperLibrary(config)
   await library.list()
-  const pixel = sharp({ create: { width: 4, height: 3, channels: 3, background: '#123456' } })
-  await writeFile(join(folder, 'z.png'), await pixel.clone().png().toBuffer())
-  await writeFile(join(folder, 'A.jpeg'), await pixel.clone().jpeg().toBuffer())
-  await writeFile(join(folder, 'space name.webp'), await pixel.clone().webp().toBuffer())
-  await writeFile(join(folder, 'unsupported.gif'), await pixel.clone().gif().toBuffer())
-  await writeFile(join(folder, 'disguised.png'), await pixel.clone().gif().toBuffer())
+  for (const [name, sample] of [['z.png', 'sample.png'], ['A.jpeg', 'sample.jpeg'], ['space name.webp', 'sample.webp']]) {
+    await writeFile(join(folder, name), imageFixture(sample))
+  }
+  const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64')
+  await writeFile(join(folder, 'unsupported.gif'), gif)
+  await writeFile(join(folder, 'disguised.png'), gif)
   await writeFile(join(folder, 'corrupt.png'), 'not an image')
-  const png = await pixel.clone().png().toBuffer()
+  const png = imageFixture()
   await writeFile(join(folder, 'truncated.png'), png.subarray(0, png.length - 20))
   await mkdir(join(folder, 'directory.png'))
   const outside = join(root, 'outside.png')
@@ -29,12 +29,8 @@ async function setupWallpapers() {
   await symlink(join(folder, 'z.png'), join(folder, 'internal-link.png'))
   await writeFile(join(folder, 'large.png'), png)
   await truncate(join(folder, 'large.png'), MAX_WALLPAPER_BYTES + 1)
-  await writeFile(join(folder, 'wide.png'), await sharp({ create: {
-    width: MAX_WALLPAPER_DIMENSION + 1, height: 1, channels: 3, background: 'red'
-  } }).png().toBuffer())
-  await writeFile(join(folder, 'pixels.png'), await sharp({ create: {
-    width: 4096, height: Math.floor(MAX_WALLPAPER_PIXELS / 4096) + 1, channels: 3, background: 'red'
-  } }).png().toBuffer())
+  await writeFile(join(folder, 'wide.png'), pngWithDimensions(MAX_WALLPAPER_DIMENSION + 1, 1))
+  await writeFile(join(folder, 'pixels.png'), pngWithDimensions(4096, Math.floor(MAX_WALLPAPER_PIXELS / 4096) + 1))
   return { root, folder, library, outside }
 }
 
@@ -54,7 +50,7 @@ test('imports a selected image and lists it immediately without overwriting a ma
   for (const imported of [first, second]) {
     expect(await readFile(join(folder, imported.id))).toEqual(original)
     expect(await library.list()).toContainEqual(imported)
-    expect(await library.read(imported.id)).toMatch(/^data:image\/webp;base64,/)
+    expect(await library.read(imported.id)).toMatch(/^data:image\/png;base64,/)
   }
   expect(await readFile(outside)).toEqual(original)
 })
@@ -68,16 +64,14 @@ test('rejects invalid selected images before adding files to the library', async
   expect(await library.list()).toEqual(before)
 })
 
-test('orders supported images and returns fully decoded WebP permitted by the CSP', async () => {
-  const { library } = await setupWallpapers()
+test('orders supported images and returns original bytes with their detected MIME type', async () => {
+  const { library, folder } = await setupWallpapers()
   const expected = ['A.jpeg', 'space name.webp', 'z.png']
   expect((await library.list()).map((entry) => entry.id)).toStrictEqual(expected)
   for (const id of expected) {
     const url = await library.read(id)
-    expect(url?.startsWith('data:image/webp;base64,')).toBeTruthy()
-    const decoded = sharp(Buffer.from(url!.split(',')[1], 'base64'))
-    expect((await decoded.metadata()).width).toBe(4)
-    expect((await decoded.raw().toBuffer()).length, 'Returned bytes fully decode').toBe(4 * 3 * 3)
+    const mime = id.endsWith('.jpeg') ? 'image/jpeg' : id.endsWith('.webp') ? 'image/webp' : 'image/png'
+    expect(url).toBe(`data:${mime};base64,${(await readFile(join(folder, id))).toString('base64')}`)
   }
   const csp = await readFile('src/renderer/index.html', 'utf8')
   expect(csp, 'Existing CSP permits returned data images').toMatch(/img-src[^;]* data:/)
@@ -98,12 +92,15 @@ test('handles deletion, permissions, removed folders and invalid folder replacem
   })
   await rm(join(folder, 'z.png'))
   expect(await library.read('z.png'), 'Deletion after listing is graceful').toBe(null)
-  await chmod(join(folder, 'A.jpeg'), 0)
-  expect(await library.read('A.jpeg'), 'Unreadable images are skipped').toBe(null)
-  await chmod(join(folder, 'A.jpeg'), 0o600)
-  await chmod(folder, 0)
-  await expect(library.list()).rejects.toThrow(/Cannot read wallpaper folder/)
-  await chmod(folder, 0o700)
+  // Windows chmod does not remove read permissions; root can also bypass mode bits.
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+    await chmod(join(folder, 'A.jpeg'), 0)
+    expect(await library.read('A.jpeg'), 'Unreadable images are skipped').toBe(null)
+    await chmod(join(folder, 'A.jpeg'), 0o600)
+    await chmod(folder, 0)
+    await expect(library.list()).rejects.toThrow(/Cannot read wallpaper folder/)
+    await chmod(folder, 0o700)
+  }
   await rm(folder, { recursive: true })
   expect(await library.list(), 'Removed folders are recreated').toStrictEqual([])
   await rm(folder, { recursive: true })

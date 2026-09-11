@@ -1,5 +1,5 @@
 import { ipcMain, shell, type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import type { IpcInvokeChannel, IpcSendChannel, IpcRequests } from '../shared/ipc-requests'
+import type { IpcInvokeChannel, IpcRequests } from '../shared/ipc-requests'
 import { validateIpcRequest } from './ipc/validation'
 import { isGitHubPullRequestUrl } from './github-repository'
 
@@ -30,10 +30,9 @@ export function isRendererSender(
 
 export interface RendererIpc {
   handle<C extends IpcInvokeChannel>(channel: C, listener: (event: IpcMainInvokeEvent, input: IpcRequests[C]) => unknown): void
-  on<C extends IpcSendChannel>(channel: C, listener: (event: IpcMainEvent, input: IpcRequests[C]) => void): void
 }
 
-/** Register every privileged channel through this guard, including send-only events. */
+/** Register every privileged channel through this guard, with sender and payload validation. */
 export function createRendererIpc(
   getWindow: () => BrowserWindow | null,
   rendererUrl: string
@@ -45,18 +44,6 @@ export function createRendererIpc(
           throw new Error('Unauthorized IPC sender')
         }
         return listener(event, validateIpcRequest(channel, args))
-      })
-    },
-    on(channel, listener) {
-      ipcMain.on(channel, (event, ...args) => {
-        // Send-only channels have no rejection reply; drop them without throwing in main.
-        if (!isRendererSender(event, getWindow(), rendererUrl)) return
-        try {
-          listener(event, validateIpcRequest(channel, args))
-        } catch (error) {
-          // Do not log raw payloads, which can contain tokens or terminal input.
-          console.warn(`Rejected ${channel}:`, error instanceof Error ? error.message : 'Invalid request')
-        }
       })
     }
   }

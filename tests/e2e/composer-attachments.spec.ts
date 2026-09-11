@@ -181,6 +181,20 @@ test.describe(() => {
       await expect(send(page)).toBeDisabled()
     })
 
+    test('Chromium rejects corrupt pixels even when the PNG headers are intact', async ({ page }) => {
+      const bytes = [...samples[0].bytes]
+      const view = new DataView(Uint8Array.from(bytes).buffer)
+      for (let offset = 8; offset + 12 <= bytes.length;) {
+        const size = view.getUint32(offset)
+        if (String.fromCharCode(...bytes.slice(offset + 4, offset + 8)) === 'IDAT') bytes.fill(0, offset + 8, offset + 8 + size)
+        offset += size + 12
+      }
+      await paste(prompt(page), [{ ...samples[0], bytes }])
+      await expect(composer(page).getByRole('alert')).toHaveCount(1)
+      await expect(composer(page).getByRole('img')).toHaveCount(0)
+      await expect(send(page)).toBeDisabled()
+    })
+
     test('blocks button and keyboard submission during reads and checkout', async ({ page }) => {
       await prompt(page).fill('Wait for the image')
       await paste(prompt(page), [{ ...samples[0], read: 'pending' }])

@@ -75,9 +75,8 @@ jobs:
           node-version: '24.14.1'
           cache: npm
       - run: npm ci
-      # Packaging disables npmRebuild, so build both native addons for Electron.
-      - run: npx electron-rebuild --force --only better-sqlite3,node-pty
-      - run: node scripts/fix-pty-permissions.cjs
+      # Packaging disables npmRebuild, so build the SQLite native addon for Electron.
+      - run: npx electron-rebuild --force --only better-sqlite3
       - run: npx electron-vite build
       - run: npx electron-builder ${{ matrix.arguments }} --publish never
       - uses: actions/upload-artifact@v4

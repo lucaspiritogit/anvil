@@ -80,10 +80,11 @@ task is deleted or settled; committed branches remain available. Approved tasks
 settle automatically two days after review, and no-change tasks two days after
 completion. Tasks can also be settled manually.
 
-Press Command+T on macOS or Ctrl+T to open the project terminal over the current
-view. It runs your default shell in the project root. Escape, the shortcut, or
-Close hides the terminal while its session continues. Each project keeps its own
-session; deleting or settling a task does not close it.
+Press Command+T on macOS or Ctrl+T to open a system terminal in the active project
+root. The terminal window runs independently of Anvil. OpenCode sign-in and
+sign-out also open a system terminal; Anvil checks account status every three
+seconds. Cancelling in Anvil stops those checks. Close the terminal window to
+stop an unfinished account command.
 
 ## Development
 

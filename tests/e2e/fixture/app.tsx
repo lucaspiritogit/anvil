@@ -7,7 +7,6 @@ import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import type { IpcRequests } from '../../../src/shared/ipc-requests'
 import { useStore } from '../../../src/renderer/src/state/store'
-import '@xterm/xterm/css/xterm.css'
 import '../../../src/renderer/src/styles.css'
 
 // Only the Electron bridge is replaced. Tests interact with the real App through Playwright.
@@ -274,6 +273,7 @@ window.anvil = {
       return projects
     },
     reveal: async () => '',
+    openTerminal: async (projectId: string) => { window.dispatchEvent(new CustomEvent('fixture:terminal-open', { detail: projectId })) },
     gitStatus: async (id) => ({ isRepository: true, repoRoot: projects.find((project) => project.id === id)!.path, gitAvailable: true, pathExists: true }),
     gitInit: async (id) => window.anvil.projects.gitStatus(id),
     branches: async (projectId) => ({ currentBranch: projectBranches[projectId] ?? 'main', branches: [
@@ -544,7 +544,6 @@ window.anvil = {
       return comments.filter((comment) => comment.taskId === input.taskId)
     }
   },
-  terminal: { ensure: async () => ({ data: '$ ', sequence: 0 }), write: noop, resize: noop, onData: subscribe, onExit: subscribe }
 }
 
 const servicesDelay = Number(query.get('servicesDelay') ?? 0)

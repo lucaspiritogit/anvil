@@ -1,21 +1,16 @@
 import type { JSX } from 'react'
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AppSkeleton } from './components/AppSkeleton'
 import { OverviewBackground } from './components/OverviewBackground'
 import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
 import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { TaskContextMenu } from './components/TaskContextMenu'
-import { matchesAccelerator } from './keys'
+import { matchesAccelerator, isTerminalShortcut } from './keys'
 import { cn } from './ui'
 import { useStore } from './state/store'
 import { DEFAULT_KEYBINDINGS, SHORTCUTS } from '@shared/keybindings'
 import type { ShortcutId } from '@shared/keybindings'
-
-const ProjectTerminal = lazy(async () => {
-  const { ProjectTerminal } = await import('./components/ProjectTerminal')
-  return { default: ProjectTerminal }
-})
 
 const SettingsPage = lazy(async () => {
   const { SettingsPage } = await import('./components/SettingsPage')
@@ -23,6 +18,7 @@ const SettingsPage = lazy(async () => {
 })
 
 export function App(): JSX.Element {
+  const [terminalError, setTerminalError] = useState<string | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const suspendedDialogs = useRef<HTMLDialogElement[]>([])
   const fontSize = useStore((s) => s.settings?.fontSize)
@@ -114,6 +110,16 @@ export function App(): JSX.Element {
       // Auto-repeat fires while a chord is held down; a shortcut is an action
       // per press, so only the first event of a hold counts.
       if (event.repeat || useStore.getState().workspaceSwitching) return
+      if (isTerminalShortcut(event)) {
+        event.preventDefault()
+        const state = useStore.getState()
+        const projectId = state.activeProjectId ?? state.projects[0]?.id
+        if (projectId) {
+          setTerminalError(null)
+          void window.anvil.projects.openTerminal(projectId).catch(() => setTerminalError('Could not open the system terminal. Check that a terminal is installed and try the shortcut again.'))
+        }
+        return
+      }
       if (event.key === 'Escape' && useStore.getState().settingsOpen) {
         event.preventDefault()
         setSettingsOpen(false)
@@ -175,7 +181,7 @@ export function App(): JSX.Element {
         <p>{workspaceError}</p>
         <button className="mt-2 text-accent" onClick={() => { if (workspaceId) void useStore.getState().selectWorkspace(workspaceId) }}>Retry workspace</button>
       </div>}
-      <div className="contents" inert={switching}><Suspense fallback={null}><ProjectTerminal key={workspaceId} /></Suspense></div>
+      {terminalError && <div role="alert" className="fixed bottom-4 left-4 z-50 rounded border border-line bg-canvas p-3 text-sm shadow-lg"><p>{terminalError}</p><button className="mt-2 text-accent" onClick={() => setTerminalError(null)}>Dismiss</button></div>}
     </>
   )
 }

@@ -1,10 +1,6 @@
 import type { ComponentPropsWithRef, JSX } from 'react'
 import { useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  ArchiveArrowDownIcon, ArrowDown01Icon, Cancel01Icon, Folder01Icon, Loading03Icon,
-  Notification03Icon, Tick02Icon
-} from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import type { Project, Task, TaskIssueSnapshot } from '@shared/types'
 import { issuePresentation, taskIssuePresentation } from '@shared/task-issue-presentation'
 import { canSettleTask, settlementDeadline } from '@shared/task-settlement'
@@ -13,14 +9,14 @@ import { cn, ISSUE_STATUS } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
 
 const TASK_INDICATORS = {
-  pending: { icon: Notification03Icon, label: 'Pending', tone: 'text-warn', highlight: '' },
-  running: { icon: Loading03Icon, label: 'Working', tone: 'text-accent', highlight: '' },
-  saving: { icon: Loading03Icon, label: 'Saving changes…', tone: 'text-accent', highlight: '' },
-  done: { icon: Tick02Icon, label: 'Done', tone: 'text-ok', highlight: '' },
-  approved: { icon: Tick02Icon, label: 'Approved', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
-  reviewable: { icon: Notification03Icon, label: 'Ready for review', tone: 'text-orange-400', highlight: 'bg-orange-400/8 hover:bg-orange-400/12 ring-orange-400/30' },
-  failed: { icon: Cancel01Icon, label: 'Failed', tone: 'text-danger', highlight: '' }
-}
+  pending: { icon: 'bell-ring', label: 'Pending', tone: 'text-warn', highlight: '' },
+  running: { icon: 'brain-circuit', label: 'Working', tone: 'text-accent', highlight: '' },
+  saving: { icon: 'brain-circuit', label: 'Saving changes…', tone: 'text-accent', highlight: '' },
+  done: { icon: 'check', label: 'Done', tone: 'text-ok', highlight: '' },
+  approved: { icon: 'check', label: 'Approved', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
+  reviewable: { icon: 'bell-ring', label: 'Ready for review', tone: 'text-orange-400', highlight: 'bg-orange-400/8 hover:bg-orange-400/12 ring-orange-400/30' },
+  failed: { icon: 'x', label: 'Failed', tone: 'text-danger', highlight: '' }
+} as const
 
 function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
   if (task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit') return TASK_INDICATORS.saving
@@ -79,10 +75,10 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   } : taskIndicator(task)
   const statusIcon = (
     <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex shrink-0', indicator?.tone ?? 'text-dim')}>
-      <HugeiconsIcon
-        icon={indicator?.icon ?? Folder01Icon}
+      <Icon
+        icon={indicator?.icon ?? 'folder'}
         size={compact ? 15 : 16}
-        className={indicator?.icon === Loading03Icon ? 'animate-spin motion-reduce:animate-none' : undefined}
+        className={indicator?.icon === 'brain-circuit' ? 'animate-pulse motion-reduce:animate-none' : undefined}
         aria-hidden="true"
       />
     </span>
@@ -156,7 +152,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
             disabled={settling}
             onClick={() => void settle()}
           >
-            <HugeiconsIcon icon={ArchiveArrowDownIcon} size={16} aria-hidden="true" />
+            <Icon icon="archive" size={16} aria-hidden="true" />
           </button>
         )}
         {error && <p role="alert" className="px-3 pb-2 text-xs text-danger">{error}</p>}
@@ -170,7 +166,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
             onClick={toggleExpanded}
           >
             <span>{childCount} {childCount === 1 ? 'subtask' : 'subtasks'}</span>
-            <HugeiconsIcon icon={ArrowDown01Icon} size={20} className={cn('transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
+            <Icon icon="chevron-down" size={20} className={cn('transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
           </button>
         )}
       </article>

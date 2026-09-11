@@ -87,10 +87,6 @@ for (const [platform, modifier] of [['darwin', 'Meta'], ['linux', 'Control'], ['
     await expect(page.getByRole('log', { name: 'Task output' })).toHaveCount(0)
     await page.getByRole('button', { name: 'Open task: Layout test task', exact: true }).click()
     await page.keyboard.press(`${modifier}+t`)
-    await page.locator('.xterm-helper-textarea').focus()
-    await page.evaluate(() => {
-      window.anvil.terminal.write = () => { throw new Error('App shortcut was forwarded to the terminal') }
-    })
     const pageErrors: string[] = []
     page.on('pageerror', (error) => pageErrors.push(error.message))
     await page.keyboard.press(`${modifier}+t`)

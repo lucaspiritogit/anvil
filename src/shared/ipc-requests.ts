@@ -20,7 +20,6 @@ export interface IpcRequests {
   'accounts:connect': AgentAccountConnect
   'accounts:disconnect': AgentAccountTarget
   'accounts:cancel': AgentAccountTarget & { sessionId: string }
-  'accounts:terminal': AgentAccountTarget & { sessionId: string; data?: string; cols?: number; rows?: number }
   'agents:list': undefined
   'agents:models': { agentId: string; workspaceId?: string }
   'projects:list': undefined
@@ -28,6 +27,7 @@ export interface IpcRequests {
   'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean }
   'projects:remove': string
   'projects:reveal': string
+  'projects:open-terminal': string
   'projects:git-status': string
   'projects:git-init': string
   'projects:branches': string
@@ -53,9 +53,6 @@ export interface IpcRequests {
   'comments:add': Pick<TaskComment, 'taskId' | 'file' | 'side' | 'lineNumber' | 'body'>
   'comments:remove': { taskId: string; id: string }
   'comments:send': string
-  'terminal:ensure': { projectId: string; cols: number; rows: number }
-  'terminal:write': { projectId: string; data: string }
-  'terminal:resize': { projectId: string; cols: number; rows: number }
   'github:credential-status': undefined
   'github:set-token': string
   'github:remove-token': undefined
@@ -66,6 +63,5 @@ export interface IpcRequests {
 }
 
 export type IpcChannel = keyof IpcRequests
-export type IpcSendChannel = 'terminal:write' | 'terminal:resize'
-export type IpcInvokeChannel = Exclude<IpcChannel, IpcSendChannel>
+export type IpcInvokeChannel = IpcChannel
 export type IpcArgs<C extends IpcChannel> = undefined extends IpcRequests[C] ? [input?: IpcRequests[C]] : [IpcRequests[C]]

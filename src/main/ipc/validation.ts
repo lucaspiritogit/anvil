@@ -76,7 +76,6 @@ const file: Check<string> = (value, field) => {
 const mergePreview = {
   sourceBranch: branch, targetBranch: branch, sourceCommit: sha, targetCommit: sha, commitCount: number(0)
 }
-const dimensions = { cols: number(1, 1000), rows: number(1, 1000) }
 
 const settingsPatch = object<IpcRequests['settings:set']['patch']>({
   memoryEnabled: optional(boolean),
@@ -122,7 +121,6 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'accounts:status': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
   'accounts:disconnect': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
   'accounts:cancel': object({ workspaceId, agentId: oneOf('codex', 'opencode'), sessionId: id }),
-  'accounts:terminal': object({ workspaceId, agentId: oneOf('codex', 'opencode'), sessionId: id, data: optional(text(16_384, false)), cols: optional(number(1, 500)), rows: optional(number(1, 300)) }),
   'accounts:connect': (value, field) => {
     const input = object<IpcRequests['accounts:connect']>({ workspaceId, agentId: oneOf('codex', 'opencode'), method: oneOf('apiKey', 'chatgpt', 'native'), apiKey: optional(text(8192, true, /^[^\s]+$/)) })(value, field)
     if (input.agentId === 'codex' ? input.method === 'native' : input.method !== 'native') invalid(field, 'has an unsupported agent login method')
@@ -136,6 +134,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'projects:update': object({ id, workspaceId: optional(workspaceId), monthlyTokenLimit: optional(nullable(number(0))), monthlyCostLimitUsd: optional(nullable(number(0, Number.MAX_SAFE_INTEGER, false))), finishOnPush: optional(boolean) }),
   'projects:remove': id,
   'projects:reveal': id,
+  'projects:open-terminal': id,
   'projects:git-status': id,
   'projects:git-init': id,
   'projects:branches': id,
@@ -165,13 +164,6 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'comments:add': object({ taskId: id, file, side: oneOf('additions', 'deletions'), lineNumber: number(1), body: text(20_000) }),
   'comments:remove': object({ taskId: id, id }),
   'comments:send': id,
-  'terminal:ensure': object({ projectId: id, ...dimensions }),
-  // Terminal data is a byte stream represented as text, including control characters and NUL.
-  'terminal:write': object({ projectId: id, data: (value, field) => {
-    if (typeof value !== 'string' || value.length > 1_048_576) invalid(field, 'must be terminal data of at most 1048576 characters')
-    return value
-  } }),
-  'terminal:resize': object({ projectId: id, ...dimensions }),
   'github:credential-status': none,
   'github:set-token': text(1024),
   'github:remove-token': none,

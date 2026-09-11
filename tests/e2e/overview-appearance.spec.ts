@@ -9,8 +9,6 @@ test('saved image stays inside overview across project switches, task views and 
   await page.getByRole('button', { name: 'Open task: Layout test task', exact: true }).click()
   const output = page.getByRole('region', { name: 'Output', exact: true })
   const taskBackground = await output.evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).backgroundImage])
-  await page.keyboard.press('Control+t')
-  const terminalBackground = await page.locator('.xterm-viewport').evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).backgroundImage])
   await page.goto(fixture)
   const overview = page.getByTestId('project-overview')
   const layer = page.getByTestId('overview-wallpaper')
@@ -28,8 +26,6 @@ test('saved image stays inside overview across project switches, task views and 
   await expect(overview).toHaveCount(0)
   await expect(page.getByRole('main')).toHaveCSS('background-image', 'none')
   expect(await output.evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).backgroundImage])).toEqual(taskBackground)
-  await page.keyboard.press('Control+t')
-  expect(await page.locator('.xterm-viewport').evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).backgroundImage])).toEqual(terminalBackground)
 })
 
 test('delayed settings and missing files use the saved color', async ({ page }) => {

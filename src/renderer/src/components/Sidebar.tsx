@@ -1,10 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  ArrowDown01Icon, Cancel01Icon, Edit02Icon,
-  FolderAddIcon, Search01Icon, Settings01Icon
-} from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import { SETTINGS_SECTIONS } from '../settings-sections'
 import { IS_MAC } from '../keys'
 import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
@@ -86,14 +82,14 @@ export function Sidebar(): JSX.Element {
           <button key={section.id} aria-current={settingsSection === section.id ? 'page' : undefined}
             className={cn('flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-[13px] whitespace-nowrap focus-visible:outline focus-visible:outline-accent', settingsSection === section.id ? 'bg-accent/10 text-accent' : 'text-dim hover:bg-hover hover:text-fg')}
             onClick={() => setSettingsSection(section.id)}>
-            <HugeiconsIcon icon={section.icon} size={18} aria-hidden="true" />
+            <Icon icon={section.icon} size={18} aria-hidden="true" />
             {section.label}
           </button>
         ))}
       </nav>
       <button className="mx-3 mb-3 flex shrink-0 items-center gap-2 px-3 py-2 text-left text-xs text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent"
         onClick={() => setSettingsOpen(false)}>
-        <HugeiconsIcon icon={Cancel01Icon} size={16} aria-hidden="true" />
+        <Icon icon="x" size={16} aria-hidden="true" />
         Back to workspace
       </button>
     </aside>
@@ -122,11 +118,11 @@ export function Sidebar(): JSX.Element {
           disabled={!activeProjectId}
           onClick={focusTaskComposer}
         >
-          <HugeiconsIcon icon={Edit02Icon} size={16} aria-hidden="true" />
+          <Icon icon="pencil" size={16} aria-hidden="true" />
           New Task
         </button>
         <div className="flex items-center gap-2 h-9 px-2.5 border border-line focus-within:border-dim/60">
-          <HugeiconsIcon icon={Search01Icon} size={16} className="shrink-0 text-dim" aria-hidden="true" />
+          <Icon icon="search" size={16} className="shrink-0 text-dim" aria-hidden="true" />
           <input
             type="search"
             aria-label="Search tasks"
@@ -137,7 +133,7 @@ export function Sidebar(): JSX.Element {
           />
           {search && (
             <button className="text-dim hover:text-fg" aria-label="Clear search" onClick={() => setSearch('')}>
-              <HugeiconsIcon icon={Cancel01Icon} size={14} aria-hidden="true" />
+              <Icon icon="x" size={14} aria-hidden="true" />
             </button>
           )}
         </div>
@@ -155,7 +151,7 @@ export function Sidebar(): JSX.Element {
           const nextProjectId = useStore.getState().activeProjectId
           if (nextProjectId !== activeProjectId) setProjectFilter(nextProjectId)
         })}>
-          <HugeiconsIcon icon={FolderAddIcon} size={18} aria-hidden="true" />
+          <Icon icon="folder-plus" size={18} aria-hidden="true" />
         </button>
       </div>
 
@@ -171,7 +167,7 @@ export function Sidebar(): JSX.Element {
           onClick={() => { if (query) setSearch(''); setSettledOpen(!showSettled) }}
           className="flex shrink-0 w-full items-center gap-2 px-2 py-3 text-[11px] text-dim hover:text-fg"
         >
-          <HugeiconsIcon icon={ArrowDown01Icon} size={13} className={cn('transition-transform', !showSettled && '-rotate-90')} aria-hidden="true" />
+          <Icon icon="chevron-down" size={13} className={cn('transition-transform', !showSettled && '-rotate-90')} aria-hidden="true" />
           <span>Settled</span>
           <span className="text-dim/60">{settledTasks.length}</span>
           <span className="h-px flex-1 bg-line" />
@@ -186,7 +182,7 @@ export function Sidebar(): JSX.Element {
         className="flex shrink-0 items-center gap-2.5 mx-2.5 my-2 px-2 py-2 text-left text-xs text-dim hover:bg-hover/60 hover:text-fg focus-visible:outline focus-visible:outline-accent"
         onClick={() => setSettingsOpen(true)}
       >
-        <HugeiconsIcon icon={Settings01Icon} size={18} aria-hidden="true" />
+        <Icon icon="settings" size={18} aria-hidden="true" />
         Settings
       </button>
       <div className="shrink-0 px-2.5 pb-3">

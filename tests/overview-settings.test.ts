@@ -4,7 +4,7 @@ import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import sharp from 'sharp'
+import { imageFixture } from './image-fixtures'
 import { Store } from '../src/main/store'
 import { WallpaperLibrary } from '../src/main/wallpapers'
 import { registerSettingsHandlers } from '../src/main/ipc/settings'
@@ -42,11 +42,11 @@ test('wallpaper IPC reads the requested workspace even when another workspace is
   const work = store.createWorkspace('Work')
   registerSettingsHandlers(rendererIpc, store, (workspaceId) => new WallpaperLibrary(store.getWorkspaceDirectory(workspaceId)))
   const directory = call('wallpapers:directory', work.id)
-  expect(directory).toContain('/workspaces/Work/wallpaper')
-  writeFileSync(join(directory, 'private.png'), await sharp({ create: { width: 1, height: 1, channels: 3, background: 'red' } }).png().toBuffer())
+  expect(directory).toContain(join('workspaces', 'Work', 'wallpaper'))
+  writeFileSync(join(directory, 'private.png'), imageFixture())
   expect(await call('wallpapers:list', work.id)).toHaveLength(1)
   expect(await call('wallpapers:list', 'default')).toEqual([])
-  expect(await call('wallpapers:read', { workspaceId: work.id, id: 'private.png' })).toMatch(/^data:image\/webp;base64,/)
+  expect(await call('wallpapers:read', { workspaceId: work.id, id: 'private.png' })).toMatch(/^data:image\/png;base64,/)
   expect(await call('wallpapers:read', { workspaceId: 'default', id: 'private.png' })).toBe(null)
   expect(() => call('wallpapers:read', { workspaceId: work.id, id: '../secret.png' })).toThrow(/Invalid IPC request/)
 })
@@ -74,9 +74,9 @@ test('rejects unauthorized wallpaper senders and invalid settings payloads', () 
 
 test('persists settings and wallpaper selection across restarts', async () => {
   call('settings:set', { fontSize: 16, memoryEnabled: true, memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://127.0.0.1:11434/v1' })
-  writeFileSync(join(root, 'wallpaper', 'test.png'), await sharp({ create: { width: 1, height: 1, channels: 3, background: 'red' } }).png().toBuffer())
-  expect(await call('wallpapers:list')).toStrictEqual([{ id: 'test.png', name: 'test.png', width: 1, height: 1 }])
-  expect(await call('wallpapers:read', 'test.png')).toMatch(/^data:image\/webp;base64,/)
+  writeFileSync(join(root, 'wallpaper', 'test.png'), imageFixture())
+  expect(await call('wallpapers:list')).toStrictEqual([{ id: 'test.png', name: 'test.png', width: 4, height: 3 }])
+  expect(await call('wallpapers:read', 'test.png')).toMatch(/^data:image\/png;base64,/)
   expect(await call('wallpapers:read', 'removed.png')).toBe(null)
   call('settings:set', { overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'test.png', caffeineMode: true })
   call('settings:set', { overviewBackgroundMode: 'color' })

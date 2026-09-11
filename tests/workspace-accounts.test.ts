@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { join } from 'node:path'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { spawn } from 'node-pty'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import type { openSystemTerminal } from '../src/main/system-terminal'
 import { WorkspaceAccounts, parseOpenCodeAccounts } from '../src/main/agents/workspace-accounts'
 import { AgentProcessManager } from '../src/main/agents/process-manager'
 import type { ConnectionHandlers } from '../src/main/agents/codex-app-server-connection'
@@ -11,7 +11,6 @@ import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { getAgent } from '../src/main/agents/registry'
 
-vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 vi.mock('../src/main/agents/resolve', () => ({ resolveCommand: () => ({ command: '/fake/opencode', prefixArgs: [], viaShell: false }) }))
 
 const work: AgentAccountTarget = { workspaceId: 'work', agentId: 'codex' }
@@ -25,6 +24,8 @@ function fixture() {
   const changed = vi.fn()
   const invalidate = vi.fn(async (_workspaceId: string) => {})
   const openBrowser = vi.fn(async () => {})
+  const openTerminal = vi.fn<typeof openSystemTerminal>(async () => {})
+  const readOpenCode = vi.fn(async (workspace: { workspaceId: string }): Promise<string> => profiles.has(workspace.workspaceId) ? '● OpenAI oauth\n1 credential' : '0 credentials')
   let rejectKey = false
   let early = false
   const requests: string[] = []
@@ -38,7 +39,7 @@ function fixture() {
       return () => { locked.delete(id) }
     },
     busy: (id) => active.has(id), invalidate, changed, openBrowser,
-    verifyOpenCode: async () => {}, readOpenCode: async (workspace) => profiles.has(workspace.workspaceId) ? '● OpenAI oauth\n1 credential' : '0 credentials',
+    verifyOpenCode: async () => {}, readOpenCode, openTerminal,
     connection: (workspace, handlers) => {
       const connection = { workspaceId: workspace.workspaceId, handlers, close: vi.fn(async () => {}), loginId: `login-${connections.length}` }
       connections.push(connection)
@@ -72,17 +73,8 @@ function fixture() {
     }
   })
   onTestCleanup(() => accounts.close())
-  return { accounts, profiles, connections, locked, active, changed, invalidate, openBrowser, requests,
+  return { accounts, profiles, connections, locked, active, changed, invalidate, openBrowser, openTerminal, readOpenCode, requests,
     rejectKey: () => { rejectKey = true }, early: () => { early = true } }
-}
-
-function nativeTerminal() {
-  let data = (_value: string): void => {}
-  const exits: Array<(event: { exitCode: number }) => void> = []
-  const terminal = { write: vi.fn(), resize: vi.fn(), kill: vi.fn(() => exits.forEach((exit) => exit({ exitCode: 0 }))),
-    onData: (handler: typeof data) => { data = handler }, onExit: (handler: typeof exits[number]) => { exits.push(handler) } }
-  vi.mocked(spawn).mockReturnValue(terminal as unknown as ReturnType<typeof spawn>)
-  return { terminal, data: (value: string) => data(value), exit: (exitCode: number) => exits.forEach((exit) => exit({ exitCode })) }
 }
 
 test('API key success, failure redaction, logout and native summaries are workspace scoped', async () => {
@@ -148,47 +140,78 @@ test('busy work prevents account mutations while another workspace can connect',
   expect(f.active.has('work')).toBe(true)
 })
 
-test('native OpenCode login preserves prompts and exact profile environment, then refreshes after exit', async () => {
+test('OpenCode login launches with the exact workspace environment and polls for accounts', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   const f = fixture()
-  const term = nativeTerminal()
   const target = { ...work, agentId: 'opencode' as const }
   const pending = await f.accounts.connect({ ...target, method: 'native' })
-  expect(pending).toMatchObject({ status: 'pending', terminal: true })
-  expect(spawn).toHaveBeenLastCalledWith('/fake/opencode', ['auth', 'login'], expect.objectContaining({
-    cwd: testWorkspace('work').home,
-    env: expect.objectContaining({ HOME: testWorkspace('work').home, CODEX_HOME: testWorkspace('work').codexHome, OPENCODE_PURE: 'true' })
+  expect(pending.status).toBe('pending')
+  expect(f.openTerminal).toHaveBeenCalledWith(testWorkspace('work').home, expect.objectContaining({
+    command: '/fake/opencode', args: ['auth', 'login'],
+    environment: expect.objectContaining({ HOME: testWorkspace('work').home, CODEX_HOME: testWorkspace('work').codexHome, OPENCODE_PURE: 'true' })
   }))
-  const environment = vi.mocked(spawn).mock.lastCall?.[2]?.env
-  expect(environment).not.toHaveProperty('OPENAI_API_KEY')
-  term.data('Choose API key or subscription\r\n')
-  expect(f.accounts.terminal(target, pending.sessionId!).data).toContain('Choose API key or subscription')
-  f.accounts.terminal({ ...personal, agentId: 'opencode' }, pending.sessionId!, { data: 'wrong-workspace' })
-  expect(term.terminal.write).not.toHaveBeenCalled()
-  f.accounts.terminal(target, pending.sessionId!, { data: 'native-input', cols: 110, rows: 22 })
-  expect(term.terminal.write).toHaveBeenCalledWith('native-input')
-  expect(term.terminal.resize).toHaveBeenCalledWith(110, 22)
+  expect(f.openTerminal.mock.lastCall?.[1]?.environment).not.toHaveProperty('OPENAI_API_KEY')
+  await vi.advanceTimersByTimeAsync(3000)
+  expect((await f.accounts.status(target)).status).toBe('pending')
   f.profiles.set('work', { type: 'apiKey' })
-  term.exit(0)
-  await expect.poll(() => f.locked.size).toBe(0)
+  await vi.waitFor(() => expect(f.locked.size).toBe(0), { timeout: 5000 })
   expect((await f.accounts.status(target)).accounts).toEqual(['OpenAI: subscription'])
-  expect(JSON.stringify(f.changed.mock.calls)).not.toContain('native-input')
+  expect((await f.accounts.status({ ...personal, agentId: 'opencode' })).status).toBe('signed-out')
 })
 
-test('OpenCode cancellation, failed exit, retry and logout all own their managed process', async () => {
+test('OpenCode existing credentials wait for a new auth write, including the same provider', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   const f = fixture()
   const target = { ...work, agentId: 'opencode' as const }
-  const first = nativeTerminal()
-  const pending = await f.accounts.connect({ ...target, method: 'native' })
-  expect((await f.accounts.cancel(target, pending.sessionId!)).status).toBe('cancelled')
-  expect(first.terminal.kill).toHaveBeenCalled()
-  const second = nativeTerminal()
+  f.profiles.set('work', { type: 'apiKey' })
+  await f.accounts.connect({ ...target, method: 'native' })
+  await vi.advanceTimersByTimeAsync(3000)
+  expect((await f.accounts.status(target)).status).toBe('pending')
+  const directory = join(testWorkspace('work').directory, 'data', 'opencode')
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(join(directory, 'auth.json'), '{}')
+  await vi.waitFor(() => expect(f.locked.size).toBe(0), { timeout: 5000 })
+  expect((await f.accounts.status(target)).status).toBe('connected')
+})
+
+test('OpenCode cancellation, launch failure, timeout and logout release the workspace', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const f = fixture()
+  const target = { ...work, agentId: 'opencode' as const }
+  const first = await f.accounts.connect({ ...target, method: 'native' })
+  expect((await f.accounts.cancel(target, 'stale')).status).toBe('pending')
+  expect((await f.accounts.cancel(target, first.sessionId!)).status).toBe('cancelled')
+  expect(f.locked.size).toBe(0)
+  f.openTerminal.mockRejectedValueOnce(new Error('sensitive launcher details'))
+  expect((await f.accounts.connect({ ...target, method: 'native' })).status).toBe('error')
+  expect(JSON.stringify(f.changed.mock.calls)).not.toContain('sensitive launcher details')
+  await f.accounts.connect({ ...target, method: 'native' })
+  await vi.advanceTimersByTimeAsync(10 * 60_000)
+  await vi.waitFor(() => expect(f.locked.size).toBe(0))
+  expect(f.changed.mock.lastCall?.[0].message).toContain('timed out')
+  f.profiles.set('work', { type: 'apiKey' })
   await f.accounts.disconnect(target)
-  expect(spawn).toHaveBeenLastCalledWith('/fake/opencode', ['auth', 'logout'], expect.anything())
-  first.exit(0)
-  expect(f.locked.has('work')).toBe(true)
-  second.exit(1)
-  await expect.poll(() => f.locked.size).toBe(0)
-  expect(f.changed.mock.lastCall?.[0].status).toBe('error')
+  expect(f.openTerminal.mock.lastCall?.[1]?.args).toEqual(['auth', 'logout'])
+  f.profiles.delete('work')
+  await vi.waitFor(() => expect(f.locked.size).toBe(0), { timeout: 5000 })
+  expect((await f.accounts.status(target)).status).toBe('signed-out')
+})
+
+test('OpenCode ignores late polls after cancellation and does not overlap slow reads', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const f = fixture()
+  const target = { ...work, agentId: 'opencode' as const }
+  const pending = await f.accounts.connect({ ...target, method: 'native' })
+  let resolve!: (value: string) => void
+  f.readOpenCode.mockImplementationOnce(() => new Promise((done) => { resolve = done }))
+  await vi.advanceTimersByTimeAsync(9000)
+  expect(f.readOpenCode).toHaveBeenCalledTimes(2)
+  await f.accounts.cancel(target, pending.sessionId!)
+  resolve('● OpenAI oauth')
+  await vi.advanceTimersByTimeAsync(6000)
+  expect(f.changed.mock.lastCall?.[0].status).toBe('cancelled')
+  expect(f.readOpenCode).toHaveBeenCalledTimes(3)
+  expect(f.locked.size).toBe(0)
 })
 
 test('unknown provider output and secrets are not returned as native account summaries', () => {

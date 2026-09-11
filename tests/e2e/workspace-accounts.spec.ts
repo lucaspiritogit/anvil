@@ -59,17 +59,18 @@ test('subscription stays with its workspace through switches and can be cancelle
 })
 
 for (const method of ['api', 'subscription']) {
-  test(`OpenCode native ${method} prompts accept interactive input and refresh on completion`, async ({ page }) => {
+  test(`OpenCode native ${method} sign-in waits for external completion and can be cancelled`, async ({ page }, testInfo) => {
     await openAccounts(page)
     const opencode = card(page, 'OpenCode')
     await opencode.getByRole('button', { name: 'Connect OpenCode for Default', exact: true }).click()
-    const terminal = opencode.getByLabel('Native provider login terminal')
-    await expect(terminal).toBeVisible()
-    await terminal.locator('textarea').focus()
-    await page.keyboard.type(method)
-    await page.keyboard.press('Enter')
+    await expect(opencode.getByText('Complete sign-in or sign-out in the terminal window.', { exact: false })).toBeVisible()
+    await expect(opencode.getByRole('button', { name: 'Connect OpenCode for Default', exact: true })).toBeDisabled()
+    await page.screenshot({ path: testInfo.outputPath(`opencode-external-${method}.png`) })
+    await page.evaluate((method) => window.dispatchEvent(new CustomEvent('fixture:account-complete', {
+      detail: { workspaceId: 'default', agentId: 'opencode', success: true, method }
+    })), method)
     await expect(opencode.getByRole('status')).toHaveText(method === 'api' ? 'OpenAI: API key' : 'OpenAI: subscription')
-    await expect(terminal).toBeHidden()
+    await expect(opencode.getByRole('button', { name: 'Cancel OpenCode for Default', exact: true })).toHaveCount(0)
     await opencode.getByRole('button', { name: 'Connect OpenCode for Default', exact: true }).click()
     await opencode.getByRole('button', { name: 'Cancel OpenCode for Default', exact: true }).click()
     await expect(opencode.getByRole('status')).toHaveText('Connection cancelled.')

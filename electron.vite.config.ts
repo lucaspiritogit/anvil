@@ -7,7 +7,7 @@ export default defineConfig({
   main: {
     build: {
       externalizeDeps: {
-        exclude: ['@ai-sdk/openai-compatible', 'ai', '@agentclientprotocol/sdk']
+        exclude: ['@agentclientprotocol/sdk']
       },
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') }

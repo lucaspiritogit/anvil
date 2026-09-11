@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState, type JSX } from 'react'
 import { flushSync } from 'react-dom'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowDown01Icon, Folder01Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import { MAX_WORKSPACE_NAME_LENGTH, type Workspace } from '@shared/types'
 import { useStore } from '../state/store'
 import { btn, cn, field, modal } from '../ui'
@@ -148,7 +147,7 @@ export function WorkspacePicker(): JSX.Element {
   }}>
     <label htmlFor={id} className="mb-1 block text-[11px] text-dim">Workspace</label>
     <div className="flex h-9 items-center gap-2 border border-line px-2.5 focus-within:border-accent">
-      <HugeiconsIcon icon={Folder01Icon} size={16} className="shrink-0 text-dim" aria-hidden="true" />
+      <Icon icon="folder" size={16} className="shrink-0 text-dim" aria-hidden="true" />
       <input id={id} ref={inputRef} role="combobox" aria-autocomplete="list" aria-expanded={open}
         aria-controls={open ? `${id}-list` : undefined}
         aria-activedescendant={open && activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
@@ -178,7 +177,7 @@ export function WorkspacePicker(): JSX.Element {
         }}
         className="w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-dim outline-none"
       />
-      <HugeiconsIcon icon={ArrowDown01Icon} size={14} className="pointer-events-none shrink-0 text-dim" aria-hidden="true" />
+      <Icon icon="chevron-down" size={14} className="pointer-events-none shrink-0 text-dim" aria-hidden="true" />
     </div>
     {open && <div className="absolute inset-x-0 bottom-full z-30 mb-1 max-h-[65vh] overflow-y-auto border border-line bg-raised shadow-lg">
       <div ref={listRef} id={`${id}-list`} role="listbox" aria-label="Workspaces" className="max-h-[min(320px,40vh)] overflow-y-auto overscroll-contain p-1">

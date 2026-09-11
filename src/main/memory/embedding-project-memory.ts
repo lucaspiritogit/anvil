@@ -1,6 +1,4 @@
 import { createHash } from 'node:crypto'
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { embed, type EmbeddingModel } from 'ai'
 import type { ProjectMemoryMetadata } from './schema'
 import type {
   CompletedTaskMemory,
@@ -31,16 +29,11 @@ export interface IndexedProjectMemory {
 /** Shares memory extraction and embedding behavior across persistence adapters. */
 export abstract class EmbeddingProjectMemory implements ProjectMemory {
   protected readonly embeddingModelId: string
-  private readonly embeddingModel: EmbeddingModel
+  private readonly embeddingsUrl: string
 
   protected constructor(options: EmbeddingOptions) {
-    const ollama = createOpenAICompatible({
-      name: 'ollama',
-      baseURL: options.baseUrl ?? DEFAULT_OLLAMA_BASE_URL,
-      apiKey: 'ollama'
-    })
+    this.embeddingsUrl = `${(options.baseUrl ?? DEFAULT_OLLAMA_BASE_URL).replace(/\/+$/, '')}/embeddings`
     this.embeddingModelId = options.modelId ?? DEFAULT_EMBEDDING_MODEL
-    this.embeddingModel = ollama.embeddingModel(this.embeddingModelId)
   }
 
   abstract connect(): Promise<void>
@@ -84,12 +77,19 @@ export abstract class EmbeddingProjectMemory implements ProjectMemory {
   }
 
   private async embed(value: string): Promise<number[]> {
-    const { embedding } = await embed({
-      model: this.embeddingModel,
-      value: value.slice(0, MAX_EMBEDDING_INPUT_CHARACTERS),
-      abortSignal: AbortSignal.timeout(10_000),
-      maxRetries: 0
+    const response = await fetch(this.embeddingsUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ollama' },
+      body: JSON.stringify({ model: this.embeddingModelId, input: value.slice(0, MAX_EMBEDDING_INPUT_CHARACTERS) }),
+      signal: AbortSignal.timeout(10_000)
     })
+    if (!response.ok) throw new Error(`Embedding request failed with HTTP ${response.status}`)
+    const body: unknown = await response.json()
+    const data = body && typeof body === 'object' && 'data' in body ? body.data : undefined
+    const embedding: unknown = Array.isArray(data) && data.length === 1 ? data[0]?.embedding : undefined
+    if (!Array.isArray(embedding) || !embedding.every((value: unknown) => typeof value === 'number' && Number.isFinite(value))) {
+      throw new Error('Embedding response must contain one finite numeric vector')
+    }
     if (embedding.length !== EMBEDDING_DIMENSIONS) {
       throw new Error(
         `Embedding model returned ${embedding.length} dimensions; project memory expects ${EMBEDDING_DIMENSIONS}`

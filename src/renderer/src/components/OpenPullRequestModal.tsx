@@ -1,7 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { AiSparklesIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import type { PullRequestField, PullRequestInfo, PullRequestPreview, Task } from '@shared/types'
 import { btn, cn, field, modal } from '../ui'
 
@@ -73,7 +72,7 @@ export function OpenPullRequestModal({ task, onClose }: { task: Task; onClose: (
       disabled={busy !== null}
       onClick={() => void generate(field)}
     >
-      <HugeiconsIcon icon={AiSparklesIcon} size={18} className={busy === field ? 'animate-pulse' : ''} />
+      <Icon icon="sparkles" size={18} className={busy === field ? 'animate-pulse' : ''} />
     </button>
   )
 

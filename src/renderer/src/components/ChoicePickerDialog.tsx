@@ -1,7 +1,6 @@
 import type { JSX, ReactNode, RefObject } from 'react'
 import { useRef, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { Cancel01Icon, Search01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import { cn } from '../ui'
 import { PickerDialog } from './PickerDialog'
 
@@ -30,7 +29,7 @@ export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, onS
     <PickerDialog anchorRef={anchorRef} label={label} onClose={onClose}>
       <div className="flex h-full flex-col">
         <div className="mx-3 flex items-center gap-2 border-b border-line focus-within:border-accent">
-          <HugeiconsIcon icon={Search01Icon} size={16} className="shrink-0 text-dim" aria-hidden="true" />
+          <Icon icon="search" size={16} className="shrink-0 text-dim" aria-hidden="true" />
           <input
             type="search"
             aria-label={`Search ${noun}`}
@@ -46,7 +45,7 @@ export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, onS
             }}
           />
           <button type="button" aria-label={`Close ${noun} picker`} className="p-1 text-dim hover:bg-hover hover:text-fg focus-visible:outline-accent" onClick={onClose}>
-            <HugeiconsIcon icon={Cancel01Icon} size={14} aria-hidden="true" />
+            <Icon icon="x" size={14} aria-hidden="true" />
           </button>
         </div>
         <div
@@ -82,7 +81,7 @@ export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, onS
                 <span className="block truncate text-xs font-medium">{choice.label}</span>
                 {choice.description && <span className="block text-[11px] text-dim">{choice.description}</span>}
               </span>
-              {choice.id === value && <HugeiconsIcon icon={Tick02Icon} size={16} className="shrink-0 text-accent" aria-hidden="true" />}
+              {choice.id === value && <Icon icon="check" size={16} className="shrink-0 text-accent" aria-hidden="true" />}
             </button>
           ))}
           {!filtered.length && <p role="status" className="px-3 py-6 text-center text-xs text-dim">No {noun} match your search.</p>}

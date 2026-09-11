@@ -15,9 +15,6 @@ files:
   - src/main/db/migrations/**
   - src/main/memory/migrations/**
 asarUnpack:
-  - node_modules/sharp/**
-  - node_modules/@img/**
-  - node_modules/node-pty/**
   - node_modules/better-sqlite3/**
   # PGlite loads its PostgreSQL and extension WebAssembly assets from disk.
   - node_modules/@electric-sql/pglite/**

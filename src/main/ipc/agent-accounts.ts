@@ -6,5 +6,4 @@ export function registerAccountHandlers(ipc: RendererIpc, accounts: WorkspaceAcc
   ipc.handle('accounts:connect', (_event, input) => accounts.connect(input))
   ipc.handle('accounts:disconnect', (_event, input) => accounts.disconnect(input))
   ipc.handle('accounts:cancel', (_event, input) => accounts.cancel(input, input.sessionId))
-  ipc.handle('accounts:terminal', (_event, input) => accounts.terminal(input, input.sessionId, input))
 }

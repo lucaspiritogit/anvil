@@ -1,7 +1,6 @@
 import type { JSX, MouseEvent } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { Alert02Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import { btn, cn, modal } from '../ui'
 
@@ -107,7 +106,7 @@ export function TaskContextMenu(): JSX.Element | null {
         )}
         <p className={modal.copy}>Project files and Git branches will not be deleted.</p>
         <p id="delete-task-warning" className="mb-3.5 flex items-start gap-2 text-xs text-danger">
-          <HugeiconsIcon icon={Alert02Icon} size={16} className="shrink-0" aria-hidden="true" />
+          <Icon icon="ban" size={16} className="shrink-0" aria-hidden="true" />
           <span>This permanently removes the task and its related records from database storage.</span>
         </p>
         {error && <p role="alert" className="text-xs text-danger">{error}</p>}

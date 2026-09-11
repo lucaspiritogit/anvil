@@ -5,22 +5,26 @@ import { basename } from 'node:path'
 import type { ProjectMemory } from '../memory/project-memory'
 import type { TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
-import type { TerminalManager } from '../terminal'
+import { openSystemTerminal } from '../system-terminal'
 import type { Project } from '../../shared/types'
 import { listProjectFiles, projectFileError } from '../project-files'
 
 interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDelivery' | 'agentProcesses'> {
   stopTask: TaskExecution['stopTask']
-  terminals: TerminalManager
   projectMemory?: ProjectMemory
   getWindow(): BrowserWindow | null
   projectsChanged?(workspaceId: string): void
 }
 
 export function registerProjectHandlers(ipc: RendererIpc, {
-  store, gitDelivery, agentProcesses, stopTask, terminals, projectMemory, getWindow, projectsChanged
+  store, gitDelivery, agentProcesses, stopTask, projectMemory, getWindow, projectsChanged
 }: ProjectHandlerDependencies): void {
   ipc.handle('projects:list', () => store.getProjects())
+  ipc.handle('projects:open-terminal', (_event, projectId) => {
+    const project = store.getProjects().find((item) => item.id === projectId)
+    if (!project) throw new Error('Project not found')
+    return openSystemTerminal(project.path)
+  })
 
   ipc.handle('projects:files', async (_event, { projectId }) => {
     const project = store.getProjects().find((item) => item.id === projectId)
@@ -63,7 +67,6 @@ export function registerProjectHandlers(ipc: RendererIpc, {
     const memory = projectMemory && 'forWorkspace' in projectMemory
       ? (projectMemory as import('../memory/workspace-project-memory').WorkspaceProjectMemory).forWorkspace(workspaceId) : projectMemory
     const projectTasks = store.getTasks(workspaceId).filter((task) => task.projectId === id)
-    terminals.dispose(id)
     store.transaction(() => {
       for (const task of projectTasks) stopTask(task.id, 'Anvil project removed.')
       store.removeProject(id, workspaceId)

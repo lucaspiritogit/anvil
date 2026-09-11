@@ -2,7 +2,7 @@ import type { WorkspaceAgentAccount } from '../shared/types'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { APP_INIT_FAILED_CHANNEL, APP_READY_CHANNEL, type AppReadiness } from '../shared/app-lifecycle'
 import { createEventLatch } from '../shared/event-latch'
-import type { IpcArgs, IpcInvokeChannel, IpcRequests, IpcSendChannel } from '../shared/ipc-requests'
+import type { IpcArgs, IpcInvokeChannel, IpcRequests } from '../shared/ipc-requests'
 import type {
   Workspace,
   WorkspaceSnapshot,
@@ -25,8 +25,7 @@ import type {
   TaskEvent,
   TaskMergePreview,
   Settings,
-  Wallpaper,
-  TerminalSnapshot
+  Wallpaper
 } from '../shared/types'
 
 // Keep native-menu requests made while React is still loading.
@@ -44,10 +43,6 @@ ipcRenderer.on(APP_INIT_FAILED_CHANNEL, (_event, readiness: AppReadiness) => app
 
 function invoke<C extends IpcInvokeChannel, T>(channel: C, ...args: IpcArgs<C>): Promise<T> {
   return ipcRenderer.invoke(channel, ...args)
-}
-
-function send<C extends IpcSendChannel>(channel: C, input: IpcRequests[C]): void {
-  ipcRenderer.send(channel, input)
 }
 
 function subscribe<T>(channel: string, handler: (payload: T) => void): () => void {
@@ -113,7 +108,6 @@ const api = {
     connect: (input: IpcRequests['accounts:connect']): Promise<WorkspaceAgentAccount> => invoke('accounts:connect', input),
     disconnect: (input: IpcRequests['accounts:disconnect']): Promise<WorkspaceAgentAccount> => invoke('accounts:disconnect', input),
     cancel: (input: IpcRequests['accounts:cancel']): Promise<WorkspaceAgentAccount> => invoke('accounts:cancel', input),
-    terminal: (input: IpcRequests['accounts:terminal']): Promise<TerminalSnapshot> => invoke('accounts:terminal', input),
     onChanged: (handler: (state: WorkspaceAgentAccount) => void): (() => void) => subscribe('accounts:changed', handler)
   },
   agents: {
@@ -129,6 +123,7 @@ const api = {
     update: (input: IpcRequests['projects:update']): Promise<Project | undefined> => invoke('projects:update', input),
     remove: (id: string): Promise<Project[]> => invoke('projects:remove', id),
     reveal: (projectId: string): Promise<string> => invoke('projects:reveal', projectId),
+    openTerminal: (projectId: string): Promise<void> => invoke('projects:open-terminal', projectId),
     gitStatus: (id: string): Promise<ProjectGitStatus> =>
       invoke('projects:git-status', id),
     gitInit: (id: string): Promise<ProjectGitStatus> => invoke('projects:git-init', id),
@@ -166,17 +161,6 @@ const api = {
       invoke('comments:remove', input),
     send: (taskId: string): Promise<{ task: Task; comments: TaskComment[] }> =>
       invoke('comments:send', taskId)
-  },
-  terminal: {
-    ensure: (input: IpcRequests['terminal:ensure']): Promise<TerminalSnapshot> =>
-      invoke('terminal:ensure', input),
-    write: (projectId: string, data: string): void => send('terminal:write', { projectId, data }),
-    resize: (projectId: string, cols: number, rows: number): void =>
-      send('terminal:resize', { projectId, cols, rows }),
-    onData: (handler: (payload: { id: string; data: string; sequence: number }) => void): (() => void) =>
-      subscribe('terminal:data', handler),
-    onExit: (handler: (payload: { id: string; code: number }) => void): (() => void) =>
-      subscribe('terminal:exit', handler)
   }
 }
 

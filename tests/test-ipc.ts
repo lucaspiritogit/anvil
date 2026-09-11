@@ -2,7 +2,7 @@ import { registerIpc } from '../src/main/ipc'
 import { getRendererWindow, rendererUrl } from './renderer-fixture'
 import { onTestCleanup } from './test-cleanup'
 
-/** Register IPC with teardown for polling, agents, terminals and memory. */
+/** Register IPC with teardown for polling, agents and memory. */
 export function registerTestIpc(): ReturnType<typeof registerIpc> {
   const runtime = registerIpc(getRendererWindow, rendererUrl)
   onTestCleanup(async () => {
@@ -13,7 +13,6 @@ export function registerTestIpc(): ReturnType<typeof registerIpc> {
       Promise.resolve().then(() => runtime.stopCaffeineMode()),
       Promise.resolve().then(() => runtime.githubPolling.close()),
       Promise.resolve().then(() => runtime.agentProcesses.close()),
-      Promise.resolve().then(() => runtime.terminals.disposeAll()),
       Promise.resolve().then(() => runtime.projectMemory?.close())
     ])
     const errors = results.filter((result) => result.status === 'rejected').map((result) => result.reason)

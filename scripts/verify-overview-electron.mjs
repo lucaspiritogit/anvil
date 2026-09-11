@@ -1,9 +1,8 @@
 // Run after npm run build. Pass the unsigned macOS executable to check the package.
 import { _electron as electron, expect } from '@playwright/test'
-import { mkdtemp, mkdir, unlink, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, unlink, rm, copyFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
-import sharp from 'sharp'
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -62,19 +61,19 @@ try {
   await settings()
   await expect(settingsPage.getByText('No supported images found.', { exact: false })).toBeVisible()
   const imagePath = join(env.ANVIL_DATA_DIR, 'wallpaper/test-wallpaper.png')
-  await sharp(Buffer.from('<svg width="1200" height="800"><rect width="1200" height="800" fill="#e5a74c"/><circle cx="1000" cy="150" r="400" fill="#386f89"/><path d="M0 700L700 0L1000 800Z" fill="#a75872"/></svg>')).png().toFile(imagePath)
+  await copyFile('tests/fixtures/images/sample.png', imagePath)
   await settingsPage.getByRole('button', { name: 'Refresh', exact: true }).click()
   await settingsPage.getByRole('radio', { name: 'Image', exact: true }).check()
   await settingsPage.getByRole('button', { name: 'test-wallpaper.png', exact: true }).click()
   await settingsPage.getByLabel('Background color', { exact: true }).fill('#345678')
   await settingsPage.screenshot({ path: join(output, 'carousel.png') })
   await save()
-  await expect(overview()).toHaveCSS('background-image', /data:image\/webp/)
+  await expect(overview()).toHaveCSS('background-image', /data:image\/png/)
   expect(await sidebar().evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).backgroundImage])).toEqual(baseline)
   await page.screenshot({ path: join(output, 'image.png') })
   await app.close()
   await launch()
-  await expect(overview()).toHaveCSS('background-image', /data:image\/webp/)
+  await expect(overview()).toHaveCSS('background-image', /data:image\/png/)
   await settings()
   await settingsPage.getByRole('radio', { name: 'Solid color', exact: true }).check()
   await save()
@@ -87,7 +86,7 @@ try {
   await settings()
   await settingsPage.getByRole('radio', { name: 'Image', exact: true }).check()
   await save()
-  await expect(overview()).toHaveCSS('background-image', /data:image\/webp/)
+  await expect(overview()).toHaveCSS('background-image', /data:image\/png/)
   await unlink(imagePath)
   await settings()
   await settingsPage.getByRole('button', { name: 'Refresh', exact: true }).click()

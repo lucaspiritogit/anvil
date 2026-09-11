@@ -1,7 +1,6 @@
 import type { JSX, RefObject } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { AiBrain01Icon, ArrowDown01Icon, Cancel01Icon, Search01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import { cn, field } from '../ui'
 import { PickerDialog } from './PickerDialog'
 import type { AgentDefinition, ProviderModelList } from '@shared/types'
@@ -39,9 +38,9 @@ export function ComposerModelPicker({ agents, agentId, modelsByAgent, selectedMo
         className="flex min-w-0 max-w-full items-center gap-2 px-2.5 py-1.5 text-xs font-medium hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45"
       >
         {agent && selected.name ? <AgentIcon agentId={agentId} label={agent.label} size={16} />
-          : <HugeiconsIcon icon={AiBrain01Icon} size={16} className="shrink-0 text-dim" aria-hidden="true" />}
+          : <Icon icon="brain-circuit" size={16} className="shrink-0 text-dim" aria-hidden="true" />}
         <span className="truncate">{selected.name || 'Choose a model'}</span>
-        <HugeiconsIcon icon={ArrowDown01Icon} size={12} className="shrink-0 text-dim" aria-hidden="true" />
+        <Icon icon="chevron-down" size={12} className="shrink-0 text-dim" aria-hidden="true" />
       </button>
       {open && (
         <ModelPickerDialog
@@ -129,7 +128,7 @@ function ModelPickerDialog({ anchorRef, agentId, agents, modelsByAgent, selected
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="mx-3 flex items-center gap-2 border-b border-line focus-within:border-accent">
-            <HugeiconsIcon icon={Search01Icon} size={16} className="shrink-0 text-dim" aria-hidden="true" />
+            <Icon icon="search" size={16} className="shrink-0 text-dim" aria-hidden="true" />
             <input
               ref={searchRef}
               type="search"
@@ -146,7 +145,7 @@ function ModelPickerDialog({ anchorRef, agentId, agents, modelsByAgent, selected
               }}
             />
             <button type="button" aria-label="Close model picker" className="p-1 text-dim hover:bg-hover hover:text-fg focus-visible:outline-accent" onClick={onClose}>
-              <HugeiconsIcon icon={Cancel01Icon} size={14} aria-hidden="true" />
+              <Icon icon="x" size={14} aria-hidden="true" />
             </button>
           </div>
           <div
@@ -227,7 +226,7 @@ function ModelRow({ option, selected, onSelect }: {
     >
       <ProviderIcon company={option.company} size={16} />
       <span className="min-w-0 flex-1 truncate text-xs font-medium">{option.name}</span>
-      {selected && <HugeiconsIcon icon={Tick02Icon} size={16} className="shrink-0 text-accent" aria-hidden="true" />}
+      {selected && <Icon icon="check" size={16} className="shrink-0 text-accent" aria-hidden="true" />}
     </button>
   )
 }

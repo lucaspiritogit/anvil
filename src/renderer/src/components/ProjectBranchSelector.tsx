@@ -1,7 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 import type { ProjectBranches } from '@shared/types'
 import { useStore } from '../state/store'
 import { ChoicePickerDialog } from './ChoicePickerDialog'
@@ -108,7 +107,7 @@ export function ProjectBranchSelector({ projectId, disabled, onSwitching }: Prop
           }}
         >
           <span className="truncate">{branchLabel}</span>
-          <HugeiconsIcon icon={ArrowDown01Icon} size={12} className="shrink-0" aria-hidden="true" />
+          <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
         </button>}
       </div>
       {open && isRepository !== false && <ChoicePickerDialog

@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import type { Store } from '../store'
-import { TerminalManager } from '../terminal'
-import type { AgentAccountTarget, AgentAccountConnect, WorkspaceAgentAccount, TerminalSnapshot } from '../../shared/types'
+import { stat } from 'node:fs/promises'
+import { join } from 'node:path'
+import { openSystemTerminal } from '../system-terminal'
+import type { AgentAccountTarget, AgentAccountConnect, WorkspaceAgentAccount } from '../../shared/types'
 import { CodexAppServerConnection, type ConnectionHandlers } from './codex-app-server-connection'
 import type { CodexAppServerProtocol, CodexObject } from './codex-app-server-protocol'
 import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from './workspace-execution'
@@ -23,6 +25,7 @@ export interface AccountDependencies {
   connection?(workspace: WorkspaceExecutionContext, handlers: ConnectionHandlers): AccountConnection
   verifyOpenCode?(workspace: WorkspaceExecutionContext): Promise<void>
   readOpenCode?(workspace: WorkspaceExecutionContext): Promise<string>
+  openTerminal?: typeof openSystemTerminal
   changed?(state: WorkspaceAgentAccount): void
 }
 
@@ -32,7 +35,7 @@ interface PendingAccount {
   release(): void
   connection?: AccountConnection
   loginId?: string
-  terminalId?: string
+  pollTimer?: ReturnType<typeof setTimeout>
   timer?: ReturnType<typeof setTimeout>
   finishing?: Promise<WorkspaceAgentAccount>
   earlyNotifications: CodexObject[]
@@ -78,7 +81,6 @@ export class WorkspaceAccounts {
   private readonly states = new Map<string, WorkspaceAgentAccount>()
   private readonly pending = new Map<string, PendingAccount>()
   private readonly revisions = new Map<string, number>()
-  readonly terminals: TerminalManager
   private closed = false
   private closing?: Promise<void>
   private readonly reads = new Map<string, Promise<WorkspaceAgentAccount>>()
@@ -91,17 +93,7 @@ export class WorkspaceAccounts {
     return () => { this.paused.delete(workspaceId) }
   }
 
-  constructor(private readonly store: Pick<Store, 'getWorkspaceDirectory' | 'getWorkspaces'>, private readonly dependencies: AccountDependencies) {
-    this.terminals = new TerminalManager({
-      // Terminal output is available only through the account session bridge. It
-      // is never broadcast as task output or written to diagnostics or storage.
-      onData: () => {},
-      onExit: (id, code) => {
-        const operation = [...this.pending.values()].find((item) => item.terminalId === id)
-        if (operation) void this.finish(operation, code === 0 ? undefined : 'Native account command failed. Retry the connection.')
-      }
-    })
-  }
+  constructor(private readonly store: Pick<Store, 'getWorkspaceDirectory' | 'getWorkspaces'>, private readonly dependencies: AccountDependencies) {}
 
   private key(target: AgentAccountTarget): string { return JSON.stringify([target.workspaceId, target.agentId]) }
 
@@ -233,15 +225,20 @@ export class WorkspaceAccounts {
       } else {
         await this.verify(workspace)
         if (operation.finishing) return operation.finishing
+        const before = parseOpenCodeAccounts(await (this.dependencies.readOpenCode ?? readNativeOpenCode)(workspace))
+        const revision = await this.openCodeAuthRevision(workspace)
+        if (operation.finishing) return operation.finishing
+        if (logout && !before.length) return this.finish(operation)
         const launch = openCodeWorkspaceCommand(workspace, ['auth', logout ? 'logout' : 'login'])
         const resolved = resolveCommand(launch.command)
         if (!resolved || resolved.viaShell) throw new Error('OpenCode requires a directly executable CLI')
-        operation.terminalId = operation.sessionId
-        this.terminals.create(operation.terminalId, launch.cwd, 80, 18, {
+        await (this.dependencies.openTerminal ?? openSystemTerminal)(launch.cwd, {
           command: resolved.command, args: [...resolved.prefixArgs, ...launch.args], environment: launch.environment
         })
-        this.publish(this.state(target, { status: 'pending', sessionId: operation.sessionId, terminal: true,
-          message: 'Choose a provider and follow its native prompts. Subscription methods depend on the provider. Finish or cancel before starting work in this workspace.' }))
+        if (operation.finishing) return operation.finishing
+        this.publish(this.state(target, { status: 'pending', sessionId: operation.sessionId,
+          message: `Complete ${logout ? 'sign-out' : 'sign-in'} in the terminal window. Anvil checks account status every 3 seconds.` }))
+        this.pollOpenCode(operation, workspace, before, revision, logout)
       }
       return this.states.get(key)!
     } catch {
@@ -249,10 +246,38 @@ export class WorkspaceAccounts {
     }
   }
 
+  private async openCodeAuthRevision(workspace: WorkspaceExecutionContext): Promise<string> {
+    try {
+      const file = await stat(join(workspace.directory, 'data', 'opencode', 'auth.json'), { bigint: true })
+      return `${file.ino}:${file.mtimeNs}:${file.ctimeNs}:${file.size}`
+    } catch { return '' }
+  }
+
+  private pollOpenCode(operation: PendingAccount, workspace: WorkspaceExecutionContext, before: string[], revision: string, logout: boolean): void {
+    const active = (): boolean => this.pending.get(this.key(operation.target)) === operation && !operation.finishing
+    operation.pollTimer = setTimeout(() => {
+      void (async () => {
+        if (!active()) return
+        try {
+          const accounts = parseOpenCodeAccounts(await (this.dependencies.readOpenCode ?? readNativeOpenCode)(workspace))
+          const changed = await this.openCodeAuthRevision(workspace) !== revision
+          if (!active()) return
+          // Existing credentials alone do not complete a new login. File metadata
+          // also detects signing in again with the same provider and method.
+          const complete = logout ? before.some((account) => !accounts.includes(account))
+            : accounts.length > 0 && (changed || accounts.some((account) => !before.includes(account)))
+          if (complete) { void this.finish(operation); return }
+        } catch { /* The CLI can briefly fail while credentials are being written. */ }
+        if (active()) this.pollOpenCode(operation, workspace, before, revision, logout)
+      })()
+    }, 3000)
+  }
+
   private finish(operation: PendingAccount, message?: string): Promise<WorkspaceAgentAccount> {
     if (operation.finishing) return operation.finishing
     operation.finishing = Promise.resolve().then(async () => {
       clearTimeout(operation.timer)
+      clearTimeout(operation.pollTimer)
       let cleanedUp = false
       try {
         if (operation.connection) {
@@ -261,7 +286,6 @@ export class WorkspaceAccounts {
           }
           await operation.connection.close()
         }
-        if (operation.terminalId) await this.terminals.dispose(operation.terminalId)
         await this.dependencies.invalidate(operation.target.workspaceId)
         cleanedUp = true
         let result: WorkspaceAgentAccount
@@ -287,15 +311,6 @@ export class WorkspaceAccounts {
     return this.finish(operation, 'Connection cancelled.')
   }
 
-  terminal(target: AgentAccountTarget, sessionId: string, input?: { data?: string; cols?: number; rows?: number }): TerminalSnapshot {
-    this.workspace(target)
-    const operation = this.pending.get(this.key(target))
-    if (!operation || operation.sessionId !== sessionId || !operation.terminalId || operation.finishing) return { data: '', sequence: 0 }
-    if (input?.data) this.terminals.write(operation.terminalId, input.data)
-    if (input?.cols && input.rows) this.terminals.resize(operation.terminalId, input.cols, input.rows)
-    return this.terminals.snapshot(operation.terminalId)
-  }
-
   close(): Promise<void> {
     if (this.closing) return this.closing
     this.closed = true
@@ -303,7 +318,6 @@ export class WorkspaceAccounts {
       const operations = [...this.pending.values()].map((operation) => this.finish(operation, 'Connection cancelled.'))
       await Promise.allSettled(operations)
       await Promise.allSettled(this.reads.values())
-      await this.terminals.close()
     })
     return this.closing
   }

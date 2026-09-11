@@ -118,11 +118,6 @@ export interface ProjectBranches {
   branches: { name: string; checkedOut: boolean }[]
 }
 
-export interface TerminalSnapshot {
-  data: string
-  sequence: number
-}
-
 export interface ProjectGitStatus {
   /** True when the project folder resolves to a Git work tree. */
   isRepository: boolean
@@ -385,5 +380,4 @@ export interface WorkspaceAgentAccount extends AgentAccountTarget {
   busy: boolean
   message?: string
   sessionId?: string
-  terminal?: boolean
 }

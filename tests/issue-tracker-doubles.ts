@@ -29,11 +29,6 @@ export const createProjectMemory = () => undefined
 export const listModels = () => []
 export const invalidateWorkspaceModels = () => {}
 export const closeModelDiscovery = async () => {}
-export class TerminalManager {
-  dispose(): void {}
-  disposeAll(): void {}
-}
-
 const agentInstances = new Set<AgentProcessManager>()
 export class AgentProcessManager extends EventEmitter {
   constructor(private readonly databasePath?: string) {
@@ -151,5 +146,5 @@ export function resetTestDoubles(): void {
 }
 
 const doubleDefaults = [app, powerSaveBlocker, ipcMain, safeStorage, dialog, shell,
-  AgentProcessManager.prototype, GitDeliveryManager.prototype, TerminalManager.prototype]
+  AgentProcessManager.prototype, GitDeliveryManager.prototype]
   .map((object) => [object, Object.getOwnPropertyDescriptors(object)] as const)

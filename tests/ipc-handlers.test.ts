@@ -2,7 +2,9 @@ import { onTestCleanup } from './test-cleanup'
 import { WallpaperLibrary } from '../src/main/wallpapers'
 import { rendererEvent, rendererIpc, rendererFrame } from './renderer-fixture'
 import { test, expect, vi } from 'vitest'
-import sharp from 'sharp'
+import { pngWithDimensions } from './image-fixtures'
+import { openSystemTerminal } from '../src/main/system-terminal'
+vi.mock('../src/main/system-terminal', () => ({ openSystemTerminal: vi.fn(async () => {}) }))
 import { TaskImageStorage } from '../src/main/task-image-storage'
 import { taskImages } from './task-image-fixture'
 import { TASK_IMAGE_LIMITS } from '../src/shared/types'
@@ -24,14 +26,12 @@ import { registerTaskHandlers } from '../src/main/ipc/tasks'
 import { registerSteeringHandlers } from '../src/main/ipc/steering'
 import { registerWorkspaceHandlers } from '../src/main/ipc/workspaces'
 import { registerSettingsHandlers } from '../src/main/ipc/settings'
-import { registerTerminalHandlers } from '../src/main/ipc/terminals'
 import { createTaskMemory } from '../src/main/memory/task-memory'
 import { createTaskCompletion } from '../src/main/tasks/completion'
 import { registerTaskEvents } from '../src/main/tasks/events'
 import { registerTaskExecution } from '../src/main/tasks/task-execution'
 import { titleFor } from '../src/main/tasks/task-title'
 import { Store } from '../src/main/store'
-import type { TerminalManager } from '../src/main/terminal'
 import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent } from '../src/shared/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome, shell, dialog } from './issue-tracker-doubles'
 
@@ -88,17 +88,6 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   const completion = createTaskCompletion(context, taskEvents.recordSystemEvent, memory)
   const execution = registerTaskExecution({ ...context, recordSystemEvent: taskEvents.recordSystemEvent }, completion)
   const reviewContext = { ...context, ...execution, recordSystemEvent: taskEvents.recordSystemEvent, requireFinishedTask: execution.requireFinishedTask }
-  const terminalCalls: unknown[][] = []
-  const terminalIds = new Set<string>()
-  const terminals = {
-    has: (id: string) => terminalIds.has(id),
-    snapshot: () => ({ data: '', sequence: 0 }),
-    create: (...args: unknown[]) => { terminalIds.add(args[0] as string); terminalCalls.push(['create', ...args]) },
-    dispose: (...args: unknown[]) => { terminalIds.delete(args[0] as string); terminalCalls.push(['dispose', ...args]) },
-    write: (...args: unknown[]) => terminalCalls.push(['write', ...args]),
-    resize: (...args: unknown[]) => terminalCalls.push(['resize', ...args])
-  } as unknown as TerminalManager
-
   registerTaskHandlers(rendererIpc, { ...context, ...taskEvents, ...execution, promptWithProjectMemory: preparePrompt ?? memory.promptWithProjectMemory })
   registerSteeringHandlers(rendererIpc, { ...context, ...taskEvents, resumeTask: execution.resumeTask })
   registerReviewHandlers(rendererIpc, reviewContext)
@@ -121,11 +110,10 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
     githubCredentialsChanged: () => { credentialRefreshes += 1 }
   })
   registerRebaseHandlers(rendererIpc, reviewContext)
-  registerTerminalHandlers(rendererIpc, terminals, store)
   registerWorkspaceHandlers(rendererIpc, store, context.send)
   registerSettingsHandlers(rendererIpc, context.store, new WallpaperLibrary(testHome))
   registerAgentHandlers(rendererIpc, store)
-  registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, terminals, getWindow: () => null })
+  registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, getWindow: () => null })
   const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, name === 'settings:set' ? { workspaceId: 'default', patch: input } : input)
   const tick = async (): Promise<void> => {
     for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve))
@@ -134,7 +122,7 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   return {
     databaseFile, taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses,
     gitDelivery, delivery, rebaseCalls, mergeCalls, pushCalls, mergeState, memory,
-    credentials, client, terminals, terminalCalls, call, tick,
+    credentials, client, call, tick,
     get prRefreshes() { return prRefreshes },
     get credentialRefreshes() { return credentialRefreshes }
   }
@@ -173,14 +161,14 @@ test('persists task ownership before preparation and retains it when selection c
 })
 
 test('registers all channels and rejects foreign, subframe and navigated senders', () => {
-  const { terminalCalls } = setupIpc()
+  setupIpc()
   expect([...handlers.keys()].sort()).toStrictEqual([
     'agents:list', 'agents:models', 'comments:add', 'comments:list', 'comments:remove', 'comments:send',
     'github:credential-status', 'github:set-token', 'github:remove-token', 'github:pr-preview', 'github:open-pr', 'github:draft-pr-field', 'github:open-pr-url',
-    'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:update',
+    'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:open-terminal', 'projects:update',
     'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:settle', 'tasks:start', 'tasks:steer',
     'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set', 'workspaces:composer:import',
-    'wallpapers:directory', 'wallpapers:import', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set', 'terminal:ensure', 'terminal:resize', 'terminal:write'
+    'wallpapers:directory', 'wallpapers:import', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set'
   ].sort())
   // Each registered handler must reject foreign windows and same-URL subframes
   // before touching its payload or any service dependency.
@@ -190,26 +178,21 @@ test('registers all channels and rejects foreign, subframe and navigated senders
     { sender: rendererEvent.sender, senderFrame: null }
   ]) {
     for (const [channel, handler] of handlers) {
-      if (channel === 'terminal:write' || channel === 'terminal:resize') {
-        expect(() => handler(event)).not.toThrow()
-      } else {
-        expect(() => handler(event), channel).toThrow(/Unauthorized IPC sender/)
-      }
+      expect(() => handler(event), channel).toThrow(/Unauthorized IPC sender/)
     }
   }
   const appUrl = rendererFrame.url
   onTestCleanup(() => { rendererFrame.url = appUrl })
   rendererFrame.url = 'https://example.com/'
   for (const [channel, handler] of handlers) {
-    if (channel === 'terminal:write' || channel === 'terminal:resize') handler(rendererEvent)
-    else expect(() => handler(rendererEvent), channel).toThrow(/Unauthorized IPC sender/)
+    expect(() => handler(rendererEvent), channel).toThrow(/Unauthorized IPC sender/)
   }
   rendererFrame.url = appUrl
-  expect(terminalCalls).toStrictEqual([])
+  expect(openSystemTerminal).not.toHaveBeenCalled()
 })
 
 test('rejects malformed IPC requests before accessing dependencies or files', async () => {
-  const { store, delivery, agentProcesses, terminals, credentials, client, call, project } = setupIpc()
+  const { store, delivery, agentProcesses, credentials, client, call, project } = setupIpc()
   // Any dependency access means a malformed request escaped the IPC contract.
   const touched: string[] = []
   const restore: (() => void)[] = []
@@ -230,19 +213,12 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
   const beforeFiles = files()
   Object.assign(shell, { openPath: async () => '', openExternal: async () => {} })
   Object.assign(dialog, { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) })
-  for (const [name, target] of Object.entries({ store, delivery, agentProcesses, terminals, credentials, client, shell, dialog })) watch(name, target)
+  for (const [name, target] of Object.entries({ store, delivery, agentProcesses, credentials, client, shell, dialog })) watch(name, target)
   const warnings: unknown[][] = []
   const warn = console.warn
   console.warn = (...args) => { warnings.push(args) }
   const invalidRequest = async (channel: string, payload: unknown): Promise<void> => {
-    if (channel === 'terminal:write' || channel === 'terminal:resize') {
-      const count = warnings.length
-      expect(() => call(channel, payload)).not.toThrow()
-      expect(warnings.length).toBe(count + 1)
-      expect(String(warnings.at(-1))).toMatch(/Invalid IPC request/)
-    } else {
-      await expect(async () => call(channel, payload), channel).rejects.toThrow(/Invalid IPC request/)
-    }
+    await expect(async () => call(channel, payload), channel).rejects.toThrow(/Invalid IPC request/)
   }
   const update = { id: project.id, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false }
   const comment = { taskId: 'task', file: 'src/file.ts', side: 'additions', lineNumber: 1, body: 'Review' }
@@ -251,13 +227,7 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
     for (const channel of handlers.keys()) {
       for (const payload of [null, [], 42, true]) await invalidRequest(channel, payload)
       const extra = () => handlers.get(channel)!(rendererEvent, undefined, 'extra')
-      if (channel === 'terminal:write' || channel === 'terminal:resize') {
-        const count = warnings.length
-        expect(extra).not.toThrow()
-        expect(warnings.length).toBe(count + 1)
-      } else {
-        await expect(async () => extra()).rejects.toThrow(/Invalid IPC request/)
-      }
+      await expect(async () => extra()).rejects.toThrow(/Invalid IPC request/)
     }
     for (const key of ['path', 'name', 'createdAt', 'gitPlatform', '__proto__']) {
       await invalidRequest('projects:update', { ...update, [key]: '/outside' })
@@ -273,7 +243,7 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
       { projectId: project.id, path: '/outside' }, { projectId: project.id, query: '../outside' },
       { projectId: project.id, limit: 1_000_000 }
     ]) await invalidRequest('projects:files', payload)
-    for (const channel of ['projects:remove', 'projects:reveal', 'projects:git-init', 'tasks:delete', 'tasks:cancel', 'tasks:issues', 'tasks:approve-issue', 'comments:send']) {
+    for (const channel of ['projects:remove', 'projects:reveal', 'projects:open-terminal', 'projects:git-init', 'tasks:delete', 'tasks:cancel', 'tasks:issues', 'tasks:approve-issue', 'comments:send']) {
       for (const id of ['', ' ', '../project', 'x'.repeat(129)]) await invalidRequest(channel, id)
     }
     for (const patch of [{ taskId: 'task', issueId: '' }, { taskId: 'task', issueId: 42 }, { taskId: 'task', issueId: 'ok', extra: 1 }]) {
@@ -282,14 +252,7 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
     for (const patch of [{ taskId: '' }, { taskId: 'task', comment: ' ' }, { taskId: 'task', comment: 42 }]) {
       await invalidRequest('tasks:reject-issue', patch)
     }
-    for (const field of ['cols', 'rows']) {
-      for (const value of [0, -1, 1.5, NaN, Infinity, 1001, '80']) {
-        for (const channel of ['terminal:ensure', 'terminal:resize']) await invalidRequest(channel, { projectId: 'project', cols: 80, rows: 24, [field]: value })
-      }
-    }
-    await invalidRequest('terminal:ensure', { projectId: 'project', cwd: '/outside', cols: 80, rows: 24 })
-    await invalidRequest('terminal:ensure', { taskId: 'task', cols: 80, rows: 24 })
-    await invalidRequest('terminal:write', { projectId: 'project', data: 'x'.repeat(1_048_577) })
+    await invalidRequest('projects:open-terminal', { projectId: 'project', cwd: '/outside', command: 'bad' })
     for (const patch of [{ side: 'left' }, { lineNumber: 0 }, { lineNumber: NaN }, { lineNumber: 1.5 }, { file: '/etc/passwd' }, { file: '../outside' }, { file: 'a/../b' }, { file: 'C:\\outside' }, { file: '' }, { body: ' ' }, { body: 'x'.repeat(20_001) }]) {
       await invalidRequest('comments:add', { ...comment, ...patch })
     }
@@ -311,10 +274,9 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
 })
 
 test('updates projects, validates task references and selects supported agents and settings', async () => {
-  const { store, project, call, terminalCalls, memory } = setupIpc()
+  const { store, project, call, memory } = setupIpc()
   const update = { id: project.id, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false }
   const comment = { taskId: 'task', file: 'src/file.ts', side: 'additions', lineNumber: 1, body: 'Review' }
-  const warn = console.warn
   const projectSettings = { ...update, monthlyTokenLimit: 5000, monthlyCostLimitUsd: 12.5, finishOnPush: true }
   expect(call('projects:update', projectSettings)).toStrictEqual({ ...project, ...projectSettings })
   expect(call('projects:update', { id: project.id, monthlyTokenLimit: null })).toStrictEqual({ ...project, ...projectSettings, monthlyTokenLimit: null })
@@ -327,14 +289,7 @@ test('updates projects, validates task references and selects supported agents a
   await call('projects:reveal', project.id)
   expect(opened).toStrictEqual([project.path])
   expect(() => call('projects:reveal', 'missing')).toThrow(/Project not found/)
-  expect(() => call('terminal:ensure', { projectId: 'missing', cols: 80, rows: 24 })).toThrow(/Project not found/)
-  const terminalCount = terminalCalls.length
-  console.warn = () => {}
-  try {
-    call('terminal:write', { projectId: 'missing', data: 'pwd\r' })
-    call('terminal:resize', { projectId: 'missing', cols: 80, rows: 24 })
-  } finally { console.warn = warn }
-  expect(terminalCalls.length).toBe(terminalCount)
+  expect(() => call('projects:open-terminal', 'missing')).toThrow(/Project not found/)
   expect(() => call('comments:add', { ...comment, taskId: 'missing' })).toThrow(/Task not found/)
 
   expect(titleFor('  First line\nSecond line')).toBe('First line')
@@ -361,23 +316,10 @@ test('updates projects, validates task references and selects supported agents a
 test('executes issues, reviews, handles credentials and PRs, approves, rebases and guards deletion', async () => {
   const comment = { taskId: 'task', file: 'src/file.ts', side: 'additions', lineNumber: 1, body: 'Review' }
   const fixture = setupIpc()
-  const { taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses, gitDelivery, rebaseCalls, mergeCalls, pushCalls, mergeState, call, tick, terminalCalls } = fixture
-  const terminalCount = terminalCalls.length
-  const warn = console.warn
+  const { taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses, gitDelivery, rebaseCalls, mergeCalls, pushCalls, mergeState, call, tick } = fixture
   const task: Task = await call('tasks:start', { projectId: project.id, agentId: 'codex', model: 'chosen-model', reasoningEffort: 'high', prompt: 'Task title\nDetails' })
   await tick()
   expect(task.title).toBe('Task title')
-  console.warn = () => {}
-  try {
-    call('terminal:write', { projectId: project.id, data: 'pwd\r' })
-  } finally { console.warn = warn }
-  expect(terminalCalls.length, 'A project without a terminal ignores writes').toBe(terminalCount)
-  expect(call('terminal:ensure', { projectId: project.id, cols: 80, rows: 24 })).toStrictEqual({ data: '', sequence: 0 })
-  call('terminal:write', { projectId: project.id, data: 'pwd\r' })
-  call('terminal:resize', { projectId: project.id, cols: 120, rows: 40 })
-  expect(terminalCalls).toStrictEqual([
-    ['create', project.id, project.path, 80, 24], ['write', project.id, 'pwd\r'], ['resize', project.id, 120, 40]
-  ])
   expect(agentProcesses.starts.length).toBe(1)
   expect(agentProcesses.starts[0].prompt).toMatch(/Leave the finished plan queued/)
   await expect(call('tasks:approve', { taskId: task.id, preview: await gitDelivery.getMergePreview(testHome, 'task') })).rejects.toThrow(/not finished/)
@@ -409,6 +351,7 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(tasks.get(task.id)?.costUsd).toBe(0.2)
   expect((await call('tasks:diff', task.id)).patch).toMatch(/base\.\.commit-/)
 
+  expect(() => call('projects:open-terminal', 'missing')).toThrow(/Project not found/)
   expect(() => call('comments:add', { taskId: task.id, body: ' ' })).toThrow(/Invalid IPC request/)
   const draft: TaskComment[] = call('comments:add', { taskId: task.id, file: 'file.ts', side: 'additions', lineNumber: 9, body: ' Fix this ' })
   expect(draft[0].body).toBe('Fix this')
@@ -486,7 +429,6 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
 
   const pendingRebase = call('tasks:rebase-agent', task.id)
   call('tasks:delete', task.id)
-  expect(terminalCalls.some((call) => call[0] === 'dispose'), 'Deleting a task retains the project terminal').toBe(false)
   await expect(pendingRebase).rejects.toThrow(/Task was deleted/)
   await tick()
   expect(agentProcesses.starts.length, 'Deletion during reopen prevents a late agent start').toBe(startsBeforeRebase)
@@ -553,13 +495,15 @@ test('blocks failed planning, cancels preparation and between issues, and forwar
   GitDeliveryManager.repository = true
 })
 
-test('project terminals open without tasks and close only when their project is removed', async () => {
-  const { call, project, terminalCalls, store } = setupIpc()
+test('system terminals use registered project paths and propagate launch failures', async () => {
+  const { call, project, store } = setupIpc()
   expect(store.getTasks()).toHaveLength(0)
-  expect(call('terminal:ensure', { projectId: project.id, cols: 100, rows: 30 })).toStrictEqual({ data: '', sequence: 0 })
-  expect(terminalCalls).toEqual([['create', project.id, project.path, 100, 30]])
+  await call('projects:open-terminal', project.id)
+  expect(openSystemTerminal).toHaveBeenCalledWith(project.path)
+  vi.mocked(openSystemTerminal).mockRejectedValueOnce(new Error('No terminal'))
+  await expect(call('projects:open-terminal', project.id)).rejects.toThrow('No terminal')
   await call('projects:remove', project.id)
-  expect(terminalCalls.at(-1)).toEqual(['dispose', project.id])
+  expect(() => call('projects:open-terminal', project.id)).toThrow('Project not found')
 })
 
 test('branch selection resolves only registered project paths', async () => {
@@ -580,7 +524,7 @@ test('validates image payloads before task, tracker or worktree creation', async
   const { call, project, store, delivery, agentProcesses } = setupIpc()
   const images = await taskImages()
   const image = images[0]
-  const hugeDimensions = new Uint8Array(await sharp({ create: { width: 4001, height: 4000, channels: 3, background: 'red' } }).png().toBuffer())
+  const hugeDimensions = new Uint8Array(pngWithDimensions(4001, 4000))
   const addTask = vi.spyOn(store, 'addTask')
   const prepare = vi.spyOn(delivery, 'prepareBranch')
   const saveExecution = vi.spyOn(store, 'saveTaskExecution')

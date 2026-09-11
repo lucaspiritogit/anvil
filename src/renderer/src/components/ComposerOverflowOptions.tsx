@@ -1,7 +1,6 @@
 import type { JSX, ReactNode, RefObject } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { MoreHorizontalIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '../icons'
 
 export function ComposerOverflowOptions({ children, containerRef }: {
   children: ReactNode
@@ -50,7 +49,7 @@ export function ComposerOverflowOptions({ children, containerRef }: {
           popover.querySelector<HTMLElement>('button, select')?.focus({ preventScroll: true })
         }}
       >
-        <HugeiconsIcon icon={MoreHorizontalIcon} size={20} aria-hidden="true" />
+        <Icon icon="settings" size={20} aria-hidden="true" />
       </button>
       <div
         ref={popoverRef}

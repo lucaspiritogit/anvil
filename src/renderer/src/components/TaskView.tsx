@@ -1,8 +1,7 @@
 import { issueIsReviewReady, issuePresentation, taskIssuePresentation } from '@shared/task-issue-presentation'
 import type { JSX, ReactNode } from 'react'
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
+import { Icon } from '../icons'
 import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
 import { useStore } from '../state/store'
 import { btn, cn, deliveryTone, dot, field, ISSUE_STATUS, statusTone } from '../ui'
@@ -109,7 +108,7 @@ const PatchFiles = lazy(async () => {
           <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 border-b border-line text-xs">
             <div className="flex min-w-0 flex-1 items-center gap-1 @max-[760px]:basis-full">
               <button className={ICON_BTN} aria-label="Previous file" disabled={selectedIndex === 0} onClick={() => selectFile(files[selectedIndex - 1].name)}>
-                <HugeiconsIcon icon={ArrowLeft01Icon} size={16} aria-hidden="true" />
+                <Icon icon="chevron-left" size={16} aria-hidden="true" />
               </button>
               <select
                 aria-label="Changed file"
@@ -124,7 +123,7 @@ const PatchFiles = lazy(async () => {
                 ))}
               </select>
               <button className={ICON_BTN} aria-label="Next file" disabled={selectedIndex === files.length - 1} onClick={() => selectFile(files[selectedIndex + 1].name)}>
-                <HugeiconsIcon icon={ArrowRight01Icon} size={16} aria-hidden="true" />
+                <Icon icon="chevron-right" size={16} aria-hidden="true" />
               </button>
               <span className="ml-1 shrink-0 tabular-nums text-dim">{selectedIndex + 1} / {files.length}</span>
             </div>
@@ -278,7 +277,7 @@ function CommitsMenu({ diff, disabled, rebasing, onRebase }: {
     <details ref={ref} className="relative" onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary className="flex cursor-pointer select-none list-none items-center gap-1 hover:text-fg [&::-webkit-details-marker]:hidden">
         {count} commit{count === 1 ? '' : 's'}
-        <HugeiconsIcon icon={ArrowDown01Icon} size={14} aria-hidden="true" />
+        <Icon icon="chevron-down" size={14} aria-hidden="true" />
       </summary>
       <div className="absolute right-0 top-full z-20 mt-1.5 w-[min(460px,80vw)] border border-line bg-raised p-3 text-fg shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
         <div className="mb-2 flex items-center justify-between gap-3">
