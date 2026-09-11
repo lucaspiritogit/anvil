@@ -22,6 +22,8 @@ interface TaskRetry {
 export interface TaskExecution {
   initializeTask(taskId: string, projectPath: string, settings?: Pick<TaskExecutionState, 'reasoningEffort' | 'hasImages'>): TaskExecutionState
   resumeTask(taskId: string): TaskExecutionState
+  acceptTaskResume(taskId: string): void
+  rollbackTaskResume(taskId: string, previousState: TaskExecutionState): void
   stopTask(taskId: string, error: string): void
   finishTaskTurn(info: ExitInfo): Promise<void>
   requireFinishedTask(taskId: string): void
@@ -379,6 +381,11 @@ export function registerTaskExecution(
     return issues.resume(taskId)
   }
 
+  const acceptTaskResume = (taskId: string): void => issues.acceptResume(taskId)
+  const rollbackTaskResume = (taskId: string, previousState: TaskExecutionState): void => {
+    issues.rollbackResume(taskId, previousState)
+  }
+
   const issueReviewReady = (taskId: string): boolean => {
     try {
       requireStoppedTurn(taskId)
@@ -393,5 +400,6 @@ export function registerTaskExecution(
     } catch { return false }
   }
 
-  return { issueReviewReady, initializeTask, resumeTask, stopTask, finishTaskTurn, requireFinishedTask, approveIssue, rejectIssue }
+  return { issueReviewReady, initializeTask, resumeTask, acceptTaskResume, rollbackTaskResume,
+    stopTask, finishTaskTurn, requireFinishedTask, approveIssue, rejectIssue }
 }

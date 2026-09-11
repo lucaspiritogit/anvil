@@ -89,7 +89,7 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   const execution = registerTaskExecution({ ...context, recordSystemEvent: taskEvents.recordSystemEvent }, completion)
   const reviewContext = { ...context, ...execution, recordSystemEvent: taskEvents.recordSystemEvent, requireFinishedTask: execution.requireFinishedTask }
   registerTaskHandlers(rendererIpc, { ...context, ...taskEvents, ...execution, promptWithProjectMemory: preparePrompt ?? memory.promptWithProjectMemory })
-  registerSteeringHandlers(rendererIpc, { ...context, ...taskEvents, resumeTask: execution.resumeTask })
+  registerSteeringHandlers(rendererIpc, { ...context, ...taskEvents, ...execution })
   registerReviewHandlers(rendererIpc, reviewContext)
   const credentials = new GitHubCredentials(join(testHome, 'github-token.enc'), {
     isEncryptionAvailable: () => true,

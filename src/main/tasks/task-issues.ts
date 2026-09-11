@@ -14,6 +14,7 @@ export interface VerifiedNoChanges {
 /** Runs task-owned Valence plans on the Store connection. */
 export class TaskIssues {
   private readonly ownedClaims = new Map<string, string>()
+  private readonly resumedBlockedClaims = new Map<string, string>()
 
   constructor(private readonly store: Store) {}
 
@@ -161,12 +162,43 @@ export class TaskIssues {
   /** User follow-ups can recover a stopped turn without discarding its issue plan. */
   resume(taskId: string): TaskExecutionState {
     const state = this.requireState(taskId)
-    return this.withTracker(state, () => {
-      if (state.phase === 'complete') return state
-      return this.store.saveTaskExecution({
+    this.resumedBlockedClaims.delete(taskId)
+    const resumed = this.withTracker(state, (tracker): { state: TaskExecutionState; resumedIssueId?: string } => {
+      if (state.phase === 'complete') return { state }
+      let resumedIssueId: string | undefined
+      if (state.currentIssueId && tracker.get(state.currentIssueId).status === 'blocked') {
+        tracker.requeue(state.currentIssueId)
+        tracker.start(state.currentIssueId)
+        resumedIssueId = state.currentIssueId
+      }
+      const next = this.store.saveTaskExecution({
         ...state, phase: state.issueIds.length ? 'recovering' : 'planning', error: null
       })
+      return { state: next, resumedIssueId }
     })
+    if (resumed.resumedIssueId) this.resumedBlockedClaims.set(taskId, resumed.resumedIssueId)
+    return resumed.state
+  }
+
+  /** Keep a resumed blocked issue working once its prompt is accepted. */
+  acceptResume(taskId: string): void {
+    this.resumedBlockedClaims.delete(taskId)
+  }
+
+  /** Restore a blocked issue when its follow-up fails before dispatch. */
+  rollbackResume(taskId: string, previousState: TaskExecutionState): void {
+    const resumedIssueId = this.resumedBlockedClaims.get(taskId)
+    try {
+      this.withTracker(previousState, (tracker) => {
+        if (resumedIssueId && previousState.currentIssueId === resumedIssueId &&
+          tracker.get(resumedIssueId).status === 'working') {
+          tracker.block(resumedIssueId)
+        }
+        this.store.saveTaskExecution(previousState)
+      })
+    } finally {
+      this.resumedBlockedClaims.delete(taskId)
+    }
   }
 
   finishRecovery(taskId: string, headCommit?: string, noChanges?: VerifiedNoChanges): void {
@@ -189,6 +221,7 @@ export class TaskIssues {
       this.store.saveTaskExecution({ ...state, currentIssueId: null, phase: complete ? 'complete' : 'working', error: null })
     })
     this.ownedClaims.delete(taskId)
+    this.resumedBlockedClaims.delete(taskId)
   }
 
   stop(taskId: string, error: string): void {
@@ -207,6 +240,7 @@ export class TaskIssues {
       error += ` Could not block the Valence issue: ${storageError instanceof Error ? storageError.message : String(storageError)}`
     }
     this.ownedClaims.delete(taskId)
+    this.resumedBlockedClaims.delete(taskId)
     this.store.saveTaskExecution({ ...state, phase: 'blocked', error })
   }
 

@@ -191,6 +191,14 @@ test('serializes steering and comments through resume, completion and recovery',
     store.saveTaskExecution({
       ...unfinished, phase: 'blocked', issueIds: [completed.id, interrupted.id], currentIssueId: interrupted.id
     })
+    tracker.block(interrupted.id)
+    const blockedState = store.getTaskExecution('unfinished')!
+    const startBeforeRecovery = agentProcesses.start.bind(agentProcesses)
+    agentProcesses.start = () => { throw new Error('Recovery executor unavailable') }
+    await expect(steer('unfinished', 'Keep going')).rejects.toThrow(/Recovery executor unavailable/)
+    expect(store.getTaskExecution('unfinished')).toEqual(blockedState)
+    expect(tracker.get(interrupted.id).status).toBe('blocked')
+    agentProcesses.start = startBeforeRecovery
     await steer('unfinished', 'Keep going')
     const recovery = agentProcesses.starts.at(-1)
     expect(recovery.workspace.workspaceId).toBe(work.id)
@@ -198,7 +206,10 @@ test('serializes steering and comments through resume, completion and recovery',
     expect(recovery.prompt).toBe(`Resume issue ${interrupted.id}\n\nKeep going`)
     expect(recovery.resumeFallbackPrompt).toBe(`Resume issue ${interrupted.id}\n\nKeep going`)
     expect(recovery.issueId).toBe(interrupted.id)
-    expect(store.getTaskExecution('unfinished')?.issueIds).toEqual([completed.id, interrupted.id])
+    expect(store.getTaskExecution('unfinished')).toMatchObject({
+      phase: 'recovering', issueIds: [completed.id, interrupted.id], currentIssueId: interrupted.id
+    })
+    expect(tracker.get(interrupted.id).status).toBe('working')
     expect(store.getTask('unfinished')?.baseCommit).toBe(finished.baseCommit)
     agentProcesses.emit('session', { taskId: 'unfinished', sessionId: 'replacement-session' })
     expect(store.getTask('unfinished')?.sessionId, 'A replacement session becomes the next resume handle').toBe('replacement-session')

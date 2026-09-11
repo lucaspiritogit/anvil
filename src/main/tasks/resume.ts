@@ -12,12 +12,15 @@ interface ResumeOptions {
   gitInstructions?: boolean
   allowRestack?: boolean
   resumeExecution?: (taskId: string) => TaskExecutionState
+  acceptExecution?: (taskId: string) => void
+  rollbackExecution?: (taskId: string, previousState: TaskExecutionState) => void
 }
 
 /** Share location, saved settings and rollback for every stopped-task follow-up. */
 export async function resumeTaskTurn(
   { store, agentProcesses, gitDelivery, send }: TaskContext,
-  { check, validate, prompt, resumeExecution, gitInstructions = true, allowRestack = false }: ResumeOptions
+  { check, validate, prompt, resumeExecution, acceptExecution, rollbackExecution,
+    gitInstructions = true, allowRestack = false }: ResumeOptions
 ): Promise<Task> {
   const task = check()
   validate(task)
@@ -83,6 +86,7 @@ export async function resumeTaskTurn(
           ? message
           : undefined
       })
+      acceptExecution?.(task.id)
       send('task:updated', store.getTask(task.id) ?? running)
       return store.getTask(task.id) ?? running
     } catch (error) {
@@ -95,7 +99,10 @@ export async function resumeTaskTurn(
           inputTokens: latest.inputTokens, outputTokens: latest.outputTokens, cachedTokens: latest.cachedTokens,
           totalTokens: latest.totalTokens, costUsd: latest.costUsd
         })!
-        if (previousState) store.saveTaskExecution(previousState)
+        if (previousState) {
+          if (rollbackExecution) rollbackExecution(task.id, previousState)
+          else store.saveTaskExecution(previousState)
+        }
         send('task:updated', restored)
       }
       throw error

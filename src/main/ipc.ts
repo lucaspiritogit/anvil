@@ -164,7 +164,7 @@ export function registerIpc(
     recordSystemEvent: taskEvents.recordSystemEvent,
     requireFinishedTask: execution.requireFinishedTask
   }
-  registerSteeringHandlers(ipc, { ...context, ...taskEvents, resumeTask: execution.resumeTask })
+  registerSteeringHandlers(ipc, { ...context, ...taskEvents, ...execution })
   registerReviewHandlers(ipc, reviewContext)
   const credentials = (workspaceId: string): GitHubCredentials => new GitHubCredentials(join(store.getWorkspaceDirectory(workspaceId), 'github-token.enc'))
   const githubClient = new GitHubClient()

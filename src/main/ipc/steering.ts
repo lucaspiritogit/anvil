@@ -11,11 +11,13 @@ import { isTaskSettled } from '../../shared/task-settlement'
 interface SteeringHandlerDependencies extends TaskContext {
   recordSystemEvent: RecordSystemEvent
   resumeTask: TaskExecution['resumeTask']
+  acceptTaskResume: TaskExecution['acceptTaskResume']
+  rollbackTaskResume: TaskExecution['rollbackTaskResume']
 }
 
 /** Live input stays in the active turn; stopped tasks resume their latest saved session. */
 export function registerSteeringHandlers(ipc: RendererIpc, {
-  store, agentProcesses, gitDelivery, send, recordSystemEvent, resumeTask
+  store, agentProcesses, gitDelivery, send, recordSystemEvent, resumeTask, acceptTaskResume, rollbackTaskResume
 }: SteeringHandlerDependencies): void {
   const requireStoppedTask = (task: Task): void => {
     if (task.status === 'running' || agentProcesses.isRunning(task.id) ||
@@ -48,6 +50,8 @@ export function registerSteeringHandlers(ipc: RendererIpc, {
           requireStoppedTask(current)
         },
         resumeExecution: resumeTask,
+        acceptExecution: acceptTaskResume,
+        rollbackExecution: rollbackTaskResume,
         gitInstructions: false,
         prompt: (_current, state) => taskFollowupPrompt(state!, message)
       })
