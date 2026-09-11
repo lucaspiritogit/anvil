@@ -1,4 +1,4 @@
-import type { AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, ComposerPreferences, WorkspacePreferences, TaskComment, TaskMergePreview } from './types'
+import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, ComposerPreferences, WorkspacePreferences, TaskComment, TaskMergePreview } from './types'
 
 /** The renderer supplies identities, never paths for privileged project actions. */
 export interface IpcRequests {
@@ -36,6 +36,7 @@ export interface IpcRequests {
   'tasks:list': undefined
   'tasks:issues': string
   'tasks:events': string
+  'tasks:events-page': TaskEventsRequest
   'tasks:diff': string
   'tasks:issue-diff': { taskId: string; issueId: string }
   'tasks:start': { parentTaskId?: string; workspaceId?: string; projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }

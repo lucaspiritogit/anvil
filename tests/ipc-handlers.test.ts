@@ -166,7 +166,7 @@ test('registers all channels and rejects foreign, subframe and navigated senders
     'agents:list', 'agents:models', 'comments:add', 'comments:list', 'comments:remove', 'comments:send',
     'github:credential-status', 'github:set-token', 'github:remove-token', 'github:pr-preview', 'github:open-pr', 'github:draft-pr-field', 'github:open-pr-url',
     'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:open-terminal', 'projects:update',
-    'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:compact', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:restack', 'tasks:settle', 'tasks:stack', 'tasks:stack-dismiss', 'tasks:start', 'tasks:steer',
+    'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:compact', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:events-page', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:restack', 'tasks:settle', 'tasks:stack', 'tasks:stack-dismiss', 'tasks:start', 'tasks:steer',
     'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set', 'workspaces:composer:import',
     'wallpapers:directory', 'wallpapers:import', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set'
   ].sort())

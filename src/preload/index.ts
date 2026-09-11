@@ -23,6 +23,8 @@ import type {
   TaskDiff,
   TaskIssueSnapshot,
   TaskEvent,
+  TaskEventsRequest,
+  TaskEventsPage,
   TaskMergePreview,
   Settings,
   Wallpaper
@@ -135,6 +137,7 @@ const api = {
     list: (): Promise<Task[]> => invoke('tasks:list'),
     issues: (taskId: string): Promise<TaskIssueSnapshot | null> => invoke('tasks:issues', taskId),
     events: (taskId: string): Promise<TaskEvent[]> => invoke('tasks:events', taskId),
+    eventsPage: (input: TaskEventsRequest): Promise<TaskEventsPage> => invoke('tasks:events-page', input),
     diff: (taskId: string): Promise<TaskDiff> => invoke('tasks:diff', taskId),
     issueDiff: (input: IpcRequests['tasks:issue-diff']): Promise<TaskDiff> => invoke('tasks:issue-diff', input),
     start: (input: IpcRequests['tasks:start']): Promise<Task> => invoke('tasks:start', input),

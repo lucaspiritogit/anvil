@@ -1,3 +1,4 @@
+import { MAX_TASK_EVENT_PAGE_SIZE } from '../../shared/types'
 import { MIN_FONT_SIZE, MAX_FONT_SIZE, OVERVIEW_COLOR_PATTERN, WALLPAPER_ID_PATTERN } from '../../shared/appearance'
 import { hasTaskContent, parseTaskImages } from '../../shared/task-images'
 import { isOllamaBaseUrl } from '../../shared/memory-settings'
@@ -144,6 +145,15 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:list': none,
   'tasks:issues': id,
   'tasks:events': id,
+  'tasks:events-page': (value, field) => {
+    const cursor = object({ taskId: id, sequence: number(1) })
+    const request = object({ taskId: id, limit: optional(number(1, MAX_TASK_EVENT_PAGE_SIZE)), before: optional(cursor), after: optional(cursor) })(value, field)
+    if (request.before && request.after) invalid(field, 'must specify only one event cursor')
+    if ([request.before, request.after].some((bound) => bound && bound.taskId !== request.taskId)) {
+      invalid(field, 'cursor must belong to the requested task')
+    }
+    return request
+  },
   'tasks:diff': id,
   'tasks:issue-diff': object({ taskId: id, issueId: id }),
   'tasks:start': (value, field) => {

@@ -5,13 +5,14 @@ import { normalizeWorkspaceName, readRootConfig, writeRootConfig, type RootConfi
 import { archiveLegacyRoot, migrateLegacyRoot, relocateTaskPaths } from './legacy-root-storage'
 import { TaskImageStorage } from './task-image-storage'
 import type { PullRequestMerged } from '../shared/github-pull-request-state'
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, lt, inArray, isNull, sql } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { DEFAULT_WORKSPACE_ID } from '../shared/types'
+import { DEFAULT_WORKSPACE_ID, DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '../shared/types'
+import type { TaskEventsRequest, TaskEventsPage, TaskEventCursor } from '../shared/types'
 import * as schema from './db/schema'
 import { canSettleTask, settlementDeadline } from '../shared/task-settlement'
 import { DEFAULT_KEYBINDINGS, normalizeKeybindings } from '../shared/keybindings'
@@ -437,7 +438,7 @@ export class Store {
       if (task.status !== 'running' && !unfinishedDelivery) continue
       // Old versions used cancellation for shutdown too. An unfinished delivery
       // without an explicit Stop event is recoverable after restart.
-      const stoppedByUser = task.status === 'cancelled' && this.readEvents(task.id).some((event) => event.text === 'Stop requested by user.')
+      const stoppedByUser = task.status === 'cancelled' && this.hasUserStopEvent(task.id)
       this.updateTask(task.id, {
         status: stoppedByUser ? 'cancelled' : 'pending',
         deliveryStatus: task.deliveryStatus === 'unavailable' ? 'unavailable' : 'agent_failed',
@@ -706,15 +707,62 @@ export class Store {
     }).run()
   }
 
-  readEvents(taskId: string): TaskEvent[] {
+  private hasUserStopEvent(taskId: string): boolean {
+    return !!this.taskConnection(taskId).db.select({ sequence: taskEvents.sequence }).from(taskEvents)
+      .where(and(eq(taskEvents.taskId, taskId), eq(taskEvents.text, 'Stop requested by user.'))).limit(1).get()
+  }
+
+  /** Bounded compatibility API for array consumers. */
+  readEvents(taskId: string, limit = DEFAULT_TASK_EVENT_PAGE_SIZE): TaskEvent[] {
+    return this.readEventsPage({ taskId, limit }).events.map(({ sequence: _sequence, ...event }) => event)
+  }
+
+  readEventsPage({ taskId, limit = DEFAULT_TASK_EVENT_PAGE_SIZE, before, after }: TaskEventsRequest): TaskEventsPage {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_TASK_EVENT_PAGE_SIZE) throw new Error('Invalid event page limit')
+    if (before !== undefined && after !== undefined) throw new Error('Specify only one event cursor')
+    for (const cursor of [before, after]) {
+      if (cursor !== undefined && (!cursor || cursor.taskId !== taskId || !Number.isSafeInteger(cursor.sequence) || cursor.sequence < 1)) {
+        throw new Error('Invalid task event cursor')
+      }
+    }
+    const empty: TaskEventsPage = { events: [], oldestCursor: null, newestCursor: null, hasOlder: false, hasNewer: false }
+    if (!this.getTask(taskId)) return empty
+    const connection = this.taskConnection(taskId)
+    // Keep rows and navigation metadata in the same read snapshot.
+    return connection.sqlite.transaction(() => {
+      const scope = eq(taskEvents.taskId, taskId)
+      const rows = connection.db.select().from(taskEvents).where(and(scope,
+        before ? lt(taskEvents.sequence, before.sequence) : after ? gt(taskEvents.sequence, after.sequence) : undefined
+      )).orderBy(after ? asc(taskEvents.sequence) : desc(taskEvents.sequence)).limit(limit).all()
+      if (!after) rows.reverse()
+      const cursor = (row: TaskEventRow | undefined): TaskEventCursor | null => row ? { taskId, sequence: row.sequence } : null
+      const oldestCursor = cursor(rows[0])
+      const newestCursor = cursor(rows.at(-1))
+      const anchor = before ?? after
+      const oldest = oldestCursor?.sequence ?? anchor?.sequence
+      const newest = newestCursor?.sequence ?? anchor?.sequence
+      const exists = (condition: ReturnType<typeof lt>): boolean => !!connection.db.select({ sequence: taskEvents.sequence })
+        .from(taskEvents).where(and(scope, condition)).limit(1).get()
+      return {
+        events: rows.map((row) => ({ ...toTaskEvent(row), sequence: row.sequence })), oldestCursor, newestCursor,
+        hasOlder: oldest !== undefined && exists(lt(taskEvents.sequence, oldest)),
+        hasNewer: newest !== undefined && exists(gt(taskEvents.sequence, newest))
+      }
+    })()
+  }
+
+  /** Select messages before applying the bound so tool traffic cannot crowd out the final summary. */
+  readMessageTail(taskId: string): TaskEvent[] {
     if (!this.getTask(taskId)) return []
     const db = this.taskConnection(taskId).db
     return db
       .select()
       .from(taskEvents)
-      .where(eq(taskEvents.taskId, taskId))
-      .orderBy(asc(taskEvents.sequence))
+      .where(and(eq(taskEvents.taskId, taskId), eq(taskEvents.category, 'message'), sql`length(trim(${taskEvents.text})) > 0`))
+      .orderBy(desc(taskEvents.sequence))
+      .limit(DEFAULT_TASK_EVENT_PAGE_SIZE)
       .all()
+      .reverse()
       .map(toTaskEvent)
   }
 

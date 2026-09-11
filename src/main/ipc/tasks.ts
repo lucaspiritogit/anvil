@@ -13,7 +13,7 @@ import type { TaskExecution } from '../tasks/task-execution'
 import { withTaskOperation, cancelTaskOperation } from '../tasks/operations'
 import { TaskIssues } from '../tasks/task-issues'
 import { titleFor } from '../tasks/task-title'
-import type { Task, TaskDiff, TaskIssueSnapshot } from '../../shared/types'
+import type { Task, TaskDiff, TaskIssueSnapshot, TaskEvent, TaskEventsPage } from '../../shared/types'
 
 interface TaskHandlerDependencies extends TaskContext, TaskEvents, TaskExecution {
   promptWithProjectMemory: TaskMemory['promptWithProjectMemory']
@@ -109,7 +109,8 @@ export function registerTaskHandlers(ipc: RendererIpc, {
     const snapshot = issues.snapshot(taskId)
     return snapshot && { ...snapshot, reviewReady: issueReviewReady(taskId) }
   })
-  ipc.handle('tasks:events', (_event, taskId: string) => store.readEvents(taskId))
+  ipc.handle('tasks:events', (_event, taskId: string): TaskEvent[] => store.readEvents(taskId))
+  ipc.handle('tasks:events-page', (_event, input): TaskEventsPage => store.readEventsPage(input))
   ipc.handle('tasks:diff', async (_event, taskId: string): Promise<TaskDiff> => {
     const task = store.getTask(taskId)
     if (!task?.baseCommit || !task.headCommit) throw new Error('This task has no delivered code')

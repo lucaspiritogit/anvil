@@ -47,7 +47,7 @@ export function createTaskMemory(
       if (!store.getSettings(task.workspaceId).memoryEnabled) return
       await memory.rememberCompletedTask({
         task,
-        events: store.readEvents(task.id),
+        events: store.readMessageTail(task.id),
         ...(diff ? { diff } : {})
       })
     } catch (error) {

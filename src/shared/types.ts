@@ -227,6 +227,32 @@ export interface TaskEvent {
   text: string
 }
 
+export const DEFAULT_TASK_EVENT_PAGE_SIZE = 500
+export const MAX_TASK_EVENT_PAGE_SIZE = 4_000
+
+/** Insertion position within one task; timestamps and snapshot updates do not move it. */
+export interface TaskEventCursor {
+  taskId: string
+  sequence: number
+}
+
+export interface TaskEventsRequest {
+  taskId: string
+  limit?: number
+  /** Exclusive bounds. Omit both to return to the latest page. */
+  before?: TaskEventCursor
+  after?: TaskEventCursor
+}
+
+export interface TaskEventsPage {
+  /** Always chronological by insertion sequence, including on backward reads. */
+  events: (TaskEvent & { sequence: number })[]
+  oldestCursor: TaskEventCursor | null
+  newestCursor: TaskEventCursor | null
+  hasOlder: boolean
+  hasNewer: boolean
+}
+
 export const DEFAULT_WORKSPACE_ID = 'default'
 export const MAX_WORKSPACE_NAME_LENGTH = 80
 
