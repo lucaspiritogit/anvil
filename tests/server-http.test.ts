@@ -21,7 +21,7 @@ async function serve(runtime = registerTestIpc()) {
   const rpc = (channel: string, input?: unknown) => fetch(`${url}/rpc`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel, input })
   })
-  return { url, rpc }
+  return { url, rpc, http }
 }
 
 test('HTTP exposes health, snapshots and validated domain handlers on loopback', async () => {
@@ -64,7 +64,10 @@ test('HTTP rejects foreign origins, DNS rebinding, malformed JSON and oversized 
   }
   expect((await fetch(`${url}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' })).status).toBe(400)
   expect((await fetch(`${url}/rpc`, { method: 'POST', body: '{}' })).status).toBe(415)
-  expect((await fetch(`${url}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: ' '.repeat(RPC_BODY_LIMIT + 1) })).status).toBe(413)
+  expect((await fetch(`${url}/rpc`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{' })).status).toBe(415)
+  const oversized = await fetch(`${url}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: ' '.repeat(RPC_BODY_LIMIT + 1) })
+  expect(oversized.status).toBe(413)
+  expect(await oversized.json()).toEqual({ error: 'RPC body too large' })
   expect(isLoopbackAddress('127.0.0.1')).toBe(true)
   expect(isLoopbackAddress('::1')).toBe(true)
   for (const address of ['0.0.0.0', '192.168.1.2', undefined]) expect(isLoopbackAddress(address)).toBe(false)
@@ -139,6 +142,27 @@ test('SSE receives runtime broadcasts and disconnects cleanly', async () => {
   expect(event).toContain('"channel":"workspaces:changed"')
   expect(event).toContain('HTTP workspace')
   await reader.cancel()
+})
+
+test('aborted SSE clients are cleaned up and the server keeps broadcasting', async () => {
+  const runtime = registerTestIpc()
+  const { url, rpc, http } = await serve(runtime)
+  const controller = new AbortController()
+  const aborted = await fetch(`${url}/events`, { signal: controller.signal })
+  const abortedReader = aborted.body!.getReader()
+  await abortedReader.read()
+  controller.abort()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const response = await fetch(`${url}/events`)
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  expect(decoder.decode((await reader.read()).value)).toContain(': connected')
+  await rpc('workspaces:create', 'after abort')
+  const event = decoder.decode((await reader.read()).value)
+  expect(event).toContain('"channel":"workspaces:changed"')
+  expect(event).toContain('after abort')
+  await reader.cancel()
+  await expect(http.close()).resolves.toBeUndefined()
 })
 
 test('HTTP keeps exact routes, JSON errors and empty RPC results', async () => {
