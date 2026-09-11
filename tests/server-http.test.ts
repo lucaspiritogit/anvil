@@ -85,6 +85,72 @@ test('SSE receives runtime broadcasts and disconnects cleanly', async () => {
   await reader.cancel()
 })
 
+test('HTTP keeps exact routes, JSON errors and empty RPC results', async () => {
+  const http = createAnvilHttpServer({
+    invoke: (channel) => {
+      if (channel === 'projects:list') throw new Error('Database unavailable')
+      if (channel === 'agents:list') throw 'Non-Error rejection'
+      return undefined
+    },
+    subscribeAll: () => () => {}
+  }, { version: 'test' })
+  const url = await http.listen(0)
+  onTestCleanup(() => http.close())
+  for (const path of ['/missing', '/health/', '/health?query=1']) {
+    const response = await fetch(`${url}${path}`)
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({ error: 'Not found' })
+    expect(response.headers.get('cache-control')).toBe('no-store')
+  }
+  expect((await fetch(`${url}/health`, { method: 'HEAD' })).status).toBe(404)
+  const rpc = (body: unknown) => fetch(`${url}/rpc`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  })
+  expect(await (await rpc({ channel: 'workspaces:snapshot' })).json()).toBeNull()
+  const failed = await rpc({ channel: 'projects:list' })
+  expect(failed.status).toBe(500)
+  expect(await failed.json()).toEqual({ error: 'Database unavailable' })
+  const rejected = await rpc({ channel: 'agents:list' })
+  expect(rejected.status).toBe(500)
+  expect(await rejected.json()).toEqual({ error: 'RPC failed' })
+  for (const body of [null, [], {}, { channel: 1 }, { channel: 'projects:list', extra: true }]) {
+    expect((await rpc(body)).status).toBe(400)
+  }
+})
+
+test('HTTP enforces the body limit for chunked requests without Content-Length', async () => {
+  const { url } = await serve()
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const chunk = new Uint8Array(1024 * 1024).fill(32)
+      for (let size = 0; size <= RPC_BODY_LIMIT; size += chunk.byteLength) controller.enqueue(chunk)
+      controller.close()
+    }
+  })
+  const response = await fetch(`${url}/rpc`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body, duplex: 'half'
+  } as RequestInit)
+  expect(response.status).toBe(413)
+  expect(await response.json()).toEqual({ error: 'RPC body too large' })
+})
+
+test('HTTP shutdown closes active event streams and unsubscribes from runtime events', async () => {
+  let unsubscribed = false
+  const http = createAnvilHttpServer({
+    invoke: () => undefined,
+    subscribeAll: () => () => { unsubscribed = true }
+  }, { version: 'test' })
+  const url = await http.listen(0)
+  onTestCleanup(() => http.close())
+  const response = await fetch(`${url}/events`)
+  const reader = response.body!.getReader()
+  await reader.read()
+  const closing = http.close()
+  expect((await reader.read()).done).toBe(true)
+  await closing
+  expect(unsubscribed).toBe(true)
+})
+
 test('HTTP decodes base64 before validation, including the complete 20 MiB image budget', async () => {
   const registry = createHandlerRegistry()
   let received: Uint8Array[] = []

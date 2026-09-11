@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
-import { createServer, type Server as HttpServer } from 'node:http'
+import { createAdaptorServer, type HttpBindings, type ServerType } from '@hono/node-server'
+import { Hono } from 'hono'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import type { CreateIssue, UpdateIssue, Completion } from '../../shared/valence'
 import type { Store } from '../store'
@@ -119,7 +120,7 @@ interface TaskToolOwner {
 export class IssueToolServer {
   private readonly owners = new Map<string, TaskToolOwner>()
   private readonly branchCalls = new Set<Promise<unknown>>()
-  private server?: HttpServer
+  private server?: ServerType
   private starting?: Promise<string>
   private closed = false
 
@@ -140,60 +141,62 @@ export class IssueToolServer {
   }
 
   private async listen(): Promise<string> {
-    const [{ Server }, { StreamableHTTPServerTransport }, { CallToolRequestSchema, ListToolsRequestSchema }] = await Promise.all([
+    const [{ Server }, { WebStandardStreamableHTTPServerTransport }, { CallToolRequestSchema, ListToolsRequestSchema }] = await Promise.all([
       import('@modelcontextprotocol/sdk/server/index.js'),
-      import('@modelcontextprotocol/sdk/server/streamableHttp.js'),
+      import('@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'),
       import('@modelcontextprotocol/sdk/types.js')
     ])
     if (this.closed) throw new Error('Issue tools are closed')
-    const server = createServer((request, response) => {
-      void (async () => {
-        const authorization = request.headers.authorization ?? ''
-        const owner = this.owners.get(authorization)
-        if (!owner?.active || request.headers.origin || request.url !== '/mcp') {
-          response.writeHead(403).end()
-          return
-        }
-        if (request.method !== 'POST') {
-          response.writeHead(405, { Allow: 'POST' }).end()
-          return
-        }
-        const turn = owner.turn
-        const checkTurn = (): void => {
-          if (this.closed || !owner.active || owner.turn !== turn || this.owners.get(authorization) !== owner) throw new Error('Agent turn has ended')
-        }
-        const protocol = new Server({ name: 'anvil_issue_tracker', version: '1.0.0' }, { capabilities: { tools: {} } })
-        protocol.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: ISSUE_TOOLS }))
-        protocol.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
-          try {
-            checkTurn()
-            const args = toolArguments(params.name, params.arguments ?? {})
-            let result: unknown
-            if (params.name === 'anvil_set_task_branch') {
-              if (!this.branches) throw new Error('Task branch naming is unavailable')
-              if (typeof args.branchName !== 'string') throw new Error('Branch name must be a string')
-              const call = this.branches.set(owner.taskId, owner.workspaceId, args.branchName, checkTurn)
-              this.branchCalls.add(call)
-              try { result = await call }
-              finally { this.branchCalls.delete(call) }
-            } else {
-              result = callIssueTool(this.store, owner.taskId, owner.workspaceId, params.name, args)
-              if (params.name !== 'anvil_get_plan') this.changed(owner.taskId)
-            }
-            return { content: [{ type: 'text', text: JSON.stringify(result) }] }
-          } catch (error) {
-            return { isError: true, content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }] }
-          }
-        })
-        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
-        response.on('close', () => { void protocol.close() })
-        await protocol.connect(transport)
-        await transport.handleRequest(request, response)
-      })().catch(() => {
-        if (!response.headersSent) response.writeHead(500)
-        response.end()
-      })
+    const app = new Hono<{ Bindings: HttpBindings }>()
+    app.use('*', async (context, next) => {
+      const owner = this.owners.get(context.req.header('authorization') ?? '')
+      if (!owner?.active || context.req.header('origin') || context.env.incoming.url !== '/mcp') {
+        return context.body(null, 403)
+      }
+      if (context.req.method !== 'POST') {
+        context.header('Allow', 'POST')
+        return context.body(null, 405)
+      }
+      await next()
     })
+    app.post('/mcp', async (context) => {
+      const authorization = context.req.header('authorization') ?? ''
+      const owner = this.owners.get(authorization)
+      if (!owner?.active) return context.body(null, 403)
+      const turn = owner.turn
+      const checkTurn = (): void => {
+        if (this.closed || !owner.active || owner.turn !== turn || this.owners.get(authorization) !== owner) throw new Error('Agent turn has ended')
+      }
+      const protocol = new Server({ name: 'anvil_issue_tracker', version: '1.0.0' }, { capabilities: { tools: {} } })
+      protocol.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: ISSUE_TOOLS }))
+      protocol.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
+        try {
+          checkTurn()
+          const args = toolArguments(params.name, params.arguments ?? {})
+          let result: unknown
+          if (params.name === 'anvil_set_task_branch') {
+            if (!this.branches) throw new Error('Task branch naming is unavailable')
+            if (typeof args.branchName !== 'string') throw new Error('Branch name must be a string')
+            const call = this.branches.set(owner.taskId, owner.workspaceId, args.branchName, checkTurn)
+            this.branchCalls.add(call)
+            try { result = await call }
+            finally { this.branchCalls.delete(call) }
+          } else {
+            result = callIssueTool(this.store, owner.taskId, owner.workspaceId, params.name, args)
+            if (params.name !== 'anvil_get_plan') this.changed(owner.taskId)
+          }
+          return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+        } catch (error) {
+          return { isError: true, content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }] }
+        }
+      })
+      const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
+      context.env.outgoing.once('close', () => { void protocol.close() })
+      await protocol.connect(transport)
+      return transport.handleRequest(context.req.raw)
+    })
+    app.onError((_, context) => context.body(null, 500))
+    const server = createAdaptorServer({ fetch: app.fetch, overrideGlobalObjects: false })
     this.server = server
     return new Promise<string>((resolve, reject) => {
       server.once('error', reject)
@@ -246,7 +249,7 @@ export class IssueToolServer {
     if (server?.listening) {
       await new Promise<void>((resolve) => {
         server.close(() => resolve())
-        server.closeAllConnections()
+        if ('closeAllConnections' in server) server.closeAllConnections()
       })
     }
     // Closing HTTP connections does not stop asynchronous Git work. Let any

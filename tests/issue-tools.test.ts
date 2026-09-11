@@ -256,6 +256,18 @@ test('MCP discovery and calls stay in the captured workspace and expire with the
 
   expect((await fetch(connection.url, { method: 'POST' })).status).toBe(403)
   expect((await fetch(connection.url, { method: 'POST', headers: { ...connection.headers, Origin: 'https://example.com' } })).status).toBe(403)
+  for (const method of ['GET', 'HEAD', 'DELETE', 'OPTIONS']) {
+    const response = await fetch(connection.url, { method, headers: connection.headers })
+    expect(response.status).toBe(405)
+    expect(response.headers.get('allow')).toBe('POST')
+  }
+  for (const suffix of ['/', '?query=1']) {
+    expect((await fetch(`${connection.url}${suffix}`, { method: 'POST', headers: connection.headers })).status).toBe(403)
+  }
+  const malformed = await fetch(connection.url, {
+    method: 'POST', headers: { ...connection.headers, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: '{'
+  })
+  expect(malformed.status).toBe(400)
   connection.close()
   expect((await fetch(connection.url, { method: 'POST', headers: connection.headers })).status).toBe(403)
   const resumed = await server.open('task-a')
