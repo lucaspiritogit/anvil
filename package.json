@@ -9,7 +9,7 @@
     "test:e2e": "playwright test",
     "test:issue-tracker": "node scripts/prepare-vitest-native.mjs && vitest run",
     "postinstall": "electron-rebuild -f -o better-sqlite3",
-    "dev": "electron-vite dev",
+    "dev": "node scripts/dev.cjs",
     "build": "npm run typecheck && electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "db:generate": "drizzle-kit generate",
