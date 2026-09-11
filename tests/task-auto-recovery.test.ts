@@ -178,10 +178,13 @@ for (const stage of ['working', 'submitted', 'reviewing'] as const) {
       callIssueTool(f.store, f.task.id, f.task.workspaceId!, 'anvil_submit_review', {
         id: f.issue.id, checklist: [true], evidence: 'Validated'
       })
-      expect(f.notifications.map((n) => n.title)).toEqual(['Subtask ready for review: Implement'])
+      expect(f.notifications).toEqual([])
     }
     f.agents.active.delete(f.task.id)
-    if (stage === 'reviewing') await f.execution.finishTaskTurn({ taskId: f.task.id, code: 0, cancelled: false })
+    if (stage === 'reviewing') {
+      await f.execution.finishTaskTurn({ taskId: f.task.id, code: 0, cancelled: false })
+      expect(f.notifications.map((n) => n.title)).toEqual(['Subtask ready for review: Implement'])
+    }
     f.notifications.length = 0
     await f.execution.finishTaskTurn({ taskId: f.task.id, code: null, cancelled: true })
     expect(f.notifications).toEqual([{ title: 'Subtask cancelled: Implement', body: `Task · ${f.issue.id}` }])

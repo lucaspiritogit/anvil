@@ -282,9 +282,23 @@ test('upgrades a legacy database twice without losing settings, sessions, execut
     expect(store.getActiveWorkspace().id).toBe(DEFAULT_WORKSPACE_ID)
     expect(store.getSettings()).toMatchObject({ defaultAgentId: 'codex', caffeineMode: true, fontSize: 18 })
     const workspaceDb = rawDatabase(store.getWorkspaceDatabasePath('default'))
-    expect(workspaceDb.prepare('SELECT * FROM tasks').get()).toEqual({ ...originalTask, workspace_id: DEFAULT_WORKSPACE_ID, context_used: null, context_size: null, context_compaction_error: null })
+    expect(workspaceDb.prepare('SELECT * FROM tasks').get()).toEqual({
+      ...originalTask,
+      workspace_id: DEFAULT_WORKSPACE_ID,
+      parent_task_id: null,
+      expected_files: null,
+      restack_state: null,
+      restack_target: null,
+      stack_suggestion: null,
+      context_used: null,
+      context_size: null,
+      context_compaction_error: null
+    })
     expect(store.getTaskExecution('task')).toEqual(state)
-    expect(tables.map((table) => workspaceDb.prepare(`SELECT * FROM ${table}`).all())).toEqual(preserved)
+    const migrated = tables.map((table) => workspaceDb.prepare(`SELECT * FROM ${table}`).all())
+    expect(migrated).toEqual(preserved.map((rows, index) => tables[index] === 'issues'
+      ? rows.map((row) => ({ ...row, expected_files: null }))
+      : rows))
     expect(store.issueTracker('project').list().map((issue) => issue.id)).toEqual(['first', 'second'])
     expect(workspaceDb.pragma('foreign_key_check')).toEqual([])
     store.close()
