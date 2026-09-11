@@ -1,7 +1,7 @@
 import type { Task } from '../../shared/types'
 import type { Store } from '../store'
 
-export type TaskOperation = 'steer' | 'review' | 'rebase' | 'merge' | 'pull-request' | 'draft'
+export type TaskOperation = 'compact' | 'steer' | 'review' | 'rebase' | 'merge' | 'pull-request' | 'draft'
 
 interface Reservation { operation: TaskOperation; cancelled: boolean }
 const reservations = new WeakMap<Store, Map<string, Reservation>>()

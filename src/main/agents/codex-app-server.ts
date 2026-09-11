@@ -122,6 +122,12 @@ export class CodexAppServerClient implements AgentExecutor {
     return { models: [...reasoning.keys()], reasoningByModel: Object.fromEntries(reasoning) }
   }
 
+  compact(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult> {
+    if ([...this.executions].some((entry) => entry.thread() === input.resumeSessionId)) throw new Error('This session already has an active turn')
+    if (!input.resumeSessionId) throw new Error('Compaction requires a saved session')
+    return this.execute({ ...input, compactOnly: true, resumeFallbackPrompt: undefined, images: undefined }, onEvent)
+  }
+
   async execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult> {
     let output = new CodexAppServerOutput(input, onEvent)
     let connection: CodexAppServerConnection | undefined
@@ -172,6 +178,17 @@ export class CodexAppServerClient implements AgentExecutor {
         return
       }
       if (!threadId || params.threadId !== threadId) return
+      // Compaction returns {}. Its turn identity arrives in turn/started.
+      if (!turnId && input.compactOnly && startingTurn && method === 'turn/started') {
+        turnId = codexTurn(params.turn).id
+        startingTurn = false
+        for (const event of queued.splice(0)) notification(event.method, event.params)
+        if (input.signal?.aborted) interrupt()
+      }
+      if (method === 'thread/tokenUsage/updated' && turnId) {
+        output.updateUsage(params.tokenUsage, true)
+        return
+      }
       if (!turnId) {
         if (startingTurn) {
           if (queued.length >= 10_000) throw new Error('Too many Codex events before turn/start response')
@@ -213,7 +230,7 @@ export class CodexAppServerClient implements AgentExecutor {
     const execution: CodexExecution = {
       taskId: input.taskId,
       steer: async (steering) => {
-        if (finished || input.signal?.aborted || startingTurn || !connection || !threadId || !turnId) {
+        if (input.compactOnly || finished || input.signal?.aborted || startingTurn || !connection || !threadId || !turnId) {
           throw new Error('Codex is not ready for steering. Wait for an active turn and try again.')
         }
         if (steering.sessionId !== threadId) throw new Error('The task session changed. Try sending again.')
@@ -307,19 +324,23 @@ export class CodexAppServerClient implements AgentExecutor {
       input.signal?.throwIfAborted()
       input.beforeDispatch?.()
       startingTurn = true
-      const started = await connection.request('turn/start', {
-        threadId, cwd: input.cwd, sandboxPolicy,
-        input: [
-          { type: 'text', text: prompt, text_elements: [] },
-          ...(input.images ?? []).map((image) => ({ type: 'image' as const, url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString('base64')}` }))
-        ]
-      })
-      turnId = started.turn.id
-      input.onStarted?.()
-      startingTurn = false
-      for (const event of queued) notification(event.method, event.params)
-      queued.length = 0
-      if (started.turn.status !== 'inProgress') finish(started.turn)
+      if (input.compactOnly) {
+        await request(connection.request('thread/compact/start', { threadId }))
+      } else {
+        const started = await connection.request('turn/start', {
+          threadId, cwd: input.cwd, sandboxPolicy,
+          input: [
+            { type: 'text', text: prompt, text_elements: [] },
+            ...(input.images ?? []).map((image) => ({ type: 'image' as const, url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString('base64')}` }))
+          ]
+        })
+        turnId = started.turn.id
+        input.onStarted?.()
+        startingTurn = false
+        for (const event of queued) notification(event.method, event.params)
+        queued.length = 0
+        if (started.turn.status !== 'inProgress') finish(started.turn)
+      }
       if (input.signal?.aborted) interrupt()
       const turn = await Promise.race([completed, connection.failure])
       stopReason = turn.status

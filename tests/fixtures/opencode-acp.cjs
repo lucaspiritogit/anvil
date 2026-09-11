@@ -84,6 +84,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       text('Old turn summary from history.')
       update({ sessionUpdate: 'tool_call', toolCallId: 'old', title: 'Old edit', kind: 'edit', status: 'completed', locations: [{ path: '/old.ts' }] })
     }
+    if (scenario === 'compact') update({ sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'compact', description: 'Compact session' }] })
     respond(message.id, { sessionId, configOptions: sessionConfig() })
   } else if (message.method === 'session/set_config_option') {
     if (hasModeConfig && message.params.configId === 'mode') {
@@ -108,6 +109,11 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     modelSelected = true
     respond(message.id, { configOptions: selectedConfig() })
   } else if (message.method === 'session/prompt') {
+    if (scenario === 'compact') {
+      if (message.params.prompt[0].text !== '/compact') process.exit(17)
+      update({ sessionUpdate: 'usage_update', used: 120, size: 1000 })
+      return respond(message.id, { stopReason: 'end_turn' })
+    }
     if (hasModeConfig && !planSelected) process.exit(14)
     promptId = message.id
     if (scenario === 'read-only-config-draft') {

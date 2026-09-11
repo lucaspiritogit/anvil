@@ -1,3 +1,5 @@
+import { CONTEXT_COMPACTED } from '../../shared/task-context'
+import type { TaskInput, TaskEvent as ExecutorEvent } from './agent-executor'
 import type { IssueToolConnection } from '../issue-tools/server'
 import type { WorkspaceExecutionContext } from './workspace-execution'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -32,6 +34,7 @@ export interface StartOptions {
   projectPath?: string
   /** Resume this agent session instead of starting a fresh one. */
   resumeSessionId?: string
+  autoCompact?: boolean
   /** Explicit recovery context for an interrupted task whose saved session is missing. */
   resumeFallbackPrompt?: string
   beforeDispatch?: () => void
@@ -233,6 +236,85 @@ export class AgentProcessManager extends EventEmitter {
     return new Promise((resolve, reject) => this.start({ ...opts, onStarted: resolve, onStartFailed: reject }))
   }
 
+  private emitExecutorEvent(event: ExecutorEvent, issueId?: string): void {
+    switch (event.type) {
+      case 'output':
+        this.emit('event', { ...event.event, issueId } satisfies TaskEvent)
+        break
+      case 'session':
+        this.emit('session', { taskId: event.taskId, sessionId: event.sessionId } satisfies SessionInfo)
+        break
+      case 'usage':
+        this.emit('usage', { taskId: event.taskId, ...event.usage } satisfies UsageInfo)
+        break
+      case 'context':
+        this.emit('context', event)
+        break
+    }
+  }
+
+  private async compactSession(client: AgentExecutor, input: TaskInput): Promise<void> {
+    if (!client.compact || !input.resumeSessionId) throw new Error('This agent cannot compact this session')
+    this.emit('compaction', { taskId: input.taskId, running: true })
+    this.steeringExecutors.delete(input.taskId)
+    let marker = false
+    let dispatched = false
+    let updatedOccupancy = false
+    const timeout = setTimeout(() => this.serverExecutions.get(input.taskId)?.abort(), 120_000)
+    try {
+      const result = await client.compact({ ...input, onStarted: undefined, beforeDispatch: () => {
+        input.beforeDispatch?.()
+        dispatched = true
+      } }, (event) => {
+        if (dispatched && event.type === 'context') updatedOccupancy = true
+        if (event.type === 'output' && event.event.text === CONTEXT_COMPACTED) marker = true
+        this.emitExecutorEvent(event, input.issueId)
+      })
+      if (result.status !== 'succeeded') throw new Error(result.error ?? 'Context compaction was cancelled or timed out')
+      if (!updatedOccupancy) this.emit('context', { taskId: input.taskId, contextUsed: null, contextSize: null })
+      if (!marker) this.emitSystem(input.taskId, CONTEXT_COMPACTED, false, input.issueId)
+      this.emit('compaction', { taskId: input.taskId, running: false, error: null })
+    } catch (failure) {
+      const error = failure instanceof Error ? failure.message : String(failure)
+      this.emitSystem(input.taskId, `Context compaction failed: ${error}`, true, input.issueId)
+      this.emit('compaction', { taskId: input.taskId, running: false, error })
+      throw failure
+    } finally {
+      clearTimeout(timeout)
+      this.emit('usage-boundary', input.taskId)
+    }
+  }
+
+  /** Holds the same execution lock as coding turns without changing task lifecycle. */
+  async compact(opts: StartOptions): Promise<void> {
+    if (this.shutdown) throw new Error('Agent processes are shutting down')
+    this.requireAccountReady(opts.workspace.workspaceId)
+    if (this.taskWorkspace && this.taskWorkspace(opts.taskId).workspaceId !== opts.workspace.workspaceId) throw new Error('Task workspace changed')
+    if (this.isRunning(opts.taskId)) throw new Error('Wait for the active turn to finish before compacting')
+    if (!opts.agent.supportsCompaction) throw new Error('This agent does not support compaction')
+    opts.beforeDispatch?.()
+    const controller = new AbortController()
+    this.serverExecutions.set(opts.taskId, controller)
+    this.executionWorkspaces.set(opts.taskId, opts.workspace.workspaceId)
+    const completion = (async () => {
+      const issueTools = await this.openIssueTools?.(opts.taskId)
+      try {
+        controller.signal.throwIfAborted()
+        await this.compactSession(this.executor(opts.agent.id, opts.workspace), { ...opts, issueTools, signal: controller.signal })
+      } finally { issueTools?.close() }
+    })()
+    const settled = completion.then(() => {}, () => {})
+    this.completions.add(settled)
+    try {
+      await completion
+    } finally {
+      this.serverExecutions.delete(opts.taskId)
+      this.executionWorkspaces.delete(opts.taskId)
+      this.cancelled.delete(opts.taskId)
+      this.completions.delete(settled)
+    }
+  }
+
   private startServer(opts: StartOptions, client: AgentExecutor): void {
     const { issueId } = opts
     const controller = new AbortController()
@@ -250,19 +332,19 @@ export class AgentProcessManager extends EventEmitter {
       const issueTools = await this.openIssueTools?.(opts.taskId)
       try {
         controller.signal.throwIfAborted()
-        return await client.execute({ ...input, issueTools, onStarted, signal: controller.signal }, (event) => {
-          switch (event.type) {
-            case 'output':
-              this.emit('event', { ...event.event, issueId } satisfies TaskEvent)
-              break
-            case 'session':
-              this.emit('session', { taskId: event.taskId, sessionId: event.sessionId } satisfies SessionInfo)
-              break
-            case 'usage':
-              this.emit('usage', { taskId: event.taskId, ...event.usage } satisfies UsageInfo)
-              break
+        if (opts.autoCompact && opts.resumeSessionId && opts.agent.supportsCompaction && client.compact) {
+          try {
+            await this.compactSession(client, { ...input, issueTools, signal: controller.signal })
+          } catch (failure) {
+            // Keep Codex's explicit missing-session recovery available. execute()
+            // alone owns creating a replacement session from the saved plan.
+            if (!opts.resumeFallbackPrompt || opts.agent.id !== 'codex' || !(failure instanceof Error) ||
+              failure.message !== `no rollout found for thread id ${opts.resumeSessionId}`) throw failure
           }
-        })
+          controller.signal.throwIfAborted()
+        }
+        if (opts.agent.supportsSteering && client.steer) this.steeringExecutors.set(opts.taskId, client)
+        return await client.execute({ ...input, issueTools, onStarted, signal: controller.signal }, (event) => this.emitExecutorEvent(event, issueId))
       } finally {
         issueTools?.close()
       }

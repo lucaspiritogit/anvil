@@ -133,6 +133,9 @@ export const tasks = sqliteTable(
     additions: integer('additions').notNull().default(0),
     deletions: integer('deletions').notNull().default(0),
     deliveryError: text('delivery_error'),
+    contextUsed: integer('context_used'),
+    contextSize: integer('context_size'),
+    contextCompactionError: text('context_compaction_error'),
     sessionId: text('session_id')
   },
   (table) => [

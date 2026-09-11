@@ -16,6 +16,7 @@ import { TaskIssues } from './TaskIssues'
 import { useTaskIssues } from '../hooks/use-task-issues'
 import { TaskActivity } from './TaskActivity'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
+import { contextOccupancy } from '@shared/task-context'
 import { isTaskSettled } from '@shared/task-settlement'
 import type {
   DeliveryStatus,
@@ -482,6 +483,19 @@ export function TaskView({ task }: Props): JSX.Element {
   const commentError = useStore((s) => s.commentError)
   const [draft, setDraft] = useState<CommentDraft | null>(null)
   const settings = useStore((s) => s.settings)
+  const supportsCompaction = useStore((s) => s.agents.find((agent) => agent.id === task.agentId)?.supportsCompaction)
+  const [compacting, setCompacting] = useState(false)
+  const [compactError, setCompactError] = useState('')
+  const compactBusy = compacting || task.contextCompacting === true
+  const occupancy = contextOccupancy(task.contextUsed, task.contextSize)
+  const contextPercent = occupancy.contextSize !== null && occupancy.contextUsed !== null ? Math.round(occupancy.contextUsed / occupancy.contextSize * 100) : null
+  const compact = async (): Promise<void> => {
+    setCompacting(true)
+    setCompactError('')
+    try { await window.anvil.tasks.compact(task.id) }
+    catch (error) { setCompactError(error instanceof Error ? error.message : String(error)) }
+    finally { setCompacting(false) }
+  }
   const openRebase = useStore((s) => s.openRebase)
   const rebaseWithAgent = useStore((s) => s.rebaseWithAgent)
   const rebasing = useStore((s) => s.rebasing === task.id)
@@ -544,7 +558,7 @@ export function TaskView({ task }: Props): JSX.Element {
   }, [issueDiffKey, diffAttempt, task.id])
 
   const retryIssueDiff = (): void => setDiffAttempt((value) => value + 1)
-  const reviewDisabled = saving || !!reviewBusy || !!issueError || !issueIsReviewReady(snapshot) || !issueDiff
+  const reviewDisabled = compactBusy || saving || !!reviewBusy || !!issueError || !issueIsReviewReady(snapshot) || !issueDiff
 
   const reviewIssue = async (action: 'approve' | 'reject'): Promise<void> => {
     if (!issue || issue.status !== 'review' || reviewDisabled) return
@@ -610,6 +624,10 @@ export function TaskView({ task }: Props): JSX.Element {
         <div className="flex items-start justify-between gap-4">
           <h1 className="min-w-0 flex-1 text-base font-medium leading-snug [overflow-wrap:anywhere]">{task.title}</h1>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs">
+            {supportsCompaction && task.sessionId && !isTaskSettled(task) && <button
+              className={btn.ghost} disabled={task.status === 'running' && !issueIsReviewReady(snapshot) || compactBusy || task.deliveryStatus === 'finalizing'}
+              onClick={() => void compact()} title="Summarize earlier model history in this task's session"
+            >{compactBusy ? 'Compacting…' : 'Compact'}</button>}
             {issue ? <>
               <span aria-label="Task status" className={cn('font-medium', ISSUE_STATUS[issuePresentation(issue, snapshot, task).status].tone)}>{saving ? 'Saving changes…' : issuePresentation(issue, snapshot, task).label}{`: ${issue.title}`}</span>
               {issue.status === 'review' && <>
@@ -678,6 +696,10 @@ export function TaskView({ task }: Props): JSX.Element {
                 <span>{formatTokens(task.outputTokens)} <span className="text-dim">out</span></span>
               </span>
             } />
+            {contextPercent !== null && <StatBlock label="Context" value={<span className={
+              task.contextCompactionError || /context[._ ]window|context window|context length/i.test(task.error ?? '') ? 'text-danger'
+                : contextPercent >= (settings?.contextCompactionThreshold ?? 75) ? 'text-warn' : undefined
+            }>{contextPercent}%</span>} detail={`${formatTokens(task.contextUsed!)} / ${formatTokens(task.contextSize!)} in the current session. Token totals are billed usage, not window fill.`} />}
             <StatBlock label="Cached" value={formatTokens(task.cachedTokens)} detail={`${formatTokens(task.cachedTokens)} cached input`} />
             <StatBlock label="Cost" value={formatCost(task.costUsd)} />
           </div>
@@ -686,6 +708,7 @@ export function TaskView({ task }: Props): JSX.Element {
 
       {issue && issueError && <Notice>Could not refresh subtask. Showing last known data. <button className={btn.text} onClick={refresh}>Retry</button></Notice>}
       {(task.error || task.deliveryError) && <Notice>{task.error || task.deliveryError}</Notice>}
+      {(compactError || task.contextCompactionError) && <Notice>{compactError || task.contextCompactionError}</Notice>}
       {reviewError && <Notice>{reviewError}</Notice>}
       {(reviewable || issue) && commentError && <Notice>{commentError}</Notice>}
 

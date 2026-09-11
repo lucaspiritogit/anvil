@@ -1,3 +1,4 @@
+import { contextOccupancy } from '../../shared/task-context'
 import { randomUUID } from 'node:crypto'
 import type { SessionUpdate, ToolCall, ToolCallUpdate, Usage } from '@agentclientprotocol/sdk'
 import type { TaskEventCategory, TaskUsage } from '../../shared/types'
@@ -69,6 +70,7 @@ export class AcpOutput {
         for (const entry of update.entries) this.line(`[${entry.status}] ${entry.content}`, 'system')
         break
       case 'usage_update':
+        this.onEvent({ type: 'context', taskId: this.input.taskId, ...contextOccupancy(update.used, update.size) })
         // ACP's `used` is context occupancy, not billable token usage. Cost is
         // session-cumulative; without a resume baseline it cannot be charged again.
         if (!this.input.resumeSessionId && update.cost?.currency === 'USD') {

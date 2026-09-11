@@ -178,6 +178,7 @@ export interface AgentDefinition {
   /** Omitted for legacy CLI execution. OpenCode uses ACP; Codex uses its own server protocol. */
   executionProtocol?: 'acp' | 'codex-app-server'
   /** The adapter can inject user input into an active turn without restarting it. */
+  supportsCompaction?: boolean
   supportsSteering?: boolean
   outputProtocol?: 'opencode-json' | 'codex-json'
 }
@@ -286,6 +287,10 @@ export interface Task {
   additions: number
   deletions: number
   deliveryError?: string
+  contextUsed?: number | null
+  contextSize?: number | null
+  contextCompactionError?: string | null
+  contextCompacting?: boolean
   /** Agent session to resume, so review follow-ups keep the original context. */
   sessionId?: string
 }
@@ -345,6 +350,8 @@ export interface Wallpaper {
 }
 
 export interface Settings {
+  autoCompactContext?: boolean
+  contextCompactionThreshold?: number
   memoryEnabled: boolean
   memoryEmbeddingModel: string
   ollamaBaseUrl: string

@@ -56,11 +56,28 @@ test('replays cumulative usage without double counting and preserves totals on r
     expect(task.cachedTokens).toBe(638208)
     expect(task.totalTokens, 'Cached input is already included, not added again').toBe(692448)
     expect(task.inputTokens - task.cachedTokens).toBe(50601)
+    agentProcesses.emit('session', { taskId: 'task', sessionId: 'saved-session' })
+    agentProcesses.emit('context', { taskId: 'task', contextUsed: 142000, contextSize: 213000 })
+    expect(store.getTask('task')).toMatchObject({ contextUsed: 142000, contextSize: 213000, totalTokens: 692448 })
+    agentProcesses.emit('compaction', { taskId: 'task', running: false, error: 'Compaction failed' })
     store.close()
     store = new Store(database, options)
+    expect(store.getTask('task')).toMatchObject({ contextUsed: 142000, contextSize: 213000, contextCompactionError: 'Compaction failed' })
+    expect(store.getSettings()).toMatchObject({ autoCompactContext: true, contextCompactionThreshold: 75 })
+    store.setSettings({ autoCompactContext: false, contextCompactionThreshold: 85 })
+    expect(store.getSettings()).toMatchObject({ autoCompactContext: false, contextCompactionThreshold: 85 })
+    expect(() => store.setSettings({ contextCompactionThreshold: 101 })).toThrow('threshold')
     for (const key of ['inputTokens', 'outputTokens', 'cachedTokens', 'totalTokens', 'costUsd'] as const) {
       expect(store.getTask('task')![key], `Restart preserves ${key}`).toBe(task[key])
     }
+    // A different issue session must not inherit occupancy or a failed compact.
+    const resumedProcesses = new EventEmitter() as TaskContext['agentProcesses']
+    registerTaskEvents({ store, agentProcesses: resumedProcesses, send: () => {} })
+    resumedProcesses.emit('session', { taskId: 'task', sessionId: 'fresh-issue' })
+    expect(store.getTask('task')?.contextUsed).toBeUndefined()
+    expect(store.getTask('task')?.contextSize).toBeUndefined()
+    expect(store.getTask('task')?.contextCompactionError).toBeUndefined()
+    expect(store.getTask('task')?.totalTokens).toBe(692448)
   } finally {
     store.close()
     rmSync(directory, { recursive: true, force: true })

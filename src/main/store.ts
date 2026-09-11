@@ -20,6 +20,8 @@ import { DEFAULT_FONT_SIZE, normalizeFontSize, DEFAULT_OVERVIEW_COLOR, OVERVIEW_
 import { DEFAULT_OLLAMA_BASE_URL, DEFAULT_EMBEDDING_MODEL, isOllamaBaseUrl } from '../shared/memory-settings'
 
 const DEFAULT_SETTINGS: Settings = {
+  autoCompactContext: true,
+  contextCompactionThreshold: 75,
   memoryEnabled: false,
   memoryEmbeddingModel: DEFAULT_EMBEDDING_MODEL,
   ollamaBaseUrl: DEFAULT_OLLAMA_BASE_URL,
@@ -37,6 +39,8 @@ const DEFAULT_SETTINGS: Settings = {
 
 /** The settings table stores text, so non-string values are encoded here. */
 const SETTING_KEYS = [
+  'autoCompactContext',
+  'contextCompactionThreshold',
   'memoryEnabled',
   'memoryEmbeddingModel',
   'ollamaBaseUrl',
@@ -53,7 +57,7 @@ const SETTING_KEYS = [
 ] as const
 
 function encodeSetting(key: keyof Settings, value: Settings[keyof Settings]): string {
-  if (key === 'confirmRebase' || key === 'caffeineMode' || key === 'memoryEnabled') return String(value === true)
+  if (key === 'autoCompactContext' || key === 'confirmRebase' || key === 'caffeineMode' || key === 'memoryEnabled') return String(value === true)
   if (key === 'keybindings') return JSON.stringify(value)
   if (key === 'overviewWallpaperId') return isWallpaperId(value) ? value : ''
   return String(value)
@@ -115,6 +119,9 @@ function toTask(row: TaskRow): Task {
     cachedTokens: row.cachedTokens,
     totalTokens: row.totalTokens,
     costUsd: row.costUsd,
+    ...(row.contextUsed === null ? {} : { contextUsed: row.contextUsed }),
+    ...(row.contextSize === null ? {} : { contextSize: row.contextSize }),
+    ...(row.contextCompactionError === null ? {} : { contextCompactionError: row.contextCompactionError }),
     deliveryStatus: row.deliveryStatus,
     ...(row.baseBranch === null ? {} : { baseBranch: row.baseBranch }),
     ...(row.branchName === null ? {} : { branchName: row.branchName }),
@@ -169,6 +176,9 @@ function toTaskRow(task: Task): typeof tasks.$inferInsert {
     baseCommit: task.baseCommit ?? null,
     headCommit: task.headCommit ?? null,
     deliveryError: task.deliveryError ?? null,
+    contextUsed: task.contextUsed ?? null,
+    contextSize: task.contextSize ?? null,
+    contextCompactionError: task.contextCompactionError ?? null,
     sessionId: task.sessionId ?? null
   }
 }
@@ -456,12 +466,13 @@ export class Store {
       .all()
       .reduce<Settings>(
         (current, row) => {
-          if (row.key === 'confirmRebase' || row.key === 'caffeineMode' || row.key === 'memoryEnabled') current[row.key] = row.value === 'true'
+          if (row.key === 'autoCompactContext' || row.key === 'confirmRebase' || row.key === 'caffeineMode' || row.key === 'memoryEnabled') current[row.key] = row.value === 'true'
           else if (row.key === 'overviewBackgroundMode') current.overviewBackgroundMode = row.value === 'image' ? 'image' : 'color'
           else if (row.key === 'overviewBackgroundColor') current.overviewBackgroundColor = OVERVIEW_COLOR_PATTERN.test(row.value) ? row.value : DEFAULT_OVERVIEW_COLOR
           else if (row.key === 'overviewWallpaperId') current.overviewWallpaperId = isWallpaperId(row.value) ? row.value : null
           else if (row.key === 'memoryEmbeddingModel') current.memoryEmbeddingModel = row.value.trim() && row.value.length <= 512 && !/\s/.test(row.value) ? row.value : DEFAULT_EMBEDDING_MODEL
           else if (row.key === 'ollamaBaseUrl') current.ollamaBaseUrl = isOllamaBaseUrl(row.value) ? row.value : DEFAULT_OLLAMA_BASE_URL
+          else if (row.key === 'contextCompactionThreshold') current.contextCompactionThreshold = Number(row.value) >= 1 && Number(row.value) <= 100 ? Number(row.value) : 75
           else if (row.key === 'fontSize') current.fontSize = normalizeFontSize(Number(row.value))
           else if (row.key === 'keybindings') current.keybindings = decodeKeybindings(row.value)
           else if (row.key === 'rebaseMode') {
@@ -478,6 +489,8 @@ export class Store {
   setSettings(next: Partial<Settings>, workspaceId = this.getActiveWorkspace().id): Settings {
     const db = this.workspaceConnection(workspaceId).db
     this.requireWorkspace(workspaceId)
+    if (next.autoCompactContext !== undefined && typeof next.autoCompactContext !== 'boolean') throw new Error('Auto-compaction must be a boolean')
+    if (next.contextCompactionThreshold !== undefined && (!Number.isInteger(next.contextCompactionThreshold) || next.contextCompactionThreshold < 1 || next.contextCompactionThreshold > 100)) throw new Error('Context threshold must be an integer from 1 to 100')
     const rows = SETTING_KEYS.filter((key) => next[key] !== undefined).map((key) => ({
       workspaceId,
       key,

@@ -139,6 +139,7 @@ const api = {
     issueDiff: (input: IpcRequests['tasks:issue-diff']): Promise<TaskDiff> => invoke('tasks:issue-diff', input),
     start: (input: IpcRequests['tasks:start']): Promise<Task> => invoke('tasks:start', input),
     steer: (input: IpcRequests['tasks:steer']): Promise<void> => invoke('tasks:steer', input),
+    compact: (taskId: string): Promise<void> => invoke('tasks:compact', taskId),
     cancel: (taskId: string): Promise<boolean> => invoke('tasks:cancel', taskId),
     delete: (taskId: string): Promise<void> => invoke('tasks:delete', taskId),
     settle: (taskId: string): Promise<Task> => invoke('tasks:settle', taskId),

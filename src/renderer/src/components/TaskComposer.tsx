@@ -169,7 +169,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
             />
             <ComposerOverflowOptions containerRef={composerRef}>
               <label className="relative flex items-center" title="Reasoning effort">
-                <Icon icon="brain-circuit" size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
+                <Icon icon="brain" size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
                 <select
                   aria-label="Reasoning effort"
                   className={cn(compactSelect, 'pl-8')}

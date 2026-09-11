@@ -89,6 +89,7 @@ const settingsPatch = object<IpcRequests['settings:set']['patch']>({
   overviewBackgroundColor: optional(text(7, true, OVERVIEW_COLOR_PATTERN)),
   overviewWallpaperId: optional(nullable(text(255, true, WALLPAPER_ID_PATTERN))),
   defaultAgentId: optional(id), defaultModel: optional(text(512, false)),
+  autoCompactContext: optional(boolean), contextCompactionThreshold: optional(number(1, 100, true)),
   rebaseMode: optional(oneOf('manual', 'agent')), confirmRebase: optional(boolean), caffeineMode: optional(boolean),
   keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false) }))
 })
@@ -151,6 +152,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
     return input
   },
   'tasks:steer': object({ taskId: id, message: text(100_000) }),
+  'tasks:compact': id,
   'tasks:cancel': id,
   'tasks:delete': id,
   'tasks:settle': id,

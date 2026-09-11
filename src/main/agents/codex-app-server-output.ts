@@ -1,3 +1,4 @@
+import { contextOccupancy, CONTEXT_COMPACTED } from '../../shared/task-context'
 import { randomUUID } from 'node:crypto'
 import type { TaskEventCategory, TaskUsage } from '../../shared/types'
 import type { TaskEvent, TaskInput } from './agent-executor'
@@ -73,7 +74,10 @@ export class CodexAppServerOutput {
   }
 
   updateUsage(value: unknown, active: boolean): void {
-    const total = tokenUsage(codexObject(value).total)
+    const data = codexObject(value)
+    const last = data.last && typeof data.last === 'object' ? data.last as CodexObject : {}
+    this.onEvent({ type: 'context', taskId: this.input.taskId, ...contextOccupancy(last.totalTokens, data.modelContextWindow) })
+    const total = tokenUsage(data.total)
     if (!active) {
       this.baseline = total
       return
@@ -134,7 +138,12 @@ export class CodexAppServerOutput {
     const id = codexId(item.id)
     const type = codexString(item.type)
     if (this.completed.has(id)) return
-    if (type === 'agentMessage') {
+    if (type === 'contextCompaction') {
+      if (complete) {
+        this.onEvent({ type: 'context', taskId: this.input.taskId, contextUsed: null, contextSize: null })
+        this.line(CONTEXT_COMPACTED, 'system', 'system')
+      }
+    } else if (type === 'agentMessage') {
       if (!this.messages.has(id)) this.messages.set(id, '')
       if (complete) {
         const text = codexString(item.text)

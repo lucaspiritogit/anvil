@@ -55,6 +55,9 @@ if (query.has('usage')) {
     ? { ...task, startedAt: now, inputTokens: 126268, outputTokens: 1759, totalTokens: 128027, costUsd: 12.34 }
     : task)
 }
+if (query.has('contextUsage')) {
+  tasks = tasks.map((task) => ({ ...task, sessionId: 'fixture-session', contextUsed: 142000, contextSize: 213000 }))
+}
 if (query.has('taskUsage')) {
   tasks = tasks.map((task) => task.id === 'output'
     ? { ...task, inputTokens: 688809, outputTokens: 3639, cachedTokens: 638208, totalTokens: 692448 }
@@ -299,7 +302,7 @@ window.anvil = {
   agents: {
     onModelsChanged: () => () => {},
     list: async () => [
-      { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5', supportsSteering: true },
+      { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5', supportsSteering: true, supportsCompaction: true },
       { id: 'opencode', label: 'OpenCode', description: 'OpenCode agent', command: 'opencode', args: [], defaultModel: 'provider/model' }
     ],
     models: async (agentId: string): Promise<ProviderModelList> => query.has('composerModel') ? {
@@ -441,6 +444,7 @@ window.anvil = {
     }
   },
   tasks: {
+    compact: async () => {},
     issues: async (taskId: string): Promise<TaskIssueSnapshot | null> => issueSnapshots[taskId] ?? null,
     list: async () => tasks,
     start: async (input: IpcRequests['tasks:start']) => {

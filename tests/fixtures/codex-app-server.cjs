@@ -215,6 +215,22 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     // A shared session-tree ID must not replace the thread resume handle.
     return respond(message.id, { thread: { id: threadId, sessionId: 'session-tree', turns: [{ id: 'old-turn', items: [{ type: 'agentMessage', id: 'old', text: 'old history' }] }] } })
   }
+  if (message.method === 'thread/compact/start') {
+    notify('turn/started', { turn: turn() })
+    item({ id: 'compact-item', type: 'contextCompaction' }, false)
+    if (scenario === 'compact-fail') {
+      notify('turn/completed', { turn: turn('failed', { message: 'context.window exhausted' }) })
+    } else {
+      item({ id: 'compact-item', type: 'contextCompaction' })
+      // Real thread usage notifications need not contain a turnId.
+      send({ method: 'thread/tokenUsage/updated', params: { threadId, tokenUsage: {
+        total: { inputTokens: 1100, outputTokens: 20, cachedInputTokens: 0, totalTokens: 1120 },
+        last: { totalTokens: 120 }, modelContextWindow: 1000
+      } } })
+      notify('turn/completed', { turn: { ...turn('completed'), items: [{ id: 'compact-item', type: 'contextCompaction' }] } })
+    }
+    return respond(message.id, {})
+  }
   if (message.method === 'turn/start') {
     const expectedPrompt = scenario === 'missing-rollout' || scenario === 'profile-recovery' ? 'Recover the saved plan and branch' : 'Implement the issue'
     if (message.params.threadId !== threadId || message.params.input[0].text !== expectedPrompt) process.exit(27)

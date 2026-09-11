@@ -1,3 +1,4 @@
+import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { implementationPrompt, taskRecoveryPrompt } from '../agents/task-prompts'
@@ -170,6 +171,7 @@ export function registerTaskExecution(
             workspace: resolveTaskWorkspace(store, task.id), agent, cwd: task.cwd,
             projectPath: project.path, model: task.model, reasoningEffort: state.reasoningEffort,
             resumeSessionId: sessionId,
+            autoCompact: shouldCompactContext(store.getTask(task.id) ?? task, store.getSettings(task.workspaceId)),
             beforeDispatch: () => {
               if (!stillCurrent()) throw new Error('Task recovery was cancelled or superseded')
             },

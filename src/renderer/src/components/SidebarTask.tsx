@@ -10,8 +10,8 @@ import { openTaskContextMenu } from './TaskContextMenu'
 
 const TASK_INDICATORS = {
   pending: { icon: 'bell-ring', label: 'Pending', tone: 'text-warn', highlight: '' },
-  running: { icon: 'brain-circuit', label: 'Working', tone: 'text-accent', highlight: '' },
-  saving: { icon: 'brain-circuit', label: 'Saving changes…', tone: 'text-accent', highlight: '' },
+  running: { icon: 'loader', label: 'Working', tone: 'text-accent', highlight: '' },
+  saving: { icon: 'loader', label: 'Saving changes…', tone: 'text-accent', highlight: '' },
   done: { icon: 'check', label: 'Done', tone: 'text-ok', highlight: '' },
   approved: { icon: 'check', label: 'Approved', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
   reviewable: { icon: 'bell-ring', label: 'Ready for review', tone: 'text-orange-400', highlight: 'bg-orange-400/8 hover:bg-orange-400/12 ring-orange-400/30' },
@@ -78,7 +78,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
       <Icon
         icon={indicator?.icon ?? 'folder'}
         size={compact ? 15 : 16}
-        className={indicator?.icon === 'brain-circuit' ? 'animate-pulse motion-reduce:animate-none' : undefined}
+        className={indicator?.icon === 'loader' ? 'animate-spin motion-reduce:animate-none' : undefined}
         aria-hidden="true"
       />
     </span>

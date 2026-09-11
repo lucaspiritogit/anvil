@@ -1,3 +1,4 @@
+import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import type { Task, TaskExecutionState } from '../../shared/types'
@@ -67,6 +68,7 @@ export async function resumeTaskTurn(
         taskId: task.id, issueId: state?.currentIssueId ?? undefined, agent, cwd: running.cwd,
         projectPath: project.path, model: current.model, reasoningEffort: state?.reasoningEffort,
         resumeSessionId: current.sessionId,
+        autoCompact: shouldCompactContext(current, store.getSettings(current.workspaceId)),
         prompt: executionPrompt,
         images,
         resumeFallbackPrompt: resumeExecution && state?.phase !== 'complete' && (!state?.hasImages || images)
@@ -79,7 +81,12 @@ export async function resumeTaskTurn(
       // Do not resurrect a deleted task or overwrite a newer lifecycle transition.
       const latest = store.getTask(task.id)
       if (latest && (!running || latest.status === 'running' && latest.deliveryStatus === running.deliveryStatus)) {
-        const restored = store.updateTask(task.id, { ...current, sessionId: latest.sessionId })!
+        const restored = store.updateTask(task.id, {
+          ...current, sessionId: latest.sessionId,
+          contextUsed: latest.contextUsed, contextSize: latest.contextSize, contextCompactionError: latest.contextCompactionError,
+          inputTokens: latest.inputTokens, outputTokens: latest.outputTokens, cachedTokens: latest.cachedTokens,
+          totalTokens: latest.totalTokens, costUsd: latest.costUsd
+        })!
         if (previousState) store.saveTaskExecution(previousState)
         send('task:updated', restored)
       }

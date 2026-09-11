@@ -25,6 +25,8 @@ export interface TaskInput {
   beforeDispatch?: () => void
   /** The transport accepted this turn, not merely its session. */
   onStarted?: () => void
+  /** Internal operational turn; never dispatched as a user prompt. */
+  compactOnly?: boolean
   signal?: AbortSignal
 }
 
@@ -32,6 +34,7 @@ export interface TaskInput {
 export type TaskEvent =
   | { type: 'output'; event: OutputTaskEvent }
   | { type: 'session'; taskId: string; sessionId: string }
+  | { type: 'context'; taskId: string; contextUsed: number | null; contextSize: number | null }
   | { type: 'usage'; taskId: string; usage: TaskUsage }
 
 export interface TaskResult {
@@ -65,6 +68,8 @@ export interface AgentExecutor {
    * and cancellation return a result; no database or renderer dependencies belong here.
    */
   execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult>
+  /** Summarizes a saved session and resolves when the compaction turn ends. */
+  compact?(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult>
   /** Injects input into an active turn. Omitted for agents without live steering. */
   steer?(input: TaskSteeringInput): Promise<void>
   /** Permanently stops this executor and waits for its server and tools to exit. */

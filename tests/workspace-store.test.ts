@@ -58,6 +58,7 @@ test('creates one Default workspace and starts new profiles with independent app
   const defaults = store.getSettings()
   addProject(store)
   const custom: Settings = {
+    autoCompactContext: false, contextCompactionThreshold: 85,
     memoryEnabled: true, memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://127.0.0.1:1234/v1',
     fontSize: 18, overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'test.png',
     defaultAgentId: 'codex', defaultModel: 'custom-model', rebaseMode: 'agent', confirmRebase: false,
@@ -281,7 +282,7 @@ test('upgrades a legacy database twice without losing settings, sessions, execut
     expect(store.getActiveWorkspace().id).toBe(DEFAULT_WORKSPACE_ID)
     expect(store.getSettings()).toMatchObject({ defaultAgentId: 'codex', caffeineMode: true, fontSize: 18 })
     const workspaceDb = rawDatabase(store.getWorkspaceDatabasePath('default'))
-    expect(workspaceDb.prepare('SELECT * FROM tasks').get()).toEqual({ ...originalTask, workspace_id: DEFAULT_WORKSPACE_ID })
+    expect(workspaceDb.prepare('SELECT * FROM tasks').get()).toEqual({ ...originalTask, workspace_id: DEFAULT_WORKSPACE_ID, context_used: null, context_size: null, context_compaction_error: null })
     expect(store.getTaskExecution('task')).toEqual(state)
     expect(tables.map((table) => workspaceDb.prepare(`SELECT * FROM ${table}`).all())).toEqual(preserved)
     expect(store.issueTracker('project').list().map((issue) => issue.id)).toEqual(['first', 'second'])

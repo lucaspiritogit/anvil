@@ -40,6 +40,7 @@ export interface IpcRequests {
   'tasks:issue-diff': { taskId: string; issueId: string }
   'tasks:start': { workspaceId?: string; projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
   'tasks:steer': { taskId: string; message: string }
+  'tasks:compact': string
   'tasks:cancel': string
   'tasks:delete': string
   'tasks:settle': string

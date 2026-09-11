@@ -97,6 +97,8 @@ export function SettingsPage(): JSX.Element {
 
   const [defaultAgentId, setDefaultAgentId] = useState(settings?.defaultAgentId ?? 'opencode')
   const [defaultModel, setDefaultModel] = useState(settings?.defaultModel ?? '')
+  const [autoCompactContext, setAutoCompactContext] = useState(settings?.autoCompactContext ?? true)
+  const [contextCompactionThreshold, setContextCompactionThreshold] = useState(settings?.contextCompactionThreshold ?? 75)
   const [confirmRebase, setConfirmRebase] = useState(settings?.confirmRebase ?? true)
   const [rebaseMode, setRebaseMode] = useState<RebaseMode>(settings?.rebaseMode ?? 'manual')
   const caffeineSave = useStore((s) => s.caffeineSave)
@@ -137,6 +139,8 @@ export function SettingsPage(): JSX.Element {
     setDefaultModel(hydrated.defaultModel)
     setRebaseMode(hydrated.rebaseMode)
     setConfirmRebase(hydrated.confirmRebase)
+    setAutoCompactContext(hydrated.autoCompactContext ?? true)
+    setContextCompactionThreshold(hydrated.contextCompactionThreshold ?? 75)
     setKeybindings(hydrated.keybindings)
   }, [settings, workspaceId])
 
@@ -192,6 +196,24 @@ export function SettingsPage(): JSX.Element {
           <fieldset className="min-w-0" disabled={!settings}>
             {section === 'providers' && <>
               <WorkspaceAgentAccounts />
+              <label className="mb-3 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={autoCompactContext} onChange={(event) => {
+                  setAutoCompactContext(event.target.checked)
+                  persist({ autoCompactContext: event.target.checked })
+                }} />
+                Auto-compact task context
+              </label>
+              <p className="mb-3 text-xs text-dim">Compacts the task's model session before resuming, without changing other tasks or the output log.</p>
+              <label className={field.wrap}>
+                <span className={field.label}>Context threshold (%)</span>
+                <input className={field.control} type="number" min={1} max={100} step={1} disabled={!autoCompactContext}
+                  value={contextCompactionThreshold} onChange={(event) => {
+                    const value = Number(event.target.value)
+                    if (!Number.isInteger(value) || value < 1 || value > 100) return
+                    setContextCompactionThreshold(value)
+                    persist({ contextCompactionThreshold: value })
+                  }} />
+              </label>
               <div className={field.wrap}>
                 <span className={field.label}>Default agent</span>
                 <ProviderPicker agents={agents} value={defaultAgentId} onChange={(value) => {

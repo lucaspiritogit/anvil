@@ -9,7 +9,7 @@ import type { TaskMemory } from '../memory/task-memory'
 import type { TaskContext } from '../tasks/context'
 import type { TaskEvents } from '../tasks/events'
 import type { TaskExecution } from '../tasks/task-execution'
-import { cancelTaskOperation } from '../tasks/operations'
+import { withTaskOperation, cancelTaskOperation } from '../tasks/operations'
 import { TaskIssues } from '../tasks/task-issues'
 import { titleFor } from '../tasks/task-title'
 import type { Task, TaskDiff, TaskIssueSnapshot } from '../../shared/types'
@@ -34,6 +34,22 @@ export function registerTaskHandlers(ipc: RendererIpc, {
   }
   const settlementTimer = setInterval(settleDueTasks, 60_000)
   settlementTimer.unref()
+
+  ipc.handle('tasks:compact', (_event, taskId) => withTaskOperation(store, taskId, 'compact', async (check) => {
+    const task = check()
+    if ((task.status === 'running' && !issueReviewReady(taskId)) || task.settledAt !== undefined || task.deliveryStatus === 'finalizing') {
+      throw new Error('Wait for the task to stop before compacting')
+    }
+    const agent = getAgent(task.agentId)
+    if (!agent?.supportsCompaction || !task.sessionId) throw new Error('This task has no session that can be compacted')
+    const state = store.getTaskExecution(taskId)
+    await agentProcesses.compact({
+      taskId, agent, workspace: resolveWorkspaceExecution(store, task.workspaceId),
+      cwd: task.cwd, model: task.model, reasoningEffort: state?.reasoningEffort,
+      issueId: state?.currentIssueId ?? undefined, resumeSessionId: task.sessionId, prompt: '',
+      beforeDispatch: () => { check() }
+    })
+  }))
 
   ipc.handle('tasks:list', () => {
     settleDueTasks()

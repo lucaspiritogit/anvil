@@ -85,6 +85,13 @@
       "when": 1788978676373,
       "tag": "0011_medical_power_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1789096443856,
+      "tag": "0012_low_silvermane",
+      "breakpoints": true
     }
   ]
 }

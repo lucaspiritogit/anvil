@@ -22,6 +22,7 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     command: 'opencode',
     args: ['acp'],
     executionProtocol: 'acp',
+    supportsCompaction: true,
     defaultModel: 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
     models: { kind: 'adapter', adapterId: 'opencode' }
   },
@@ -33,6 +34,7 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     args: ['app-server', '--listen', 'stdio://'],
     executionProtocol: 'codex-app-server',
     supportsSteering: true,
+    supportsCompaction: true,
     defaultModel: 'gpt-5.6-sol',
     models: { kind: 'adapter', adapterId: 'codex' }
   }

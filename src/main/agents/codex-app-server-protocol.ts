@@ -91,6 +91,10 @@ export interface CodexAppServerRequests {
     }
     result: { turnId: string }
   }
+  'thread/compact/start': {
+    params: { threadId: string }
+    result: CodexObject
+  }
   'turn/interrupt': {
     params: { threadId: string; turnId: string }
     result: CodexObject

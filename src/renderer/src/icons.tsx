@@ -13,6 +13,7 @@ import folderPlus from './icons/folder-plus.svg?raw'
 import folder from './icons/folder.svg?raw'
 import gitBranch from './icons/git-branch.svg?raw'
 import keyboard from './icons/keyboard.svg?raw'
+import loader from './icons/loader.svg?raw'
 import monitor from './icons/monitor.svg?raw'
 import pencil from './icons/pencil.svg?raw'
 import search from './icons/search.svg?raw'
@@ -47,6 +48,7 @@ const artwork = {
   folder: body(folder),
   'git-branch': body(gitBranch),
   keyboard: body(keyboard),
+  loader: body(loader),
   monitor: body(monitor),
   pencil: body(pencil),
   search: body(search),
