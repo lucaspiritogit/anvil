@@ -187,15 +187,13 @@ export class TaskIssues {
     const state = this.store.getTaskExecution(taskId)
     if (!state || state.phase === 'complete') return
     try {
-      // Only a claim recorded for this running Anvil turn can be released here.
-      if (state.phase === 'reviewing' && state.currentIssueId) this.withTracker(state, (tracker) => {
-        // A pending review cannot survive a stopped task as claimable work:
-        // block it so a resumed task requeues and re-claims deterministically.
-        if (tracker.get(state.currentIssueId!).status === 'review') tracker.block(state.currentIssueId!)
-      })
-      else if (state.currentIssueId && this.ownedClaims.get(taskId) === state.currentIssueId) this.withTracker(state, (tracker) => {
+      if (state.currentIssueId) this.withTracker(state, (tracker) => {
         const status = tracker.get(state.currentIssueId!).status
-        if (status === 'working' || status === 'review') tracker.block(state.currentIssueId!)
+        // Submitted reviews also need blocking if finalization fails during
+        // recovery, when the original process's in-memory claim is gone.
+        if (status === 'review' || status === 'working' && this.ownedClaims.get(taskId) === state.currentIssueId) {
+          tracker.block(state.currentIssueId!)
+        }
       })
     } catch (storageError) {
       error += ` Could not block the Valence issue: ${storageError instanceof Error ? storageError.message : String(storageError)}`
@@ -210,7 +208,7 @@ export class TaskIssues {
     return state
   }
 
-  /** The worktree commit at submit time anchors the per-issue review diff. */
+  /** The finalized worktree commit anchors the per-issue review diff. */
   private recordReviewCommit(tracker: IssueTracker, issue: Issue, headCommit: string | undefined): void {
     if (headCommit && (issue.status === 'review' || issue.status === 'complete') && issue.headCommit !== headCommit) {
       tracker.recordCommits(issue.id, { headCommit })

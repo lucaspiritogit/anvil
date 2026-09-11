@@ -78,6 +78,12 @@ export function registerTaskHandlers(ipc: RendererIpc, {
     const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
     const source = issues.issueDiffSource(input.taskId, input.issueId)
+    const state = store.getTaskExecution(input.taskId)
+    const issue = issues.list(input.taskId).find((entry) => entry.id === input.issueId)!
+    if (!['review', 'complete'].includes(issue.status) ||
+      state?.currentIssueId === input.issueId && !issueReviewReady(input.taskId)) {
+      throw new Error('This sub-task has not finished preparing its review changes')
+    }
     const diff = await gitDelivery.getIssueDiff(project.path, source)
     if (!diff) throw new Error('This sub-task has no recorded code changes yet')
     return diff

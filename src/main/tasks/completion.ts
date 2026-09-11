@@ -2,12 +2,14 @@ import type { ExitInfo } from '../agents/process-manager'
 import type { TaskMemory } from '../memory/task-memory'
 import type { RecordSystemEvent, TaskContext } from './context'
 
+export type TaskCompletion = (info: ExitInfo, options?: { finalize: boolean }) => Promise<void>
+
 export function createTaskCompletion(
   { store, gitDelivery, send }: Pick<TaskContext, 'store' | 'gitDelivery' | 'send'>,
   recordSystemEvent: RecordSystemEvent,
   { rememberCompletedTask }: Pick<TaskMemory, 'rememberCompletedTask'>
-): (info: ExitInfo) => Promise<void> {
-  return async (info) => {
+): TaskCompletion {
+  return async (info, options) => {
     const status = info.cancelled ? 'cancelled' : info.code === 0 ? 'succeeded' : 'pending'
     // Git tasks deliver a final diff from their branch.
     const existing = store.getTask(info.taskId)
@@ -17,7 +19,7 @@ export function createTaskCompletion(
       endedAt: Date.now(),
       exitCode: info.code,
       error: info.error,
-      ...(managed ? { deliveryStatus: 'finalizing' as const } : {})
+      ...(managed && options?.finalize !== false ? { deliveryStatus: 'finalizing' as const } : {})
     })
     if (task) send('task:updated', task)
     if (task && status === 'pending') {
@@ -25,7 +27,7 @@ export function createTaskCompletion(
     }
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task?.projectId)
     if (!project || !task) return
-    if (!managed || !task.baseCommit) {
+    if (!managed || !task.baseCommit || options?.finalize === false) {
       await rememberCompletedTask(task, project.path)
       return
     }

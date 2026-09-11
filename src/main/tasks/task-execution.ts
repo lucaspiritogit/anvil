@@ -5,6 +5,7 @@ import type { ExitInfo } from '../agents/process-manager'
 import type { TaskContext } from './context'
 import type { RecordSystemEvent } from './context'
 import { TaskIssues } from './task-issues'
+import type { TaskCompletion } from './completion'
 import type { TaskExecutionState } from '../../shared/types'
 
 const MAX_RECOVERY_ATTEMPTS = 3
@@ -30,7 +31,7 @@ export interface TaskExecution {
 /** Anvil runs one turn per claimed issue and pauses for developer review after each. */
 export function registerTaskExecution(
   { store, agentProcesses, gitDelivery, send, recordSystemEvent }: TaskContext & { recordSystemEvent: RecordSystemEvent },
-  finishTask: (info: ExitInfo) => Promise<void>
+  finishTask: TaskCompletion
 ): TaskExecution {
   const issues = new TaskIssues(store)
   // Retries belong to this running scheduler. App restarts retain the existing
@@ -65,12 +66,6 @@ export function registerTaskExecution(
 
   // Each task runs one agent process at a time; other tasks have their own worktrees.
   const starting = new Set<string>()
-
-  // The committed worktree tip when a turn ends anchors the issue's review diff.
-  const turnHeadCommit = (taskId: string): string | undefined => {
-    if (!store.getTask(taskId)?.branchName) return undefined
-    return gitDelivery.worktreeHead(taskId) ?? undefined
-  }
 
   const startNextTurn = async (taskId: string): Promise<void> => {
     if (closing || starting.has(taskId) || agentProcesses.isRunning(taskId)) return
@@ -193,14 +188,33 @@ export function registerTaskExecution(
   }
 
   const finishing = new Set<string>()
+  const cancelledFinishes = new Set<string>()
   const finishTaskTurn = async (info: ExitInfo): Promise<void> => {
     const state = store.getTaskExecution(info.taskId)
-    if (!state || store.getTask(info.taskId)?.status !== 'running' || finishing.has(info.taskId)) return
+    if (!state || store.getTask(info.taskId)?.status !== 'running') return
+    if (finishing.has(info.taskId)) {
+      if (info.cancelled) cancelledFinishes.add(info.taskId)
+      return
+    }
+    if (state.phase === 'reviewing' && !info.cancelled) return
+    if (state.phase === 'working' && !state.currentIssueId && !info.cancelled) return
     if (agentProcesses.isRunning(info.taskId)) return
     if (info.result?.issueId && info.result.issueId !== state.currentIssueId) return
     // Duplicate exit notifications must not consume the retry budget or timers.
     if (retries.get(info.taskId)?.timer && !info.cancelled) return
     finishing.add(info.taskId)
+    let finalizing = false
+    const check = (): void => {
+      if (cancelledFinishes.has(info.taskId)) {
+        info = { ...info, cancelled: true }
+        throw new Error('Task cancelled.')
+      }
+      const current = store.getTaskExecution(info.taskId)
+      if (closing || store.getTask(info.taskId)?.status !== 'running' ||
+        current?.phase !== state.phase || current.currentIssueId !== state.currentIssueId) {
+        throw new Error('Task finalization was interrupted or superseded.')
+      }
+    }
     try {
       if (state.phase === 'complete') {
         clearRetry(info.taskId)
@@ -223,16 +237,39 @@ export function registerTaskExecution(
       clearRetry(info.taskId)
       if (state.phase === 'planning') {
         issues.finishPlanning(info.taskId)
-      } else if (state.phase === 'recovering') {
-        issues.finishRecovery(info.taskId, turnHeadCommit(info.taskId))
       } else {
-        issues.finishIssue(info.taskId, turnHeadCommit(info.taskId))
+        const task = store.getTask(info.taskId)!
+        let delivery: Awaited<ReturnType<typeof gitDelivery.finalizeBranch>> | undefined
+        if (task.branchName) {
+          finalizing = true
+          if (!task.baseCommit) throw new Error('The task has no base commit for finalization.')
+          const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
+          if (!project || project.path !== state.projectPath) throw new Error('Task project is unavailable')
+          store.updateTask(task.id, { deliveryStatus: 'finalizing', deliveryError: undefined })
+          notify(task.id)
+          delivery = await gitDelivery.finalizeBranch(project.path, task.id, task.branchName, task.baseBranch, task.baseCommit, task.title, {
+            check,
+            onFinisherCommand: (command) => recordSystemEvent(task.id, command, 'did_not_commit')
+          })
+          check()
+          const issue = issues.list(task.id).find((entry) => entry.id === state.currentIssueId)
+          if (issue && !issue.baseCommit) throw new Error('The issue has no base commit for review.')
+          if (issue?.baseCommit) await gitDelivery.getDiff(project.path, issue.baseCommit, delivery.headCommit)
+          check()
+        }
+        // Save the finalized range, aggregate metadata and review phase together.
+        store.transaction(() => {
+          if (delivery) store.updateTask(task.id, {
+            headCommit: delivery.headCommit, filesChanged: delivery.filesChanged,
+            additions: delivery.additions, deletions: delivery.deletions, deliveryStatus: 'working'
+          })
+          if (state.phase === 'recovering') issues.finishRecovery(task.id, delivery?.headCommit)
+          else issues.finishIssue(task.id, delivery?.headCommit)
+        }, task.workspaceId)
       }
-      notify(info.taskId)
       const next = store.getTaskExecution(info.taskId)
       if (next?.phase === 'reviewing') {
         // The gate: never hop to the next queued issue before developer review.
-        recordSystemEvent(info.taskId, `Issue ${next.currentIssueId} is awaiting developer review. Approve it or request changes to continue.`)
         return
       }
       if (next?.phase === 'complete') {
@@ -241,16 +278,25 @@ export function registerTaskExecution(
         setImmediate(() => { void startNextTurn(info.taskId) })
       }
     } catch (error) {
+      if (!store.getTask(info.taskId)) return
+      if (cancelledFinishes.has(info.taskId)) info = { ...info, cancelled: true }
       const message = error instanceof Error ? error.message : String(error)
       const wasRunning = store.getTask(info.taskId)?.status === 'running'
       store.transaction(() => {
         stopTask(info.taskId, message)
         // Commit explicit cancellation with its incidental blocked issue state.
         if (info.cancelled && wasRunning) store.updateTask(info.taskId, { status: 'cancelled' })
+        if (finalizing) store.updateTask(info.taskId, { deliveryStatus: 'failed', deliveryError: message })
       }, store.getTask(info.taskId)?.workspaceId)
-      if (wasRunning) await finishTask({ ...info, code: 1, error: message })
+      if (wasRunning) await finishTask({ ...info, code: 1, error: message }, { finalize: !finalizing })
     } finally {
       finishing.delete(info.taskId)
+      cancelledFinishes.delete(info.taskId)
+      // Observers must receive a snapshot after the readiness guard is released.
+      notify(info.taskId)
+      if (issueReviewReady(info.taskId)) {
+        recordSystemEvent(info.taskId, `Issue ${store.getTaskExecution(info.taskId)!.currentIssueId} is awaiting developer review. Approve it or request changes to continue.`)
+      }
     }
   }
 
@@ -267,6 +313,7 @@ export function registerTaskExecution(
 
   const approveIssue: TaskExecution['approveIssue'] = async (taskId) => {
     requireStoppedTurn(taskId)
+    if (!issueReviewReady(taskId)) throw new Error('This task is not ready for issue review')
     const issueId = store.getTaskExecution(taskId)?.currentIssueId
     const state = issues.approveIssue(taskId)
     notify(taskId)
@@ -281,6 +328,7 @@ export function registerTaskExecution(
 
   const rejectIssue: TaskExecution['rejectIssue'] = (taskId) => {
     requireStoppedTurn(taskId)
+    if (!issueReviewReady(taskId)) throw new Error('This task is not ready for issue review')
     const issueId = store.getTaskExecution(taskId)?.currentIssueId
     const state = issues.rejectIssue(taskId)
     notify(taskId)
@@ -309,7 +357,14 @@ export function registerTaskExecution(
   const issueReviewReady = (taskId: string): boolean => {
     try {
       requireStoppedTurn(taskId)
-      return store.getTaskExecution(taskId)?.phase === 'reviewing'
+      const state = store.getTaskExecution(taskId)
+      if (state?.phase !== 'reviewing' || !state.currentIssueId) return false
+      const task = store.getTask(taskId)
+      if (!task || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'failed') return false
+      if (!task.branchName) return true
+      const source = issues.issueDiffSource(taskId, state.currentIssueId)
+      return Boolean(source.baseCommit && source.headCommit ||
+        !source.baseCommit && !source.headCommit && source.taskBaseCommit && source.taskHeadCommit)
     } catch { return false }
   }
 

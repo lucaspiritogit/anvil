@@ -111,7 +111,8 @@ export class GitDeliveryManager {
   async releaseWorktree(): Promise<void> {}
   async finalizeBranch(): Promise<any> {
     if (GitDeliveryManager.failFinalize) throw new Error('finalize failed')
-    return { headCommit: `commit-${++GitDeliveryManager.head}`, hasChanges: true, filesChanged: 1, additions: 1, deletions: 0 }
+    GitDeliveryManager.head++
+    return { headCommit: GitDeliveryManager.worktreeHeadValue ?? `commit-${GitDeliveryManager.head}`, hasChanges: true, filesChanged: 1, additions: 1, deletions: 0 }
   }
   async getMergePreview(_path: string, branchName: string): Promise<any> {
     return { sourceBranch: branchName, targetBranch: 'main', sourceCommit: 'a'.repeat(40), targetCommit: 'b'.repeat(40), commitCount: 1 }
