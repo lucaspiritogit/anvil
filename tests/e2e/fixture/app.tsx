@@ -81,6 +81,7 @@ if (query.has('openPr')) {
     : task)
 }
 tasks = tasks.map((task) => ({ ...task, branchName: `anvil/${task.id === 'approved' ? 'polish-task-cards' : task.id}` }))
+if (query.has('demo')) tasks = tasks.filter((task) => ['running', 'review', 'approved'].includes(task.id))
 const issueSnapshots: Record<string, TaskIssueSnapshot | null> = {}
 window.addEventListener('fixture:issues', (event) => {
   const { taskId, snapshot } = (event as CustomEvent<{ taskId: string; snapshot: TaskIssueSnapshot | null }>).detail
@@ -477,12 +478,16 @@ window.anvil = {
     }
   },
   tasks: {
-    stack: async ({ taskId, parentTaskId }) => { const task = tasks.find((entry) => entry.id === taskId)!; Object.assign(task, { parentTaskId, stackSuggestion: undefined }); updates.forEach((listener) => listener(task)); return task },
-    dismissStack: async (taskId) => { const task = tasks.find((entry) => entry.id === taskId)!; task.stackSuggestion = undefined; updates.forEach((listener) => listener(task)); return task },
+    stack: async ({ taskId, parentTaskId }) => {
+      const task = tasks.find((entry) => entry.id === taskId)!
+      const parent = tasks.find((entry) => entry.id === parentTaskId)!
+      return update({ ...task, parentTaskId, baseBranch: parent.branchName, stackSuggestion: undefined })
+    },
+    dismissStack: async (taskId) => update({ ...tasks.find((entry) => entry.id === taskId)!, stackSuggestion: undefined }),
     restack: async (taskId) => tasks.find((entry) => entry.id === taskId)!,
     compact: async () => {},
     issues: async (taskId: string): Promise<TaskIssueSnapshot | null> => issueSnapshots[taskId] ?? null,
-    list: async () => tasks,
+    list: async () => tasks.filter((task) => task.workspaceId === selectedWorkspace),
     start: async (input: IpcRequests['tasks:start']) => {
       for (const path of input.fileReferences ?? []) {
         if (!window.fileMentionTest.paths[input.projectId]?.includes(path)) throw new Error(`Referenced file is missing or unavailable: ${JSON.stringify(path)}. Remove the reference or choose the file again.`)
@@ -494,9 +499,13 @@ window.anvil = {
         throw new Error('Task could not be started')
       }
       if (query.has('startFailure')) throw new Error('Task could not be started')
+      const id = `started-${tasks.length}`
+      const parent = tasks.find((task) => task.id === input.parentTaskId)
       const task: Task = {
-        ...base, ...input, workspaceId: input.workspaceId ?? selectedWorkspace, id: `started-${tasks.length}`, title: input.prompt || 'Image task',
+        ...base, ...input, workspaceId: input.workspaceId ?? selectedWorkspace, id, title: input.prompt || 'Image task',
         status: 'running', deliveryStatus: 'working', endedAt: undefined, reviewedAt: undefined,
+        startedAt: Date.now(), workingStartedAt: Date.now(), filesChanged: 0, additions: 0, deletions: 0,
+        branchName: `anvil/${id}`, baseBranch: parent?.branchName ?? projectBranches[input.projectId] ?? 'main',
         cwd: projects.find((project) => project.id === input.projectId)!.path
       }
       tasks = [task, ...tasks]

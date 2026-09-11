@@ -65,16 +65,19 @@ function relativeAge(timestamp: number, now: number): string {
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`
 }
 
-export function SidebarTask({ task, snapshot, project, now, active, compact = false, rowProps }: {
+export function SidebarTask({ task, snapshot, project, now, active, compact = false, stackStart = false, stackEnd = false, rowProps }: {
   task: Task
   snapshot?: TaskIssueSnapshot | null
   project?: Project
   now: number
   active: boolean
   compact?: boolean
-  rowProps?: ComponentPropsWithRef<'li'> & { 'data-index'?: number }
+  stackStart?: boolean
+  stackEnd?: boolean
+  rowProps?: ComponentPropsWithRef<'li'> & { 'data-index'?: number; 'data-task-id'?: string; 'data-stacked'?: boolean; 'data-row-start'?: number }
 }): JSX.Element {
   const parent = useStore((state) => state.tasks.find((entry) => entry.id === (task.restackTarget?.parentTaskId ?? task.parentTaskId)))
+  const stacked = Boolean(task.restackTarget?.parentTaskId ?? task.parentTaskId)
   const openTask = useStore((state) => state.openTask)
   const settleTask = useStore((state) => state.settleTask)
   const [settling, setSettling] = useState(false)
@@ -132,10 +135,11 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
 
   return (
     <li {...rowProps}>
+      {stackStart && <StackSeparator />}
       <article
         className={cn(
           'group relative transition-colors',
-          parent && 'ml-3 border-l border-accent/40',
+          stacked && 'bg-accent/5',
           indicator?.highlight || (active ? 'bg-hover' : compact ? 'hover:bg-hover/60' : 'bg-raised/60 hover:bg-hover/70'),
           (active || indicator?.highlight) && 'ring-1 ring-inset',
           active && (indicator?.highlight ? 'outline outline-1 outline-offset-1 outline-dim/60' : 'ring-line')
@@ -144,12 +148,20 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
         <button
           aria-label={`Open task: ${task.title}`}
           aria-current={active ? 'page' : undefined}
-          className={cn('w-full min-w-0 text-left focus-visible:outline focus-visible:outline-accent', compact ? 'flex items-center gap-2 px-2.5 py-2' : 'block px-3 py-3')}
+          className={cn('w-full min-w-0 text-left focus-visible:outline focus-visible:outline-accent', compact || stacked ? 'flex items-center gap-2 px-2.5 py-2' : 'block px-3 py-3')}
           onClick={open}
           onContextMenu={(event) => openTaskContextMenu(event, task.id)}
-          title={task.prompt}
+          title={parent ? `${task.prompt}\nStacked on ${parent.title}` : task.prompt}
         >
-          {compact ? (
+          {stacked ? (
+            <>
+              <Icon icon="layers" size={14} className="shrink-0 text-accent" />
+              <span className="min-w-0 flex-1 truncate text-xs text-fg/80">{task.title}</span>
+              <span className={cn('shrink-0 text-[10px]', task.restackState ? 'text-warn' : indicator?.tone ?? 'text-dim')}>
+                {task.restackState ? `Restack ${task.restackState}` : indicator?.label ?? (task.status === 'cancelled' ? 'Cancelled' : task.status)}
+              </span>
+            </>
+          ) : compact ? (
             <>
               {statusIcon}
               <span className="min-w-0 flex-1 truncate text-xs text-dim">{task.title}</span>
@@ -176,11 +188,10 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
               </span>
             </>
           )}
-          {parent && <span className="block truncate text-[10px] text-dim">Stacked on {parent.title}</span>}
-          {task.restackState && <span className="block text-[10px] text-warn">Restack {task.restackState}</span>}
-          {presentation && <span className="block truncate px-1 text-[11px] text-dim" title={presentation.issue.title}>{presentation.label}: {presentation.issue.title}</span>}
+          {!stacked && task.restackState && <span className="block text-[10px] text-warn">Restack {task.restackState}</span>}
+          {!stacked && presentation && <span className="block truncate px-1 text-[11px] text-dim" title={presentation.issue.title}>{presentation.label}: {presentation.issue.title}</span>}
         </button>
-        {!compact && eligible && (
+        {!stacked && !compact && eligible && (
           <button
             aria-label={`Settle task: ${task.title}`}
             title={deadline === undefined ? 'Settle task' : `Settle now. Automatically settles ${new Date(deadline).toLocaleString()}.`}
@@ -192,7 +203,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           </button>
         )}
         {error && <p role="alert" className="px-3 pb-2 text-xs text-danger">{error}</p>}
-        {!compact && hasChildren && (
+        {!stacked && !compact && hasChildren && (
           <button
             type="button"
             aria-expanded={expanded}
@@ -206,7 +217,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           </button>
         )}
       </article>
-      {hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="ml-4 mr-2 mt-1 mb-2 border-l border-line pl-2 space-y-1">
+      {!stacked && hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="ml-4 mr-2 mt-1 mb-2 border-l border-line pl-2 space-y-1">
         {snapshot?.children.map((issue) => <li key={issue.id}>
           <div
             className="flex w-full min-w-0 items-center gap-2 min-h-7 px-2 py-1 text-left text-[11px] text-dim"
@@ -216,6 +227,15 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           </div>
         </li>)}
       </ol>}
+      {stackEnd && <StackSeparator />}
     </li>
   )
+}
+
+function StackSeparator(): JSX.Element {
+  return <div className="flex items-center gap-2 py-2 text-accent/60" aria-hidden="true">
+    <span className="h-px flex-1 bg-accent/25" />
+    <Icon icon="layers" size={12} />
+    <span className="h-px flex-1 bg-accent/25" />
+  </div>
 }

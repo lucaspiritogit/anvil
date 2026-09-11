@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { AgentAccountConnect, AgentAccountTarget, WorkspaceAgentAccount } from '@shared/types'
 import { useStore } from '../state/store'
-import { btn, field } from '../ui'
+import { btn, cn, field } from '../ui'
 
 function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget & { workspaceName: string }): JSX.Element {
   const [account, setAccount] = useState<WorkspaceAgentAccount | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [method, setMethod] = useState<'apiKey' | 'chatgpt'>('chatgpt')
   const [requesting, setRequesting] = useState(false)
+  const [revealed, setRevealed] = useState(false)
   const mounted = useRef(true)
   const accountRef = useRef(account)
   accountRef.current = account
@@ -52,7 +53,17 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
     <section className="my-4 rounded border border-line p-4" aria-label={`${label} account for ${workspaceName}`}>
       <h3 className="font-medium">{label} account for {workspaceName}</h3>
       <div role="status" className="my-2 text-xs text-dim">
-        <p>{!account ? 'Reading account…' : account.status === 'connected' ? account.accounts.join(', ') : account.status === 'signed-out' ? 'Signed out' : account.message}</p>
+        {!account
+          ? <p>Reading account…</p>
+          : account.status === 'connected'
+            ? agentId === 'codex'
+              ? <button type="button" aria-pressed={revealed} title={revealed ? 'Hide email' : 'Reveal email'}
+                  className={cn('cursor-pointer text-left transition-[filter] duration-150 focus-visible:outline focus-visible:outline-accent', !revealed && 'select-none blur-[3px]')}
+                  onClick={() => setRevealed((value) => !value)}>
+                  {account.accounts.join(', ')}
+                </button>
+              : <p>{account.accounts.join(', ')}</p>
+            : <p>{account.status === 'signed-out' ? 'Signed out' : account.message}</p>}
         {account?.busy && <p>Active work in {workspaceName} must finish before changing accounts.</p>}
       </div>
       {agentId === 'codex' && !pending && <>

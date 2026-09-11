@@ -8,11 +8,13 @@ import brain from './icons/brain.svg?raw'
 import check from './icons/check.svg?raw'
 import chevronDown from './icons/chevron-down.svg?raw'
 import chevronUp from './icons/chevron-up.svg?raw'
+import coffee from './icons/coffee.svg?raw'
 import copy from './icons/copy.svg?raw'
 import folderPlus from './icons/folder-plus.svg?raw'
 import folder from './icons/folder.svg?raw'
 import gitBranch from './icons/git-branch.svg?raw'
 import keyboard from './icons/keyboard.svg?raw'
+import layers from './icons/layers.svg?raw'
 import loader from './icons/loader.svg?raw'
 import monitor from './icons/monitor.svg?raw'
 import pencil from './icons/pencil.svg?raw'
@@ -43,11 +45,13 @@ const artwork = {
   'chevron-up': body(chevronUp),
   'chevron-left': `<g transform="rotate(90 12 12)">${body(chevronDown)}</g>`,
   'chevron-right': `<g transform="rotate(-90 12 12)">${body(chevronDown)}</g>`,
+  coffee: body(coffee),
   copy: body(copy),
   'folder-plus': body(folderPlus),
   folder: body(folder),
   'git-branch': body(gitBranch),
   keyboard: body(keyboard),
+  layers: body(layers),
   loader: body(loader),
   monitor: body(monitor),
   pencil: body(pencil),

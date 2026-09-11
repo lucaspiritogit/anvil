@@ -112,6 +112,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Choose the model again to retry saving.</p>}
       {projectId && <ProjectBranchSelector key={projectId} projectId={projectId} disabled={busy} onSwitching={setSwitchingBranch} />}
       {parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
+        <Icon icon="layers" size={14} />
         Stack on task
         <select aria-label="Stack on task" className={compactSelect} disabled={busy} value={parentTaskId} onChange={(event) => setParentTaskId(event.target.value)}>
           <option value="">Project branch</option>

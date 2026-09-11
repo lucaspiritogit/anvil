@@ -16,13 +16,6 @@ import { DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE, normalizeFontSize } fr
 import { DEFAULT_EMBEDDING_MODEL, DEFAULT_OLLAMA_BASE_URL } from '@shared/memory-settings'
 import type { RebaseMode, Settings } from '@shared/types'
 
-type ProjectDraft = { monthlyTokenLimit: string; monthlyCostLimitUsd: string; finishOnPush: boolean }
-
-function parseLimit(value: string): number | null {
-  const parsed = Number(value)
-  return value && Number.isFinite(parsed) && parsed > 0 ? parsed : null
-}
-
 /** Click, then press the chord you want. Escape leaves the binding alone. */
 function ShortcutField({
   shortcut,
@@ -101,11 +94,6 @@ export function SettingsPage(): JSX.Element {
   const [contextCompactionThreshold, setContextCompactionThreshold] = useState(settings?.contextCompactionThreshold ?? 75)
   const [confirmRebase, setConfirmRebase] = useState(settings?.confirmRebase ?? true)
   const [rebaseMode, setRebaseMode] = useState<RebaseMode>(settings?.rebaseMode ?? 'manual')
-  const caffeineSave = useStore((s) => s.caffeineSave)
-  const setCaffeineMode = useStore((s) => s.setCaffeineMode)
-  const caffeineMode = caffeineSave?.status === 'pending'
-    ? caffeineSave.value
-    : settings?.caffeineMode ?? false
   const [keybindings, setKeybindings] = useState<Keybindings>(
     settings?.keybindings ?? DEFAULT_KEYBINDINGS
   )
@@ -145,24 +133,6 @@ export function SettingsPage(): JSX.Element {
   }, [settings, workspaceId])
 
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? projects[0]
-  const [projectDrafts, setProjectDrafts] = useState<Record<string, ProjectDraft>>({})
-  const pendingProject = edits[`project:${workspaceId}:${activeProject?.id}`]
-  const projectDraft = (activeProject ? projectDrafts[`${workspaceId}:${activeProject.id}`] : undefined) ?? {
-    monthlyTokenLimit: activeProject?.monthlyTokenLimit?.toString() ?? '',
-    monthlyCostLimitUsd: activeProject?.monthlyCostLimitUsd?.toString() ?? '',
-    finishOnPush: activeProject?.finishOnPush ?? false,
-    ...(pendingProject?.status !== 'saved' ? pendingProject?.draft as Partial<ProjectDraft> : {})
-  }
-  const { monthlyTokenLimit, monthlyCostLimitUsd, finishOnPush } = projectDraft
-  const updateProjectDraft = (patch: Partial<ProjectDraft>): void => {
-    if (!activeProject) return
-    setProjectDrafts((drafts) => ({ ...drafts, [`${workspaceId}:${activeProject.id}`]: { ...projectDraft, ...patch } }))
-    autosave(`project:${workspaceId}:${activeProject.id}`, {
-      ...('monthlyTokenLimit' in patch ? { monthlyTokenLimit: parseLimit(patch.monthlyTokenLimit!) } : {}),
-      ...('monthlyCostLimitUsd' in patch ? { monthlyCostLimitUsd: parseLimit(patch.monthlyCostLimitUsd!) } : {}),
-      ...('finishOnPush' in patch ? { finishOnPush: patch.finishOnPush } : {})
-    }, patch)
-  }
 
   const catalogue = modelsByAgent[defaultAgentId]
 
@@ -182,7 +152,7 @@ export function SettingsPage(): JSX.Element {
           <div aria-live="polite" className="mb-6 min-w-0 space-y-2 break-words text-xs">
             {projectRemovalError && <p role="alert" className="text-danger">{projectRemovalError}</p>}
             {failed.length > 0 && <p role="alert" className="text-danger">Could not save settings. Your changes are retained. <button className={btn.text} onClick={() => failed.forEach(([key]) => retryAutosave(key))}>Retry</button></p>}
-            <span role="status" className={hint}>{saving ? 'Saving settings…' : saved ? caffeineSave ? 'Other settings saved' : 'Saved' : 'Changes save automatically.'}</span>
+            <span role="status" className={hint}>{saving ? 'Saving settings…' : saved ? 'Saved' : 'Changes save automatically.'}</span>
           </div>
           {!settings && <p role="status" className="mb-4 text-dim">Loading settings…</p>}
           {(section === 'general' || section === 'source-control') && projects.length > 0 && (
@@ -239,68 +209,6 @@ export function SettingsPage(): JSX.Element {
 
             </>}
             {section === 'general' && <>
-              <label className={modal.toggle}>
-                <input
-                  className="mt-0.5"
-                  type="checkbox"
-                  checked={caffeineMode}
-                  disabled={!settings}
-                  aria-describedby="caffeine-save-status"
-                  onChange={(event) => void setCaffeineMode(event.target.checked)}
-                />
-                <span className="block">
-                  <strong className="block">Caffeine mode</strong>
-                  <small className={field.hint}>Keep the computer and display awake while tasks are running.</small>
-                </span>
-              </label>
-
-              <div id="caffeine-save-status" className="mb-3 text-xs">
-                {caffeineSave?.status === 'error' ? (
-                  <div role="alert" className="flex items-center gap-2 text-danger">
-                    <span>Could not save Caffeine mode. The last saved setting is shown.</span>
-                    <button className={btn.text} onClick={() => void setCaffeineMode(caffeineSave.value)}>
-                      Retry
-                    </button>
-                  </div>
-                ) : (
-                  <span role="status" className={hint}>
-                    {!settings ? 'Loading Caffeine mode…' : caffeineSave ? 'Saving Caffeine mode…' : 'Caffeine mode saves automatically.'}
-                  </span>
-                )}
-              </div>
-
-              {activeProject && (
-                <div className={modal.section}>
-                  <h3 className="my-3 text-[13px] font-semibold">{activeProject.name} limits</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className={field.wrap}>
-                      <span className={field.label}>Monthly token limit</span>
-                      <input
-                        className={field.sized}
-                        type="number"
-                        min="0"
-                        step="1"
-                        placeholder="No limit"
-                        value={monthlyTokenLimit}
-                        onChange={(e) => updateProjectDraft({ monthlyTokenLimit: e.target.value })}
-                      />
-                    </label>
-                    <label className={field.wrap}>
-                      <span className={field.label}>Monthly cost limit, USD</span>
-                      <input
-                        className={field.sized}
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="No limit"
-                        value={monthlyCostLimitUsd}
-                        onChange={(e) => updateProjectDraft({ monthlyCostLimitUsd: e.target.value })}
-                      />
-                    </label>
-                  </div>
-                </div>
-              )}
-
               {activeProject && (
                 <div className="flex gap-3 items-center justify-between p-3 mt-2 text-xs text-dim border border-line">
                   <span>
@@ -351,25 +259,6 @@ export function SettingsPage(): JSX.Element {
                 <span>Ask before handing a rebase to an agent</span>
               </label>
               <GitHubSettings />
-              {activeProject && (
-                <div className={modal.section}>
-                  <label className={modal.toggle}>
-                    <input
-                      className="mt-0.5"
-                      type="checkbox"
-                      checked={finishOnPush}
-                      onChange={(event) => updateProjectDraft({ finishOnPush: event.target.checked })}
-                    />
-                    <span className="block">
-                      <strong className="block">Work is done on push</strong>
-                      <small className="block mt-1 text-dim leading-[1.4]">
-                        Reserve this project preference for automatic GitHub delivery. Automatic delivery is not enabled yet;
-                        use Open PR to push and open a pull request manually.
-                      </small>
-                    </span>
-                  </label>
-                </div>
-              )}
             </div>
             {section === 'shortcuts' && <>
               <p className="mb-4 text-xs text-dim">Select a shortcut, then press the keys you want to use. Escape cancels.</p>

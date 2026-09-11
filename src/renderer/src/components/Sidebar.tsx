@@ -10,6 +10,7 @@ import { useSidebarIssueSnapshots } from '../hooks/use-task-issues'
 import { SidebarTaskList } from './SidebarTaskList'
 import { ProjectPicker } from './ProjectPicker'
 import { WorkspacePicker } from './WorkspacePicker'
+import { CaffeineToggle } from './CaffeineToggle'
 
 const ICON_BUTTON = 'grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent'
 
@@ -177,6 +178,8 @@ export function Sidebar(): JSX.Element {
             projectById={projectById} now={now} view={view} compact emptyMessage="No settled tasks." />
         )}
       </section>
+
+      <CaffeineToggle />
 
       <button
         className="flex shrink-0 items-center gap-2.5 mx-2.5 my-2 px-2 py-2 text-left text-xs text-dim hover:bg-hover/60 hover:text-fg focus-visible:outline focus-visible:outline-accent"

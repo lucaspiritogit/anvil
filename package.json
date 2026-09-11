@@ -7,9 +7,10 @@
   "license": "Apache-2.0",
   "scripts": {
     "test:e2e": "playwright test",
-    "test:issue-tracker": "node scripts/prepare-vitest-native.mjs && vitest run",
+    "test:issue-tracker": "vitest run",
     "postinstall": "electron-rebuild -f -o better-sqlite3",
     "dev": "node scripts/dev.cjs",
+    "demo": "node scripts/capture-demo.mjs",
     "build": "npm run typecheck && electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "db:generate": "drizzle-kit generate",
@@ -26,9 +27,11 @@
     "pack:mac": "npm run build && electron-builder --mac --dir -c.mac.identity=null",
     "dist:mac": "npm run build && electron-builder --mac dmg -c.mac.identity=null",
     "rebuild": "electron-builder install-app-deps",
-    "test:vitest": "node scripts/prepare-vitest-native.mjs && vitest run",
+    "test:vitest": "vitest run",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
-    "test": "node scripts/prepare-vitest-native.mjs && vitest run"
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test": "vitest run"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",

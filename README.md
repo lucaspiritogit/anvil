@@ -5,9 +5,7 @@
 Anvil gives every task its own branch and worktree, runs an agent there, and hands
 you one cumulative diff to review.
 
-![Anvil desktop preview](./public/showcase/01-workspace.png)
-
-![Anvil demo showing task creation, agent activity, and workspace switching](./public/showcase/anvil-demo.gif)
+![Anvil demo showing task creation, agent activity, stacked tasks, and workspace switching](./public/showcase/anvil-demo.gif)
 
 ## What it does
 

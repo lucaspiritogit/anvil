@@ -1,4 +1,4 @@
-// npm test and its aliases run this before Vitest. Postinstall builds the installed
+// The Vitest integration project runs this once before its suites. Postinstall builds the installed
 // better-sqlite3 addon for Electron, whose native module ABI differs from host Node.
 // Vitest runs on host Node, so it needs a separately compiled SQLite addon.
 // This script builds that copy in node_modules/.anvil-vitest-native; the test setup

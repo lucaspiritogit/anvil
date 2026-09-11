@@ -3,10 +3,16 @@ import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { Settings, Wallpaper } from '@shared/types'
 import { loadWallpaper } from '../state/wallpaper-cache'
+import { Icon } from '../icons'
 import { btn, cn, field, modal } from '../ui'
 
 export type OverviewAppearance = Pick<Settings, 'overviewBackgroundMode' | 'overviewBackgroundColor' | 'overviewWallpaperId'>
 const PAGE_SIZE = 3
+
+const MODES = [
+  { value: 'color', label: 'Solid color' },
+  { value: 'image', label: 'Image' }
+] as const
 
 function Thumbnail({ wallpaper, refresh, workspaceId }: { wallpaper: Wallpaper; refresh?: boolean; workspaceId?: string }): JSX.Element {
   const [url, setUrl] = useState<string | null | undefined>(undefined)
@@ -19,8 +25,8 @@ function Thumbnail({ wallpaper, refresh, workspaceId }: { wallpaper: Wallpaper; 
     return () => { cancelled = true }
   }, [wallpaper.id, refresh, workspaceId])
   return url
-    ? <img src={url} alt="" className="h-16 w-full object-cover" />
-    : <span className="flex h-16 items-center justify-center text-xs text-dim">{url === undefined ? 'Loading…' : 'Image unavailable.'}</span>
+    ? <img src={url} alt="" className="aspect-[4/3] w-full object-cover" />
+    : <span className="flex aspect-[4/3] items-center justify-center text-xs text-dim">{url === undefined ? 'Loading…' : 'Image unavailable.'}</span>
 }
 
 export function OverviewBackgroundPicker({ value, onChange }: {
@@ -80,56 +86,77 @@ export function OverviewBackgroundPicker({ value, onChange }: {
   return (
     <fieldset className={cn(modal.section, 'min-w-0')}>
       <legend className="text-[13px] font-semibold">Overview background</legend>
-      <p className={field.hint}>Applies to the project preview only. The sidebar keeps its current background.</p>
-      <div className="my-3 flex gap-4">
-        {(['color', 'image'] as const).map((mode) => (
-          <label key={mode} className="flex items-center gap-2">
-            <input type="radio" name="overview-background-mode" value={mode}
-              checked={value.overviewBackgroundMode === mode}
-              onChange={() => onChange({ ...value, overviewBackgroundMode: mode })} />
-            {mode === 'image' ? 'Image' : 'Solid color'}
-          </label>
-        ))}
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="min-w-0 text-[11px] text-dim">Project preview only · PNG, JPEG or WebP · the color is the fallback.</p>
+        <div role="radiogroup" aria-label="Overview background mode" className="inline-flex shrink-0 rounded-full border border-line p-0.5">
+          {MODES.map((mode) => {
+            const selected = value.overviewBackgroundMode === mode.value
+            return (
+              <label key={mode.value} className={cn('relative cursor-pointer rounded-full px-3 py-1 text-xs', selected ? 'bg-accent text-canvas' : 'text-dim hover:text-fg')}>
+                <input type="radio" name="overview-background-mode" value={mode.value} checked={selected}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  onChange={() => onChange({ ...value, overviewBackgroundMode: mode.value })} />
+                {mode.label}
+              </label>
+            )
+          })}
+        </div>
       </div>
-      <label className="flex items-center gap-3">
-        <span className={field.label}>Background color</span>
-        <input type="color" value={value.overviewBackgroundColor}
-          onChange={(event) => onChange({ ...value, overviewBackgroundColor: event.target.value })} />
-      </label>
-      <p className={field.hint}>This color is also used when an image is unavailable.</p>
-      <p className={field.hint}>Choose a PNG, JPEG or WebP image from your computer.</p>
-      <button type="button" className={btn.ghost} disabled={loading || importing} onClick={() => void addWallpaper()}>
-        {importing ? 'Adding image…' : 'Add image…'}
-      </button>
-      {importError && <p role="alert">{importError}</p>}
-      {loading ? <p role="status">Loading wallpapers…</p> : error ? (
-        <div>
-          <p role="alert">Cannot load wallpapers. Check folder permissions and try again.</p>
-          <button type="button" className={btn.ghost} disabled={importing} onClick={() => setRevision((current) => current + 1)}>Retry</button>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <label className="flex items-center gap-2.5 text-xs text-dim">
+          Background color
+          <input type="color" value={value.overviewBackgroundColor}
+            className="h-6 w-9 cursor-pointer rounded border border-line bg-transparent p-0"
+            onChange={(event) => onChange({ ...value, overviewBackgroundColor: event.target.value })} />
+        </label>
+        <div className="flex items-center gap-2">
+          <button type="button" className={btn.ghost} disabled={loading || importing} onClick={() => void addWallpaper()}>
+            {importing ? 'Adding image…' : 'Add image…'}
+          </button>
+          {pages > 1 && <div className="flex items-center">
+            <button type="button" aria-label="Previous images" disabled={page === 0}
+              className={cn(btn.icon, 'disabled:cursor-not-allowed disabled:opacity-30')}
+              onClick={() => setPage(page - 1)}>
+              <Icon icon="chevron-left" size={16} />
+            </button>
+            <span role="status" className="min-w-[3ch] text-center text-[11px] tabular-nums text-dim">{page + 1} / {pages}</span>
+            <button type="button" aria-label="Next images" disabled={page + 1 >= pages}
+              className={cn(btn.icon, 'disabled:cursor-not-allowed disabled:opacity-30')}
+              onClick={() => setPage(page + 1)}>
+              <Icon icon="chevron-right" size={16} />
+            </button>
+          </div>}
+        </div>
+      </div>
+
+      {importError && <p role="alert" className="mt-2 text-xs text-danger">{importError}</p>}
+      {loading ? <p role="status" className={field.hint}>Loading wallpapers…</p> : error ? (
+        <div className="mt-2">
+          <p role="alert" className="text-xs text-danger">Cannot load wallpapers. Check folder permissions and try again.</p>
+          <button type="button" className={cn(btn.ghost, 'mt-2')} disabled={importing} onClick={() => setRevision((current) => current + 1)}>Retry</button>
         </div>
       ) : <>
-        {library.length === 0 && <p role="status">No wallpapers yet. Choose Add image to get started.</p>}
+        {library.length === 0 && <p role="status" className={field.hint}>No wallpapers yet. Choose Add image to get started.</p>}
         {value.overviewWallpaperId && !library.some((item) => item.id === value.overviewWallpaperId) && (
-          <p role="status" className="break-words">Selected image {value.overviewWallpaperId} is unavailable. Add it again or choose another image. The background color will be used until it is available.</p>
+          <p role="status" className={cn(field.hint, 'break-words')}>Selected image {value.overviewWallpaperId} is unavailable. Add it again or choose another image. The background color will be used until it is available.</p>
         )}
-        {value.overviewBackgroundMode === 'image' && library.length > 0 && <>
-          <div className="my-3 grid min-w-0 grid-cols-3 gap-2" aria-label="Wallpapers">
-            {library.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((wallpaper) => (
-              <button key={`${revision}:${wallpaper.id}`} type="button" aria-pressed={value.overviewWallpaperId === wallpaper.id}
-                className={cn('min-w-0 overflow-hidden border p-1 text-left focus-visible:outline-2 focus-visible:outline-accent', value.overviewWallpaperId === wallpaper.id ? 'border-accent bg-accent/10' : 'border-line')}
-                onClick={() => onChange({ ...value, overviewWallpaperId: wallpaper.id })}>
-                <Thumbnail workspaceId={workspaceId} wallpaper={wallpaper} refresh={revision > 0} />
-                <span className="block truncate text-xs" title={wallpaper.name}>{wallpaper.name}</span>
-                {value.overviewWallpaperId === wallpaper.id && <span className="text-xs text-accent">Selected</span>}
-              </button>
-            ))}
+        {value.overviewBackgroundMode === 'image' && library.length > 0 && (
+          <div className="mt-3 grid min-w-0 grid-cols-3 gap-2" aria-label="Wallpapers">
+            {library.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((wallpaper) => {
+              const selected = value.overviewWallpaperId === wallpaper.id
+              return (
+                <button key={`${revision}:${wallpaper.id}`} type="button" aria-pressed={selected}
+                  className={cn('relative min-w-0 overflow-hidden border p-1 text-left focus-visible:outline-2 focus-visible:outline-accent', selected ? 'border-accent bg-accent/10' : 'border-line hover:border-dim')}
+                  onClick={() => onChange({ ...value, overviewWallpaperId: wallpaper.id })}>
+                  <Thumbnail workspaceId={workspaceId} wallpaper={wallpaper} refresh={revision > 0} />
+                  <span className="block truncate text-[11px]" title={wallpaper.name}>{wallpaper.name}</span>
+                  {selected && <span aria-hidden="true" className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-full bg-accent text-canvas"><Icon icon="check" size={12} /></span>}
+                </button>
+              )
+            })}
           </div>
-          <div className="flex items-center justify-between gap-2">
-            <button type="button" className={btn.ghost} disabled={page === 0} onClick={() => setPage(page - 1)}>Previous images</button>
-            <span role="status" className="text-xs">{page + 1} / {pages}</span>
-            <button type="button" className={btn.ghost} disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>Next images</button>
-          </div>
-        </>}
+        )}
       </>}
     </fieldset>
   )

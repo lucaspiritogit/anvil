@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 const fixture = '/tests/e2e/fixture/'
 
-test('settings sidebar separates controls and retains drafts across sections and projects', async ({ page }, testInfo) => {
+test('settings sidebar separates controls and retains drafts across sections', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1000, height: 780 })
   await page.goto(fixture)
   const prompt = page.getByRole('textbox', { name: 'Task prompt' })
@@ -14,16 +14,8 @@ test('settings sidebar separates controls and retains drafts across sections and
   await expect(navigation.locator('svg[aria-hidden="true"]')).toHaveCount(6)
   await expect(navigation.getByRole('button', { name: 'General', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(prompt).toBeHidden()
-  await page.getByLabel('Monthly token limit', { exact: true }).fill('123')
-  await page.getByLabel('Project', { exact: true }).selectOption('project-1')
-  await page.getByLabel('Monthly token limit', { exact: true }).fill('456')
-  await page.getByLabel('Project', { exact: true }).selectOption('project-0')
-  await expect(page.getByLabel('Monthly token limit', { exact: true })).toHaveValue('123')
-  await page.getByLabel('Project', { exact: true }).selectOption('project-1')
-  await expect(page.getByLabel('Monthly token limit', { exact: true })).toHaveValue('456')
   await navigation.getByRole('button', { name: 'Providers', exact: true }).click()
   await expect(page.getByLabel('Default agent')).toBeVisible()
-  await expect(page.getByLabel('Monthly token limit', { exact: true })).toHaveCount(0)
   await navigation.getByRole('button', { name: 'Source control', exact: true }).click()
   await page.getByLabel('Rebase mode').selectOption('agent')
   await expect(page.getByRole('region', { name: 'GitHub integration' })).toBeVisible()
@@ -39,7 +31,6 @@ test('settings sidebar separates controls and retains drafts across sections and
   await expect(page.getByRole('button', { name: 'Back to workspace', exact: true })).toBeInViewport()
   const settings = await page.evaluate(() => window.anvil.settings.get())
   expect(settings).toMatchObject({ fontSize: 18, rebaseMode: 'agent', confirmRebase: false })
-  expect(await page.evaluate(async () => (await window.anvil.projects.list()).slice(0, 2).map((project) => project.monthlyTokenLimit))).toEqual([123, 456])
   await page.screenshot({ path: testInfo.outputPath('settings-display.png') })
   await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
   await expect(prompt).toBeVisible()
@@ -214,45 +205,6 @@ test('rapid autosaves keep latest input and failure retry across dismissal', asy
   await page.evaluate(() => window.settingsTest.release())
   await expect(page.getByText('Saved', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => window.settingsTest.calls)).toEqual([{ fontSize: 18 }, { fontSize: 12 }, { fontSize: 12 }])
-})
-
-test('project autosaves serialize rapid edits, preserve limits and retry their captured destination', async ({ page }) => {
-  await page.goto(`${fixture}?projectsControlled&workspaces`)
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  const limit = page.getByLabel('Monthly token limit', { exact: true })
-  await limit.fill('123')
-  await limit.fill('456')
-  await page.getByLabel('Project', { exact: true }).selectOption('project-1')
-  await limit.fill('789')
-  await expect.poll(() => page.evaluate(() => window.projectSettingsTest.calls.length)).toBe(1)
-  await page.evaluate(() => window.projectSettingsTest.release())
-  await expect.poll(() => page.evaluate(() => window.projectSettingsTest.calls.length)).toBe(2)
-  await page.getByLabel('Project', { exact: true }).selectOption('project-0')
-  await expect(limit).toHaveValue('456')
-  await page.evaluate(() => window.projectSettingsTest.release(true))
-  await expect.poll(() => page.evaluate(() => window.projectSettingsTest.calls.length)).toBe(3)
-  await page.evaluate(() => window.projectSettingsTest.release())
-  await page.getByRole('button', { name: 'Create test workspace' }).click()
-  await expect(page.getByLabel('Settings workspace')).toContainText('Work')
-  await expect(page.getByRole('alert')).toBeHidden()
-  await page.getByRole('combobox', { name: 'Test workspace', exact: true }).selectOption({ label: 'Default' })
-  await expect(page.getByRole('alert')).toContainText('Could not save settings')
-  await page.getByRole('button', { name: 'Retry', exact: true }).click()
-  await expect.poll(() => page.evaluate(() => window.projectSettingsTest.calls.length)).toBe(4)
-  await page.evaluate(() => window.projectSettingsTest.release())
-  await expect(page.getByText('Saved', { exact: true })).toBeVisible()
-  expect(await page.evaluate(() => window.projectSettingsTest.calls)).toEqual([
-    { id: 'project-0', workspaceId: 'default', monthlyTokenLimit: 123 },
-    { id: 'project-0', workspaceId: 'default', monthlyTokenLimit: 456 },
-    { id: 'project-1', workspaceId: 'default', monthlyTokenLimit: 789 },
-    { id: 'project-0', workspaceId: 'default', monthlyTokenLimit: 456 }
-  ])
-  await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByLabel('Project', { exact: true }).selectOption('project-0')
-  await expect(limit).toHaveValue('456')
-  await page.getByLabel('Project', { exact: true }).selectOption('project-1')
-  await expect(limit).toHaveValue('789')
 })
 
 test('pending workspace autosave captures its destination before a switch', async ({ page }) => {
