@@ -441,11 +441,12 @@ export class GitDeliveryManager {
     const branchName = (await git(checkoutPath, ['branch', '--show-current'])).stdout.trim()
     const numstat = await git(checkoutPath, ['diff', '--numstat', baseCommit, headCommit, '--'])
     const stats = parseNumstat(numstat.stdout)
+    const changes = await git(checkoutPath, ['diff', '--quiet', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none', baseCommit, headCommit, '--'], [0, 1])
     options.check?.()
     return {
       headCommit,
       ...(branchName ? { branchName } : {}),
-      hasChanges: stats.filesChanged > 0,
+      hasChanges: changes.exitCode === 1,
       finisherCommitted,
       ...stats
     }
@@ -542,7 +543,7 @@ export class GitDeliveryManager {
 
   async getDiff(repoPath: string, baseCommit: string, headCommit: string): Promise<TaskDiff> {
     const [patch, log] = await Promise.all([
-      git(repoPath, ['diff', '--find-renames', '--no-color', baseCommit, headCommit, '--']),
+      git(repoPath, ['diff', '--find-renames', '--no-color', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none', baseCommit, headCommit, '--']),
       git(repoPath, ['log', '--format=%H%x09%s', `${baseCommit}..${headCommit}`])
     ])
     const commits: TaskCommit[] = log.stdout

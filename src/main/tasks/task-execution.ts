@@ -4,7 +4,7 @@ import { implementationPrompt, taskRecoveryPrompt } from '../agents/task-prompts
 import type { ExitInfo } from '../agents/process-manager'
 import type { TaskContext } from './context'
 import type { RecordSystemEvent } from './context'
-import { TaskIssues } from './task-issues'
+import { TaskIssues, type VerifiedNoChanges } from './task-issues'
 import type { TaskCompletion } from './completion'
 import type { TaskExecutionState } from '../../shared/types'
 
@@ -28,7 +28,7 @@ export interface TaskExecution {
   rejectIssue(taskId: string): TaskExecutionState
 }
 
-/** Anvil runs one turn per claimed issue and pauses for developer review after each. */
+/** Anvil runs one turn per claimed issue and pauses for review when finalized changes remain. */
 export function registerTaskExecution(
   { store, agentProcesses, gitDelivery, send, recordSystemEvent }: TaskContext & { recordSystemEvent: RecordSystemEvent },
   finishTask: TaskCompletion
@@ -240,6 +240,7 @@ export function registerTaskExecution(
       } else {
         const task = store.getTask(info.taskId)!
         let delivery: Awaited<ReturnType<typeof gitDelivery.finalizeBranch>> | undefined
+        let noChanges: VerifiedNoChanges | undefined
         if (task.branchName) {
           finalizing = true
           if (!task.baseCommit) throw new Error('The task has no base commit for finalization.')
@@ -254,7 +255,12 @@ export function registerTaskExecution(
           check()
           const issue = issues.list(task.id).find((entry) => entry.id === state.currentIssueId)
           if (issue && !issue.baseCommit) throw new Error('The issue has no base commit for review.')
-          if (issue?.baseCommit) await gitDelivery.getDiff(project.path, issue.baseCommit, delivery.headCommit)
+          if (issue?.baseCommit) {
+            const diff = await gitDelivery.getDiff(project.path, issue.baseCommit, delivery.headCommit)
+            if (issue.status === 'review' && diff.patch === '') {
+              noChanges = { issueId: issue.id, baseCommit: issue.baseCommit, headCommit: delivery.headCommit }
+            }
+          }
           check()
         }
         // Save the finalized range, aggregate metadata and review phase together.
@@ -263,8 +269,8 @@ export function registerTaskExecution(
             headCommit: delivery.headCommit, filesChanged: delivery.filesChanged,
             additions: delivery.additions, deletions: delivery.deletions, deliveryStatus: 'working'
           })
-          if (state.phase === 'recovering') issues.finishRecovery(task.id, delivery?.headCommit)
-          else issues.finishIssue(task.id, delivery?.headCommit)
+          if (state.phase === 'recovering') issues.finishRecovery(task.id, delivery?.headCommit, noChanges)
+          else issues.finishIssue(task.id, delivery?.headCommit, noChanges)
         }, task.workspaceId)
       }
       const next = store.getTaskExecution(info.taskId)

@@ -231,7 +231,7 @@ export class IssueTracker {
     }, { behavior: 'immediate' })
   }
 
-  /** Confirm the checklist with evidence and hold the issue for developer review. */
+  /** Confirm the checklist with evidence; Anvil finalizes the turn before deciding completion or review. */
   submitForReview(id: string, completion: Completion): Issue {
     return this.database.transaction(() => {
       const issue = this.get(id)
@@ -263,7 +263,24 @@ export class IssueTracker {
     }, { behavior: 'immediate' })
   }
 
-  /** Developer approval is the only path to complete; dependencies gate on it. */
+  /** Internal completion after Anvil verifies a clean worktree and an empty finalized diff. */
+  completeNoChanges(id: string, range: { baseCommit: string; headCommit: string }): Issue {
+    return this.database.transaction(() => {
+      const issue = this.get(id)
+      if (issue.status !== 'review') throw new Error('Only submitted issues can complete without review')
+      requiredText(issue.evidence, 'evidence')
+      if (!issue.baseCommit || !issue.headCommit ||
+        issue.baseCommit !== range.baseCommit || issue.headCommit !== range.headCommit) {
+        throw new Error('No-change completion requires the verified finalized issue range')
+      }
+      this.database.update(issues).set({
+        status: 'complete', completedAt: Date.now(), reviewedAt: null
+      }).where(eq(issues.id, id)).run()
+      return this.get(id)
+    }, { behavior: 'immediate' })
+  }
+
+  /** Developer approval completes changed issues; dependencies gate on completion. */
   approve(id: string): Issue {
     return this.database.transaction(() => {
       const issue = this.get(id)

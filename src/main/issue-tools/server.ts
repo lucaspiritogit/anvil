@@ -22,7 +22,7 @@ export const ISSUE_TOOLS: Tool[] = [
   { name: 'anvil_get_plan', description: 'Read the current Anvil task, parent issue, execution phase and all its issues. Call this before resuming work.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'anvil_create_issue', description: 'Add a queued issue to the current task during planning. Parent and workspace are supplied by Anvil. Dependencies must belong to this task.', inputSchema: { type: 'object', properties: fields, required: ['title', 'description', 'checklist', 'validation'], additionalProperties: false } },
   { name: 'anvil_update_issue', description: 'Update an issue in the current task during planning. Ownership cannot change.', inputSchema: { type: 'object', properties: { id, patch: { type: 'object', properties: fields, additionalProperties: false } }, required: ['id', 'patch'], additionalProperties: false } },
-  { name: 'anvil_submit_review', description: 'Submit only the current issue in working status after validating and committing. Blocked issues must be requeued and started first. Success returns the issue in review status; Anvil pauses for developer approval. This does not approve the issue.', inputSchema: { type: 'object', properties: { id, checklist: { type: 'array', description: 'Exactly one true confirmation per issue checklist item, in the order returned by anvil_get_plan. All items must be satisfied.', items: { type: 'boolean' } }, evidence: { type: 'string', description: 'Non-empty actual validation evidence: commands run and their results, plus any required manual checks. Never claim unperformed checks passed.' } }, required: ['id', 'checklist', 'evidence'], additionalProperties: false } },
+  { name: 'anvil_submit_review', description: 'Request completion of only the current issue in working status after validating and committing any changes. No empty commit is needed. Blocked issues must be requeued and started first. Success records the submission in review status, pending turn finalization. After the agent stops, Anvil verifies a clean worktree and finalized issue diff: empty changes complete automatically; changed work pauses for developer approval. This does not approve the issue.', inputSchema: { type: 'object', properties: { id, checklist: { type: 'array', description: 'Exactly one true confirmation per issue checklist item, in the order returned by anvil_get_plan. All items must be satisfied.', items: { type: 'boolean' } }, evidence: { type: 'string', description: 'Non-empty actual validation evidence: commands run and their results, plus any required manual checks. Never claim unperformed checks passed.' } }, required: ['id', 'checklist', 'evidence'], additionalProperties: false } },
   { name: 'anvil_block_issue', description: 'Block an unfinished issue in the current task. Explain the blocker in your response.', inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false } },
   { name: 'anvil_requeue_issue', description: 'Requeue a blocked planning issue or the current interrupted issue. Never take over another task.', inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false } },
   { name: 'anvil_start_issue', description: 'Restart the current interrupted issue after requeueing it. Anvil schedules and claims new work.', inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false } }
@@ -89,7 +89,11 @@ export function callIssueTool(store: Store, taskId: string, workspaceId: string,
         return tracker.start(issueId)
       case 'anvil_submit_review':
         if (planning || state.currentIssueId !== issueId) throw new Error('Only the current working issue can be submitted')
-        return tracker.submitForReview(issueId, { checklist: args.checklist, evidence: args.evidence } as Completion)
+        return {
+          ...tracker.submitForReview(issueId, { checklist: args.checklist, evidence: args.evidence } as Completion),
+          completion: 'pending_finalization',
+          message: 'Submission recorded. End this turn so Anvil can finalize changes. Verified empty changes complete automatically; changed work requires developer review.'
+        }
       default: throw new Error('Unknown issue tool')
     }
   }, workspaceId)

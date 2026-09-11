@@ -35,6 +35,49 @@ function fixture() {
   return { directory, registryPath, path, store, db, a, b, pa, pb, input }
 }
 
+test('verified no-change completion preserves evidence without developer approval and unlocks dependencies', () => {
+  const { a, b, pb, store, input } = fixture()
+  const issue = a.create(input())
+  const dependent = a.create(input({ dependencies: [issue.id] }))
+  const range = { baseCommit: 'base', headCommit: 'head' }
+  expect(() => a.completeNoChanges(issue.id, range)).toThrow(/submitted/)
+  a.start(issue.id)
+  a.recordCommits(issue.id, range)
+  expect(() => a.completeNoChanges(issue.id, range)).toThrow(/submitted/)
+  expect(() => a.submitForReview(issue.id, { checklist: new Array(1), evidence: 'Checked' })).toThrow(/checklist/)
+  a.block(issue.id)
+  expect(() => a.completeNoChanges(issue.id, range)).toThrow(/submitted/)
+  a.requeue(issue.id)
+  a.start(issue.id)
+  a.submitForReview(issue.id, { checklist: [true], evidence: 'Verified no remaining diff; checks passed' })
+  expect(() => a.completeNoChanges(issue.id, { ...range, headCommit: 'stale' })).toThrow(/range/)
+  const foreign = b.create(input({ parentId: pb.id }))
+  expect(() => a.completeNoChanges(foreign.id, range)).toThrow(/not found/)
+  const completed = a.completeNoChanges(issue.id, range)
+  expect(completed).toMatchObject({ status: 'complete', completedAt: expect.any(Number), evidence: 'Verified no remaining diff; checks passed', ...range })
+  expect(completed.reviewedAt).toBeUndefined()
+  expect(a.ready().map((entry) => entry.id)).toEqual([dependent.id])
+  expect(() => a.completeNoChanges(issue.id, range)).toThrow(/submitted/)
+  const reopened = store.issueTracker('a')
+  onTestCleanup(() => reopened.close())
+  expect(reopened.get(issue.id)).toEqual(completed)
+  expect(reopened.claim()?.id).toBe(dependent.id)
+  expect(reopened.claim()).toBeUndefined()
+})
+
+test('no-change completion rejects a submitted issue without a saved range or evidence', () => {
+  const { a, db, input } = fixture()
+  const issue = a.create(input())
+  a.start(issue.id)
+  a.submitForReview(issue.id, { checklist: [true], evidence: 'Checked' })
+  const range = { baseCommit: 'base', headCommit: 'head' }
+  expect(() => a.completeNoChanges(issue.id, range)).toThrow(/range/)
+  a.recordCommits(issue.id, range)
+  db.prepare('UPDATE issues SET evidence = NULL WHERE id = ?').run(issue.id)
+  expect(() => a.completeNoChanges(issue.id, range)).toThrow(/evidence/)
+  expect(a.get(issue.id).status).toBe('review')
+})
+
 test('validates malformed issue and parent input without writes', () => {
   const { a, input } = fixture()
   for (const bad of [null, [], {}, { ...input(), title: ' ' }, { ...input(), checklist: [] },

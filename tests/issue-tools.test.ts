@@ -58,10 +58,41 @@ test('tools preserve ownership, dependency scheduling and developer review', () 
   expect(() => call('task-a', 'anvil_submit_review', { id: first.id, checklist: [true], evidence: 'Passed' })).toThrow(/Only working/)
   call('task-a', 'anvil_requeue_issue', { id: first.id })
   call('task-a', 'anvil_start_issue', { id: first.id })
-  call('task-a', 'anvil_submit_review', { id: first.id, checklist: [true], evidence: 'Focused test passed' })
+  expect(() => call('task-a', 'anvil_submit_review', { id: second.id, checklist: [true], evidence: 'Passed' })).toThrow(/current issue/)
+  expect(() => call('task-a', 'anvil_submit_review', { id: first.id, checklist: [true], evidence: 'Passed', noChanges: true })).toThrow(/Unsupported/)
+  expect(call('task-a', 'anvil_submit_review', { id: first.id, checklist: [true], evidence: 'Focused test passed' }))
+    .toMatchObject({ status: 'review', completion: 'pending_finalization', message: expect.stringContaining('End this turn') })
   expect(store.issueTracker('project').get(first.id).status).toBe('review')
   expect(() => call('task-a', 'anvil_approve_issue', { id: first.id })).toThrow(/Unknown/)
   expect(call('task-a', 'anvil_get_plan')).toMatchObject({ task: { id: 'task-a' }, issues: [expect.objectContaining({ id: first.id }), expect.objectContaining({ id: second.id })] })
+})
+
+test('only matching internal finalization can complete the submitted current issue and recovery advances once', () => {
+  const { store, issues, call } = fixture()
+  const first = call('task-a', 'anvil_create_issue', input) as Issue
+  const second = call('task-a', 'anvil_create_issue', { ...input, dependencies: [first.id] }) as Issue
+  issues.finishPlanning('task-a')
+  issues.claim('task-a', 'base')
+  call('task-a', 'anvil_submit_review', { id: first.id, checklist: [true], evidence: 'No changes needed; checks passed' })
+  const proof = { issueId: first.id, baseCommit: 'base', headCommit: 'head' }
+  for (const invalid of [{ ...proof, issueId: second.id }, { ...proof, baseCommit: 'stale' }, { ...proof, headCommit: 'stale' }]) {
+    expect(() => issues.finishIssue('task-a', 'head', invalid)).toThrow(/verification|range/)
+    expect(issues.list('task-a')[0]).toMatchObject({ status: 'review' })
+    expect(issues.list('task-a')[0].headCommit).toBeUndefined()
+    expect(store.getTaskExecution('task-a')).toMatchObject({ phase: 'working', currentIssueId: first.id })
+  }
+  expect(issues.finishIssue('task-a', 'head', proof)).toBe(false)
+  expect(issues.list('task-a')[0]).toMatchObject({ status: 'complete', evidence: 'No changes needed; checks passed' })
+  expect(issues.list('task-a')[0].reviewedAt).toBeUndefined()
+  const recovered = new TaskIssues(store)
+  recovered.resume('task-a')
+  recovered.finishRecovery('task-a')
+  expect(recovered.claim('task-a', 'head')?.id).toBe(second.id)
+  expect(() => recovered.claim('task-a', 'head')).toThrow(/not ready/)
+  call('task-a', 'anvil_submit_review', { id: second.id, checklist: [true], evidence: 'Checked without Git verification' })
+  // A missing verification result must never imply an empty diff, even with identical endpoints.
+  expect(recovered.finishIssue('task-a', 'head')).toBe(true)
+  expect(recovered.list('task-a')[1].status).toBe('review')
 })
 
 test('MCP discovery and calls stay in the captured workspace and expire with the turn', async () => {
@@ -77,7 +108,9 @@ test('MCP discovery and calls stay in the captured workspace and expire with the
   expect(tools.tools.map((tool) => tool.name)).toContain('anvil_get_plan')
   const review = tools.tools.find((tool) => tool.name === 'anvil_submit_review')!
   expect(review.description).toContain('current issue in working status')
-  expect(review.description).toContain('Success returns the issue in review status')
+  expect(review.description).toContain('pending turn finalization')
+  expect(review.description).toContain('empty changes complete automatically')
+  expect(review.description).toContain('No empty commit is needed')
   expect(review.inputSchema.required).toEqual(['id', 'checklist', 'evidence'])
   expect(review.inputSchema.additionalProperties).toBe(false)
   expect(review.inputSchema.properties).toMatchObject({
