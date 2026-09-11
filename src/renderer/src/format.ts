@@ -1,13 +1,14 @@
 import type { Task } from '@shared/types'
+import { taskWorkingTimeMs, type TaskWorkingTime } from '../../shared/task-timing'
 
 /**
  * Task metrics are rendered in the sidebar, the task list and the task header,
  * so the formatting lives here rather than drifting between the three.
  */
 
-/** Wall time so far: `now` keeps a running task ticking. */
-export function formatDuration(task: Task, now: number): string {
-  const seconds = Math.max(0, Math.floor(((task.endedAt ?? now) - task.startedAt) / 1000))
+/** Measured work so far: `now` advances only an open working interval. */
+export function formatDuration(task: TaskWorkingTime, now: number): string {
+  const seconds = Math.floor(taskWorkingTimeMs(task, now) / 1000)
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`

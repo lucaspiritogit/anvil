@@ -515,10 +515,12 @@ export function TaskView({ task }: Props): JSX.Element {
   }, [events, openTask, task.id])
 
   useEffect(() => {
-    if (task.status !== 'running') return
+    setNow(Date.now())
+    // The persisted interval closes during issue review even if status stays running.
+    if (task.workingStartedAt === undefined) return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [task.status])
+  }, [task.id, task.workingStartedAt])
 
   useEffect(() => {
     const output = outputRef.current
