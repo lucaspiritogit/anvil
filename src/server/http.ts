@@ -1,5 +1,6 @@
 import { createAdaptorServer, type HttpBindings } from '@hono/node-server'
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { HTTPException } from 'hono/http-exception'
 import { decodeRpcInput } from '../shared/rpc-codec'
 import type { HandlerContext } from './handler-registry'
@@ -44,36 +45,6 @@ async function authorized(header: string | undefined, auth: HttpServerAuth | und
   const separator = decoded.indexOf(':')
   return separator !== -1 && decoded.slice(0, separator) === 'anvil'
     && auth.verifyPassword(decoded.slice(separator + 1))
-}
-
-async function readBody(request: Request): Promise<unknown> {
-  if (!/^application\/json(?:;|$)/i.test(request.headers.get('content-type') ?? '')) {
-    throw new HTTPException(415, { message: 'Expected application/json' })
-  }
-  if (Number(request.headers.get('content-length')) > RPC_BODY_LIMIT) {
-    throw new HTTPException(413, { message: 'RPC body too large' })
-  }
-  let size = 0
-  const chunks: Uint8Array[] = []
-  const reader = request.body?.getReader()
-  if (reader) {
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        size += value.byteLength
-        if (size > RPC_BODY_LIMIT) throw new HTTPException(413, { message: 'RPC body too large' })
-        chunks.push(value)
-      }
-    } finally {
-      reader.releaseLock()
-    }
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  } catch {
-    throw new HTTPException(400, { message: 'Invalid JSON body' })
-  }
 }
 
 export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: string; rendererOrigin?: string; auth?: HttpServerAuth }) {
@@ -161,26 +132,39 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: { version: 
     context.header('X-Accel-Buffering', 'no')
     return context.body(body)
   })
-  app.post('/rpc', async (context) => {
-    const body = await readBody(context.req.raw)
-    if (!body || typeof body !== 'object' || Array.isArray(body) || !('channel' in body) || typeof body.channel !== 'string' ||
-      Object.keys(body).some((key) => key !== 'channel' && key !== 'input')) {
-      throw new HTTPException(400, { message: 'Expected { channel, input }' })
-    }
-    const input = decodeRpcInput(body.channel, 'input' in body ? body.input : undefined)
-    const deferred: Array<() => void | Promise<void>> = []
-    const result = await runtime.invoke(body.channel, input, {
-      deferUntilResponse: (action) => { deferred.push(action) }
-    })
-    if (deferred.length) {
-      context.env.outgoing.once('finish', () => {
-        for (const action of deferred) Promise.resolve().then(action).catch((error) => {
-          console.error('Deferred HTTP action failed:', error)
-        })
+  app.post(
+    '/rpc',
+    bodyLimit({ maxSize: RPC_BODY_LIMIT, onError: (context) => context.json({ error: 'RPC body too large' }, 413) }),
+    async (context) => {
+      const type = context.req.header('content-type') ?? ''
+      if (!/^application\/json(?:;|$)/i.test(type)) {
+        throw new HTTPException(415, { message: 'Expected application/json' })
+      }
+      let body: unknown
+      try {
+        body = await context.req.json()
+      } catch {
+        throw new HTTPException(400, { message: 'Invalid JSON body' })
+      }
+      if (!body || typeof body !== 'object' || Array.isArray(body) || !('channel' in body) || typeof body.channel !== 'string' ||
+        Object.keys(body).some((key) => key !== 'channel' && key !== 'input')) {
+        throw new HTTPException(400, { message: 'Expected { channel, input }' })
+      }
+      const input = decodeRpcInput(body.channel, 'input' in body ? body.input : undefined)
+      const deferred: Array<() => void | Promise<void>> = []
+      const result = await runtime.invoke(body.channel, input, {
+        deferUntilResponse: (action) => { deferred.push(action) }
       })
+      if (deferred.length) {
+        context.env.outgoing.once('finish', () => {
+          for (const action of deferred) Promise.resolve().then(action).catch((error) => {
+            console.error('Deferred HTTP action failed:', error)
+          })
+        })
+      }
+      return context.json(result ?? null)
     }
-    return context.json(result ?? null)
-  })
+  )
   app.notFound((context) => context.json({ error: 'Not found' }, 404))
   app.onError((error, context) => {
     const status = error instanceof HTTPException ? error.status : /^(Invalid |Unknown RPC channel)/.test(error.message) ? 400 : 500
