@@ -178,6 +178,151 @@ test('failed delivery preserves files until task deletion', async () => {
   expect(existsSync(task.cwd)).toBe(false)
 })
 
+test('renaming preserves committed and dirty work, nested checkout location, and later delivery after restart', async () => {
+  const { repo, manager, worktrees } = await fixture()
+  const task = await manager.prepareBranch(join(repo, 'app'), 'rename', 'Task')
+  const worktree = join(worktrees, 'rename')
+  await writeFile(join(task.cwd, 'committed.txt'), 'task commit\n')
+  git(task.cwd, 'add', '.')
+  git(task.cwd, 'commit', '-m', 'feat: task work')
+  await writeFile(join(task.cwd, 'source.ts'), 'staged task work\n')
+  git(task.cwd, 'add', '.')
+  await writeFile(join(task.cwd, 'source.ts'), 'unstaged task work\n')
+  await writeFile(join(task.cwd, 'untracked.txt'), 'keep task file\n')
+  await writeFile(join(repo, 'app', 'source.ts'), 'staged project work\n')
+  git(repo, 'add', '.')
+  await writeFile(join(repo, 'app', 'source.ts'), 'unstaged project work\n')
+  await writeFile(join(repo, 'local.txt'), 'keep project file\n')
+  const snapshot = (cwd: string) => ({
+    head: git(cwd, 'rev-parse', 'HEAD'),
+    status: git(cwd, 'status', '--porcelain=v1', '--untracked-files=all'),
+    staged: git(cwd, 'diff', '--cached'),
+    unstaged: git(cwd, 'diff'),
+    index: git(cwd, 'ls-files', '--stage')
+  })
+  const taskBefore = snapshot(task.cwd)
+  const projectBefore = snapshot(repo)
+  const baseCommit = task.baseCommit
+  const renamed = await manager.renameTaskBranch(join(repo, 'app'), 'rename', task.branchName, 'feat/agent-selected')
+  expect(renamed).toBe('feat/agent-selected')
+  expect(snapshot(task.cwd)).toEqual(taskBefore)
+  expect(snapshot(repo)).toEqual(projectBefore)
+  expect(git(task.cwd, 'branch', '--show-current')).toBe(renamed)
+  expect(git(repo, 'branch', '--show-current')).toBe('main')
+  expect(git(repo, 'worktree', 'list', '--porcelain')).toContain(`worktree ${worktree}\nHEAD ${taskBefore.head}\nbranch refs/heads/${renamed}`)
+  expect(await readFile(join(task.cwd, 'untracked.txt'), 'utf8')).toBe('keep task file\n')
+  expect(await readFile(join(repo, 'local.txt'), 'utf8')).toBe('keep project file\n')
+  expect(() => git(repo, 'show-ref', '--verify', `refs/heads/${task.branchName}`)).toThrow()
+  const restarted = new GitDeliveryManager(worktrees)
+  expect(await restarted.renameTaskBranch(repo, 'rename', task.branchName, renamed)).toBe(renamed)
+  expect(await restarted.renameTaskBranch(repo, 'rename', renamed, renamed)).toBe(renamed)
+  expect((await restarted.checkoutBranch(join(repo, 'app'), 'rename', renamed, task.baseBranch)).cwd).toBe(task.cwd)
+  expect(task.baseCommit).toBe(baseCommit)
+  const result = await restarted.finalizeBranch(repo, 'rename', renamed, task.baseBranch, baseCommit, 'Task changes')
+  expect(result.hasChanges).toBe(true)
+  expect(result.finisherCommitted).toBe(true)
+  expect(git(task.cwd, 'status', '--porcelain=v1')).toBe('')
+  const diff = await restarted.getDiff(repo, baseCommit, result.headCommit)
+  expect(diff.patch).toContain('committed.txt')
+  expect(diff.patch).toContain('untracked.txt')
+  expect(snapshot(repo)).toEqual(projectBefore)
+})
+
+test('renaming rejects invalid or nonliteral short names and existing refs without changing work', async () => {
+  const { repo, manager } = await fixture()
+  const task = await manager.prepareBranch(repo, 'invalid-rename', 'Task')
+  const other = await manager.prepareBranch(repo, 'other', 'Other task')
+  git(repo, 'branch', 'existing')
+  await writeFile(join(task.cwd, 'dirty.txt'), 'keep me\n')
+  const refs = git(repo, 'show-ref')
+  const invalidNames = ['', '-bad', '--force', 'HEAD', 'a b', 'a..b', 'a.lock', 'a~b', 'a\nb', 'a:b', '@{-1}', 'refs/heads/full-name']
+  for (const name of [...invalidNames, 'main', 'existing', other.branchName, 'existing/child']) {
+    await expect(manager.renameTaskBranch(repo, 'invalid-rename', task.branchName, name)).rejects.toThrow()
+    expect(git(repo, 'show-ref')).toBe(refs)
+    expect(git(task.cwd, 'branch', '--show-current')).toBe(task.branchName)
+    expect(await readFile(join(task.cwd, 'dirty.txt'), 'utf8')).toBe('keep me\n')
+  }
+  // Git accepts checkout-history shorthand, but this API requires literal input.
+  git(task.cwd, 'switch', '-c', 'history')
+  git(task.cwd, 'switch', task.branchName)
+  await expect(manager.renameTaskBranch(repo, 'invalid-rename', task.branchName, '@{-1}')).rejects.toThrow(/literal short branch name/)
+})
+
+test('renaming rejects stale, detached, missing, and foreign task worktrees', async () => {
+  const { repo, manager, worktrees } = await fixture()
+  const foreign = await fixture()
+  const task = await manager.prepareBranch(repo, 'stale', 'Task')
+  await writeFile(join(task.cwd, 'dirty.txt'), 'keep me\n')
+  await expect(manager.renameTaskBranch(foreign.repo, 'stale', task.branchName, 'renamed')).rejects.toThrow(/does not belong/)
+  await expect(manager.renameTaskBranch(repo, 'missing', task.branchName, 'renamed')).rejects.toThrow()
+  await expect(manager.renameTaskBranch(repo, '../escape', task.branchName, 'renamed')).rejects.toThrow(/Invalid task ID/)
+  git(task.cwd, 'switch', '-c', 'unexpected')
+  await expect(manager.renameTaskBranch(repo, 'stale', task.branchName, 'renamed')).rejects.toThrow(/switched away/)
+  git(task.cwd, 'switch', '--detach')
+  await expect(manager.renameTaskBranch(repo, 'stale', task.branchName, 'renamed')).rejects.toThrow(/switched away/)
+  await symlink(repo, join(worktrees, 'project-alias'), 'junction')
+  await expect(manager.renameTaskBranch(repo, 'project-alias', 'main', 'renamed')).rejects.toThrow(/not a managed linked worktree/)
+  git(task.cwd, 'switch', task.branchName)
+  await symlink(task.cwd, join(worktrees, 'task-alias'), 'junction')
+  await expect(manager.renameTaskBranch(repo, 'task-alias', task.branchName, 'renamed')).rejects.toThrow(/not a managed linked worktree/)
+  expect(git(repo, 'branch', '--show-current')).toBe('main')
+  expect(git(task.cwd, 'rev-parse', 'HEAD')).toBe(task.baseCommit)
+  expect(await readFile(join(task.cwd, 'dirty.txt'), 'utf8')).toBe('keep me\n')
+  expect(() => git(repo, 'show-ref', '--verify', 'refs/heads/renamed')).toThrow()
+})
+
+test('concurrent renames serialize through repository aliases and reject stale requests', async () => {
+  const { repo, manager, directory } = await fixture()
+  const task = await manager.prepareBranch(repo, 'concurrent-rename', 'Task')
+  const alias = join(directory, 'alias')
+  await symlink(repo, alias, 'junction')
+  const results = await Promise.allSettled([
+    manager.renameTaskBranch(repo, 'concurrent-rename', task.branchName, 'first-name'),
+    manager.renameTaskBranch(join(alias, 'app'), 'concurrent-rename', task.branchName, 'second-name')
+  ])
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+  const rejected = results.find((result) => result.status === 'rejected')
+  expect(rejected?.reason.message).toMatch(/switched away/)
+  const accepted = git(task.cwd, 'branch', '--show-current')
+  expect(await manager.renameTaskBranch(repo, 'concurrent-rename', accepted, accepted)).toBe(accepted)
+  expect(await manager.renameTaskBranch(repo, 'concurrent-rename', task.branchName, accepted)).toBe(accepted)
+  git(repo, 'branch', task.branchName)
+  await expect(manager.renameTaskBranch(repo, 'concurrent-rename', task.branchName, accepted)).rejects.toThrow(/switched away/)
+})
+
+test('renaming checks cancellation under the lock and immediately before mutation', async () => {
+  const { repo, manager } = await fixture()
+  const task = await manager.prepareBranch(repo, 'cancel-rename', 'Task')
+  await writeFile(join(task.cwd, 'dirty.txt'), 'keep me\n')
+  let release!: () => void
+  let entered!: () => void
+  const locked = new Promise<void>((resolve) => { entered = resolve })
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const holder = manager.withRepoLock(repo, async () => {
+    entered()
+    await gate
+  })
+  await locked
+  let cancelled = false
+  const pending = manager.renameTaskBranch(repo, 'cancel-rename', task.branchName, 'cancelled', () => {
+    if (cancelled) throw new Error('Cancelled')
+  })
+  const rejection = expect(pending).rejects.toThrow('Cancelled')
+  cancelled = true
+  release()
+  await holder
+  await rejection
+  let checks = 0
+  await expect(manager.renameTaskBranch(repo, 'cancel-rename', task.branchName, 'cancelled', () => {
+    if (++checks === 2) throw new Error('Cancelled before mutation')
+  })).rejects.toThrow('Cancelled before mutation')
+  expect(checks).toBe(2)
+  expect(git(task.cwd, 'branch', '--show-current')).toBe(task.branchName)
+  expect(git(task.cwd, 'rev-parse', 'HEAD')).toBe(task.baseCommit)
+  expect(await readFile(join(task.cwd, 'dirty.txt'), 'utf8')).toBe('keep me\n')
+  expect(() => git(repo, 'show-ref', '--verify', 'refs/heads/cancelled')).toThrow()
+})
+
 test('cancellation between staging and committing preserves the uncommitted task files', async () => {
   const { repo, manager } = await fixture()
   const task = await manager.prepareBranch(repo, 'cancel-finisher', 'Task')

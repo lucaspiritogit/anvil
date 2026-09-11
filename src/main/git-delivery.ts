@@ -282,6 +282,42 @@ export class GitDeliveryManager {
     return { commit, branch: branch ?? ((await git(projectPath, ['branch', '--show-current'])).stdout.trim() || commit) }
   }
 
+  /** Rename only an existing task checkout, accepting retries of an applied rename. */
+  async renameTaskBranch(projectPath: string, taskId: string, branchName: string, proposedName: string, check: () => void = () => {}): Promise<string> {
+    return this.withRepoLock(projectPath, async () => {
+      check()
+      const worktree = this.taskWorktree(taskId)
+      const current = (await git(worktree, ['branch', '--show-current'])).stdout.trim()
+      let expected = branchName
+      if (current === proposedName && current !== branchName) {
+        const oldRef = await git(worktree, ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`], [0, 1])
+        if (oldRef.exitCode === 1) expected = proposedName
+      }
+      await this.verifyTaskWorktree(projectPath, worktree, expected)
+      const gitDir = await realpath((await git(worktree, ['rev-parse', '--absolute-git-dir'])).stdout.trim())
+      const commonDir = await realpath((await git(worktree, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).stdout.trim())
+      if (gitDir === commonDir || await realpath(worktree) !== join(await realpath(dirname(worktree)), taskId)) {
+        throw new Error('The task checkout is not a managed linked worktree. No files were changed.')
+      }
+
+      // --branch rejects leading options and HEAD, but expands @{-n}. Require
+      // literal short names so that Git cannot silently choose a different name.
+      const validated = await git(worktree, ['check-ref-format', '--branch', proposedName])
+      if (validated.stdout.trim() !== proposedName || proposedName.startsWith('refs/')) {
+        throw new Error('Use a literal short branch name.')
+      }
+      check()
+      if (current === proposedName) return current
+
+      // The explicit source prevents renaming an unrelated current branch, and
+      // lowercase -m refuses to overwrite an existing destination ref.
+      await git(worktree, ['branch', '-m', '--', branchName, proposedName])
+      // Do not check cancellation after mutation: callers must receive the name
+      // that Git accepted so they can persist it even if the task just stopped.
+      return proposedName
+    })
+  }
+
   async commonBase(projectPath: string, first: string, second: string): Promise<string> {
     return (await git(projectPath, ['merge-base', first, second])).stdout.trim()
   }
