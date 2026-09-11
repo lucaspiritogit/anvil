@@ -22,7 +22,7 @@ you one cumulative diff to review.
 
 Download the latest DMG from
 [Releases](https://github.com/lucaspiritogit/anvil/releases), open it, drag Anvil
-into Applications, and launch it there. Requires macOS.
+into Applications, and launch it there.
 
 The builds are unsigned for now, so macOS may warn on first launch. To build from
 source instead, see [Package for macOS](#package-for-macos).

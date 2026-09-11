@@ -4,7 +4,7 @@
   "description": "Desktop control plane for running coding agents in parallel Git worktrees and reviewing their diffs.",
   "main": "./out/main/index.js",
   "author": "lucasignaciopirito@gmail.com",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "scripts": {
     "test:e2e": "playwright test",
     "test:issue-tracker": "node scripts/prepare-vitest-native.mjs && vitest run",
