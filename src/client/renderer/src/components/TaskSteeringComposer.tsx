@@ -99,11 +99,6 @@ export function TaskSteeringComposer({ task, contextControl }: {
           </button>
         )}
       </div>
-      {task.status === 'running' && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-dim">
-          <span>{stopMode ? 'The agent is working. Type to steer it, or press the square to stop.' : 'Press Enter to send.'}</span>
-        </div>
-      )}
       {error && <p role="alert" className="mt-1.5 max-h-16 overflow-y-auto text-xs text-danger">{error}</p>}
     </form>
   )

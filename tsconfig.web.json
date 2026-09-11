@@ -1,10 +1,11 @@
 {
-  "include": ["src/client/renderer/src/**/*", "src/client/preload/**/*", "src/shared/**/*", "tests/e2e/fixture/app.tsx", "tests/e2e/fixture/accounts.ts", "tests/e2e/fixture/task-events.ts"],
+  "include": ["package.json", "src/client/renderer/src/**/*", "src/client/preload/**/*", "src/shared/**/*", "tests/e2e/fixture/app.tsx", "tests/e2e/fixture/accounts.ts", "tests/e2e/fixture/task-events.ts"],
   "compilerOptions": {
     "composite": true,
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "strict": true,

@@ -1,4 +1,5 @@
 import { WorkspaceAgentAccounts } from './WorkspaceAgentAccounts'
+import { version } from '../../../../../package.json'
 import type { JSX } from 'react'
 import { SETTINGS_SECTIONS } from '../settings-sections'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -475,6 +476,9 @@ export function SettingsPage(): JSX.Element {
           </fieldset>
         </div>
       </main>
+      <footer className="shrink-0 px-5 py-3 text-right text-[11px] text-dim" aria-label="Anvil version">
+        Anvil v{version}
+      </footer>
     </div>
   )
 }

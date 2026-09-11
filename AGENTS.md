@@ -15,8 +15,6 @@ Anvil is an Electron desktop app built with TypeScript, React, Zustand, and Tail
 - `npm ci`: install locked dependencies locally and rebuild native Electron modules. Use `npm install` when changing dependencies.
 - `npm run dev`: start Electron with Vite development tooling. Unset `ELECTRON_RUN_AS_NODE` first.
 - `npm run typecheck`: check main-process and renderer TypeScript.
-- `npm test`: run Vitest once. `npm run test:issue-tracker -- <suite>` is a compatibility alias with Vitest filename filters.
-- `npm run typecheck:tests`: strictly check migrated tests and the Vitest configuration.
 - `npm run build`: typecheck and generate production bundles in `out/`.
 - `npm run pack` / `npm run dist`: build unpacked Windows output or an installer.
 - `npm run pack:mac` / `npm run dist:mac`: build a local unsigned macOS app or DMG in `release/` for the current architecture.
@@ -28,7 +26,7 @@ Use two-space indentation, single quotes, and no semicolons. Keep TypeScript str
 
 ## Testing
 
-Tests use Vitest on host Node ^22.12.0, ^24.0.0, or >=26.0.0. Name suites `tests/*.test.ts`; discovery is automatic and excludes Playwright under `tests/e2e/`. Use named `test`/`describe` cases, `expect`, and `vi`. `tsconfig.test.json` automatically checks test suites and helpers, excluding Playwright. Use `npm test -- tests/task-usage.test.ts` for one exact file or `npm run test:issue-tracker -- task-usage` for a filename filter. Run browser coverage separately with `npm run test:e2e`. The npm test commands build a private host SQLite addon without changing Electron's installed addon. Register resource disposal with `onTestCleanup` and use `registerTestIpc` for IPC fixtures. See `docs/testing/vitest-migration.md` for runtime details, the migration audit and validation evidence. No coverage threshold is configured. Cover dependency and priority scheduling, sequential execution, malformed output, restart persistence, and final task diffs when changing the issue tracker. Use temporary databases and repositories. Include manual UI checks for renderer changes.
+Run `npm run typecheck` to verify that the code works, do not run tests unless explicitly told so
 
 ## Commits and pull requests
 
