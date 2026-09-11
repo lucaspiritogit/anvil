@@ -166,7 +166,7 @@ test('registers all channels and rejects foreign, subframe and navigated senders
     'agents:list', 'agents:models', 'comments:add', 'comments:list', 'comments:remove', 'comments:send',
     'github:credential-status', 'github:set-token', 'github:remove-token', 'github:pr-preview', 'github:open-pr', 'github:draft-pr-field', 'github:open-pr-url',
     'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:open-terminal', 'projects:update',
-    'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:compact', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:settle', 'tasks:start', 'tasks:steer',
+    'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:compact', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:restack', 'tasks:settle', 'tasks:stack', 'tasks:stack-dismiss', 'tasks:start', 'tasks:steer',
     'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set', 'workspaces:composer:import',
     'wallpapers:directory', 'wallpapers:import', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set'
   ].sort())
@@ -774,4 +774,21 @@ test('partial project preferences target the captured workspace after switching'
   expect(call('projects:update', { workspaceId: original.id, id: project.id, monthlyTokenLimit: 123 })).toMatchObject({ monthlyTokenLimit: 123 })
   expect(store.getProjects(original.id)[0]).toMatchObject({ monthlyTokenLimit: 123, monthlyCostLimitUsd: null, finishOnPush: false })
   expect(store.getProjects(other.id)[0]).toMatchObject({ monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false })
+})
+
+
+test('stacked start validates ownership and passes the parent commit to branch preparation', async () => {
+  const { store, call, gitDelivery, tick } = setupIpc()
+  const parent = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Parent' }) as Task
+  await tick()
+  const stackBase = vi.fn(async () => ({ commit: 'parent-tip', branch: parent.branchName! }))
+  Object.assign(gitDelivery, { stackBase })
+  const prepare = vi.spyOn(gitDelivery, 'prepareBranch')
+  const child = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Child', parentTaskId: parent.id }) as Task
+  expect(child.parentTaskId).toBe(parent.id)
+  expect(store.getTask(child.id)?.parentTaskId).toBe(parent.id)
+  expect(prepare).toHaveBeenCalledWith(testHome, child.id, child.title, expect.any(Function), { commit: 'parent-tip', branch: parent.branchName })
+  const count = store.getTasks().length
+  await expect(call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Invalid', parentTaskId: 'missing' })).rejects.toThrow('same project')
+  expect(store.getTasks()).toHaveLength(count)
 })

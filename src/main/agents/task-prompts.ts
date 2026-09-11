@@ -17,7 +17,7 @@ function issueTrackerInstructionsPrompt(): string {
   return 'Use the supplied anvil_issue_tracker tools. If not visible, discover them through the available tool search/list facility. Call anvil_get_plan for current issue context and status. Follow the discovered MCP schema for arguments and call the tool directly. The connection supplies task ownership; no database access, credentials, or hand-written HTTP is needed.'
 }
 
-const PLANNING_TOOLS = 'Use anvil_create_issue and anvil_update_issue to build the queued plan. Use anvil_requeue_issue for repaired blocked planning issues and anvil_block_issue only for unfinished planning.'
+const PLANNING_TOOLS = 'Declare expectedFiles for every issue using repo-relative paths, or [] when no files are expected. Use anvil_create_issue and anvil_update_issue to build the queued plan. Use anvil_requeue_issue for repaired blocked planning issues and anvil_block_issue only for unfinished planning.'
 
 const PLANNING_VALIDATION = 'Give each issue one narrow validation check or a short justified list for its changed paths. Prefer unit/integration checks; use e2e only for affected UI behavior or explicit requirements. Do not default to full-repository typecheck, test, and e2e stacks. Avoid repeating suites across dependent issues unless later changes invalidate earlier results or required checks demand it. Preserve required repository and user checks; place shared checks at the relevant dependency boundary.'
 

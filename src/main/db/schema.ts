@@ -11,7 +11,7 @@ import { sql, type SQL } from 'drizzle-orm'
 import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH } from '../../shared/types'
 import type { ComposerPreferences } from '../../shared/types'
 import type { Issue } from '../../shared/valence'
-import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { type AnySQLiteColumn, check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
 import type {
   DeliveryStatus,
@@ -125,6 +125,11 @@ export const tasks = sqliteTable(
       .$type<DeliveryStatus>()
       .notNull()
       .default('unavailable'),
+    parentTaskId: text('parent_task_id').references((): AnySQLiteColumn => tasks.id, { onDelete: 'set null' }),
+    expectedFiles: text('expected_files', { mode: 'json' }).$type<string[]>(),
+    restackState: text('restack_state').$type<'pending' | 'conflict'>(),
+    restackTarget: text('restack_target', { mode: 'json' }).$type<import('../../shared/types').TaskStackTarget>(),
+    stackSuggestion: text('stack_suggestion', { mode: 'json' }).$type<{ parentTaskId: string; paths: string[] }>(),
     baseBranch: text('base_branch'),
     branchName: text('branch_name'),
     baseCommit: text('base_commit'),
@@ -145,6 +150,8 @@ export const tasks = sqliteTable(
     // this still serves `ORDER BY started_at DESC`.
     index('tasks_workspace_started_idx').on(table.workspaceId, table.startedAt),
     index('tasks_project_started_idx').on(table.projectId, table.startedAt),
+    index('tasks_parent_idx').on(table.parentTaskId),
+    check('tasks_restack_state_valid', oneOf(table.restackState, ['pending', 'conflict'])),
     check('tasks_status_valid', oneOf(table.status, TASK_STATUSES)),
     check('tasks_delivery_status_valid', oneOf(table.deliveryStatus, DELIVERY_STATUSES))
   ]
@@ -245,6 +252,7 @@ export const issues = sqliteTable('issues', {
   parentId: text('parent_id').notNull().references(() => parentIssues.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
   description: text('description').notNull(),
+  expectedFiles: text('expected_files', { mode: 'json' }).$type<string[]>(),
   checklist: text('checklist', { mode: 'json' }).$type<string[]>().notNull(),
   validation: text('validation').notNull(),
   labels: text('labels', { mode: 'json' }).$type<string[]>().notNull(),

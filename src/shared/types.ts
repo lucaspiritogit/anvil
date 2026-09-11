@@ -256,7 +256,20 @@ export interface WorkspacePreferences {
   lastProjectId: string | null
 }
 
+export interface TaskStackTarget {
+  commit: string
+  branch: string
+  parentTaskId?: string
+  oldBase?: string
+}
+
 export interface Task {
+  parentTaskId?: string
+  expectedFiles?: string[]
+  restackState?: 'pending' | 'conflict'
+  restackTarget?: TaskStackTarget
+  stackSuggestion?: { parentTaskId: string; paths: string[] }
+
   id: string
   readonly workspaceId: string
   projectId: string

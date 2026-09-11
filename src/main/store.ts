@@ -122,6 +122,11 @@ function toTask(row: TaskRow): Task {
     ...(row.contextUsed === null ? {} : { contextUsed: row.contextUsed }),
     ...(row.contextSize === null ? {} : { contextSize: row.contextSize }),
     ...(row.contextCompactionError === null ? {} : { contextCompactionError: row.contextCompactionError }),
+    ...(row.parentTaskId === null ? {} : { parentTaskId: row.parentTaskId }),
+    ...(row.expectedFiles === null ? {} : { expectedFiles: row.expectedFiles }),
+    ...(row.restackState === null ? {} : { restackState: row.restackState }),
+    ...(row.restackTarget === null ? {} : { restackTarget: row.restackTarget }),
+    ...(row.stackSuggestion === null ? {} : { stackSuggestion: row.stackSuggestion }),
     deliveryStatus: row.deliveryStatus,
     ...(row.baseBranch === null ? {} : { baseBranch: row.baseBranch }),
     ...(row.branchName === null ? {} : { branchName: row.branchName }),
@@ -165,6 +170,11 @@ function toTaskEvent(row: TaskEventRow): TaskEvent {
 function toTaskRow(task: Task): typeof tasks.$inferInsert {
   return {
     ...task,
+    parentTaskId: task.parentTaskId ?? null,
+    expectedFiles: task.expectedFiles ?? null,
+    restackState: task.restackState ?? null,
+    restackTarget: task.restackTarget ?? null,
+    stackSuggestion: task.stackSuggestion ?? null,
     model: task.model ?? null,
     endedAt: task.endedAt ?? null,
     reviewedAt: task.reviewedAt ?? null,

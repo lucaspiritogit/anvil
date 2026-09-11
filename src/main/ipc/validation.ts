@@ -147,12 +147,15 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:diff': id,
   'tasks:issue-diff': object({ taskId: id, issueId: id }),
   'tasks:start': (value, field) => {
-    const input = object<IpcRequests['tasks:start']>({ workspaceId: optional(id), projectId: id, agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
+    const input = object<IpcRequests['tasks:start']>({ parentTaskId: optional(id), workspaceId: optional(id), projectId: id, agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
     if (!hasTaskContent(input.prompt, input.images)) invalid(field, 'requires a prompt or an image')
     return input
   },
   'tasks:steer': object({ taskId: id, message: text(100_000) }),
   'tasks:compact': id,
+  'tasks:stack': object({ taskId: id, parentTaskId: id }),
+  'tasks:stack-dismiss': id,
+  'tasks:restack': id,
   'tasks:cancel': id,
   'tasks:delete': id,
   'tasks:settle': id,

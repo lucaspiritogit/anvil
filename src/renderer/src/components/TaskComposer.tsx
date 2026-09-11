@@ -23,6 +23,9 @@ export function TaskComposer(): JSX.Element {
 }
 
 function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; draftKey: string }): JSX.Element {
+  const tasks = useStore((state) => state.tasks)
+  const [parentTaskId, setParentTaskId] = useState('')
+  const parents = tasks.filter((task) => task.projectId === projectId && task.branchName && !task.restackState && task.settledAt === undefined && task.status !== 'cancelled' && ['working', 'reviewable'].includes(task.deliveryStatus))
   const agents = useStore((state) => state.agents)
   const modelsByAgent = useStore((state) => state.modelsByAgent)
   const loadingModelsAgentId = useStore((state) => state.loadingModelsAgentId)
@@ -64,6 +67,9 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   }, [agentId, model, reasoningEffort, savedEffort, setReasoningEffort])
 
   useEffect(() => { setSwitchingBranch(false) }, [projectId])
+  useEffect(() => {
+    if (parentTaskId && !tasks.some((task) => task.id === parentTaskId && !task.restackState && task.status !== 'cancelled' && task.settledAt === undefined && ['working', 'reviewable'].includes(task.deliveryStatus))) setParentTaskId('')
+  }, [tasks, parentTaskId])
 
   useEffect(() => {
     promptRef.current?.focus()
@@ -81,6 +87,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     try {
       await startTask({
         agentId,
+        parentTaskId: parentTaskId || undefined,
         prompt: prompt.trim(),
         ...(mentions.references.length ? { fileReferences: mentions.references } : {}),
         model: model.trim() || undefined,
@@ -90,6 +97,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       draft.clearSubmitted()
       if (mounted.current) {
         attachments.reset()
+        setParentTaskId('')
       }
     } catch (error) {
       if (mounted.current) setError(error instanceof Error ? error.message : String(error))
@@ -103,6 +111,13 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     <div>
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Choose the model again to retry saving.</p>}
       {projectId && <ProjectBranchSelector key={projectId} projectId={projectId} disabled={busy} onSwitching={setSwitchingBranch} />}
+      {parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
+        Stack on task
+        <select aria-label="Stack on task" className={compactSelect} disabled={busy} value={parentTaskId} onChange={(event) => setParentTaskId(event.target.value)}>
+          <option value="">Project branch</option>
+          {parents.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}
+        </select>
+      </label>}
       <form
         ref={composerRef}
         aria-label="Start a task"

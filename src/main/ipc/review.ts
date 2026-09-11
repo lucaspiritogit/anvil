@@ -1,3 +1,4 @@
+import { TaskStacks, requireStackMergeable } from '../tasks/task-stacks'
 import { TaskIssues } from '../tasks/task-issues'
 import type { RendererIpc } from '../renderer-security'
 import { randomUUID } from 'node:crypto'
@@ -24,6 +25,7 @@ export function registerReviewHandlers(ipc: RendererIpc, {
     requireFinishedTask(taskId)
     const task = store.getTask(taskId)
     if (!task) throw new Error('Task not found')
+    requireStackMergeable(store, task)
     if (task.deliveryStatus !== 'reviewable') throw new Error('This task is not awaiting review')
     if (!task.branchName) throw new Error('This task has no branch to merge')
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
@@ -50,6 +52,7 @@ export function registerReviewHandlers(ipc: RendererIpc, {
       if (!approved) throw new Error('Task was deleted')
       recordSystemEvent(taskId, `Merged ${branchName} into ${preview.targetBranch} with git merge, bringing in ${preview.commitCount} commit${preview.commitCount === 1 ? '' : 's'}.`)
       send('task:updated', approved)
+      await new TaskStacks({ store, agentProcesses, gitDelivery, send }).restackChildren(taskId)
       return approved
     })
   })

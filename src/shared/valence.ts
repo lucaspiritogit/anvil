@@ -20,6 +20,7 @@ export interface Issue {
   parentId: string
   title: string
   description: string
+  expectedFiles?: string[]
   checklist: string[]
   validation: string
   labels: string[]
@@ -42,6 +43,7 @@ export interface CreateIssue {
   parentId: string
   title: string
   description: string
+  expectedFiles?: string[]
   checklist: string[]
   validation: string
   labels?: string[]

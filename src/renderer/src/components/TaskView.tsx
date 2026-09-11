@@ -3,6 +3,7 @@ import type { JSX, ReactNode } from 'react'
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
+import { TaskStackStatus } from './TaskStackStatus'
 import { useStore } from '../state/store'
 import { btn, cn, deliveryTone, dot, field, ISSUE_STATUS, statusTone } from '../ui'
 import { AgentIcon } from './AgentIcon'
@@ -620,6 +621,7 @@ export function TaskView({ task }: Props): JSX.Element {
           diff && <RebaseModal taskId={task.id} commits={diff.commits} />
         ))}
 
+      <TaskStackStatus key={`stack-${task.id}`} task={task} />
       <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4">
         <div className="flex items-start justify-between gap-4">
           <h1 className="min-w-0 flex-1 text-base font-medium leading-snug [overflow-wrap:anywhere]">{task.title}</h1>
@@ -657,7 +659,7 @@ export function TaskView({ task }: Props): JSX.Element {
                 <button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
                   Open PR
                 </button>
-                {!approved && <button className={cn(btn.primary, 'bg-ok')} disabled={!diff || rebasing || sending} onClick={() => setApprovalTaskId(task.id)}>
+                {!approved && <button className={cn(btn.primary, 'bg-ok')} disabled={!diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)} title={task.restackState ? 'Finish restacking before merging' : task.parentTaskId ? 'Merge the parent task first' : undefined} onClick={() => setApprovalTaskId(task.id)}>
                   Approve
                 </button>}
               </span>}

@@ -52,6 +52,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   compact?: boolean
   rowProps?: ComponentPropsWithRef<'li'> & { 'data-index'?: number }
 }): JSX.Element {
+  const parent = useStore((state) => state.tasks.find((entry) => entry.id === (task.restackTarget?.parentTaskId ?? task.parentTaskId)))
   const openTask = useStore((state) => state.openTask)
   const settleTask = useStore((state) => state.settleTask)
   const [settling, setSettling] = useState(false)
@@ -102,6 +103,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
       <article
         className={cn(
           'group relative transition-colors',
+          parent && 'ml-3 border-l border-accent/40',
           indicator?.highlight || (active ? 'bg-hover' : compact ? 'hover:bg-hover/60' : 'bg-raised/60 hover:bg-hover/70'),
           (active || indicator?.highlight) && 'ring-1 ring-inset',
           active && (indicator?.highlight ? 'outline outline-1 outline-offset-1 outline-dim/60' : 'ring-line')
@@ -142,6 +144,8 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
               </span>
             </>
           )}
+          {parent && <span className="block truncate text-[10px] text-dim">Stacked on {parent.title}</span>}
+          {task.restackState && <span className="block text-[10px] text-warn">Restack {task.restackState}</span>}
           {presentation && <span className="block truncate px-1 text-[11px] text-dim" title={presentation.issue.title}>{presentation.label}: {presentation.issue.title}</span>}
         </button>
         {!compact && eligible && (

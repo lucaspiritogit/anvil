@@ -13,6 +13,7 @@ export interface IssueToolConnection {
 const fields = {
   title: { type: 'string' }, description: { type: 'string' },
   checklist: { type: 'array', items: { type: 'string' } }, validation: { type: 'string' },
+  expectedFiles: { type: 'array', description: 'Repository-relative files this issue expects to modify.', items: { type: 'string' } },
   labels: { type: 'array', items: { type: 'string' } },
   priority: { type: 'string', enum: ['urgent', 'high', 'medium', 'low'] },
   dependencies: { type: 'array', items: { type: 'string' } }

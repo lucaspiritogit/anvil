@@ -1,3 +1,4 @@
+import { TaskStacks, requireStackParent } from '../tasks/task-stacks'
 import { resolveWorkspaceExecution } from '../agents/workspace-execution'
 import { promptWithFileReferences, validateTaskFileReferences } from '../task-file-references'
 import { validateTaskImages } from '../task-images'
@@ -22,6 +23,29 @@ export function registerTaskHandlers(ipc: RendererIpc, {
   store, agentProcesses, gitDelivery, send, recordSystemEvent, forgetUsage,
   issueReviewReady, initializeTask, stopTask, finishTaskTurn, requireFinishedTask, promptWithProjectMemory
 }: TaskHandlerDependencies): void {
+  const stacks = new TaskStacks({ store, agentProcesses, gitDelivery, send })
+  ipc.handle('tasks:stack', (_event, input) => stacks.stack(input.taskId, input.parentTaskId))
+  ipc.handle('tasks:stack-dismiss', (_event, taskId) => {
+    const task = store.updateTask(taskId, { stackSuggestion: undefined })
+    if (!task) throw new Error('Task not found')
+    send('task:updated', task)
+    return task
+  })
+  ipc.handle('tasks:restack', async (_event, taskId) => {
+    await stacks.apply(taskId)
+    const task = store.getTask(taskId)
+    if (!task) throw new Error('Task not found')
+    return task
+  })
+  for (const task of store.getTasks()) {
+    if (task.deliveryStatus === 'approved' || task.deliveryStatus === 'no_changes' || task.status === 'cancelled') void stacks.restackChildren(task.id, task.deliveryStatus !== 'approved').catch(console.warn)
+    else if (task.restackState === 'pending') void stacks.apply(task.id).catch(console.warn)
+  }
+  store.subscribeActivity(() => {
+    for (const task of store.getTasks()) {
+      if (task.restackState === 'pending') void stacks.apply(task.id).catch(console.warn)
+    }
+  })
   // Retry cleanup for tasks that settled before the app last closed.
   for (const task of store.getTasks()) {
     if (task.settledAt !== undefined) void gitDelivery.releaseWorktree(task.id)
@@ -62,8 +86,14 @@ export function registerTaskHandlers(ipc: RendererIpc, {
     send('task:updated', task)
     return task
   })
-  ipc.handle('tasks:delete', (_event, taskId: string): void => {
+  ipc.handle('tasks:delete', async (_event, taskId: string): Promise<void> => {
     cancelTaskOperation(store, taskId)
+    if (store.getTasks().some((task) => task.parentTaskId === taskId || task.restackTarget?.parentTaskId === taskId)) {
+      stopTask(taskId, 'Anvil task deleted.')
+      store.updateTask(taskId, { status: 'cancelled' })
+      if (agentProcesses.isRunning(taskId)) agentProcesses.cancel(taskId)
+      await stacks.restackChildren(taskId, true)
+    }
     // Release only this process's claim; the independent Valence records survive deletion.
     store.transaction(() => {
       stopTask(taskId, 'Anvil task deleted.')
@@ -152,6 +182,8 @@ export function registerTaskHandlers(ipc: RendererIpc, {
         additions: 0,
         deletions: 0
       }
+      if (input.parentTaskId) requireStackParent(store, task, input.parentTaskId)
+      task.parentTaskId = input.parentTaskId
       store.addTask(task)
       const requireRunningTask = (): void => {
         const current = store.getTask(task.id)
@@ -168,6 +200,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
         const git = await gitDelivery.status(project.path)
         requireRunningTask()
         if (!git.isRepository) {
+          if (input.parentTaskId) throw new Error('Stacked tasks require a Git repository')
           const unmanagedTask = store.updateTask(task.id, {
             cwd: project.path,
             deliveryStatus: 'unavailable'
@@ -189,7 +222,12 @@ export function registerTaskHandlers(ipc: RendererIpc, {
           return unmanagedTask
         }
 
-        const prepared = await gitDelivery.prepareBranch(project.path, task.id, task.title, requireRunningTask)
+        const parent = input.parentTaskId ? requireStackParent(store, task, input.parentTaskId) : undefined
+        const base = parent ? await gitDelivery.stackBase(project.path, parent.branchName) : undefined
+        const prepared = await gitDelivery.prepareBranch(project.path, task.id, task.title, () => {
+          requireRunningTask()
+          if (input.parentTaskId) requireStackParent(store, task, input.parentTaskId)
+        }, base)
         const preparedTask = store.updateTask(task.id, {
           cwd: prepared.cwd,
           ...(store.getTask(task.id)?.status === 'running' ? { deliveryStatus: 'working' as const } : {}),
@@ -242,10 +280,14 @@ export function registerTaskHandlers(ipc: RendererIpc, {
   )
 
   ipc.handle('tasks:cancel', (_event, taskId: string) => {
+    const detachChildren = (): void => {
+      void stacks.restackChildren(taskId, true).catch((error) => recordSystemEvent(taskId, String(error), 'delivery', 'error'))
+    }
     const cancelledOperation = cancelTaskOperation(store, taskId)
     if (agentProcesses.isRunning(taskId)) {
       store.taskImages.remove(taskId)
       recordSystemEvent(taskId, 'Stop requested by user.')
+      detachChildren()
       return agentProcesses.cancel(taskId)
     }
     // Cancellation must also cover the gap between sequential agent processes.
@@ -253,6 +295,7 @@ export function registerTaskHandlers(ipc: RendererIpc, {
     if (!state || state.phase === 'complete' || store.getTask(taskId)?.status !== 'running') return cancelledOperation
     store.taskImages.remove(taskId)
     recordSystemEvent(taskId, 'Stop requested by user.')
+    detachChildren()
     void finishTaskTurn({ taskId, code: null, cancelled: true })
     return true
   })

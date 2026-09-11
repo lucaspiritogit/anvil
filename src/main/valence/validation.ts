@@ -20,7 +20,7 @@ export function validateIssueInput(value: unknown): Required<CreateIssue> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Expected an issue object')
   const input = value as Record<string, unknown>
-  const fields = ['parentId', 'title', 'description', 'checklist', 'validation', 'labels', 'priority', 'dependencies']
+  const fields = ['parentId', 'title', 'description', 'checklist', 'validation', 'labels', 'priority', 'dependencies', 'expectedFiles']
   for (const field of Object.keys(input)) {
     if (!fields.includes(field))
       throw new Error(`Unknown issue field: ${field}`)
@@ -36,6 +36,7 @@ export function validateIssueInput(value: unknown): Required<CreateIssue> {
     parentId: requiredText(input.parentId, 'parentId'),
     title: requiredText(input.title, 'title'),
     description: requiredText(input.description, 'description'),
+    expectedFiles: expectedFiles(input.expectedFiles),
     checklist,
     validation: requiredText(input.validation, 'validation'),
     labels: textList(input.labels === undefined ? [] : input.labels, 'labels'),
@@ -59,4 +60,12 @@ export function validateParentInput(value: unknown): Required<CreateParentIssue>
     title: requiredText(input.title, 'title'),
     description: typeof input.description === 'string' ? input.description.trim() : ''
   }
+}
+
+export function expectedFiles(value: unknown): string[] {
+  const paths = textList(value ?? [], 'expectedFiles').map((path) => path.replace(/\\/g, '/').replace(/^\.\//, ''))
+  if (paths.length > 1000 || paths.some((path) => path.length > 4096 || path.startsWith('/') || /^[a-z]:/i.test(path) || path.split('/').includes('..') || /[\x00-\x1f]/.test(path))) {
+    throw new Error('expectedFiles must contain repo-relative paths')
+  }
+  return [...new Set(paths)]
 }

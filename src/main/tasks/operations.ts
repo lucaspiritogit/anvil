@@ -1,7 +1,7 @@
 import type { Task } from '../../shared/types'
 import type { Store } from '../store'
 
-export type TaskOperation = 'compact' | 'steer' | 'review' | 'rebase' | 'merge' | 'pull-request' | 'draft'
+export type TaskOperation = 'stack' | 'compact' | 'steer' | 'review' | 'rebase' | 'merge' | 'pull-request' | 'draft'
 
 interface Reservation { operation: TaskOperation; cancelled: boolean }
 const reservations = new WeakMap<Store, Map<string, Reservation>>()
@@ -18,6 +18,10 @@ export function cancelTaskOperation(store: Store, taskId: string): boolean {
   if (!reservation) return false
   reservation.cancelled = true
   return true
+}
+
+export function taskOperationActive(store: Store, taskId: string): boolean {
+  return operations(store).has(taskId)
 }
 
 /** All user task mutations conflict. Draft edits remain available during dispatch. */
@@ -41,8 +45,8 @@ export async function withTaskOperation<T>(
     if (reservation.cancelled) throw new Error('Task operation was cancelled')
     // Session and usage updates may arrive while waiting. Identity and lifecycle must stay put.
     const keys = ['workspaceId', 'startedAt', 'projectId', 'agentId', 'branchName', 'baseCommit', 'headCommit',
-      'status', 'deliveryStatus', 'settledAt', 'cwd'] as const
-    if (keys.some((key) => task[key] !== expected[key]) ||
+      'parentTaskId', 'restackState', 'status', 'deliveryStatus', 'settledAt', 'cwd'] as const
+    if (JSON.stringify(task.restackTarget) !== JSON.stringify(expected.restackTarget) || keys.some((key) => task[key] !== expected[key]) ||
       store.getProjects(task?.workspaceId).find((project) => project.id === task.projectId)?.path !== projectPath) {
       throw new Error('Task changed while the operation was waiting. Try again.')
     }
@@ -52,5 +56,6 @@ export async function withTaskOperation<T>(
     return await action(check)
   } finally {
     entries.delete(taskId)
+    if (operation !== 'stack') store.activityChanged()
   }
 }

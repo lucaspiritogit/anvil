@@ -5,6 +5,7 @@ import { useStore } from '../state/store'
 import { btn, cn, modal } from '../ui'
 
 export function ApproveTaskModal({ taskId, onClose }: { taskId: string; onClose: () => void }): JSX.Element {
+  const childCount = useStore((state) => state.tasks.filter((task) => task.parentTaskId === taskId || task.restackTarget?.parentTaskId === taskId).length)
   const approveTask = useStore((state) => state.approveTask)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const previousFocus = useRef(document.activeElement)
@@ -62,6 +63,7 @@ export function ApproveTaskModal({ taskId, onClose }: { taskId: string; onClose:
           Merge <code className="font-mono text-fg">{preview.sourceBranch}</code> into{' '}
           <code className="font-mono text-fg">{preview.targetBranch}</code> using git merge.
           {' '}{preview.commitCount} commit{preview.commitCount === 1 ? '' : 's'} will be brought in.
+          {childCount > 0 && ` This will restack ${childCount} stacked task${childCount === 1 ? '' : 's'}. Running agents will finish their turn first.`}
           {preview.commitCount === 0 && ' This branch is already merged.'}
         </> : error ? 'Could not load the merge details.' : 'Loading merge details…'}
       </p>

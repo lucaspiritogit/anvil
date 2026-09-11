@@ -65,11 +65,15 @@ export function registerRebaseHandlers(ipc: RendererIpc, {
       { store, agentProcesses, gitDelivery, send }, {
         check,
         gitInstructions: false,
+        allowRestack: true,
         validate: (task) => {
-          requireFinishedTask(taskId)
+          if (!task.restackState) requireFinishedTask(taskId)
+          else if (task.status === 'running') throw new Error('Wait for the task to stop before resolving its restack')
           if (!task.branchName || !task.baseCommit) throw new Error('This task has no branch to rebase')
         },
-        prompt: (task) => agentRebasePrompt(task.baseCommit!)
+        prompt: (task) => task.restackTarget
+          ? `Resolve this task's restack onto commit ${task.restackTarget.commit}. Run git rebase --onto ${task.restackTarget.commit} ${task.restackTarget.oldBase ?? task.baseCommit}. Resolve conflicts preserving both changes, git add resolved files, and continue with GIT_EDITOR=true git rebase --continue until finished. Do not skip commits or reset away changes. Leave a clean worktree. Anvil will verify the target ancestry and refresh the diff. Do not change issue statuses during this repair.`
+          : agentRebasePrompt(task.baseCommit!)
       }
     ))
   })

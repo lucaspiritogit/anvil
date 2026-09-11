@@ -1,3 +1,4 @@
+import { TaskStacks } from './task-stacks'
 import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
@@ -34,6 +35,7 @@ export function registerTaskExecution(
   { store, agentProcesses, gitDelivery, send, recordSystemEvent }: TaskContext & { recordSystemEvent: RecordSystemEvent },
   finishTask: TaskCompletion
 ): TaskExecution {
+  const stacks = new TaskStacks({ store, agentProcesses, gitDelivery, send })
   const issues = new TaskIssues(store)
   // Retries belong to this running scheduler. App restarts retain the existing
   // interrupted-task recovery policy instead of silently relaunching work.
@@ -72,6 +74,8 @@ export function registerTaskExecution(
     if (closing || starting.has(taskId) || agentProcesses.isRunning(taskId)) return
     starting.add(taskId)
     try {
+      await stacks.apply(taskId, true)
+      if (store.getTask(taskId)?.restackState) throw new Error('Resolve the task restack before continuing')
       const task = store.getTask(taskId)
       const state = store.getTaskExecution(taskId)
       if (!task || task.status !== 'running' || state?.phase !== 'working') return
@@ -198,6 +202,12 @@ export function registerTaskExecution(
       if (info.cancelled) cancelledFinishes.add(info.taskId)
       return
     }
+    if (store.getTask(info.taskId)?.restackState === 'conflict' && !agentProcesses.isRunning(info.taskId)) {
+      store.updateTask(info.taskId, { status: info.code === 0 && state.phase === 'complete' ? 'succeeded' : 'pending', endedAt: Date.now() })
+      await stacks.apply(info.taskId, true)
+      notify(info.taskId)
+      return
+    }
     if (state.phase === 'reviewing' && !info.cancelled) return
     if (state.phase === 'working' && !state.currentIssueId && !info.cancelled) return
     if (agentProcesses.isRunning(info.taskId)) return
@@ -239,6 +249,7 @@ export function registerTaskExecution(
       clearRetry(info.taskId)
       if (state.phase === 'planning') {
         issues.finishPlanning(info.taskId)
+        await stacks.suggest(info.taskId)
       } else {
         const task = store.getTask(info.taskId)!
         let delivery: Awaited<ReturnType<typeof gitDelivery.finalizeBranch>> | undefined
@@ -298,6 +309,9 @@ export function registerTaskExecution(
       }, store.getTask(info.taskId)?.workspaceId)
       if (wasRunning) await finishTask({ ...info, code: 1, error: message }, { finalize: !finalizing })
     } finally {
+      const completed = store.getTask(info.taskId)
+      if (completed && (completed.deliveryStatus === 'no_changes' || completed.status === 'cancelled')) await stacks.restackChildren(info.taskId, true).catch(console.warn)
+      await stacks.apply(info.taskId, true).catch((error) => recordSystemEvent(info.taskId, String(error)))
       finishing.delete(info.taskId)
       cancelledFinishes.delete(info.taskId)
       // Observers must receive a snapshot after the readiness guard is released.
@@ -322,6 +336,7 @@ export function registerTaskExecution(
 
   const approveIssue: TaskExecution['approveIssue'] = async (taskId) => {
     requireStoppedTurn(taskId)
+    if (store.getTask(taskId)?.restackState) throw new Error('Finish restacking this task before reviewing an issue')
     if (!issueReviewReady(taskId)) throw new Error('This task is not ready for issue review')
     const issueId = store.getTaskExecution(taskId)?.currentIssueId
     const state = issues.approveIssue(taskId)
@@ -337,6 +352,7 @@ export function registerTaskExecution(
 
   const rejectIssue: TaskExecution['rejectIssue'] = (taskId) => {
     requireStoppedTurn(taskId)
+    if (store.getTask(taskId)?.restackState) throw new Error('Finish restacking this task before reviewing an issue')
     if (!issueReviewReady(taskId)) throw new Error('This task is not ready for issue review')
     const issueId = store.getTaskExecution(taskId)?.currentIssueId
     const state = issues.rejectIssue(taskId)

@@ -1,3 +1,4 @@
+import { requireStackParent } from './task-stacks'
 import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
@@ -9,16 +10,18 @@ interface ResumeOptions {
   validate: (task: Task) => void
   prompt: (task: Task, state: TaskExecutionState | undefined) => string
   gitInstructions?: boolean
+  allowRestack?: boolean
   resumeExecution?: (taskId: string) => TaskExecutionState
 }
 
 /** Share location, saved settings and rollback for every stopped-task follow-up. */
 export async function resumeTaskTurn(
   { store, agentProcesses, gitDelivery, send }: TaskContext,
-  { check, validate, prompt, resumeExecution, gitInstructions = true }: ResumeOptions
+  { check, validate, prompt, resumeExecution, gitInstructions = true, allowRestack = false }: ResumeOptions
 ): Promise<Task> {
   const task = check()
   validate(task)
+  if (task.restackState && !allowRestack) throw new Error('Finish restacking this task before resuming')
   const workspace = resolveTaskWorkspace(store, task.id)
   if (task.settledAt !== undefined) throw new Error('This task is settled and cannot be resumed')
   const agent = getAgent(task.agentId)
@@ -44,7 +47,12 @@ export async function resumeTaskTurn(
       location = { cwd: checkout.cwd }
     } else if (task.deliveryStatus !== 'unavailable' && (await gitDelivery.status(project.path)).isRepository) {
       guard()
-      const prepared = await gitDelivery.prepareBranch(project.path, task.id, task.title, guard)
+      const parent = task.parentTaskId ? requireStackParent(store, task, task.parentTaskId) : undefined
+      const base = parent ? await gitDelivery.stackBase(project.path, parent.branchName) : undefined
+      const prepared = await gitDelivery.prepareBranch(project.path, task.id, task.title, () => {
+        guard()
+        if (task.parentTaskId) requireStackParent(store, task, task.parentTaskId)
+      }, base)
       location = { cwd: prepared.cwd, baseCommit: prepared.baseCommit,
         baseBranch: prepared.baseBranch, branchName: prepared.branchName }
     }

@@ -9,7 +9,7 @@ export function isTaskSettled(task: Task): boolean {
 
 /** No-change tasks need no code review. Everything else must be approved first. */
 export function canSettleTask(task: Task): boolean {
-  return task.status === 'succeeded' &&
+  return !task.restackState && !task.parentTaskId && task.status === 'succeeded' &&
     (task.deliveryStatus === 'approved' || task.deliveryStatus === 'no_changes') &&
     task.settledAt === undefined
 }

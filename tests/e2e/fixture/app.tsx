@@ -444,6 +444,9 @@ window.anvil = {
     }
   },
   tasks: {
+    stack: async ({ taskId, parentTaskId }) => { const task = tasks.find((entry) => entry.id === taskId)!; Object.assign(task, { parentTaskId, stackSuggestion: undefined }); updates.forEach((listener) => listener(task)); return task },
+    dismissStack: async (taskId) => { const task = tasks.find((entry) => entry.id === taskId)!; task.stackSuggestion = undefined; updates.forEach((listener) => listener(task)); return task },
+    restack: async (taskId) => tasks.find((entry) => entry.id === taskId)!,
     compact: async () => {},
     issues: async (taskId: string): Promise<TaskIssueSnapshot | null> => issueSnapshots[taskId] ?? null,
     list: async () => tasks,

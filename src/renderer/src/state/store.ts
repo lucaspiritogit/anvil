@@ -114,7 +114,7 @@ interface AnvilState {
   sendComments: (taskId: string) => Promise<void>
 
   loadAgentModels: (agentId: string) => Promise<void>
-  startTask: (input: { agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
+  startTask: (input: { parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
   steerTask: (taskId: string, message: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string) => Promise<void>
@@ -361,7 +361,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  startTask: async ({ agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
+  startTask: async ({ parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
     if (get().workspaceSwitching || !get().ready) throw new Error('Workspace is still loading')
     const generation = workspaceGeneration
     const projectId = get().activeProjectId
@@ -369,7 +369,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     const view = get().view
     const task = await window.anvil.tasks.start({
       workspaceId: get().activeWorkspaceId ?? undefined,
-      projectId, agentId, prompt, model,
+      projectId, parentTaskId, agentId, prompt, model,
       ...(images?.length ? { images } : {}),
       ...(fileReferences?.length ? { fileReferences } : {}),
       ...(reasoningEffort !== undefined ? { reasoningEffort } : {})

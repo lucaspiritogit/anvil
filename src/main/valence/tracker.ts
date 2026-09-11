@@ -153,8 +153,8 @@ export class IssueTracker {
         throw new Error('Only queued or blocked issues can be updated')
       if (!patch || typeof patch !== 'object' || Array.isArray(patch))
         throw new Error('Expected an issue update object')
-      const { parentId, title, description, checklist, validation, labels, priority, dependencies } = current
-      const input = validateIssueInput({ parentId, title, description, checklist, validation, labels, priority, dependencies, ...patch })
+      const { parentId, title, description, checklist, validation, labels, priority, dependencies, expectedFiles } = current
+      const input = validateIssueInput({ parentId, title, description, checklist, validation, labels, priority, dependencies, expectedFiles, ...patch })
       this.getParent(input.parentId)
       const existing = new Map(this.list().map((issue) => [issue.id, issue]))
       if (input.dependencies.includes(id))
@@ -356,6 +356,7 @@ export class IssueTracker {
     const { sequence, evidence, startedAt, completedAt, reviewedAt, baseCommit, headCommit, ...issue } = row
     return {
       ...issue,
+      expectedFiles: row.expectedFiles ?? undefined,
       dependencies: this.database.select().from(issueDependencies).where(eq(issueDependencies.issueId, row.id)).orderBy(issueDependencies.position).all().map((entry) => entry.dependencyId),
       ...(evidence === null ? {} : { evidence }),
       ...(startedAt === null ? {} : { startedAt }),

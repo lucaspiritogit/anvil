@@ -225,7 +225,7 @@ export class GitDeliveryManager {
     return cwd
   }
 
-  async prepareBranch(projectPath: string, taskId: string, title: string, check: () => void = () => {}): Promise<PreparedCheckout> {
+  async prepareBranch(projectPath: string, taskId: string, title: string, check: () => void = () => {}, base?: { commit: string; branch: string }): Promise<PreparedCheckout> {
     const repoRoot = await realpath((await git(projectPath, ['rev-parse', '--show-toplevel'])).stdout.trim())
     return this.withRepoLock(repoRoot, async () => {
       check()
@@ -236,8 +236,8 @@ export class GitDeliveryManager {
         const branchRef = (await git(repoRoot, ['symbolic-ref', 'HEAD'])).stdout.trim()
         await this.createInitialCommit(repoRoot, branchRef)
       }
-      const baseCommit = (await git(repoRoot, ['rev-parse', 'HEAD'])).stdout.trim()
-      const baseBranch = (await git(repoRoot, ['branch', '--show-current'])).stdout.trim() || baseCommit
+      const baseCommit = base?.commit ?? (await git(repoRoot, ['rev-parse', 'HEAD'])).stdout.trim()
+      const baseBranch = base?.branch ?? ((await git(repoRoot, ['branch', '--show-current'])).stdout.trim() || baseCommit)
       const branchName = `${slug(title)}-${taskId}`
       check()
       const worktree = this.taskWorktree(taskId)
@@ -276,6 +276,44 @@ export class GitDeliveryManager {
     })
   }
 
+  async stackBase(projectPath: string, branch?: string): Promise<{ commit: string; branch: string }> {
+    const ref = branch ? `refs/heads/${branch}` : 'HEAD'
+    const commit = (await git(projectPath, ['rev-parse', '--verify', `${ref}^{commit}`])).stdout.trim()
+    return { commit, branch: branch ?? ((await git(projectPath, ['branch', '--show-current'])).stdout.trim() || commit) }
+  }
+
+  async commonBase(projectPath: string, first: string, second: string): Promise<string> {
+    return (await git(projectPath, ['merge-base', first, second])).stdout.trim()
+  }
+
+  async changedFiles(projectPath: string, base: string, branch: string): Promise<string[]> {
+    return (await git(projectPath, ['diff', '--name-only', '-z', `${base}..refs/heads/${branch}`])).stdout.split('\0').filter(Boolean)
+  }
+
+  async restackBranch(projectPath: string, taskId: string, branch: string, oldBase: string,
+    target: { commit: string; branch: string }, check: () => void, save?: (result: FinalizedCheckout) => void): Promise<FinalizedCheckout> {
+    return this.withRepoLock(projectPath, async () => {
+      check()
+      const worktree = this.taskWorktree(taskId)
+      await this.verifyTaskWorktree(projectPath, worktree, branch)
+      if ((await git(worktree, ['status', '--porcelain', '--untracked-files=all'])).stdout.trim()) {
+        throw new Error('Commit or stash worktree changes before restacking')
+      }
+      check()
+      const alreadyBased = await git(worktree, ['merge-base', '--is-ancestor', target.commit, 'HEAD'], [0, 1])
+      const result = alreadyBased.exitCode === 0 ? alreadyBased : await git(worktree, ['rebase', '--onto', target.commit, oldBase, branch], [0, 1])
+      if (result.exitCode !== 0) {
+        await git(worktree, ['rebase', '--abort'])
+        throw new Error(`Restack conflict. Resolve the changes and retry.\n${result.stderr || result.stdout}`)
+      }
+      const headCommit = (await git(worktree, ['rev-parse', 'HEAD'])).stdout.trim()
+      const stats = parseNumstat((await git(worktree, ['diff', '--numstat', target.commit, headCommit])).stdout)
+      const finalized = { headCommit, ...stats, hasChanges: stats.filesChanged > 0, finisherCommitted: false }
+      save?.(finalized)
+      return finalized
+    })
+  }
+
   async finalizeBranch(projectPath: string, taskId: string, branchName: string, _baseBranch: string | undefined, baseCommit: string, title: string, options: FinalizeOptions = {}): Promise<FinalizedCheckout> {
     const repoRoot = await realpath((await git(projectPath, ['rev-parse', '--show-toplevel'])).stdout.trim())
     return this.withRepoLock(repoRoot, async () => {
@@ -303,7 +341,7 @@ export class GitDeliveryManager {
     }
   }
 
-  private async withRepoLock<T>(repoRoot: string, action: () => Promise<T>): Promise<T> {
+  async withRepoLock<T>(repoRoot: string, action: () => Promise<T>): Promise<T> {
     // Linked worktrees, subdirectories and symlink aliases share the common Git directory.
     const common = (await git(repoRoot, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).stdout.trim()
     repoRoot = await realpath(common)

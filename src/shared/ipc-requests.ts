@@ -38,9 +38,12 @@ export interface IpcRequests {
   'tasks:events': string
   'tasks:diff': string
   'tasks:issue-diff': { taskId: string; issueId: string }
-  'tasks:start': { workspaceId?: string; projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
+  'tasks:start': { parentTaskId?: string; workspaceId?: string; projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
   'tasks:steer': { taskId: string; message: string }
   'tasks:compact': string
+  'tasks:stack': { taskId: string; parentTaskId: string }
+  'tasks:stack-dismiss': string
+  'tasks:restack': string
   'tasks:cancel': string
   'tasks:delete': string
   'tasks:settle': string

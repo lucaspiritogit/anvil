@@ -25,9 +25,9 @@ function fixture(existing = false): { db: Database.Database; path: string } {
   store.close()
   const db = new Database(workspacePath)
   db.pragma('foreign_keys = ON')
-  onTestCleanup(() => { db.close() })
+  onTestCleanup(() => { if (db.open) db.close() })
   if (!existing) seedTasks(db)
-  if (originalTasks) expect(db.prepare('SELECT * FROM tasks ORDER BY id').all()).toEqual(originalTasks.map((row) => ({ ...row, workspace_id: 'default', context_used: null, context_size: null, context_compaction_error: null })))
+  if (originalTasks) expect(db.prepare('SELECT * FROM tasks ORDER BY id').all()).toEqual(originalTasks.map((row) => ({ ...row, workspace_id: 'default', context_used: null, context_size: null, context_compaction_error: null, parent_task_id: null, expected_files: null, restack_state: null, restack_target: null, stack_suggestion: null })))
   return { db, path }
 }
 
@@ -99,7 +99,7 @@ test('adds a nullable issue start timestamp without inventing history or changin
   const path = join(directory, 'anvil.db')
   migrateBefore(path, 10)
   const db = new Database(path)
-  onTestCleanup(() => { db.close() })
+  onTestCleanup(() => { if (db.open) db.close() })
   seedTasks(db)
   parent(db, 'parent', 'task-a')
   for (const status of ['queued', 'working', 'review', 'complete']) {
@@ -111,16 +111,17 @@ test('adds a nullable issue start timestamp without inventing history or changin
   const before = db.prepare<[], Record<string, unknown>>('SELECT * FROM issues ORDER BY sequence').all()
   expect(before.every((row) => !Object.hasOwn(row, 'started_at'))).toBe(true)
 
+  db.close()
   const migrated = new Store(path, { migrationsFolder })
   onTestCleanup(() => migrated.close())
   const workspaceDb = new Database(migrated.getWorkspaceDatabasePath('default'))
   onTestCleanup(() => { workspaceDb.close() })
   expect(workspaceDb.prepare('SELECT * FROM issues ORDER BY sequence').all())
-    .toEqual(before.map((row) => ({ ...row, started_at: null })))
+    .toEqual(before.map((row) => ({ ...row, started_at: null, expected_files: null })))
   expect(migrated.issueTracker('project').list().every((entry) => entry.startedAt === undefined)).toBe(true)
   expect(workspaceDb.prepare('SELECT * FROM issue_dependencies').all())
     .toEqual([{ issue_id: 'queued', dependency_id: 'complete', position: 0 }])
-  expect(db.pragma('foreign_key_check')).toEqual([])
+  expect(workspaceDb.pragma('foreign_key_check')).toEqual([])
 })
 
 test('issues accept review status and reject unknown statuses', () => {
