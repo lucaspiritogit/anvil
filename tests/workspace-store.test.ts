@@ -251,6 +251,33 @@ test('enforces foreign keys, immutable task ownership and independent project se
   expect(db.pragma('foreign_key_check')).toEqual([])
 })
 
+test('loads pull request metadata only for the current reviewable task revision', () => {
+  const { open } = fixture()
+  const store = open()
+  addProject(store)
+  const task = store.addTask({ ...taskInput('pull-request-task'), headCommit: 'current-head' })
+  store.linkPullRequest(task.id, {
+    repository: 'Developer/Project', number: 17, headSha: 'current-head',
+    sourceBranch: 'task-branch', targetBranch: 'main'
+  })
+
+  const pullRequest = { number: 17, url: 'https://github.com/developer/project/pull/17' }
+  expect(store.getTask(task.id)?.pullRequest).toEqual(pullRequest)
+  expect(store.getTasks()[0].pullRequest).toEqual(pullRequest)
+
+  store.close()
+  const reopened = open()
+  expect(reopened.getTask(task.id)?.pullRequest).toEqual(pullRequest)
+  expect(reopened.getTasks()[0].pullRequest).toEqual(pullRequest)
+
+  expect(reopened.updateTask(task.id, { headCommit: 'new-head' })?.pullRequest).toBeUndefined()
+  expect(reopened.getTask(task.id)?.pullRequest).toBeUndefined()
+  expect(reopened.getTasks()[0].pullRequest).toBeUndefined()
+
+  expect(reopened.updateTask(task.id, { headCommit: 'current-head', deliveryStatus: 'approved' })?.pullRequest).toBeUndefined()
+  expect(reopened.getTask(task.id)?.pullRequest).toBeUndefined()
+})
+
 test('upgrades a legacy database twice without losing settings, sessions, execution or Valence ownership', () => {
   const { open, database } = fixture(true)
   const db = rawDatabase(database)

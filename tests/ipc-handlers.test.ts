@@ -380,6 +380,7 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect('githubToken' in store.getSettings(), 'Tokens stay out of ordinary settings').toBe(false)
   const prPreview = await call('github:pr-preview', task.id)
   expect(prPreview.account).toBe('developer')
+  const taskUpdatesBeforePullRequest = notifications.filter((notification) => notification.channel === 'task:updated').length
   const pullRequest = await call('github:open-pr', { taskId: task.id, preview: prPreview, title: 'User PR title', description: 'User PR description' })
   expect(fixture.prRefreshes, 'Opening a PR schedules a status refresh').toBe(1)
   expect(store.getPullRequestsToRefresh().some((link) => link.taskId === task.id && link.number === 7), 'Persist the task association before refreshing').toBeTruthy()
@@ -388,6 +389,12 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(pullRequest.description).toBe('User PR description')
   expect(pushCalls.map((args) => args.slice(0, 2))).toStrictEqual([[testHome, prPreview]])
   expect(tasks.get(task.id)?.deliveryStatus, 'Opening a PR does not approve locally').toBe('reviewable')
+  const pullRequestUpdates = notifications.filter((notification) => notification.channel === 'task:updated').slice(taskUpdatesBeforePullRequest)
+  expect(pullRequestUpdates).toHaveLength(1)
+  expect(pullRequestUpdates[0].payload).toMatchObject({
+    id: task.id,
+    pullRequest: { number: 7, url: 'https://github.com/developer/project/pull/7' }
+  })
   expect(events.some((event) => event.text.includes(pullRequest.url))).toBeTruthy()
   const beforeCredentialRemoval = fixture.credentialRefreshes
   expect(await call('github:remove-token')).toStrictEqual({ configured: false })

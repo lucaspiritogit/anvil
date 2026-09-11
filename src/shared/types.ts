@@ -107,6 +107,11 @@ export interface PullRequestInfo {
   existing: boolean
 }
 
+export interface TaskPullRequest {
+  number: number
+  url: string
+}
+
 export type PullRequestField = 'title' | 'description'
 
 export interface GitHubCredentialStatus {
@@ -296,6 +301,8 @@ export interface Task {
   branchName?: string
   baseCommit?: string
   headCommit?: string
+  /** Current PR for this task's reviewable head revision. Derived from persisted link metadata. */
+  pullRequest?: TaskPullRequest
   filesChanged: number
   additions: number
   deletions: number

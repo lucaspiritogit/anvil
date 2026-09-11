@@ -19,7 +19,7 @@ interface GitHubHandlerDependencies extends TaskContext {
 }
 
 export function registerGitHubHandlers(ipc: RendererIpc, {
-  store, gitDelivery, agentProcesses, credentials, recordSystemEvent, requireFinishedTask, refreshPullRequests, githubCredentialsChanged, client = new GitHubClient()
+  store, gitDelivery, agentProcesses, send, credentials, recordSystemEvent, requireFinishedTask, refreshPullRequests, githubCredentialsChanged, client = new GitHubClient()
 }: GitHubHandlerDependencies): void {
   const workspaceCredentials = (workspaceId: string): GitHubCredentials => typeof credentials === 'function' ? credentials(workspaceId) : credentials
   const pullRequests = (workspaceId: string): GitHubPullRequests => new GitHubPullRequests(gitDelivery, workspaceCredentials(workspaceId), client)
@@ -71,6 +71,8 @@ export function registerGitHubHandlers(ipc: RendererIpc, {
           repository: preview.repository, number: result.number, headSha: headCommit,
           sourceBranch: result.sourceBranch, targetBranch: result.targetBranch
         })
+        const updated = store.getTask(taskId)
+        if (updated) send('task:updated', updated)
         refreshPullRequests?.(task.workspaceId)
       }
       recordSystemEvent(taskId, `${result.existing ? 'Existing' : 'Opened'} PR #${result.number}: ${result.title}\n${result.url}\n${result.sourceBranch} into ${result.targetBranch}, by ${result.author}.`)

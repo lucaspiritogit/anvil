@@ -75,6 +75,7 @@ const { projects, taskComments, taskEvents, tasks, workspaceSettings: settings, 
 
 type ProjectRow = typeof projects.$inferSelect
 type TaskRow = typeof tasks.$inferSelect
+type TaskPullRequestRow = typeof schema.taskPullRequests.$inferSelect
 type TaskCommentRow = typeof taskComments.$inferSelect
 type TaskEventRow = typeof taskEvents.$inferSelect
 
@@ -140,6 +141,23 @@ function toTask(row: TaskRow): Task {
   }
 }
 
+function withCurrentPullRequest(task: Task, link: TaskPullRequestRow | undefined): Task {
+  if (!link || task.status !== 'succeeded' || task.deliveryStatus !== 'reviewable' || task.headCommit !== link.headSha) return task
+  return {
+    ...task,
+    pullRequest: {
+      number: link.number,
+      url: `https://github.com/${link.repository}/pull/${link.number}`
+    }
+  }
+}
+
+function withoutPullRequest(task: Task): Task {
+  const persistedTask = { ...task }
+  delete persistedTask.pullRequest
+  return persistedTask
+}
+
 function toTaskComment(row: TaskCommentRow): TaskComment {
   return {
     id: row.id,
@@ -169,7 +187,7 @@ function toTaskEvent(row: TaskEventRow): TaskEvent {
 /** The row a `Task` writes, with its optional fields collapsed back to null. */
 function toTaskRow(task: Task): typeof tasks.$inferInsert {
   return {
-    ...task,
+    ...withoutPullRequest(task),
     parentTaskId: task.parentTaskId ?? null,
     expectedFiles: task.expectedFiles ?? null,
     restackState: task.restackState ?? null,
@@ -563,7 +581,10 @@ export class Store {
     if (workspaceId === undefined) {
       return this.getOpenedWorkspaces().flatMap((workspace) => this.getTasks(workspace.id)).sort((a, b) => b.startedAt - a.startedAt)
     }
-    return this.workspaceConnection(workspaceId).db.select().from(tasks).orderBy(desc(tasks.startedAt)).all().map(toTask)
+    const db = this.workspaceConnection(workspaceId).db
+    const pullRequests = new Map(db.select().from(schema.taskPullRequests).all().map((link) => [link.taskId, link]))
+    return db.select().from(tasks).orderBy(desc(tasks.startedAt)).all()
+      .map((row) => withCurrentPullRequest(toTask(row), pullRequests.get(row.id)))
   }
 
   addTask(task: Omit<Task, 'workspaceId'> & { workspaceId?: string }): Task {
@@ -584,7 +605,7 @@ export class Store {
     this.activityChanged()
   }
 
-  updateTask(id: string, patch: Partial<Omit<Task, 'workspaceId'>>): Task | undefined {
+  updateTask(id: string, patch: Partial<Omit<Task, 'workspaceId' | 'pullRequest'>>): Task | undefined {
     const current = this.getTask(id)
     if (!current) return undefined
     const db = this.workspaceConnection(current.workspaceId).db
@@ -592,12 +613,13 @@ export class Store {
       throw new Error('Task workspace ownership cannot change')
     }
     const next = {
-      ...current, ...patch,
+      ...withoutPullRequest(current), ...patch,
       ...(patch.status === 'running' ? { reviewedAt: undefined, settledAt: undefined } : {})
     }
     db.update(tasks).set(toTaskRow(next)).where(eq(tasks.id, id)).run()
     if (current.status !== next.status || current.deliveryStatus !== next.deliveryStatus) this.activityChanged()
-    return next
+    const link = db.select().from(schema.taskPullRequests).where(eq(schema.taskPullRequests.taskId, id)).get()
+    return withCurrentPullRequest(next, link)
   }
 
   settleTask(id: string, now = Date.now()): Task {
@@ -618,8 +640,12 @@ export class Store {
 
   getTask(id: string): Task | undefined {
     for (const workspace of this.getOpenedWorkspaces()) {
-      const row = this.storage.open(workspace.id).db.select().from(tasks).where(eq(tasks.id, id)).get()
-      if (row) return toTask(row)
+      const db = this.storage.open(workspace.id).db
+      const row = db.select().from(tasks).where(eq(tasks.id, id)).get()
+      if (row) {
+        const link = db.select().from(schema.taskPullRequests).where(eq(schema.taskPullRequests.taskId, id)).get()
+        return withCurrentPullRequest(toTask(row), link)
+      }
     }
     return undefined
   }
