@@ -426,7 +426,7 @@ const DELIVERY_LABEL: Record<DeliveryStatus, string> = {
   finalizing: 'Saving branch',
   did_not_commit: 'Finisher committing',
   reviewable: 'Ready to review',
-  approved: 'Approved',
+  approved: 'Merged',
   no_changes: 'No code changes',
   agent_failed: 'Code not reviewable',
   failed: 'Delivery failed',
@@ -500,6 +500,7 @@ export function TaskView({ task }: Props): JSX.Element {
   const [approvalTaskId, setApprovalTaskId] = useState<string | null>(null)
   const [pullRequestTaskId, setPullRequestTaskId] = useState<string | null>(null)
   const approved = task.deliveryStatus === 'approved'
+  const openPullRequest = task.deliveryStatus === 'reviewable' ? task.pullRequest : undefined
 
   const outputRef = useRef<HTMLDivElement>(null)
   const [now, setNow] = useState(Date.now())
@@ -638,7 +639,10 @@ export function TaskView({ task }: Props): JSX.Element {
                 <span className={dot(task.status)} />
                 <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : saving ? 'Saving changes…' : STATUS_LABEL[task.status]}</span>
                 <span className="text-dim">·</span>
-                <span className={deliveryTone(task.deliveryStatus)}>{DELIVERY_LABEL[task.deliveryStatus]}</span>
+                <span className={cn('flex items-center gap-1.5', openPullRequest ? 'text-ok' : deliveryTone(task.deliveryStatus))}>
+                  {openPullRequest && <Icon icon="git-branch" size={14} aria-hidden="true" />}
+                  {openPullRequest ? 'Open PR' : DELIVERY_LABEL[task.deliveryStatus]}
+                </span>
                 </>}
               </span>
               {reviewable && <span className="ml-2 flex items-center gap-2">
@@ -649,7 +653,7 @@ export function TaskView({ task }: Props): JSX.Element {
                   Open PR
                 </button>
                 {!approved && <button className={cn(btn.primary, 'bg-ok')} disabled={!diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)} title={task.restackState ? 'Finish restacking before merging' : task.parentTaskId ? 'Merge the parent task first' : undefined} onClick={() => setApprovalTaskId(task.id)}>
-                  Approve
+                  Merge
                 </button>}
               </span>}
             </>}

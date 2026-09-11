@@ -6,9 +6,9 @@ test('Open PR previews the remote, drafts editable fields, and shows created PR 
   await page.goto(fixture)
   // Review actions live in the task header, so they are reachable from any panel.
   const open = page.getByRole('button', { name: 'Open PR', exact: true })
-  const approve = page.getByRole('button', { name: 'Approve', exact: true })
+  const merge = page.getByRole('button', { name: 'Merge', exact: true })
   await expect(open).toBeEnabled()
-  expect((await open.boundingBox())!.x).toBeLessThan((await approve.boundingBox())!.x)
+  expect((await open.boundingBox())!.x).toBeLessThan((await merge.boundingBox())!.x)
   await open.click()
   const dialog = page.getByRole('dialog', { name: 'Open PR', exact: true })
   await expect(dialog).toContainText('developer/anvil via origin')
@@ -33,11 +33,18 @@ test('Open PR previews the remote, drafts editable fields, and shows created PR 
   await expect(created.getByRole('link')).toHaveAttribute('href', 'https://github.com/developer/anvil/pull/42')
   await page.screenshot({ path: testInfo.outputPath('created-pr.png') })
   await created.getByRole('button', { name: 'Close', exact: true }).click()
-  await expect(approve).toBeEnabled()
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Open PR')
+  await expect(page.getByLabel('Task status', { exact: true })).not.toContainText('Ready to review')
+  await expect(page.getByLabel('Task status', { exact: true }).getByText('Open PR', { exact: true })).toHaveCSS('color', 'rgb(124, 195, 121)')
+  await expect(page.getByLabel('Task status', { exact: true }).locator('path')).toHaveAttribute('d', /M15 6C12\.6131/)
+  const sidebarTask = page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
+  await expect(sidebarTask.getByRole('img', { name: 'Open PR', exact: true })).toBeVisible()
+  await expect(sidebarTask.getByRole('img', { name: 'Ready for review', exact: true })).toHaveCount(0)
+  await expect(merge).toBeEnabled()
   await expect(open).toBeFocused()
 })
 
-test('cancelling the PR dialog does not push or approve', async ({ page }) => {
+test('cancelling the PR dialog does not push or merge', async ({ page }) => {
   await page.goto(fixture)
   await page.evaluate(() => {
     window.addEventListener('fixture:open-pr', () => { throw new Error('Unexpected PR creation') })
@@ -48,9 +55,30 @@ test('cancelling the PR dialog does not push or approve', async ({ page }) => {
   await page.getByRole('button', { name: 'Open PR', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByRole('dialog')).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled()
   expect(errors).toEqual([])
 })
+
+for (const [platform, modifier] of [['darwin', 'Meta'], ['linux', 'Control']] as const) {
+  test(`${modifier}-click opens an existing PR without selecting its task on ${platform}`, async ({ page }) => {
+    await page.goto(`${fixture}&openPr=1&platform=${platform}`)
+    await page.evaluate(() => {
+      const urls: string[] = []
+      Object.assign(window, { openedPullRequestUrls: urls })
+      window.anvil.github.openUrl = async (url) => { urls.push(url) }
+    })
+    const reviewTask = page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
+    await page.getByRole('button', { name: 'Open task: Layout test task', exact: true }).click()
+    await reviewTask.dispatchEvent('click', modifier === 'Meta' ? { metaKey: true } : { ctrlKey: true })
+    await expect(page.getByRole('heading', { name: 'Layout test task', exact: true })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => (window as unknown as { openedPullRequestUrls: string[] }).openedPullRequestUrls))
+      .toEqual(['https://github.com/developer/anvil/pull/42'])
+    await reviewTask.click()
+    await expect(page.getByRole('heading', { name: 'Review sidebar changes', exact: true })).toBeVisible()
+    await reviewTask.click({ button: 'right' })
+    await expect(page.getByRole('menu', { name: 'Task actions', exact: true })).toBeVisible()
+  })
+}
 
 for (const [query, message] of [
   ['prPreviewFailure', 'Add your GitHub token in Settings.'],

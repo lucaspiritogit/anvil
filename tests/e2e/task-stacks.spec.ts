@@ -42,14 +42,14 @@ test('dismisses overlap suggestions and displays a restack conflict', async ({ p
 })
 
 
-test('merge preview explains child restacking and pending children cannot approve', async ({ page }) => {
+test('merge preview explains child restacking and pending children cannot merge', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const child = (await window.anvil.tasks.list()).find((task) => task.id === 'running')!
     window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...child, parentTaskId: 'review' } }))
   })
-  await page.getByRole('button', { name: 'Approve', exact: true }).click()
-  const dialog = page.getByRole('alertdialog', { name: 'Merge and approve?' })
+  await page.getByRole('button', { name: 'Merge', exact: true }).click()
+  const dialog = page.getByRole('alertdialog', { name: 'Merge task?' })
   await expect(dialog).toContainText('This will restack 1 stacked task.')
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(dialog).toHaveCount(0)
@@ -58,5 +58,5 @@ test('merge preview explains child restacking and pending children cannot approv
     window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, restackState: 'pending' } }))
   })
   await expect(page.getByText('Restack pending. Changes will apply after the current turn.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Merge', exact: true })).toBeDisabled()
 })

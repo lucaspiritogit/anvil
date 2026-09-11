@@ -95,7 +95,7 @@ export function OpenPullRequestModal({ task, onClose }: { task: Task; onClose: (
           void window.anvil.github.openUrl(result.url).catch((error: unknown) => setError(error instanceof Error ? error.message : String(error)))
         }}>{result.url}</a>
         {result.description && <p className="mt-3 text-xs text-dim whitespace-pre-wrap break-words">{result.description}</p>}
-        <p className={cn(modal.copy, 'mt-3')}>Opening a PR does not merge or approve this task locally.</p>
+        <p className={cn(modal.copy, 'mt-3')}>Opening a PR does not merge this task locally.</p>
       </> : <>
         <p id="open-pr-description" className={cn(modal.copy, 'break-words')}>
           {preview ? <>

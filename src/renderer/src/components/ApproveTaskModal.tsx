@@ -49,16 +49,16 @@ export function ApproveTaskModal({ taskId, onClose }: { taskId: string; onClose:
     <dialog
       ref={dialogRef}
       role="alertdialog"
-      aria-labelledby="approve-task-title"
-      aria-describedby="approve-task-description"
+      aria-labelledby="merge-task-title"
+      aria-describedby="merge-task-description"
       className={cn(modal.panel, modal.width.narrow, 'm-auto text-fg backdrop:bg-black/55')}
       onCancel={(event) => {
         event.preventDefault()
         if (!submitting.current) onClose()
       }}
     >
-      <h2 id="approve-task-title" className={modal.title}>Merge and approve?</h2>
-      <p id="approve-task-description" className={cn(modal.copy, 'break-words')}>
+      <h2 id="merge-task-title" className={modal.title}>Merge task?</h2>
+      <p id="merge-task-description" className={cn(modal.copy, 'break-words')}>
         {preview ? <>
           Merge <code className="font-mono text-fg">{preview.sourceBranch}</code> into{' '}
           <code className="font-mono text-fg">{preview.targetBranch}</code> using git merge.
@@ -75,7 +75,7 @@ export function ApproveTaskModal({ taskId, onClose }: { taskId: string; onClose:
           disabled={!preview || merging}
           onClick={() => void confirm()}
         >
-          {merging ? 'Merging…' : 'Merge and approve'}
+          {merging ? 'Merging…' : 'Merge'}
         </button>
       </div>
     </dialog>

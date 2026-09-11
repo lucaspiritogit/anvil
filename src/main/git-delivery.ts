@@ -533,7 +533,7 @@ export class GitDeliveryManager {
   async getMergePreview(projectPath: string, branchName: string): Promise<TaskMergePreview> {
     await git(projectPath, ['check-ref-format', `refs/heads/${branchName}`])
     const targetBranch = (await git(projectPath, ['branch', '--show-current'])).stdout.trim()
-    if (!targetBranch) throw new Error('Check out a branch in the project before approving this task.')
+    if (!targetBranch) throw new Error('Check out a branch in the project before merging this task.')
     if (targetBranch === branchName) throw new Error('The task branch is checked out in the project. Check out the destination branch first.')
 
     const sourceCommit = (await git(projectPath, ['rev-parse', '--verify', `refs/heads/${branchName}^{commit}`])).stdout.trim()
@@ -550,17 +550,17 @@ export class GitDeliveryManager {
       if (!expected || current.sourceBranch !== expected.sourceBranch || current.targetBranch !== expected.targetBranch ||
         current.sourceCommit !== expected.sourceCommit || current.targetCommit !== expected.targetCommit ||
         current.commitCount !== expected.commitCount) {
-        throw new Error('The branches changed since the merge preview was loaded. Close this dialog and approve again.')
+        throw new Error('The branches changed since the merge preview was loaded. Close this dialog and merge again.')
       }
 
       for (const operation of ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer']) {
         const operationPath = (await git(repoRoot, ['rev-parse', '--git-path', operation])).stdout.trim()
         if (existsSync(isAbsolute(operationPath) ? operationPath : join(repoRoot, operationPath))) {
-          throw new Error('Finish or abort the existing Git operation before approving this task.')
+          throw new Error('Finish or abort the existing Git operation before merging this task.')
         }
       }
       const dirty = (await git(repoRoot, ['status', '--porcelain=v1', '--untracked-files=all'])).stdout.trim()
-      if (dirty) throw new Error('Commit or stash local changes in the project before approving this task.')
+      if (dirty) throw new Error('Commit or stash local changes in the project before merging this task.')
 
       check()
       try {
@@ -574,7 +574,7 @@ export class GitDeliveryManager {
             throw new Error(`Merge failed: ${error instanceof Error ? error.message : String(error)}. Could not abort the merge: ${abortError instanceof Error ? abortError.message : String(abortError)}`)
           }
         }
-        throw new Error(`Merge failed. The task was not approved: ${error instanceof Error ? error.message : String(error)}`)
+        throw new Error(`Merge failed. The task was not merged: ${error instanceof Error ? error.message : String(error)}`)
       }
     })
   }

@@ -176,7 +176,7 @@ export function registerIpc(
         getPullRequestsToRefresh: () => store.getPullRequestsToRefresh(workspaceId),
         approveMergedPullRequest: (merge) => store.approveMergedPullRequest(merge, workspaceId)
       }, credentials(workspaceId), githubClient, (task, merge) => {
-        taskEvents.recordSystemEvent(task.id, `GitHub merged ${merge.repository}#${merge.number} into ${merge.targetBranch}. Task approved.`)
+        taskEvents.recordSystemEvent(task.id, `GitHub merged ${merge.repository}#${merge.number} into ${merge.targetBranch}. Task merged.`)
         send('task:updated', task)
       }, (message) => console.warn(`GitHub PR refresh: ${message}`))
       polls.set(workspaceId, polling)

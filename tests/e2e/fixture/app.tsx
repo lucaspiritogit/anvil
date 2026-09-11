@@ -74,6 +74,11 @@ if (query.has('steering')) {
 if (query.has('cancelled')) {
   tasks = tasks.map((task) => task.id === 'failed' ? { ...task, status: 'cancelled' as const } : task)
 }
+if (query.has('openPr')) {
+  tasks = tasks.map((task) => task.id === 'review'
+    ? { ...task, pullRequest: { number: 42, url: 'https://github.com/developer/anvil/pull/42' } }
+    : task)
+}
 tasks = tasks.map((task) => ({ ...task, branchName: `anvil/${task.id === 'approved' ? 'polish-task-cards' : task.id}` }))
 const issueSnapshots: Record<string, TaskIssueSnapshot | null> = {}
 window.addEventListener('fixture:issues', (event) => {
@@ -351,10 +356,12 @@ window.anvil = {
       window.dispatchEvent(new CustomEvent('fixture:open-pr', { detail: input }))
       await new Promise((resolve) => setTimeout(resolve, 200))
       if (query.has('prFailure')) throw new Error('The branch was pushed, but the PR could not be confirmed. Retry to check for an existing PR.')
-      return {
+      const result = {
         number: 42, url: 'https://github.com/developer/anvil/pull/42', title: input.title, description: input.description,
         author: 'developer', sourceBranch: input.preview.sourceBranch, targetBranch: input.preview.targetBranch, existing: query.has('prExisting')
       }
+      update({ ...tasks.find((task) => task.id === input.taskId)!, pullRequest: { number: result.number, url: result.url } })
+      return result
     },
     openUrl: async (url: string) => { window.dispatchEvent(new CustomEvent('fixture:pr-url', { detail: url })) }
   },
@@ -489,7 +496,7 @@ window.anvil = {
     },
     mergePreview: async (taskId: string): Promise<TaskMergePreview> => {
       await new Promise((resolve) => setTimeout(resolve, 100))
-      if (query.has('mergePreviewFailure')) throw new Error('Check out a branch before approving')
+      if (query.has('mergePreviewFailure')) throw new Error('Check out a branch before merging')
       return {
         sourceBranch: tasks.find((task) => task.id === taskId)!.branchName!, targetBranch: 'user-current',
         sourceCommit: 'source-head', targetCommit: 'target-head', commitCount: Number(query.get('mergeCommitCount') ?? 3)
@@ -498,7 +505,7 @@ window.anvil = {
     approve: async (input: { taskId: string; preview: TaskMergePreview }) => {
       window.dispatchEvent(new CustomEvent('fixture:approval', { detail: input }))
       await new Promise((resolve) => setTimeout(resolve, 200))
-      if (query.has('mergeFailure')) throw new Error('Merge failed. The task was not approved.')
+      if (query.has('mergeFailure')) throw new Error('Merge failed. The task was not merged.')
       return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', reviewedAt: Date.now() })
     },
     approveIssue: async ({ taskId }: { taskId: string; issueId: string; headCommit: string | null }) => {
