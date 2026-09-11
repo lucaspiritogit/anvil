@@ -12,7 +12,7 @@ export type AgentModelCatalogue = Pick<ProviderModelList, 'models' | 'reasoningB
 /** Provider discovery and execution share one registration point. */
 export interface AgentAdapter {
   id: string
-  createExecutor(workspace: WorkspaceExecutionContext): AgentExecutor
+  createExecutor(workspace: WorkspaceExecutionContext, catalogue?: () => Promise<ProviderModelList>): AgentExecutor
   listModels(agent: AgentDefinition, workspace: WorkspaceExecutionContext, signal?: AbortSignal): Promise<AgentModelCatalogue>
 }
 
@@ -47,7 +47,7 @@ export const openCodeAdapter: AgentAdapter = {
 
 export const codexAdapter: AgentAdapter = {
   id: 'codex',
-  createExecutor: (workspace) => new CodexAppServerClient({ workspace }),
+  createExecutor: (workspace, catalogue) => new CodexAppServerClient({ workspace }, catalogue),
   async listModels(agent, workspace, signal) {
     const client = new CodexAppServerClient({ command: agent.command, args: agent.args, requestTimeoutMs: 20_000, workspace })
     const cancel = (): void => { void client.close() }

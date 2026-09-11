@@ -20,7 +20,10 @@ export class CodexAppServerClient implements AgentExecutor {
   private readonly server = new LazyAgentServer<CodexAppServerConnection>()
   private readonly executions = new Set<CodexExecution>()
 
-  constructor(private readonly options: CodexAppServerOptions) {}
+  constructor(
+    private readonly options: CodexAppServerOptions,
+    private readonly catalogue?: () => Promise<Pick<ProviderModelList, 'models' | 'reasoningByModel'>>
+  ) {}
 
   close(): Promise<void> {
     return this.server.close()
@@ -244,7 +247,7 @@ export class CodexAppServerClient implements AgentExecutor {
       input.signal?.throwIfAborted()
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
       if (input.reasoningEffort !== undefined) {
-        const catalogue = await request(this.listModels(input.cwd))
+        const catalogue = await request(this.catalogue?.() ?? this.listModels(input.cwd))
         const capabilities = input.model ? catalogue.reasoningByModel?.[input.model] : undefined
         if (!capabilities?.options.some((option) => option.id === input.reasoningEffort)) {
           throw new Error(`Codex does not advertise reasoning effort ${input.reasoningEffort} for model ${input.model ?? '(unspecified)'}`)

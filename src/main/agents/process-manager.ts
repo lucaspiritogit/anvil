@@ -7,9 +7,11 @@ import { resolveCommand } from './resolve'
 import { closeAgentServer, killAgentServer } from './agent-server-process'
 import { parseAgentLine } from './output'
 import { getAgentAdapter } from './adapters'
+import { listModels } from './models'
 import type { AgentExecutor, TaskResult, TaskSteeringInput } from './agent-executor'
 import type {
   AgentDefinition,
+  ProviderModelList,
   TaskImageAttachment,
   TaskEvent,
   TaskEventCategory,
@@ -169,18 +171,18 @@ export class AgentProcessManager extends EventEmitter {
   constructor(
     private readonly openCodeClient?: AgentExecutor,
     private readonly codexClient?: AgentExecutor,
-    private readonly createExecutor = (agentId: string, workspace: WorkspaceExecutionContext): AgentExecutor => getAgentAdapter(agentId).createExecutor(workspace),
+    private readonly createExecutor = (agentId: string, workspace: WorkspaceExecutionContext, catalogue?: () => Promise<ProviderModelList>): AgentExecutor => getAgentAdapter(agentId).createExecutor(workspace, catalogue),
     private readonly taskWorkspace?: (taskId: string) => WorkspaceExecutionContext,
     private readonly openIssueTools?: (taskId: string) => Promise<IssueToolConnection>
   ) {
     super()
   }
 
-  private executor(agentId: string, workspace: WorkspaceExecutionContext): AgentExecutor {
-    const key = JSON.stringify([workspace.workspaceId, agentId])
+  private executor(agent: AgentDefinition, workspace: WorkspaceExecutionContext): AgentExecutor {
+    const key = JSON.stringify([workspace.workspaceId, agent.id])
     let client = this.clients.get(key)
     if (!client) {
-      client = (agentId === 'codex' ? this.codexClient : this.openCodeClient) ?? this.createExecutor(agentId, workspace)
+      client = (agent.id === 'codex' ? this.codexClient : this.openCodeClient) ?? this.createExecutor(agent.id, workspace, () => listModels(agent, workspace))
       this.clients.set(key, client)
     }
     return client
@@ -190,7 +192,7 @@ export class AgentProcessManager extends EventEmitter {
   async generateText(options: Pick<StartOptions, 'agent' | 'prompt' | 'cwd' | 'model' | 'reasoningEffort' | 'workspace'>): Promise<string> {
     if (this.shutdown) throw new Error('Agent processes are shutting down')
     this.requireAccountReady(options.workspace.workspaceId)
-    const client = ['codex', 'opencode'].includes(options.agent.id) ? this.executor(options.agent.id, options.workspace) : undefined
+    const client = ['codex', 'opencode'].includes(options.agent.id) ? this.executor(options.agent, options.workspace) : undefined
     if (!client) throw new Error('This agent does not support PR drafting')
     const taskId = `pr-draft-${randomUUID()}`
     const controller = new AbortController()
@@ -395,11 +397,11 @@ export class AgentProcessManager extends EventEmitter {
     opts.beforeDispatch?.()
     if (this.isRunning(opts.taskId)) throw new Error('This task is already running')
     if (opts.agent.executionProtocol === 'acp') {
-      this.startServer(opts, this.executor('opencode', opts.workspace))
+      this.startServer(opts, this.executor(opts.agent, opts.workspace))
       return
     }
     if (opts.agent.executionProtocol === 'codex-app-server') {
-      this.startServer(opts, this.executor('codex', opts.workspace))
+      this.startServer(opts, this.executor(opts.agent, opts.workspace))
       return
     }
     const { taskId, issueId, agent, prompt, model, reasoningEffort, cwd, resumeSessionId } = opts

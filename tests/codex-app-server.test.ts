@@ -11,6 +11,7 @@ import { AgentProcessManager, type ExitInfo } from '../src/main/agents/process-m
 import { getAgent } from '../src/main/agents/registry'
 import type { TaskEvent, TaskInput } from '../src/main/agents/agent-executor'
 import { codexAdapter } from '../src/main/agents/adapters'
+import { invalidateWorkspaceModels, listModels } from '../src/main/agents/models'
 import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../src/main/agents/workspace-execution'
 
 interface ProfileLaunch {
@@ -46,6 +47,66 @@ async function profileFixture() {
     writeFile(join(workspace.codexHome, 'auth.json'), JSON.stringify({ fixtureAccount: account }))
   return { directory, profile, client, input, authenticate }
 }
+
+test('reuses workspace catalogue reasoning capabilities until invalidated', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'anvil-codex-reasoning-cache-'))
+  const fixture = resolve('tests/fixtures/codex-app-server.cjs')
+  const transcript = join(directory, 'requests.jsonl')
+  const workspace = testWorkspace('reasoning-cache')
+  const agent = {
+    ...getAgent('codex')!, id: 'codex-reasoning-cache', command: process.execPath,
+    args: [fixture, 'models', transcript]
+  }
+  const executor = new CodexAppServerClient(
+    { workspace, command: agent.command, args: agent.args, requestTimeoutMs: 5_000 },
+    () => listModels(agent, workspace)
+  )
+  onTestCleanup(async () => {
+    invalidateWorkspaceModels(workspace.workspaceId)
+    await executor.close()
+    await rm(directory, { recursive: true, force: true })
+  })
+  const input: TaskInput = {
+    workspace, taskId: 'cached-reasoning', cwd: directory, prompt: 'Implement the issue',
+    model: 'reasoner', reasoningEffort: 'native-max'
+  }
+  const modelRequests = async (): Promise<any[]> =>
+    (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line)).filter((entry) => entry.method === 'model/list')
+
+  expect((await executor.execute(input, () => {})).status).toBe('succeeded')
+  expect((await executor.execute({ ...input, taskId: 'cached-resume', resumeSessionId: 'thread-test', reasoningEffort: 'low' }, () => {})).status).toBe('succeeded')
+  const recoveryExecutor = new CodexAppServerClient(
+    { workspace, command: agent.command, args: [fixture, 'missing-rollout', transcript], requestTimeoutMs: 5_000 },
+    () => listModels(agent, workspace)
+  )
+  onTestCleanup(() => recoveryExecutor.close())
+  const recovered = await recoveryExecutor.execute({
+    ...input, taskId: 'cached-recovery', resumeSessionId: 'missing-thread',
+    resumeFallbackPrompt: 'Recover the saved plan and branch', reasoningEffort: 'low'
+  }, () => {})
+  expect(recovered.status, recovered.error).toBe('succeeded')
+  expect(await modelRequests(), 'New, resumed, and recovery turns share the first two-page discovery').toHaveLength(2)
+
+  const stale = await executor.execute({ ...input, taskId: 'cached-stale', reasoningEffort: 'removed-option' }, () => {})
+  expect(stale.error).toMatch(/does not advertise reasoning effort removed-option/)
+  expect(await modelRequests(), 'Unknown efforts fail closed without bypassing the cache').toHaveLength(2)
+
+  invalidateWorkspaceModels(workspace.workspaceId)
+  expect((await executor.execute({ ...input, taskId: 'cached-invalidated' }, () => {})).status).toBe('succeeded')
+  expect(await modelRequests(), 'Authentication invalidation forces fresh discovery').toHaveLength(4)
+
+  const otherWorkspace = testWorkspace('reasoning-cache-other')
+  const otherExecutor = new CodexAppServerClient(
+    { workspace: otherWorkspace, command: agent.command, args: agent.args, requestTimeoutMs: 5_000 },
+    () => listModels(agent, otherWorkspace)
+  )
+  onTestCleanup(async () => {
+    invalidateWorkspaceModels(otherWorkspace.workspaceId)
+    await otherExecutor.close()
+  })
+  expect((await otherExecutor.execute({ ...input, workspace: otherWorkspace, taskId: 'cached-other' }, () => {})).status).toBe('succeeded')
+  expect(await modelRequests(), 'Another workspace cannot consume the first workspace catalogue').toHaveLength(6)
+})
 
 test('isolates simultaneous Codex tasks, accounts and model discovery without touching global files', async () => {
   const fixture = await profileFixture()
