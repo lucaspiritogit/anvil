@@ -17,7 +17,7 @@ export function Sidebar(): JSX.Element {
   const fontSize = useStore((state) => state.settings?.fontSize)
   const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
   // Native traffic lights do not scale with the renderer's font-size zoom.
-  const titlebarStyle = IS_MAC ? { height: 52 / scale, paddingLeft: 84 / scale } : undefined
+  const titlebarStyle = IS_MAC ? { height: 44 / scale, paddingLeft: 78 / scale } : undefined
   const workspaceId = useStore((state) => state.activeWorkspaceId)
   const projects = useStore((state) => state.projects)
   const tasks = useStore((state) => state.tasks)

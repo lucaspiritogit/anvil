@@ -26,6 +26,36 @@ async function back(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
 }
 
+async function titleMetrics(page: Page, selector: string): Promise<{ height: number; textLeft: number; borderBottomWidth: string; appRegion: string }> {
+  return page.locator(selector).filter({ hasText: /^ANVIL$/ }).evaluate((element) => {
+    const bounds = element.getBoundingClientRect()
+    const text = element.firstChild!
+    const range = document.createRange()
+    range.selectNodeContents(text)
+    return {
+      height: bounds.height,
+      textLeft: range.getBoundingClientRect().left - bounds.left,
+      borderBottomWidth: getComputedStyle(element).borderBottomWidth,
+      appRegion: getComputedStyle(element).getPropertyValue('-webkit-app-region')
+    }
+  })
+}
+
+test('macOS title treatment stays aligned and borderless when the sidebar is expanded or collapsed', async ({ page }) => {
+  await page.goto(fixture + '?platform=darwin')
+  const expandedTitle = 'aside[aria-label="Task sidebar"] > .drag-region'
+
+  expect(await titleMetrics(page, expandedTitle)).toEqual({ height: 44, textLeft: 78, borderBottomWidth: '0px', appRegion: 'drag' })
+
+  await page.evaluate(async () => window.anvil.settings.set('default', { fontSize: 18 }))
+  await page.reload()
+  expect(await titleMetrics(page, expandedTitle)).toEqual({ height: 44, textLeft: 78, borderBottomWidth: '0px', appRegion: 'drag' })
+
+  await page.keyboard.press('Meta+b')
+  await expect(page.getByRole('complementary', { name: 'Task sidebar' })).toBeHidden()
+  expect(await titleMetrics(page, 'main .drag-region')).toEqual({ height: 44, textLeft: 78, borderBottomWidth: '0px', appRegion: 'drag' })
+})
+
 test('Workspace is below Settings and supports keyboard selection, filtering and focus restoration', async ({ page }, testInfo) => {
   await page.goto(fixture)
   await createWorkspace(page, 'Work')

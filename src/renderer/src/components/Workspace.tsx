@@ -1,4 +1,5 @@
 import type { JSX } from 'react'
+import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { IS_MAC } from '../keys'
 import { useStore } from '../state/store'
 import { btn, cn } from '../ui'
@@ -12,14 +13,16 @@ export function Workspace(): JSX.Element {
   const tasks = useStore((s) => s.tasks)
   const addProject = useStore((s) => s.addProject)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
+  const fontSize = useStore((s) => s.settings?.fontSize)
 
   const project = projects.find((p) => p.id === activeProjectId)
   const dragStrip = IS_MAC && sidebarCollapsed
+  const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
 
   if (!project) {
     return (
       <main className="flex flex-col min-w-0 h-full">
-        {dragStrip && <DragStrip />}
+        {dragStrip && <DragStrip scale={scale} />}
         <div className="grid place-content-center justify-items-center gap-2.5 h-full text-center">
           <h1 className="text-lg font-semibold">Add a project</h1>
           <p className="max-w-[360px] mb-2 text-dim">
@@ -44,8 +47,8 @@ export function Workspace(): JSX.Element {
       IS_MAC && overview && 'py-11'
     )}>
       {dragStrip && (overview
-        ? <div className="absolute inset-x-0 top-0"><DragStrip /></div>
-        : <DragStrip />)}
+        ? <div className="absolute inset-x-0 top-0"><DragStrip scale={scale} /></div>
+        : <DragStrip scale={scale} />)}
       <section className="relative flex-1 min-w-0 min-h-0 overflow-hidden">
         {overview && (
           <ProjectOverview project={project} />
@@ -61,9 +64,12 @@ export function Workspace(): JSX.Element {
  * the sidebar collapsed they land here instead, so a slim strip takes over as
  * the window's drag handle and keeps the gutter clear.
  */
-function DragStrip(): JSX.Element {
+function DragStrip({ scale }: { scale: number }): JSX.Element {
   return (
-    <div className={cn('drag-region flex shrink-0 items-center h-11 pl-[78px] text-[11px] font-semibold tracking-[0.12em] text-dim border-b border-line')}>
+    <div
+      style={{ height: 44 / scale, paddingLeft: 78 / scale }}
+      className="drag-region flex shrink-0 items-center h-11 pl-[78px] text-[11px] font-semibold tracking-[0.12em] text-dim"
+    >
       ANVIL
     </div>
   )
