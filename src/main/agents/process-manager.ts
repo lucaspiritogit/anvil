@@ -302,7 +302,7 @@ export class AgentProcessManager extends EventEmitter {
       const issueTools = await this.openIssueTools?.(opts.taskId)
       try {
         controller.signal.throwIfAborted()
-        await this.compactSession(this.executor(opts.agent.id, opts.workspace), { ...opts, issueTools, signal: controller.signal })
+        await this.compactSession(this.executor(opts.agent, opts.workspace), { ...opts, issueTools, signal: controller.signal })
       } finally { issueTools?.close() }
     })()
     const settled = completion.then(() => {}, () => {})
