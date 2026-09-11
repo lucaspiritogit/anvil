@@ -19,9 +19,9 @@ function launch(command: string, args: string[], cwd: string): Promise<void> {
   })
 }
 
-function run(command: string, args: string[], cwd: string): Promise<void> {
+function run(command: string, args: string[], cwd: string, windowsHide = true): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile(command, args, { cwd, timeout: 10_000, windowsHide: true }, (error) => error ? reject(error) : resolve())
+    execFile(command, args, { cwd, timeout: 10_000, windowsHide }, (error) => error ? reject(error) : resolve())
   })
 }
 
@@ -39,8 +39,14 @@ export async function openSystemTerminal(cwd: string, command?: SystemTerminalCo
       script.push(`& ${[command.command, ...command.args].map(powershellQuote).join(' ')}`)
     }
     const args = ['-NoProfile', '-NoExit', '-EncodedCommand', Buffer.from(script.join('\n'), 'utf16le').toString('base64')]
-    try { await run('wt.exe', ['-w', 'new', '-d', cwd, 'powershell.exe', ...args], cwd) }
-    catch { await launch('powershell.exe', args, cwd) }
+    // wt is the visible terminal itself, not a background helper.
+    try { await run('wt.exe', ['-w', 'new', '-d', cwd, 'powershell.exe', ...args], cwd, false) }
+    catch {
+      // A detached Node child uses DETACHED_PROCESS on Windows, so it can
+      // succeed without a console. Let PowerShell create the interactive window.
+      const start = `Start-Process -FilePath powershell.exe -ArgumentList ${powershellQuote(args.join(' '))} -WorkingDirectory ${powershellQuote(cwd)} -WindowStyle Normal -ErrorAction Stop`
+      await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', start], cwd)
+    }
     return
   }
 

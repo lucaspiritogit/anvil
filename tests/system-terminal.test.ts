@@ -26,6 +26,7 @@ test('Windows Terminal receives a literal cwd and an encoded workspace command',
   await openSystemTerminal(cwd, { command: 'C:\\tools\\opencode.exe', args: ['auth', 'login', "literal'$(bad); &"], environment: { HOME: cwd, OPENCODE_CONFIG_CONTENT: '{"value":"$secret"}' } })
   const [command, args] = native.execFile.mock.calls[0]
   expect(command).toBe('wt.exe')
+  expect(native.execFile.mock.calls[0][2]).toMatchObject({ cwd, windowsHide: false })
   expect(args.slice(0, 5)).toEqual(['-w', 'new', '-d', cwd, 'powershell.exe'])
   expect(args).toContain('-NoProfile')
   const script = Buffer.from(args.at(-1), 'base64').toString('utf16le')
@@ -36,12 +37,28 @@ test('Windows Terminal receives a literal cwd and an encoded workspace command',
   expect(native.spawn).not.toHaveBeenCalled()
 })
 
-test('Windows falls back to an interactive detached PowerShell window', async () => {
+test('Windows falls back to a new interactive PowerShell window with the same workspace command', async () => {
   platform('win32')
-  native.execFile.mockImplementation((_command, _args, _options, callback) => callback(new Error('wt unavailable')))
+  native.execFile.mockImplementationOnce((_command, _args, _options, callback) => callback(new Error('wt unavailable')))
+  const cwd = "C:\\work & stuff\\O'Brien"
+  await openSystemTerminal(cwd, { command: 'C:\\tools\\opencode.exe', args: ['auth', 'login'], environment: { HOME: cwd } })
+  const encoded = native.execFile.mock.calls[0][1].at(-1)
+  expect(native.execFile.mock.calls[1]).toEqual(['powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-Command',
+    `Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile -NoExit -EncodedCommand ${encoded}' -WorkingDirectory 'C:\\work & stuff\\O''Brien' -WindowStyle Normal -ErrorAction Stop`
+  ], expect.objectContaining({ cwd, windowsHide: true }), expect.any(Function)])
+  expect(native.spawn).not.toHaveBeenCalled()
+})
+
+test('Windows folder terminals use the visible fallback and report launch failures', async () => {
+  platform('win32')
+  native.execFile.mockImplementationOnce((_command, _args, _options, callback) => callback(new Error('wt unavailable')))
   await openSystemTerminal('C:\\project')
-  expect(native.spawn).toHaveBeenCalledWith('powershell.exe', expect.arrayContaining(['-NoExit', '-EncodedCommand']),
-    expect.objectContaining({ cwd: 'C:\\project', detached: true, stdio: 'ignore', windowsHide: false }))
+  const encoded = native.execFile.mock.calls[0][1].at(-1)
+  expect(Buffer.from(encoded, 'base64').toString('utf16le')).toBe("Set-Location -LiteralPath 'C:\\project'")
+  expect(native.execFile.mock.calls[1][1].at(-1)).toContain('-WindowStyle Normal -ErrorAction Stop')
+  native.execFile.mockImplementation((_command, _args, _options, callback) => callback(new Error('terminal unavailable')))
+  await expect(openSystemTerminal('C:\\project')).rejects.toThrow('terminal unavailable')
 })
 
 test('macOS opens folders directly and quotes auth commands inside AppleScript', async () => {
