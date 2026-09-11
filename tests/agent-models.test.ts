@@ -101,3 +101,28 @@ test('discovers adapter models, preserves cached effort metadata and reports fai
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+test('coalesces concurrent catalogue discovery and reuses reasoning metadata', async () => {
+  vi.resetModules()
+  onTestCleanup(() => { vi.resetModules() })
+  const { registerAgentAdapter } = await import('../src/main/agents/adapters')
+  const { listModels } = await import('../src/main/agents/models')
+  let respond!: (catalogue: typeof expected) => void
+  const discover = vi.fn(() => new Promise<typeof expected>((resolve) => { respond = resolve }))
+  registerAgentAdapter({ id: 'coalesced', createExecutor: () => { throw new Error('unused') }, listModels: discover })
+  const agent: AgentDefinition = {
+    id: 'coalesced', label: 'Coalesced', description: '', command: 'unused', args: [],
+    models: { kind: 'adapter', adapterId: 'coalesced' }
+  }
+
+  const first = listModels(agent, testWorkspace())
+  const second = listModels(agent, testWorkspace())
+  expect(second).toBe(first)
+  expect(discover).toHaveBeenCalledTimes(1)
+  respond(expected)
+  const catalogue = await first
+  expect(await second).toStrictEqual(catalogue)
+  expect(await listModels(agent, testWorkspace())).toStrictEqual(catalogue)
+  expect(catalogue.reasoningByModel).toStrictEqual(expected.reasoningByModel)
+  expect(discover).toHaveBeenCalledTimes(1)
+})

@@ -198,9 +198,13 @@ test('scopes discovery and authentication invalidation by workspace and rejects 
   const { store, work, personal } = fixture()
   let release: ((catalogue: { models: string[] }) => void) | undefined
   let delayed = false
+  let aborted = false
   const adapterId = `workspace-${randomUUID()}`
-  const discover = vi.fn(async (_agent: AgentDefinition, workspace: WorkspaceExecutionContext) => {
-    if (delayed) return new Promise<{ models: string[] }>((resolve) => { release = resolve })
+  const discover = vi.fn(async (_agent: AgentDefinition, workspace: WorkspaceExecutionContext, signal?: AbortSignal) => {
+    if (delayed) return new Promise<{ models: string[] }>((resolve) => {
+      release = resolve
+      signal?.addEventListener('abort', () => { aborted = true })
+    })
     return { models: [workspace.workspaceId] }
   })
   registerAgentAdapter({ id: adapterId, createExecutor: () => { throw new Error('unused') }, listModels: discover })
@@ -214,11 +218,16 @@ test('scopes discovery and authentication invalidation by workspace and rejects 
   expect(discover).toHaveBeenCalledTimes(2)
   delayed = true
   const stale = listModels(agent, workContext)
+  const overlapping = listModels(agent, workContext)
+  expect(overlapping).toBe(stale)
   invalidateWorkspaceModels(work)
+  expect(aborted).toBe(true)
   release!({ models: ['old-account'] })
   expect((await stale).error).toMatch(/authentication changed/)
+  expect((await overlapping).error).toMatch(/authentication changed/)
   delayed = false
   expect((await listModels(agent, workContext)).models).toEqual([work])
+  expect(discover).toHaveBeenCalledTimes(4)
   const changes: string[] = []
   onTestCleanup(watchWorkspaceAuthChanges(store, (id) => changes.push(id)))
   await writeFile(join(workContext.codexHome, 'auth.json'), '{}')
