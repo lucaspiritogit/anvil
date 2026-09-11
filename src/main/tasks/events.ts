@@ -14,8 +14,7 @@ export function registerTaskEvents({ store, agentProcesses, send }: Pick<TaskCon
   const compacting = new Set<string>()
   agentProcesses.on('event', (event: TaskEvent) => {
     if (!store.getTask(event.taskId)) return
-    store.appendEvent(event)
-    send('task:event', event)
+    send('task:event', store.appendEvent(event))
     if (event.category === 'system' && event.text === CONTEXT_COMPACTED) {
       const task = store.updateTask(event.taskId, { contextCompactionError: null })
       if (task) send('task:updated', { ...task, contextCompacting: compacting.has(event.taskId) })
@@ -33,8 +32,7 @@ export function registerTaskEvents({ store, agentProcesses, send }: Pick<TaskCon
       category,
       text
     }
-    store.appendEvent(event)
-    send('task:event', event)
+    send('task:event', store.appendEvent(event))
   }
 
   agentProcesses.on('session', (info: SessionInfo) => {

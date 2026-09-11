@@ -120,7 +120,11 @@ test('reconciles tool and text snapshots and persists row identity', () => {
       if (channel === 'task:event') live.push(event as OutputEvent)
     } })
     for (const event of events) if (event.type === 'output') agentProcesses.emit('event', event.event)
-    expect(live).toStrictEqual(events.flatMap(event => event.type === 'output' ? [event.event] : []))
+    expect(live.map(({ sequence: _sequence, ...event }) => event)).toStrictEqual(events.flatMap(event => event.type === 'output' ? [event.event] : []))
+    for (const event of live) {
+      expect(event.sequence).toBeGreaterThan(0)
+      expect(event.sequence).toBe(live.find((row) => row.id === event.id)!.sequence)
+    }
     expect(store.readEvents(input.taskId)).toStrictEqual(rows())
     store.close()
     store = new Store(database, options)

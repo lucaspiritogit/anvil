@@ -1,3 +1,4 @@
+import { pageTaskEvents } from './task-events'
 import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
 import { useTaskIssues } from '../../../src/renderer/src/hooks/use-task-issues'
@@ -142,6 +143,12 @@ const events = (taskId: string): TaskEvent[] => {
     id: String(index), taskId, ts: index, stream: 'stdout', kind: 'output', category: 'message',
     text: `Output ${index}: ${'long-token'.repeat(80)}`
   }))
+}
+
+const eventHistories = new Map<string, TaskEvent[]>()
+const taskHistory = (taskId: string): TaskEvent[] => {
+  if (!eventHistories.has(taskId)) eventHistories.set(taskId, events(taskId).map((event, index) => ({ ...event, sequence: index + 1 })))
+  return eventHistories.get(taskId)!
 }
 
 let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-embed-large', ollamaBaseUrl: 'http://localhost:11434/v1', fontSize: 14, overviewBackgroundMode: 'color', overviewBackgroundColor: '#0d0f12', overviewWallpaperId: null, defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, caffeineMode: false, keybindings: DEFAULT_KEYBINDINGS }
@@ -483,7 +490,8 @@ window.anvil = {
       const task = tasks.find((task) => task.id === input.taskId)!
       update({ ...task, status: 'running', deliveryStatus: 'working', endedAt: undefined })
     },
-    events: async (taskId: string) => events(taskId),
+    events: async (taskId: string) => taskHistory(taskId),
+    eventsPage: async (input) => pageTaskEvents(taskHistory(input.taskId), input),
     diff: async () => {
       diffRequests += 1
       if (query.has('diffFailure') && diffRequests === 1) throw new Error('Could not load the task diff')
@@ -521,7 +529,15 @@ window.anvil = {
       return tasks.find((task) => task.id === input.taskId)!
     },
     onEvent: (listener: (event: TaskEvent) => void) => {
-      const receive = (event: Event) => listener((event as CustomEvent<TaskEvent>).detail)
+      const receive = (event: Event) => {
+        const output = (event as CustomEvent<TaskEvent>).detail
+        const history = taskHistory(output.taskId)
+        const index = history.findIndex((row) => row.id === output.id)
+        output.sequence ??= index === -1 ? (history.at(-1)?.sequence ?? 0) + 1 : history[index].sequence
+        if (index === -1) history.push(output)
+        else history[index] = output
+        listener(output)
+      }
       window.addEventListener('fixture:output', receive)
       return () => window.removeEventListener('fixture:output', receive)
     },

@@ -14,7 +14,8 @@ test('a newly created task discovers planning children and keeps execution and r
   const rows = sidebar.getByRole('list', { name: 'Subtasks of Build sidebar lifecycle' })
   const parent = sidebar.getByRole('button', { name: 'Open task: Build sidebar lifecycle', exact: true })
   await expect(rows).toHaveCount(0)
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
+    const { pageTaskEvents } = await import('/tests/e2e/fixture/task-events.ts')
     const mutations: string[] = []
     Object.assign(window, { lifecycleMutations: mutations })
     for (const method of ['start', 'steer', 'cancel', 'approve', 'settle', 'delete'] as const) {
@@ -25,7 +26,7 @@ test('a newly created task discovers planning children and keeps execution and r
       } })
     }
     const history: TaskEvent[] = []
-    window.anvil.tasks.events = async (taskId) => history.filter((event) => event.taskId === taskId)
+    window.anvil.tasks.eventsPage = async (input) => pageTaskEvents(history, input)
     window.addEventListener('fixture:output', (event) => history.push((event as CustomEvent<TaskEvent>).detail))
   })
   const snapshot: TaskIssueSnapshot = {

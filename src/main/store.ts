@@ -698,13 +698,15 @@ export class Store {
     return pending.map((comment) => ({ ...comment, sentAt }))
   }
 
-  appendEvent(event: TaskEvent): void {
+  appendEvent(event: TaskEvent): TaskEvent & { sequence: number } {
     const db = this.taskConnection(event.taskId).db
     // Tool snapshots replace their prior row without changing insertion order.
-    db.insert(taskEvents).values(event).onConflictDoUpdate({
+    const { sequence: _sequence, ...input } = event
+    const row = db.insert(taskEvents).values(input).onConflictDoUpdate({
       target: taskEvents.id,
       set: { text: event.text, category: event.category, stream: event.stream }
-    }).run()
+    }).returning().get()
+    return { ...toTaskEvent(row), sequence: row.sequence }
   }
 
   private hasUserStopEvent(taskId: string): boolean {

@@ -71,11 +71,16 @@ test('stale child selection renders its owner with continuous output', async ({ 
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const { useStore } = await import('/src/renderer/src/state/store.ts')
-    const read = window.anvil.tasks.events
-    window.anvil.tasks.events = async (id) => [...await read(id), ...['working', 'blocked'].map((issueId) => ({
-      id: issueId, issueId, taskId: id, ts: 1, stream: 'stdout' as const, kind: 'output' as const,
-      category: 'message' as const, text: `Saved ${issueId} result`
-    }))]
+    const read = window.anvil.tasks.eventsPage
+    window.anvil.tasks.eventsPage = async (input) => {
+      const page = await read(input)
+      const events = [...page.events, ...['working', 'blocked'].map((issueId) => ({
+        id: issueId, issueId, taskId: input.taskId, sequence: issueId === 'working' ? 3 : 4, ts: 1, stream: 'stdout' as const, kind: 'output' as const,
+        category: 'message' as const, text: `Saved ${issueId} result`
+      }))]
+      return { ...page, events, newestCursor: { taskId: input.taskId, sequence: 4 } }
+    }
+    useStore.getState().showHome()
     useStore.setState({ view: { kind: 'task', taskId: 'review', issueId: 'removed-child' }, eventsByTask: {} })
   })
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Review sidebar changes')

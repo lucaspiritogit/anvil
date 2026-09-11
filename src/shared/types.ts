@@ -214,6 +214,8 @@ export const TASK_EVENT_CATEGORIES: TaskEventCategory[] = [
 ]
 
 export interface TaskEvent {
+  /** Persisted insertion order, supplied on history pages and live IPC output. */
+  sequence?: number
   /** Stable for tool snapshots: a repeated ID replaces the previous event in place. */
   id: string
   taskId: string

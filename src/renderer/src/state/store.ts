@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '../../../shared/types'
 import { hydrateComposer, importLegacyComposer } from './composer-preferences'
 import { enqueueWorkspaceRequest } from './workspace-requests'
 import type { SettingsSectionId } from '../settings-sections'
@@ -13,11 +14,53 @@ import type {
   TaskImageAttachment,
   TaskDiff,
   TaskEvent,
+  TaskEventCursor,
+  TaskEventsRequest,
   TaskMergePreview,
   Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange
 } from '@shared/types'
 
-const MAX_LINES_IN_MEMORY = 4000
+const MAX_LINES_IN_MEMORY = MAX_TASK_EVENT_PAGE_SIZE
+
+type HistoryDirection = 'initial' | 'older' | 'newer' | 'latest'
+export interface TaskEventHistory {
+  taskId: string
+  oldestCursor: TaskEventCursor | null
+  newestCursor: TaskEventCursor | null
+  hasOlder: boolean
+  hasNewer: boolean
+  followingLatest: boolean
+  loaded: boolean
+  loading: HistoryDirection | null
+  error: string | null
+}
+let taskViewGeneration = 0
+interface HistoryRequest {
+  promise: Promise<void>
+  live: Map<string, TaskEvent>
+  direction: HistoryDirection
+  before?: number
+  after?: number
+  newestLiveSequence: number
+}
+let historyRequest: HistoryRequest | null = null
+const evictTaskEvents = () => {
+  taskViewGeneration += 1
+  historyRequest?.live.clear()
+  historyRequest = null
+  return { eventsByTask: {}, taskEventHistory: null }
+}
+const emptyHistory = (taskId: string): TaskEventHistory => ({
+  taskId, oldestCursor: null, newestCursor: null, hasOlder: false, hasNewer: false,
+  followingLatest: true, loaded: false, loading: null, error: null
+})
+const mergeEvents = (...groups: TaskEvent[][]): TaskEvent[] => {
+  const events = new Map<string, TaskEvent>()
+  for (const group of groups) for (const event of group) events.set(event.id, event)
+  return [...events.values()].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+}
+const eventCursor = (event: TaskEvent | undefined): TaskEventCursor | null =>
+  event?.sequence === undefined ? null : { taskId: event.taskId, sequence: event.sequence }
 
 // A new selection invalidates asynchronous responses from the previous profile.
 const modelGenerations = new Map<string, number>()
@@ -58,6 +101,8 @@ interface AnvilState {
   activeProjectId: string | null
   view: CenterView
   eventsByTask: Record<string, TaskEvent[]>
+  taskEventHistory: TaskEventHistory | null
+  loadTaskEvents: (taskId: string, direction?: HistoryDirection) => Promise<void>
   diffsByTask: Record<string, TaskDiff>
   diffErrorsByTask: Record<string, string>
   diffsByIssue: Record<string, TaskDiff>
@@ -141,11 +186,14 @@ export const useStore = create<AnvilState>((set, get) => ({
   applyWorkspaceSnapshot: (snapshot) => {
     hydrateComposer(snapshot.workspace.id, snapshot.preferences.composer)
     const changed = get().activeWorkspaceId !== snapshot.workspace.id
+    const view = get().view
+    const removed = view.kind === 'task' && !snapshot.tasks.some((task) => task.id === view.taskId)
     set({
       workspaces: snapshot.workspaces, activeWorkspaceId: snapshot.workspace.id,
       settings: snapshot.settings, projects: snapshot.projects, tasks: snapshot.tasks,
       activeProjectId: snapshot.projects.find((project) => project.id === snapshot.preferences.lastProjectId)?.id ?? snapshot.projects[0]?.id ?? null,
       ready: true,
+      ...(changed || removed ? { ...evictTaskEvents(), view: { kind: 'home' as const } } : {}),
       ...(changed ? {
         view: { kind: 'home' }, taskMenu: null, rebaseTaskId: null,
         settingsProjectId: null, settingsSection: 'general', caffeineSave: null,
@@ -161,7 +209,7 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
   selectWorkspace: async (workspaceId) => {
     const generation = ++workspaceGeneration
-    set({ workspaceSwitching: true, workspaceError: null })
+    set({ ...evictTaskEvents(), view: { kind: 'home' }, workspaceSwitching: true, workspaceError: null })
     try {
       await enqueueWorkspaceRequest(async () => {
         const snapshot = await window.anvil.workspaces.select(workspaceId)
@@ -220,6 +268,7 @@ export const useStore = create<AnvilState>((set, get) => ({
   activeProjectId: null,
   view: { kind: 'home' },
   eventsByTask: {},
+  taskEventHistory: null,
   diffsByTask: {},
   diffErrorsByTask: {},
   diffsByIssue: {},
@@ -245,6 +294,7 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   load: async () => {
     const generation = ++workspaceGeneration
+    set(evictTaskEvents())
     try {
       await enqueueWorkspaceRequest(async () => {
         await importLegacyComposer()
@@ -270,6 +320,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     set((s) => ({
       projects: s.projects.some((p) => p.id === project.id) ? s.projects : [...s.projects, project],
       activeProjectId: project.id,
+      ...evictTaskEvents(),
       view: { kind: 'home' }
     }))
   },
@@ -281,6 +332,7 @@ export const useStore = create<AnvilState>((set, get) => ({
       const tasks = s.tasks.filter((task) => task.projectId !== id)
       const view = s.view
       return {
+        ...(view.kind === 'task' && !tasks.some((task) => task.id === view.taskId) ? evictTaskEvents() : {}),
         projects,
         gitStatusByProject,
         tasks,
@@ -304,7 +356,7 @@ export const useStore = create<AnvilState>((set, get) => ({
   selectProject: (id) => {
     const workspaceId = get().activeWorkspaceId
     if (!workspaceId || get().workspaceSwitching) return
-    set({ activeProjectId: id, view: { kind: 'home' } })
+    set({ ...evictTaskEvents(), activeProjectId: id, view: { kind: 'home' } })
     void enqueueWorkspaceRequest(() => window.anvil.workspaces.setPreferences(workspaceId, { lastProjectId: id }))
       .catch((error: unknown) => {
         if (get().activeWorkspaceId === workspaceId) set({ workspaceError: error instanceof Error ? error.message : 'Could not save project selection' })
@@ -377,9 +429,8 @@ export const useStore = create<AnvilState>((set, get) => ({
     if (generation !== workspaceGeneration) return
     set((s) => ({
       tasks: [task, ...s.tasks],
-      eventsByTask: { ...s.eventsByTask, [task.id]: [] },
       ...(s.activeProjectId === projectId && s.view === view
-        ? { view: { kind: 'task' as const, taskId: task.id } }
+        ? { ...evictTaskEvents(), view: { kind: 'task' as const, taskId: task.id } }
         : {})
     }))
   },
@@ -407,7 +458,7 @@ export const useStore = create<AnvilState>((set, get) => ({
         Object.fromEntries(Object.entries(cache).filter(([id]) => id !== taskId))
       return {
         tasks: state.tasks.filter((task) => task.id !== taskId),
-        eventsByTask: withoutTask(state.eventsByTask),
+        ...(state.view.kind === 'task' && state.view.taskId === taskId ? evictTaskEvents() : {}),
         diffsByTask: withoutTask(state.diffsByTask),
         diffErrorsByTask: withoutTask(state.diffErrorsByTask),
         commentsByTask: withoutTask(state.commentsByTask),
@@ -429,12 +480,81 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
     const currentView = get().view
     if (currentView.kind !== 'task' || currentView.taskId !== taskId) {
-      set({ activeProjectId: task.projectId, view: { kind: 'task', taskId } })
+      set({ ...evictTaskEvents(), activeProjectId: task.projectId, view: { kind: 'task', taskId } })
     }
-    if (get().eventsByTask[taskId]) return
-    const events = await window.anvil.tasks.events(taskId)
-    if (!get().tasks.some((task) => task.id === taskId)) return
-    set((s) => ({ eventsByTask: { ...s.eventsByTask, [taskId]: events } }))
+    await get().loadTaskEvents(taskId)
+  },
+
+  loadTaskEvents: (taskId, direction = 'initial') => {
+    const state = get()
+    if (state.workspaceSwitching || state.view.kind !== 'task' || state.view.taskId !== taskId ||
+      !state.tasks.some((task) => task.id === taskId)) return Promise.resolve()
+    if (historyRequest) return historyRequest.promise
+    const history = state.taskEventHistory ?? emptyHistory(taskId)
+    if (direction === 'initial' && history.loaded) return Promise.resolve()
+    if (direction === 'older' && (!history.hasOlder || !history.oldestCursor)) return Promise.resolve()
+    if (direction === 'newer' && (!history.hasNewer || !history.newestCursor)) return Promise.resolve()
+    const workspace = workspaceGeneration
+    const workspaceId = state.activeWorkspaceId
+    const view = taskViewGeneration
+    const request: HistoryRequest = {
+      promise: Promise.resolve(), live: new Map(), direction, newestLiveSequence: 0,
+      before: direction === 'older' ? history.oldestCursor!.sequence : undefined,
+      after: direction === 'newer' ? history.newestCursor!.sequence : undefined
+    }
+    historyRequest = request
+    const current = (): boolean => {
+      const state = get()
+      return historyRequest === request && workspace === workspaceGeneration &&
+        workspaceId === state.activeWorkspaceId && view === taskViewGeneration &&
+        state.view.kind === 'task' && state.view.taskId === taskId &&
+        state.tasks.some((task) => task.id === taskId)
+    }
+    const input: TaskEventsRequest = {
+      taskId, limit: DEFAULT_TASK_EVENT_PAGE_SIZE,
+      ...(direction === 'older' ? { before: history.oldestCursor! } : {}),
+      ...(direction === 'newer' ? { after: history.newestCursor! } : {})
+    }
+    set({
+      eventsByTask: { [taskId]: state.eventsByTask[taskId] ?? [] },
+      taskEventHistory: { ...history, loading: direction, error: null,
+        followingLatest: direction === 'older' ? false : history.followingLatest }
+    })
+    // Defer invocation so duplicate callers always see the same request promise.
+    request.promise = Promise.resolve().then(async () => {
+      try {
+        if (!current()) return
+        const page = await window.anvil.tasks.eventsPage(input)
+        if (!current()) return
+        const state = get()
+        const retained = state.eventsByTask[taskId] ?? []
+        const live = [...request.live.values()]
+        const replacing = direction === 'initial' || direction === 'latest'
+        const fetched = mergeEvents(page.events, live.filter((event) =>
+          page.events.some((row) => row.id === event.id) ||
+          ((replacing || (direction === 'newer' && !page.hasNewer)) &&
+            event.sequence! > (page.newestCursor?.sequence ?? input.after?.sequence ?? 0))))
+        const merged = replacing ? fetched : mergeEvents(fetched, retained)
+        const events = direction === 'older' ? merged.slice(0, MAX_LINES_IN_MEMORY) : merged.slice(-MAX_LINES_IN_MEMORY)
+        const trimmed = merged.length > events.length
+        const hasOlder = direction === 'older' ? page.hasOlder :
+          replacing ? page.hasOlder || trimmed : history.hasOlder || trimmed
+        const hasNewer = direction === 'older' ? history.hasNewer || trimmed || state.taskEventHistory!.hasNewer :
+          page.hasNewer || request.newestLiveSequence > (events.at(-1)?.sequence ?? 0)
+        set({ eventsByTask: { [taskId]: events }, taskEventHistory: {
+          taskId, oldestCursor: eventCursor(events[0]), newestCursor: eventCursor(events.at(-1)),
+          hasOlder, hasNewer, followingLatest: direction !== 'older' && !hasNewer,
+          loaded: true, loading: null, error: null
+        } })
+      } catch (error) {
+        if (!current()) return
+        set({ taskEventHistory: { ...get().taskEventHistory!, loading: null,
+          error: error instanceof Error ? error.message : String(error) } })
+      } finally {
+        if (historyRequest === request) historyRequest = null
+      }
+    })
+    return request.promise
   },
 
   loadTaskDiff: async (taskId) => {
@@ -601,8 +721,6 @@ export const useStore = create<AnvilState>((set, get) => ({
       set((s) => ({
         tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
         commentsByTask: { ...s.commentsByTask, [taskId]: comments },
-        // The task is running again, so its log is what matters now.
-        eventsByTask: { ...s.eventsByTask, [taskId]: s.eventsByTask[taskId] ?? [] },
         diffsByTask: Object.fromEntries(
           Object.entries(s.diffsByTask).filter(([key]) => key !== taskId)
         ),
@@ -616,10 +734,11 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  showHome: () => set({ view: { kind: 'home' } }),
+  showHome: () => set({ ...evictTaskEvents(), view: { kind: 'home' } }),
   focusTaskComposer: () => set((state) => {
     if (!state.activeProjectId || state.settingsOpen || state.taskMenu || state.rebaseTaskId) return state
     return {
+      ...evictTaskEvents(),
       view: { kind: 'home' },
       taskComposerFocusRequest: state.taskComposerFocusRequest + 1
     }
@@ -627,15 +746,46 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   applyEvent: (event) =>
     set((s) => {
-      const existing = s.eventsByTask[event.taskId]
-      if (!existing) return s
+      const history = s.taskEventHistory
+      if (s.workspaceSwitching || s.view.kind !== 'task' || s.view.taskId !== event.taskId || !history) return s
+      const existing = s.eventsByTask[event.taskId] ?? []
+      // Production IPC always supplies sequence. Unknown ordering must never turn
+      // an old snapshot into an apparent new tail event.
       const eventIndex = existing.findIndex((entry) => entry.id === event.id)
-      const next = eventIndex === -1 ? [...existing, event] : existing.map((entry, index) => index === eventIndex ? event : entry)
-      return {
-        eventsByTask: {
-          ...s.eventsByTask,
-          [event.taskId]: next.length > MAX_LINES_IN_MEMORY ? next.slice(-MAX_LINES_IN_MEMORY) : next
+      const previous = existing[eventIndex]
+      if (event.sequence === undefined && previous?.sequence === undefined) return s
+      const ordered = { ...event, sequence: event.sequence ?? previous!.sequence }
+      if (historyRequest) {
+        const request = historyRequest
+        request.newestLiveSequence = Math.max(request.newestLiveSequence, ordered.sequence!)
+        // Keep only updates that can overlap the page. A background tail burst
+        // must not evict an in-flight older page's snapshot overrides.
+        if ((request.before === undefined || ordered.sequence! < request.before) &&
+          (request.after === undefined || ordered.sequence! > request.after)) {
+          request.live.set(event.id, ordered)
+          if (request.live.size > MAX_LINES_IN_MEMORY) {
+            let discard: TaskEvent = ordered
+            for (const candidate of request.live.values()) {
+              if (request.direction === 'newer'
+                ? candidate.sequence! > discard.sequence!
+                : candidate.sequence! < discard.sequence!) discard = candidate
+            }
+            request.live.delete(discard.id)
+          }
         }
+      }
+      const beyondTail = ordered.sequence! > (history.newestCursor?.sequence ?? 0)
+      const append = history.followingLatest && beyondTail
+      if (!previous && !append) {
+        if (!beyondTail || history.hasNewer) return s
+        return { taskEventHistory: { ...history, hasNewer: true } }
+      }
+      const merged = previous ? existing.map((entry, index) => index === eventIndex ? ordered : entry) : [...existing, ordered]
+      const events = merged.slice(-MAX_LINES_IN_MEMORY)
+      return {
+        eventsByTask: { [event.taskId]: events },
+        taskEventHistory: { ...history, oldestCursor: eventCursor(events[0]), newestCursor: eventCursor(events.at(-1)),
+          hasOlder: history.hasOlder || merged.length > events.length }
       }
     }),
 
