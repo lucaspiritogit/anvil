@@ -299,6 +299,7 @@ export function registerTaskExecution(
       finishing.delete(info.taskId)
       cancelledFinishes.delete(info.taskId)
       // Observers must receive a snapshot after the readiness guard is released.
+      store.activityChanged()
       notify(info.taskId)
       if (issueReviewReady(info.taskId)) {
         recordSystemEvent(info.taskId, `Issue ${store.getTaskExecution(info.taskId)!.currentIssueId} is awaiting developer review. Approve it or request changes to continue.`)

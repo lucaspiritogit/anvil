@@ -1,3 +1,5 @@
+import { registerTaskNotifications } from '../src/main/task-notifications'
+import { EventEmitter } from 'node:events'
 import { callIssueTool } from '../src/main/issue-tools/server'
 import { rendererEvent } from './renderer-fixture'
 import { expect, test, vi } from 'vitest'
@@ -245,6 +247,17 @@ test.each(['working', 'blocked', 'missing range', 'failed diff', 'unavailable Gi
 
 test('publishes the saved review range only after exit and delayed finalization, once per turn', async () => {
   const f = await turnFixture()
+  const alerts: string[] = []
+  class Notification extends EventEmitter {
+    static isSupported = () => true
+    constructor(options: { title?: string }) {
+      super()
+      alerts.push(options.title ?? '')
+    }
+    show() {}
+    close() {}
+  }
+  onTestCleanup(registerTaskNotifications(f.store, Notification, {}, f.execution.issueReviewReady))
   writeFileSync(join(f.task.cwd, 'tracked.txt'), 'staged\n')
   runGit(f.task.cwd, 'add', 'tracked.txt')
   writeFileSync(join(f.task.cwd, 'tracked.txt'), 'staged and unstaged\n')
@@ -281,8 +294,10 @@ test('publishes the saved review range only after exit and delayed finalization,
   expect(tip).not.toBe(f.task.baseCommit)
   expect(f.tracker.get(f.issue.id).headCommit).toBeUndefined()
   expect(f.execution.issueReviewReady(f.task.id)).toBe(false)
+  expect(alerts).toEqual([])
   publish.release()
   await ending
+  expect(alerts).toEqual([`Subtask ready for review: ${f.issue.title}`])
   expect(f.snapshots.at(-1)).toEqual({ ready: true, phase: 'reviewing', head: tip, files: 2 })
   expect(f.tracker.get(f.issue.id)).toMatchObject({ baseCommit: f.task.baseCommit, headCommit: tip })
   expect(runGit(f.task.cwd, 'status', '--porcelain')).toBe('')

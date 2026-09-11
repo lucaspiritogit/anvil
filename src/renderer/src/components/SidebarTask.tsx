@@ -6,7 +6,7 @@ import {
   Notification03Icon, Tick02Icon
 } from '@hugeicons/core-free-icons'
 import type { Project, Task, TaskIssueSnapshot } from '@shared/types'
-import { taskIssuePresentation } from '@shared/task-issue-presentation'
+import { issuePresentation, taskIssuePresentation } from '@shared/task-issue-presentation'
 import { canSettleTask, settlementDeadline } from '@shared/task-settlement'
 import { useStore } from '../state/store'
 import { cn, ISSUE_STATUS } from '../ui'
@@ -15,18 +15,22 @@ import { openTaskContextMenu } from './TaskContextMenu'
 const TASK_INDICATORS = {
   pending: { icon: Notification03Icon, label: 'Pending', tone: 'text-warn', highlight: '' },
   running: { icon: Loading03Icon, label: 'Working', tone: 'text-accent', highlight: '' },
+  saving: { icon: Loading03Icon, label: 'Saving changes…', tone: 'text-accent', highlight: '' },
+  done: { icon: Tick02Icon, label: 'Done', tone: 'text-ok', highlight: '' },
   approved: { icon: Tick02Icon, label: 'Approved', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
   reviewable: { icon: Notification03Icon, label: 'Ready for review', tone: 'text-orange-400', highlight: 'bg-orange-400/8 hover:bg-orange-400/12 ring-orange-400/30' },
   failed: { icon: Cancel01Icon, label: 'Failed', tone: 'text-danger', highlight: '' }
 }
 
 function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
+  if (task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit') return TASK_INDICATORS.saving
   if (task.status === 'pending') return TASK_INDICATORS.pending
   if (task.status === 'running') return TASK_INDICATORS.running
   if (task.status === 'failed' || task.deliveryStatus === 'failed' || task.deliveryStatus === 'agent_failed') {
     return TASK_INDICATORS.failed
   }
   if (task.status === 'succeeded') {
+    if (task.deliveryStatus === 'no_changes') return TASK_INDICATORS.done
     if (task.deliveryStatus === 'approved') return TASK_INDICATORS.approved
     if (task.deliveryStatus === 'reviewable') return TASK_INDICATORS.reviewable
   }
@@ -70,7 +74,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const deadline = settlementDeadline(task)
   const presentation = taskIssuePresentation(task, snapshot)
   const indicator = presentation ? {
-    ...(presentation.status === 'review' ? TASK_INDICATORS.reviewable : presentation.status === 'working' ? TASK_INDICATORS.running : presentation.status === 'blocked' ? TASK_INDICATORS.failed : presentation.status === 'complete' ? TASK_INDICATORS.approved : TASK_INDICATORS.pending),
+    ...(presentation.status === 'review' ? TASK_INDICATORS.reviewable : presentation.status === 'working' ? TASK_INDICATORS.running : presentation.status === 'blocked' ? TASK_INDICATORS.failed : presentation.status === 'complete' ? presentation.issue.reviewedAt != null ? TASK_INDICATORS.approved : TASK_INDICATORS.done : TASK_INDICATORS.pending),
     label: presentation.label
   } : taskIndicator(task)
   const statusIcon = (
@@ -177,7 +181,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
             title={issue.title}
           >
             <span className="min-w-0 flex-1 truncate">{issue.title}</span>
-            <span className={cn('shrink-0 text-[10px]', ISSUE_STATUS[issue.status].tone)}>{ISSUE_STATUS[issue.status].label}</span>
+            <span className={cn('shrink-0 text-[10px]', ISSUE_STATUS[issuePresentation(issue, snapshot, task).status].tone)}>{issuePresentation(issue, snapshot, task).label}</span>
           </div>
         </li>)}
       </ol>}
