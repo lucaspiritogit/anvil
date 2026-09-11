@@ -261,8 +261,8 @@ export function registerTaskExecution(
           if (!task.baseCommit) throw new Error('The task has no base commit for finalization.')
           const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
           if (!project || project.path !== state.projectPath) throw new Error('Task project is unavailable')
-          store.updateTask(task.id, { deliveryStatus: 'finalizing', deliveryError: undefined })
-          notify(task.id)
+          // This only prepares one issue's review output. Whole-task delivery
+          // does not begin until every issue has passed developer review.
           delivery = await gitDelivery.finalizeBranch(project.path, task.id, task.branchName, task.baseBranch, task.baseCommit, task.title, {
             check,
             onFinisherCommand: (command) => recordSystemEvent(task.id, command, 'did_not_commit')
@@ -354,10 +354,19 @@ export function registerTaskExecution(
 
   const rejectIssue: TaskExecution['rejectIssue'] = (taskId) => {
     requireStoppedTurn(taskId)
-    if (store.getTask(taskId)?.restackState) throw new Error('Finish restacking this task before reviewing an issue')
+    const task = store.getTask(taskId)
+    if (task?.restackState) throw new Error('Finish restacking this task before reviewing an issue')
     if (!issueReviewReady(taskId)) throw new Error('This task is not ready for issue review')
     const issueId = store.getTaskExecution(taskId)?.currentIssueId
-    const state = issues.rejectIssue(taskId)
+    const state = store.transaction(() => {
+      // Reopen both lifecycle layers before review feedback can be dispatched.
+      const rejected = issues.rejectIssue(taskId)
+      store.updateTask(taskId, {
+        status: 'running', endedAt: undefined, exitCode: null, error: undefined,
+        deliveryStatus: task?.branchName ? 'working' : 'unavailable', deliveryError: undefined
+      })
+      return rejected
+    }, task?.workspaceId)
     notify(taskId)
     recordSystemEvent(taskId, `Developer requested changes on issue ${issueId}. Restarting its turn with the review feedback.`)
     return state

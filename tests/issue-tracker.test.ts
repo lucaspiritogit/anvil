@@ -1,6 +1,6 @@
 import { callIssueTool } from '../src/main/issue-tools/server'
 import { rendererEvent } from './renderer-fixture'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { BatchIssue } from '../src/shared/valence'
@@ -132,6 +132,40 @@ test('schedules dependencies and priorities sequentially and retains final task 
   await submit(taskId)
   await assertReadOnlySnapshot(['review', 'complete', 'complete'])
   expect(agentProcesses.starts.length, 'The last review pause still claims nothing').toBe(startsBeforeSubmit + 2)
+
+  const finalIssueId = store.getTaskExecution(taskId)!.currentIssueId!
+  await call('tasks:reject-issue', {
+    taskId, issueId: finalIssueId, headCommit: trackerHead(taskId), comment: 'Address the final review suggestion'
+  })
+  expect(store.getTask(taskId)).toMatchObject({ status: 'running', deliveryStatus: 'working' })
+  expect(store.getTaskExecution(taskId)).toMatchObject({ phase: 'working', currentIssueId: finalIssueId })
+  expect(tracker.get(finalIssueId).status).toBe('working')
+  expect(agentProcesses.starts.at(-1).issueId, 'The final issue resumes only after working state is durable').toBe(finalIssueId)
+
+  callIssueTool(store, taskId, store.getTask(taskId)!.workspaceId, 'anvil_submit_review', {
+    id: finalIssueId, checklist: [true, true], evidence: 'Final review suggestion verified'
+  })
+  let releaseFinalize!: () => void
+  let observeFinalize!: () => void
+  const finalizing = new Promise<void>((resolve) => { observeFinalize = resolve })
+  const finalizeGate = new Promise<void>((resolve) => { releaseFinalize = resolve })
+  const originalFinalize = GitDeliveryManager.prototype.finalizeBranch
+  vi.spyOn(GitDeliveryManager.prototype, 'finalizeBranch').mockImplementationOnce(async function (...args: Parameters<typeof originalFinalize>) {
+    observeFinalize()
+    await finalizeGate
+    return originalFinalize.apply(this, args)
+  })
+  agentProcesses.finishTurn(taskId, 'Reworked the final review suggestion')
+  await finalizing
+  expect(store.getTask(taskId), 'Issue output finalization remains ordinary working state').toMatchObject({
+    status: 'running', deliveryStatus: 'working'
+  })
+  expect(store.getTaskExecution(taskId)).toMatchObject({ phase: 'working', currentIssueId: finalIssueId })
+  releaseFinalize()
+  await tick()
+  await assertReadOnlySnapshot(['review', 'complete', 'complete'])
+  expect(store.getTask(taskId)).toMatchObject({ status: 'running', deliveryStatus: 'working' })
+  expect(store.getTaskExecution(taskId)).toMatchObject({ phase: 'reviewing', currentIssueId: finalIssueId })
   await approve(taskId)
   await assertReadOnlySnapshot(['complete', 'complete', 'complete'])
   expect(store.getTaskExecution(taskId)?.phase).toBe('complete')

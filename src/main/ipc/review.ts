@@ -83,6 +83,8 @@ export function registerReviewHandlers(ipc: RendererIpc, {
       requireCurrentReview(input)
       const body = input.comment?.trim()
       const state = rejectIssue(input.taskId)
+      const rejected = store.getTask(input.taskId)
+      if (!rejected) throw new Error('Task was deleted')
       if (body) store.addComment({
         id: randomUUID(),
         taskId: input.taskId,
@@ -95,7 +97,7 @@ export function registerReviewHandlers(ipc: RendererIpc, {
       })
       const pending = store.getComments(input.taskId).filter((comment) => comment.sentAt === null)
       const running = await resumeTaskTurn({ store, agentProcesses, gitDelivery, send }, {
-        check,
+        check: (expected = rejected) => check(expected),
         validate: (task) => {
           if (isTaskSettled(task)) throw new Error('This task is settled and cannot be reworked')
           if (!state.currentIssueId) throw new Error('This task has no issue to rework')
