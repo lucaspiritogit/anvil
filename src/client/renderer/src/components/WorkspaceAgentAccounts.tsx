@@ -7,7 +7,7 @@ import { btn, cn, field } from '../ui'
 function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget & { workspaceName: string }): JSX.Element {
   const [account, setAccount] = useState<WorkspaceAgentAccount | null>(null)
   const [apiKey, setApiKey] = useState('')
-  const [method, setMethod] = useState<'apiKey' | 'chatgpt'>('chatgpt')
+  const [method, setMethod] = useState<'apiKey' | 'chatgpt' | 'deviceAuth'>('chatgpt')
   const [requesting, setRequesting] = useState(false)
   const [revealed, setRevealed] = useState(false)
   const mounted = useRef(true)
@@ -73,6 +73,7 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
           <select className={field.sized} value={method} disabled={disabled} onChange={(event) => { setMethod(event.target.value as typeof method); setApiKey('') }}>
             <option value="chatgpt">ChatGPT subscription</option>
             <option value="apiKey">API key</option>
+            <option value="deviceAuth">Connect remotely (one-time code)</option>
           </select>
         </label>
         {method === 'apiKey' && <label className={field.wrap}>
@@ -80,6 +81,7 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
           <input className={field.sized} type="password" autoComplete="off" spellCheck={false} value={apiKey}
             disabled={disabled} onChange={(event) => setApiKey(event.target.value)} />
         </label>}
+        {method === 'deviceAuth' && <p className="my-2 text-xs text-dim">Open the verification link from any device and enter the one-time code in the terminal panel.</p>}
       </>}
       {agentId === 'opencode' && <p className="my-2 text-xs text-dim">Choose an API key or a subscription in the native provider prompts. Subscription availability depends on the provider.</p>}
       <div className="flex flex-wrap gap-2">
