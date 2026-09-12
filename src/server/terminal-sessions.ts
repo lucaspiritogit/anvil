@@ -40,6 +40,14 @@ export class TerminalSessionManager {
       launch.cwd, launch.environment, 80, 10, onExit)
   }
 
+  createCodexAuth(workspace: WorkspaceExecutionContext, onExit: (exitCode: number) => void): { sessionId: string } {
+    const resolved = resolveCommand('codex')
+    if (!resolved || resolved.viaShell) throw new Error('Codex requires a directly executable CLI')
+    return this.create('auth', workspace.workspaceId, resolved.command,
+      [...resolved.prefixArgs, 'login', '--device-auth', '-c', 'cli_auth_credentials_store="file"'],
+      workspace.home, workspace.environment, 80, 10, onExit)
+  }
+
   private create(kind: Session['kind'], workspaceId: string, command: string, args: string[], cwd: string,
     environment: NodeJS.ProcessEnv, cols: number, rows: number, onExit?: (code: number) => void): { sessionId: string } {
     const env = Object.fromEntries(Object.entries(environment).filter((entry): entry is [string, string] => entry[1] !== undefined))
