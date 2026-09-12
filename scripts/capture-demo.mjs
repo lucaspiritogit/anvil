@@ -9,6 +9,8 @@ import { execFileSync } from 'node:child_process'
 const output = resolve(process.argv[2] || 'public/showcase')
 const frames = await mkdtemp(join(tmpdir(), 'anvil-demo-frames-'))
 const fps = 25
+const durationSeconds = 20
+const targetFrames = fps * durationSeconds
 const errors = []
 let frame = 0
 let cursor = { x: 1180, y: 720 }
@@ -51,7 +53,7 @@ try {
   async function focusNewTask() {
     await page.keyboard.press('Meta+n')
     await expect(page.getByRole('textbox', { name: 'Task prompt', exact: true })).toBeFocused()
-    await capture(0.3)
+    await capture(0.16)
   }
   async function typePrompt(text) {
     const input = page.getByRole('textbox', { name: 'Task prompt', exact: true })
@@ -60,7 +62,7 @@ try {
       await input.pressSequentially(character)
       await capture(1 / fps)
     }
-    await capture(0.3)
+    await capture(0.16)
     await input.press('Enter')
     await page.getByRole('log', { name: 'Task output' }).waitFor()
     return page.evaluate(() => window.anvil.tasks.list().then((tasks) => tasks[0].id))
@@ -84,6 +86,11 @@ try {
       window.dispatchEvent(new CustomEvent('fixture:task-updated', {
         detail: {
           ...task,
+          status: 'running',
+          deliveryStatus: 'preparing',
+          workingStartedAt: undefined,
+          branchName: undefined,
+          sessionId: undefined,
           expectedFiles,
           parentTaskId,
           baseBranch: parent.branchName,
@@ -92,13 +99,38 @@ try {
       }))
     }, { taskId, parentTaskId, expectedFiles })
   }
+  async function startStackedTask(taskId) {
+    await page.evaluate(async (taskId) => {
+      const task = (await window.anvil.tasks.list()).find((candidate) => candidate.id === taskId)
+      const next = {
+        ...task,
+        status: 'running',
+        deliveryStatus: 'working',
+        branchName: `anvil/${taskId}`,
+        baseBranch: 'main',
+        workingStartedAt: Date.now()
+      }
+      delete next.parentTaskId
+      window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: next }))
+    }, taskId)
+  }
+  async function openChanges() {
+    await click(page.getByRole('tab', { name: /^Changes/ }))
+    await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
+  }
+  async function mergeTask() {
+    await click(page.getByRole('button', { name: 'Merge', exact: true }))
+    const dialog = page.getByRole('alertdialog')
+    await expect(dialog).toContainText('using git merge')
+    await capture(0.64)
+    await click(dialog.getByRole('button', { name: 'Merge', exact: true }))
+    await expect(page.getByLabel('Task status', { exact: true })).toContainText('Merged')
+  }
   await page.addInitScript(() => {
-    localStorage.setItem('fixture:workspaces', JSON.stringify([
-      { id: 'default', name: 'Personal', createdAt: 0 }, { id: 'studio', name: 'Studio', createdAt: 0 }
-    ]))
-    localStorage.setItem('fixture:preferences', JSON.stringify(Object.fromEntries(['default', 'studio'].map((id) => [id, {
-      composer: { agentId: 'codex', modelsByAgent: { codex: 'gpt-5' }, reasoningByAgentModel: {} }, lastProjectId: 'project-0'
-    }]))))
+    localStorage.setItem('fixture:workspaces', JSON.stringify([{ id: 'default', name: 'Personal', createdAt: 0 }]))
+    localStorage.setItem('fixture:preferences', JSON.stringify({
+      default: { composer: { agentId: 'codex', modelsByAgent: { codex: 'gpt-5' }, reasoningByAgentModel: {} }, lastProjectId: 'project-0' }
+    }))
   })
   await page.goto('http://127.0.0.1:4188/tests/e2e/fixture/?demo&platform=darwin')
   await page.getByRole('textbox', { name: 'Task prompt', exact: true }).waitFor()
@@ -107,7 +139,52 @@ try {
     const personal = { ...initial, overviewBackgroundMode: wallpaper ? 'image' : 'color', overviewWallpaperId: wallpaper ? 'demo.jpg' : null }
     if (wallpaper) window.anvil.wallpapers.read = async () => wallpaper
     window.settingsTest.apply(personal)
-    await window.anvil.settings.set('studio', { ...initial, overviewBackgroundMode: 'color', overviewBackgroundColor: '#17252b' })
+    const patches = {
+      parent: `diff --git a/src/shared/keybindings.ts b/src/shared/keybindings.ts
+index 1111111..2222222 100644
+--- a/src/shared/keybindings.ts
++++ b/src/shared/keybindings.ts
+@@ -18,3 +18,5 @@ export const DEFAULT_KEYBINDINGS = {
+   newTask: 'Meta+N',
++  previousTask: 'Meta+[',
++  nextTask: 'Meta+]',
+   openSettings: 'Meta+,',
+ }
+`,
+      child: `diff --git a/src/client/renderer/src/components/SidebarTask.tsx b/src/client/renderer/src/components/SidebarTask.tsx
+index 3333333..4444444 100644
+--- a/src/client/renderer/src/components/SidebarTask.tsx
++++ b/src/client/renderer/src/components/SidebarTask.tsx
+@@ -88,4 +88,5 @@ export function SidebarTask({ task }: Props) {
+       <span className="truncate">{task.title}</span>
++      <kbd className="text-dim">⌘ ]</kbd>
+     </button>
+   )
+ }
+`
+    }
+    window.anvil.tasks.diff = async (taskId) => {
+      const task = (await window.anvil.tasks.list()).find((candidate) => candidate.id === taskId)
+      const parent = task?.title === 'Add task keyboard shortcuts'
+      return {
+        commits: [{
+          sha: parent ? '1234567890abcdef' : 'abcdef1234567890',
+          subject: parent ? 'Add task navigation shortcuts' : 'Show shortcut hints'
+        }],
+        patch: parent ? patches.parent : patches.child
+      }
+    }
+    window.anvil.tasks.mergePreview = async (taskId) => {
+      const task = (await window.anvil.tasks.list()).find((candidate) => candidate.id === taskId)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      return {
+        sourceBranch: task.branchName,
+        targetBranch: 'main',
+        sourceCommit: 'source-head',
+        targetCommit: 'target-head',
+        commitCount: 1
+      }
+    }
   }, wallpaper)
   await page.addStyleTag({ content: `
     body { padding: 28px; background: #080c11; overflow: hidden }
@@ -122,72 +199,52 @@ try {
     document.body.append(cursor)
   })
   await page.waitForTimeout(600)
-  await capture(0.8)
+  await capture(0.48)
   await focusNewTask()
   const parentId = await typePrompt('Add task keyboard shortcuts')
   await emit(parentId, 'message', 'I’ll add next-task and previous-task shortcuts using the existing keybinding registry.')
-  await capture(1.4)
+  await capture(1.0)
   await emit(parentId, 'tool_use', 'Read files\nsrc/shared/keybindings.ts · src/client/renderer/src/components/Sidebar.tsx')
-  await capture(0.8)
   await emit(parentId, 'tool_result', 'Task navigation and keybindings are ready to extend.')
   await emit(parentId, 'tool_use', 'Edit files\nAdd next-task and previous-task shortcuts')
-  await capture(0.8)
-  await emit(parentId, 'tool_result', 'Updated keybindings.ts and Sidebar.tsx · +28 −4')
-  await emit(parentId, 'tool_use', 'Shell\nnpm run test:unit')
-  await capture(0.7)
-  await emit(parentId, 'tool_result', 'Test Files  12 passed\nTests       64 passed')
-  await emit(parentId, 'message', 'Keyboard shortcuts are ready. Task selection wraps at either end and keeps the active task visible.')
-  await updateTask(parentId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 18000, filesChanged: 2, additions: 28, deletions: 4 })
-  await capture(1.3)
-  await page.screenshot({ path: join(output, 'demo-agent-preview.png') })
+  await capture(0.48)
   await focusNewTask()
   const childId = await typePrompt('Add shortcut hints')
-  await emit(childId, 'message', 'I’ll plan the shortcut hints against the current keybinding and sidebar code.')
-  await emit(childId, 'tool_use', 'Read files\nsrc/shared/keybindings.ts · src/client/renderer/src/components/Sidebar.tsx')
-  await capture(0.7)
-  await emit(childId, 'tool_result', 'Plan ready · src/shared/keybindings.ts overlaps Add task keyboard shortcuts')
+  await emit(childId, 'message', 'This uses the same keybinding code, so I’ll queue it on the keyboard-shortcuts task.')
   await automaticallyStackTask(childId, parentId, ['src/shared/keybindings.ts'])
   await expect(page.getByRole('button', { name: 'Stacked on Add task keyboard shortcuts', exact: true })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'Queued. Waiting for Add task keyboard shortcuts' })).toBeVisible()
   await capture(1.4)
-  const childRow = page.getByRole('button', { name: 'Open task: Add shortcut hints', exact: true })
-  await emit(childId, 'tool_use', 'Edit files\nShow the shortcut beside each navigation action')
-  await capture(0.7)
-  await emit(childId, 'tool_result', 'Added shortcut hints · +6 −0')
-  await emit(childId, 'message', 'Added the shortcut hints on top of the keyboard-shortcuts task. Ready for review.')
-  await updateTask(childId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 6000, filesChanged: 1, additions: 6 })
-  await capture(1.0)
-  await focusNewTask()
-  const nextChildId = await typePrompt('Add shortcut tooltips')
-  await emit(nextChildId, 'message', 'I’ll plan the tooltip changes against the existing shortcut hints.')
-  await emit(nextChildId, 'tool_result', 'Plan ready · src/shared/keybindings.ts overlaps Add shortcut hints')
-  await capture(0.5)
-  await automaticallyStackTask(nextChildId, childId, ['src/shared/keybindings.ts'])
-  await expect(page.getByRole('button', { name: 'Stacked on Add shortcut hints', exact: true })).toBeVisible()
-  await emit(nextChildId, 'message', 'I’ll add tooltips on top of the shortcut-hints task.')
-  await capture(0.8)
-  const nextChildRow = page.getByRole('button', { name: 'Open task: Add shortcut tooltips', exact: true })
-  const parentRow = page.getByRole('button', { name: 'Open task: Add task keyboard shortcuts', exact: true })
-  const parentBox = await parentRow.boundingBox()
-  const firstBox = await childRow.boundingBox()
-  const secondBox = await nextChildRow.boundingBox()
-  if (!(secondBox.y < firstBox.y && firstBox.y < parentBox.y)) throw new Error('Stack must read newest child, parent child, then root task from top to bottom')
-  await emit(nextChildId, 'message', 'Shortcut tooltips are ready for review.')
-  await updateTask(nextChildId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 3000, filesChanged: 1, additions: 4 })
-  await capture(0.6)
-  await focusNewTask()
-  await capture(1.1)
   await page.screenshot({ path: join(output, 'demo-stack-preview.png') })
-  const picker = page.getByRole('combobox', { name: 'Workspace', exact: true })
-  await click(picker)
+  const childRow = page.getByRole('button', { name: 'Open task: Add shortcut hints', exact: true })
+  const parentRow = page.getByRole('button', { name: 'Open task: Add task keyboard shortcuts', exact: true })
+  await click(parentRow)
+  await emit(parentId, 'tool_result', 'Updated keybindings.ts · +2 −0')
+  await emit(parentId, 'message', 'Task navigation wraps at either end and keeps the active task visible.')
+  await updateTask(parentId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 18000, filesChanged: 1, additions: 2, deletions: 0 })
   await capture(0.4)
-  await click(page.getByRole('option').filter({ hasText: 'Studio' }))
-  await capture(1.0)
-  await page.screenshot({ path: join(output, 'demo-workspace-preview.png') })
-  await click(picker)
-  await capture(0.3)
-  await click(page.getByRole('option').filter({ hasText: 'Personal' }))
-  await expect(childRow).toBeVisible()
+  await openChanges()
+  await capture(1.8)
+  await page.screenshot({ path: join(output, 'demo-agent-preview.png') })
+  await mergeTask()
   await capture(1.2)
+  await page.screenshot({ path: join(output, 'demo-workspace-preview.png') })
+
+  await startStackedTask(childId)
+  await expect(childRow.getByRole('img', { name: 'Working' })).toBeVisible()
+  await capture(0.32)
+  await click(childRow)
+  await emit(childId, 'tool_use', 'Edit files\nShow the shortcut beside each navigation action')
+  await emit(childId, 'tool_result', 'Updated SidebarTask.tsx · +1 −0')
+  await capture(0.8)
+  await emit(childId, 'message', 'Shortcut hints are ready for review.')
+  await updateTask(childId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 6000, filesChanged: 1, additions: 1, deletions: 0 })
+  await capture(0.4)
+  await openChanges()
+  await capture(1.4)
+  await mergeTask()
+  if (frame > targetFrames) throw new Error(`Demo ran ${(frame / fps).toFixed(2)} seconds before the final hold; expected at most ${durationSeconds}.`)
+  if (frame < targetFrames) await capture((targetFrames - frame) / fps)
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(`Captured ${frame} frames, ${(frame / fps).toFixed(2)} seconds.`)
 } finally {

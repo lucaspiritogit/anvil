@@ -2,7 +2,7 @@
 
 **A local-first control plane that runs coding agents in parallel Git worktrees and lets you review their diffs from your desktop or browser.**
 
-![Anvil demo showing task creation, agent activity, stacked tasks, and workspace switching](./public/showcase/anvil-demo.gif)
+![Anvil demo showing a task diff, a queued stacked task, and both tasks being merged](./public/showcase/anvil-demo.gif)
 
 <img width="1440" height="900" alt="image" src="https://github.com/user-attachments/assets/b82dc5bb-43e3-426a-8a65-5df87447d946" />
 
