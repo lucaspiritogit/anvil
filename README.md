@@ -1,9 +1,12 @@
 # Anvil
 
-**A desktop control plane for running coding agents in parallel Git worktrees and reviewing their diffs.**
+**A local control plane for running coding agents in parallel Git worktrees and reviewing their diffs.**
 
 Anvil gives every task its own branch and worktree, runs an agent there, and hands
 you one cumulative diff to review.
+
+Run Anvil as a desktop app or a standalone server. Use the same interface on the
+host machine, over a trusted LAN, or through Tailscale HTTPS.
 
 ![Anvil demo showing task creation, agent activity, stacked tasks, and workspace switching](./public/showcase/anvil-demo.gif)
 
@@ -15,6 +18,8 @@ you one cumulative diff to review.
   project's current commit, so many can run in the same repository at once.
 - **Diff-first review.** Anvil saves one cumulative final diff per task for you
   to comment on and approve.
+- **Remote access.** Open Anvil from another device through Tailscale HTTPS or
+  use password-protected access on your local network.
 
 ## Install
 
@@ -33,6 +38,39 @@ Anvil drives agent CLIs already on your PATH, with no hosted backend.
 | --- | --- | --- |
 | OpenCode (default) | `opencode` | ACP server over stdio |
 | Codex | `codex` | app-server over stdio |
+
+## Server and remote access
+
+The server runs agents, Git worktrees, storage, and the browser interface on the
+host machine. Remote devices only need a browser.
+
+| Mode | Start | Access |
+| --- | --- | --- |
+| Desktop | Launch Anvil, then open **Settings > Connections** | Local by default, with optional LAN or Tailscale access |
+| Headless LAN | `npm run serve:headless` | `http://host:4780` with username `anvil` and your server password |
+| Headless Tailscale | `npm run serve:headless:tailscale` | Private HTTPS address managed by Tailscale |
+
+For desktop LAN access, set a server password in **Settings > Connections** and
+enable **Allow other devices**. Anvil stores only an Argon2id password hash.
+Open `http://HOST:4780` from another device on the same trusted network and sign
+in with username `anvil`.
+
+Enable **Tailscale HTTPS** to access the desktop server from another network.
+Install and connect Tailscale on both devices, then open the HTTPS address shown
+by Anvil. Desktop Tailscale access still requires the Anvil username and password.
+
+For an unattended headless LAN server, provide the password through a file:
+
+```sh
+ANVIL_SERVER_PASSWORD_FILE=/absolute/path/to/password npm run serve:headless
+```
+
+Without a password file, the first terminal launch prompts for a password. The
+headless Tailscale command delegates access control to Tailscale and does not read
+the password file.
+
+LAN mode uses HTTP, so use it only on a trusted network. Use Tailscale for private
+HTTPS access outside that network.
 
 ## How it differs
 
