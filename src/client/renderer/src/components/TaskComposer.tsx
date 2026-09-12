@@ -200,12 +200,12 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
               </label>
             </ComposerOverflowOptions>
-            <div className="ml-auto flex shrink-0 items-center gap-3 pl-2">
+            <div className="ml-auto flex shrink-0 items-stretch gap-3 self-stretch pl-2">
               <button
                 type="submit"
                 aria-label={busy ? 'Starting…' : 'Send'}
                 title={busy ? 'Starting…' : 'Send'}
-                className="grid size-8 shrink-0 place-items-center bg-accent text-canvas transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
+                className="grid w-8 shrink-0 place-items-center bg-accent text-canvas transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
                 disabled={!projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || busy || switchingBranch}
               >
                 <Icon icon="chevron-up" size={18} aria-hidden="true" />
