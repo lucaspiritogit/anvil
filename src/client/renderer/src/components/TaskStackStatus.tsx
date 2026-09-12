@@ -4,6 +4,7 @@ import type { Task } from '@shared/types'
 import { useStore } from '../state/store'
 import { Icon } from '../icons'
 import { btn } from '../ui'
+import { RestackConflictAlert } from './RestackConflictAlert'
 
 export function TaskStackStatus({ task }: { task: Task }) {
   const tasks = useStore((state) => state.tasks)
@@ -23,14 +24,13 @@ export function TaskStackStatus({ task }: { task: Task }) {
   return <div className="shrink-0 border-b border-line px-5 py-2 text-xs space-y-2">
     {parent && <button className="inline-flex items-center gap-1.5 text-accent hover:underline" onClick={() => openTask(parent.id)}><Icon icon="layers" size={14} />Stacked on {parent.title}</button>}
     {parent && isQueuedStackTask(task) && <p role="status" className="text-dim">Queued. Waiting for {parent.title} to finish before starting.</p>}
-    {task.restackState && <div role="status">
-      <span className="text-warn">{task.restackState === 'pending' ? 'Restack pending. Waiting for the parent task to finish and the current turn to stop.' : 'Restack conflict'}</span>
-      {task.restackState === 'conflict' && <>
-        <p className="whitespace-pre-wrap text-dim">{task.deliveryError}</p>
-        <button className={btn.ghost} disabled={busy || task.status === 'running'} onClick={() => void run(() => window.anvil.tasks.restack(task.id))}>Retry restack</button>
-        <button className={btn.ghost} disabled={busy || task.status === 'running'} onClick={() => void run(() => window.anvil.tasks.rebaseWithAgent(task.id))}>Resolve with agent</button>
-      </>}
-    </div>}
+    {task.restackState === 'pending' && <p role="status" className="text-warn">Restack pending. Waiting for the parent task to finish and the current turn to stop.</p>}
+    {task.restackState === 'conflict' && <RestackConflictAlert
+      error={task.deliveryError}
+      disabled={busy || task.status === 'running'}
+      onRetry={() => void run(() => window.anvil.tasks.restack(task.id))}
+      onResolveWithAgent={() => void run(() => window.anvil.tasks.rebaseWithAgent(task.id))}
+    />}
     {suggestion && suggested && !task.restackState && <div>
       <p>This task expects to modify files also touched by {suggested.title}: {suggestion.paths.slice(0, 5).join(', ')}{suggestion.paths.length > 5 ? ` and ${suggestion.paths.length - 5} more` : ''}. Stack on it?</p>
       <button className={btn.ghost} disabled={busy} onClick={() => void run(() => window.anvil.tasks.stack({ taskId: task.id, parentTaskId: suggested.id }))}><Icon icon="layers" size={14} />Stack</button>
