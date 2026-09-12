@@ -16,7 +16,7 @@ const TASK_INDICATORS = {
   saving: { icon: 'loader', label: 'Saving changes…', tone: 'text-accent', highlight: '' },
   done: { icon: 'check', label: 'Done', tone: 'text-ok', highlight: '' },
   reviewedIssue: { icon: 'check', label: 'Approved', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
-  merged: { icon: 'check', label: 'Merged', tone: 'text-violet', highlight: 'bg-violet/8 hover:bg-violet/12 ring-violet/30' },
+  merged: { icon: 'git-branch', label: 'Merged', tone: 'text-violet', highlight: 'bg-violet/8 hover:bg-violet/12 ring-violet/30' },
   openPullRequest: { icon: 'git-branch', label: 'Open PR', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
   reviewable: { icon: 'bell-ring', label: 'Ready for review', tone: 'text-orange-400', highlight: 'bg-orange-400/8 hover:bg-orange-400/12 ring-orange-400/30' },
   failed: { icon: 'x', label: 'Failed', tone: 'text-danger', highlight: '' }
@@ -149,6 +149,11 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
     }
   }
 
+  const title = [
+    parent ? `${task.prompt}\nStacked on ${parent.title}` : task.prompt,
+    ...(task.pullRequest ? [task.pullRequest.url, `${IS_MAC ? '⌘' : 'Ctrl'}+click to open pull request`] : [])
+  ].join('\n')
+
   const open = (event: React.MouseEvent<HTMLButtonElement>): void => {
     const primaryModifier = IS_MAC ? event.metaKey : event.ctrlKey
     if (task.pullRequest && primaryModifier) {
@@ -181,7 +186,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           className={cn('w-full min-w-0 text-left focus-visible:outline focus-visible:outline-accent', compact || queuedStack ? 'flex items-center gap-2 px-2.5 py-2' : 'block px-3 py-3')}
           onClick={open}
           onContextMenu={(event) => openTaskContextMenu(event, task.id)}
-          title={parent ? `${task.prompt}\nStacked on ${parent.title}` : task.prompt}
+          title={title}
         >
           {queuedStack ? (
             <>
