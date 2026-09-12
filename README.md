@@ -10,6 +10,9 @@ host machine, over a trusted LAN, or through Tailscale HTTPS.
 
 ![Anvil demo showing task creation, agent activity, stacked tasks, and workspace switching](./public/showcase/anvil-demo.gif)
 
+<img width="1440" height="900" alt="image" src="https://github.com/user-attachments/assets/b82dc5bb-43e3-426a-8a65-5df87447d946" />
+
+
 ## What it does
 
 - **Runs tasks, not conversations.** Dispatch work to an agent and review the

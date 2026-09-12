@@ -48,9 +48,14 @@ try {
     await locator.click()
     await capture(0.25)
   }
+  async function focusNewTask() {
+    await page.keyboard.press('Meta+n')
+    await expect(page.getByRole('textbox', { name: 'Task prompt', exact: true })).toBeFocused()
+    await capture(0.3)
+  }
   async function typePrompt(text) {
     const input = page.getByRole('textbox', { name: 'Task prompt', exact: true })
-    await click(input)
+    await expect(input).toBeFocused()
     for (const character of text) {
       await input.pressSequentially(character)
       await capture(1 / fps)
@@ -70,6 +75,22 @@ try {
       const task = (await window.anvil.tasks.list()).find((task) => task.id === taskId)
       window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, ...patch } }))
     }, { taskId, patch })
+  }
+  async function automaticallyStackTask(taskId, parentTaskId, expectedFiles) {
+    await page.evaluate(async ({ taskId, parentTaskId, expectedFiles }) => {
+      const tasks = await window.anvil.tasks.list()
+      const task = tasks.find((candidate) => candidate.id === taskId)
+      const parent = tasks.find((candidate) => candidate.id === parentTaskId)
+      window.dispatchEvent(new CustomEvent('fixture:task-updated', {
+        detail: {
+          ...task,
+          expectedFiles,
+          parentTaskId,
+          baseBranch: parent.branchName,
+          stackSuggestion: undefined
+        }
+      }))
+    }, { taskId, parentTaskId, expectedFiles })
   }
   await page.addInitScript(() => {
     localStorage.setItem('fixture:workspaces', JSON.stringify([
@@ -102,9 +123,10 @@ try {
   })
   await page.waitForTimeout(600)
   await capture(0.8)
+  await focusNewTask()
   const parentId = await typePrompt('Add task keyboard shortcuts')
   await emit(parentId, 'message', 'I’ll add next-task and previous-task shortcuts using the existing keybinding registry.')
-  await capture(1.4, { x: 1120, y: 680 })
+  await capture(1.4)
   await emit(parentId, 'tool_use', 'Read files\nsrc/shared/keybindings.ts · src/client/renderer/src/components/Sidebar.tsx')
   await capture(0.8)
   await emit(parentId, 'tool_result', 'Task navigation and keybindings are ready to extend.')
@@ -118,41 +140,41 @@ try {
   await updateTask(parentId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 18000, filesChanged: 2, additions: 28, deletions: 4 })
   await capture(1.3)
   await page.screenshot({ path: join(output, 'demo-agent-preview.png') })
-  await click(page.getByRole('button', { name: 'New task', exact: true }))
+  await focusNewTask()
   const childId = await typePrompt('Add shortcut hints')
-  await emit(childId, 'message', 'The hints use the keyboard shortcuts from the previous task. I can stack this change on that branch.')
-  await updateTask(childId, { stackSuggestion: { parentTaskId: parentId, paths: ['src/shared/keybindings.ts'] } })
-  await capture(1.4, { x: 1100, y: 640 })
-  const childRow = page.getByRole('button', { name: 'Open task: Add shortcut hints', exact: true })
-  const originalHeight = (await childRow.boundingBox()).height
-  await click(page.getByRole('button', { name: 'Stack', exact: true }))
+  await emit(childId, 'message', 'I’ll plan the shortcut hints against the current keybinding and sidebar code.')
+  await emit(childId, 'tool_use', 'Read files\nsrc/shared/keybindings.ts · src/client/renderer/src/components/Sidebar.tsx')
+  await capture(0.7)
+  await emit(childId, 'tool_result', 'Plan ready · src/shared/keybindings.ts overlaps Add task keyboard shortcuts')
+  await automaticallyStackTask(childId, parentId, ['src/shared/keybindings.ts'])
   await expect(page.getByRole('button', { name: 'Stacked on Add task keyboard shortcuts', exact: true })).toBeVisible()
   await capture(1.4)
-  const compactHeight = (await childRow.boundingBox()).height
-  if (compactHeight >= originalHeight) throw new Error(`Stack did not shrink: ${originalHeight} -> ${compactHeight}`)
+  const childRow = page.getByRole('button', { name: 'Open task: Add shortcut hints', exact: true })
   await emit(childId, 'tool_use', 'Edit files\nShow the shortcut beside each navigation action')
   await capture(0.7)
   await emit(childId, 'tool_result', 'Added shortcut hints · +6 −0')
   await emit(childId, 'message', 'Added the shortcut hints on top of the keyboard-shortcuts task. Ready for review.')
   await updateTask(childId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 6000, filesChanged: 1, additions: 6 })
   await capture(1.0)
-  await click(page.getByRole('button', { name: 'New task', exact: true }))
+  await focusNewTask()
   const nextChildId = await typePrompt('Add shortcut tooltips')
-  await emit(nextChildId, 'message', 'I’ll add tooltips on top of the same keyboard-shortcuts task.')
-  await updateTask(nextChildId, { stackSuggestion: { parentTaskId: parentId, paths: ['src/shared/keybindings.ts'] } })
-  await capture(0.8)
-  await click(page.getByRole('button', { name: 'Stack', exact: true }))
+  await emit(nextChildId, 'message', 'I’ll plan the tooltip changes against the existing shortcut hints.')
+  await emit(nextChildId, 'tool_result', 'Plan ready · src/shared/keybindings.ts overlaps Add shortcut hints')
+  await capture(0.5)
+  await automaticallyStackTask(nextChildId, childId, ['src/shared/keybindings.ts'])
+  await expect(page.getByRole('button', { name: 'Stacked on Add shortcut hints', exact: true })).toBeVisible()
+  await emit(nextChildId, 'message', 'I’ll add tooltips on top of the shortcut-hints task.')
   await capture(0.8)
   const nextChildRow = page.getByRole('button', { name: 'Open task: Add shortcut tooltips', exact: true })
   const parentRow = page.getByRole('button', { name: 'Open task: Add task keyboard shortcuts', exact: true })
   const parentBox = await parentRow.boundingBox()
   const firstBox = await childRow.boundingBox()
   const secondBox = await nextChildRow.boundingBox()
-  if (!(parentBox.y < firstBox.y && firstBox.y < secondBox.y)) throw new Error('Stack must read main task, first child, then second child from top to bottom')
+  if (!(secondBox.y < firstBox.y && firstBox.y < parentBox.y)) throw new Error('Stack must read newest child, parent child, then root task from top to bottom')
   await emit(nextChildId, 'message', 'Shortcut tooltips are ready for review.')
   await updateTask(nextChildId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 3000, filesChanged: 1, additions: 4 })
   await capture(0.6)
-  await click(page.getByRole('button', { name: 'New task', exact: true }))
+  await focusNewTask()
   await capture(1.1)
   await page.screenshot({ path: join(output, 'demo-stack-preview.png') })
   const picker = page.getByRole('combobox', { name: 'Workspace', exact: true })
@@ -165,9 +187,9 @@ try {
   await capture(0.3)
   await click(page.getByRole('option').filter({ hasText: 'Personal' }))
   await expect(childRow).toBeVisible()
-  await capture(1.2, { x: 1180, y: 720 })
+  await capture(1.2)
   if (errors.length) throw new Error(errors.join('\n'))
-  console.log(`Captured ${frame} frames, ${(frame / fps).toFixed(2)} seconds. Stack row: ${originalHeight}px -> ${compactHeight}px.`)
+  console.log(`Captured ${frame} frames, ${(frame / fps).toFixed(2)} seconds.`)
 } finally {
   await browser?.close()
   await server.close()

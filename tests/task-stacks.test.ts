@@ -237,7 +237,10 @@ test('automatic stacking leaves tasks without overlap unstacked', async () => {
   const child = await f.add('child')
   f.store.updateTask(child.id, { expectedFiles: ['unrelated.txt'] })
   await f.stacks.autoStack(child.id)
-  expect(f.store.getTask(child.id)).toMatchObject({ parentTaskId: undefined, restackState: undefined, restackTarget: undefined })
+  const unstacked = f.store.getTask(child.id)!
+  expect(unstacked.parentTaskId).toBeUndefined()
+  expect(unstacked.restackState).toBeUndefined()
+  expect(unstacked.restackTarget).toBeUndefined()
 })
 
 test('automatic stacking skips a strongest candidate that becomes ineligible', async () => {

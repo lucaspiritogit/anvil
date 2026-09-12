@@ -251,7 +251,7 @@ test('enforces foreign keys, immutable task ownership and independent project se
   expect(db.pragma('foreign_key_check')).toEqual([])
 })
 
-test('loads pull request metadata only for the current reviewable task revision', () => {
+test('loads pull request metadata only for the current task revision', () => {
   const { open } = fixture()
   const store = open()
   addProject(store)
@@ -274,8 +274,8 @@ test('loads pull request metadata only for the current reviewable task revision'
   expect(reopened.getTask(task.id)?.pullRequest).toBeUndefined()
   expect(reopened.getTasks()[0].pullRequest).toBeUndefined()
 
-  expect(reopened.updateTask(task.id, { headCommit: 'current-head', deliveryStatus: 'approved' })?.pullRequest).toBeUndefined()
-  expect(reopened.getTask(task.id)?.pullRequest).toBeUndefined()
+  expect(reopened.updateTask(task.id, { headCommit: 'current-head', deliveryStatus: 'approved' })?.pullRequest).toEqual(pullRequest)
+  expect(reopened.getTask(task.id)?.pullRequest).toEqual(pullRequest)
 })
 
 
