@@ -118,32 +118,6 @@ either version. This also isolates its Electron profile. For example:
 ANVIL_DATA_DIR="$(mktemp -d /tmp/anvil-test.XXXXXX)" npm run dev
 ```
 
-### Package for macOS
-
-Build a local installer on the Mac where you will use Anvil:
-
-```sh
-npm run dist:mac
-```
-
-This builds the production app and creates
-`release/Anvil-0.1.0-arm64.dmg` on Apple Silicon, or
-`release/Anvil-0.1.0-x64.dmg` on Intel. The filename follows the version in
-`package.json`. Open the DMG, drag Anvil into Applications, and launch it there.
-The installed app runs without the development server.
-
-After changing the code, quit Anvil, rerun `npm run dist:mac`, and replace the
-copy in Applications. Your projects and settings stay in `~/.anvil-composer/`.
-Agent CLIs must still be installed on your Mac.
-Anvil loads your login shell's PATH at startup, including interactive shell
-configuration, so tools installed through Homebrew or NVM are available when
-launching from Applications. Restart Anvil after changing that configuration.
-
-For just the `.app` bundle, run `npm run pack:mac` and look under `release/mac*`.
-Both commands skip Apple code signing for local use. Sharing builds with other
-people requires a separate signing and notarization setup for normal Gatekeeper
-approval. See the [electron-builder signing guide](https://www.electron.build/v26/docs/features/code-signing/code-signing-mac/).
-
 ### Project memory
 
 Project memory is off by default. Enable it in **Settings > Memory** to save
