@@ -7,6 +7,7 @@ import { AgentProcessManager } from '../src/server/agents/process-manager'
 import type { ConnectionHandlers } from '../src/server/agents/codex-app-server-connection'
 import type { CodexAccount, CodexAppServerRequests } from '../src/server/agents/codex-app-server-protocol'
 import type { AgentAccountConnect, AgentAccountTarget } from '../src/shared/types'
+import { validateIpcRequest } from '../src/server/handlers/validation'
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { getAgent } from '../src/server/agents/registry'
@@ -410,4 +411,12 @@ test('Codex device auth stays scoped to its workspace', async () => {
   expect((await f.accounts.status(work)).status).toBe('connected')
   expect((await f.accounts.status(personal)).status).toBe('signed-out')
   expect(f.invalidate.mock.calls.every(([id]) => id === 'work')).toBe(true)
+})
+
+test('accounts:connect validator rejects deviceAuth for opencode and native for codex', () => {
+  const target = { workspaceId: 'default' as const }
+  expect(() => validateIpcRequest('accounts:connect', [{ ...target, agentId: 'codex', method: 'deviceAuth' }])).not.toThrow()
+  expect(() => validateIpcRequest('accounts:connect', [{ ...target, agentId: 'codex', method: 'native' }])).toThrow('unsupported agent login method')
+  expect(() => validateIpcRequest('accounts:connect', [{ ...target, agentId: 'opencode', method: 'deviceAuth' }])).toThrow('unsupported agent login method')
+  expect(() => validateIpcRequest('accounts:connect', [{ ...target, agentId: 'opencode', method: 'native' }])).not.toThrow()
 })

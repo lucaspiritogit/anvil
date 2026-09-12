@@ -31,7 +31,9 @@ export function fixtureAccounts(name: (id: string) => string, busy: boolean): An
           accounts: input.apiKey === 'fixture-fail' ? [] : ['API key'], message: input.apiKey === 'fixture-fail' ? 'Account operation failed. Retry the connection.' : undefined })
       }
       const sessionId = crypto.randomUUID()
-      return publish({ ...state, status: 'pending', sessionId, terminalSessionId: input.agentId === 'opencode' ? `auth-${sessionId}` : undefined, message: 'Complete the native sign-in for this workspace.' })
+      const deviceAuth = input.agentId === 'codex' && input.method === 'deviceAuth'
+      return publish({ ...state, status: 'pending', sessionId, terminalSessionId: input.agentId === 'opencode' || deviceAuth ? `auth-${sessionId}` : undefined,
+        message: deviceAuth ? 'Complete Codex sign-in in the terminal panel: open the link and enter the one-time code.' : 'Complete the native sign-in for this workspace.' })
     },
     cancel: async (input) => {
       const state = current(input)

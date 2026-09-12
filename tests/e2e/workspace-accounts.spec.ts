@@ -78,6 +78,24 @@ for (const method of ['api', 'subscription']) {
   })
 }
 
+test('Codex remote device-code sign-in shows the terminal guide and can be cancelled', async ({ page }, testInfo) => {
+  await openAccounts(page)
+  const codex = card(page)
+  await codex.getByLabel('Codex sign-in method for Default').selectOption('deviceAuth')
+  await expect(codex.getByText('Open the verification link from any device and enter the one-time code in the terminal panel.')).toBeVisible()
+  await codex.getByRole('button', { name: 'Connect Codex for Default', exact: true }).click()
+  await expect(codex.locator('canvas')).toBeVisible()
+  await expect(codex.getByText('enter the one-time code', { exact: false })).toBeVisible()
+  await expect(codex.getByRole('button', { name: 'Connect Codex for Default', exact: true })).toBeDisabled()
+  await page.screenshot({ path: testInfo.outputPath('codex-device-auth-terminal.png') })
+  await complete(page)
+  await expect(codex.getByRole('status')).toHaveText('ChatGPT: fixture@example.test (plus)')
+  await codex.getByRole('button', { name: 'Connect Codex for Default', exact: true }).click()
+  await expect(codex.locator('canvas')).toBeVisible()
+  await codex.getByRole('button', { name: 'Cancel Codex for Default', exact: true }).click()
+  await expect(codex.getByRole('status')).toHaveText('Connection cancelled.')
+})
+
 test('busy work explains why account changes are disabled', async ({ page }) => {
   await openAccounts(page, 'accountBusy')
   await expect(card(page).getByText('Active work in Default must finish before changing accounts.')).toBeVisible()
