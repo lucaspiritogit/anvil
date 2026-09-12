@@ -38,7 +38,8 @@ async function main(): Promise<void> {
     rendererOrigin: process.env.ANVIL_RENDERER_ORIGIN ?? 'http://localhost:5173',
     rendererDirectory: join(__dirname, '../browser'),
     auth: serverAuth,
-    requireAuthentication: headlessAccess === 'password'
+    // Local desktop clients share this listener; remote clients still authenticate.
+    isReady: () => runtime !== undefined
   }
   const http = createAnvilHttpServer(httpRuntime, httpOptions)
   let tailscaleHttp: ReturnType<typeof createAnvilHttpServer> | undefined

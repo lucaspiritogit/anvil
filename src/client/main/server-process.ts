@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { setTimeout as delay } from 'node:timers/promises'
 import { serverAddress } from '../../shared/server-address'
 
 export interface ServerConnection {
@@ -6,10 +7,34 @@ export interface ServerConnection {
   close(): Promise<void>
 }
 
-async function checkHealth(url: string): Promise<void> {
-  const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(2_000) })
-  const health = await response.json() as { ok?: boolean; version?: string }
-  if (!response.ok || health.ok !== true || typeof health.version !== 'string') throw new Error('Invalid Anvil server health response')
+function connectionRefused(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  if ('code' in error && error.code === 'ECONNREFUSED') return true
+  return 'cause' in error && connectionRefused(error.cause)
+}
+
+async function existingServer(url: string): Promise<ServerConnection | undefined> {
+  const deadline = Date.now() + 20_000
+  while (true) {
+    let response: Response
+    try {
+      response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(2_000), redirect: 'error' })
+    } catch (error) {
+      if (connectionRefused(error)) return undefined
+      throw new Error(`Could not connect to Anvil at ${url}.`, { cause: error })
+    }
+    const health: unknown = await response.json().catch(() => null)
+    if (!response.ok || !health || typeof health !== 'object' ||
+      !('service' in health) || health.service !== 'anvil' ||
+      !('ok' in health) || health.ok !== true ||
+      !('version' in health) || typeof health.version !== 'string' ||
+      !('ready' in health) || typeof health.ready !== 'boolean') {
+      throw new Error(`The service at ${url} is not a compatible Anvil server. Stop it or use another ANVIL_SERVER_PORT.`)
+    }
+    if (health.ready) return { url, close: async () => {} }
+    if (Date.now() >= deadline) throw new Error(`Anvil at ${url} is still starting. Finish any setup in its terminal, then reopen the app.`)
+    await delay(200)
+  }
 }
 
 export async function connectToServer(options: {
@@ -23,10 +48,13 @@ export async function connectToServer(options: {
   const environment = options.environment ?? process.env
   if (environment.ANVIL_SERVER_URL) {
     const url = serverAddress(environment.ANVIL_SERVER_URL)
-    await checkHealth(url)
-    return { url, close: async () => {} }
+    const existing = await existingServer(url)
+    if (!existing) throw new Error(`No Anvil server is running at ${url}.`)
+    return existing
   }
   const url = serverAddress(`http://127.0.0.1:${environment.ANVIL_SERVER_PORT ?? 4780}`)
+  const existing = await existingServer(url)
+  if (existing) return existing
   const child = spawn(options.executable, [options.entry], {
     env: { ...environment, ELECTRON_RUN_AS_NODE: '1', ANVIL_DATA_DIR: options.dataDirectory,
       ANVIL_PACKAGED: options.packaged ? '1' : '0', ANVIL_RENDERER_ORIGIN: new URL(options.rendererUrl).origin },
@@ -35,7 +63,7 @@ export async function connectToServer(options: {
   let stopped: Promise<void> | undefined
   const close = (): Promise<void> => { stopped ??= stopChild(child); return stopped }
   try {
-    // A ready message identifies our child; a different process on this port is not adopted.
+    // Only a child we started belongs to the desktop's shutdown lifecycle.
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => finish(new Error('Timed out starting Anvil server')), 20_000)
       const onError = (error: Error): void => finish(error)
@@ -55,10 +83,13 @@ export async function connectToServer(options: {
       child.once('exit', onExit)
       child.on('message', onMessage)
     })
-    await checkHealth(url)
+    if (!await existingServer(url)) throw new Error('Anvil server stopped during startup.')
     return { url, close }
   } catch (error) {
     await close()
+    // Another launch may have claimed the port after our initial probe.
+    const existing = await existingServer(url)
+    if (existing) return existing
     throw error
   }
 }

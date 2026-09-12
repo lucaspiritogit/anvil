@@ -56,6 +56,7 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: {
   auth?: HttpServerAuth
   requireAuthentication?: boolean
   externalOrigin?: string
+  isReady?(): boolean
 }) {
   const app = new Hono<{ Bindings: HttpBindings }>()
   const clients = new Set<EventClient>()
@@ -114,7 +115,12 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: {
     context.header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
     return context.body(null, 204)
   })
-  app.get('/health', (context) => context.json({ ok: true, version: options.version }))
+  app.get('/health', (context) => context.json({
+    ok: true,
+    service: 'anvil',
+    version: options.version,
+    ready: options.isReady?.() ?? true
+  }))
   app.get('/events', (context) => {
     let cleanup = (): void => {}
     const body = new ReadableStream<Uint8Array>({
