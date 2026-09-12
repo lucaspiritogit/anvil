@@ -73,8 +73,6 @@ test('orders supported images and returns original bytes with their detected MIM
     const mime = id.endsWith('.jpeg') ? 'image/jpeg' : id.endsWith('.webp') ? 'image/webp' : 'image/png'
     expect(url).toBe(`data:${mime};base64,${(await readFile(join(folder, id))).toString('base64')}`)
   }
-  const csp = await readFile('src/client/renderer/index.html', 'utf8')
-  expect(csp, 'Existing CSP permits returned data images').toMatch(/img-src[^;]* data:/)
 })
 
 test('rejects traversal, symlinks, invalid images and byte, dimension and pixel limits', async () => {

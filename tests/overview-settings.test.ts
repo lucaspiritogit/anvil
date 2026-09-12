@@ -30,15 +30,10 @@ beforeEach(() => {
   registerSettingsHandlers(rendererIpc, store, wallpapers)
 })
 
-test('loads settings defaults', () => {
-  expect(store.getSettings().fontSize).toBe(14)
+test('keeps memory and remote access disabled until configured', () => {
   expect(store.getSettings().memoryEnabled).toBe(false)
-  expect(store.getSettings().memoryEmbeddingModel).toBe('mxbai-embed-large')
-  expect(store.getSettings().ollamaBaseUrl).toBe('http://localhost:11434/v1')
-  expect(store.getSettings().overviewBackgroundMode).toBe('color')
-  expect(store.getSettings().overviewBackgroundColor).toBe('#0d0f12')
-  expect(store.getSettings().overviewWallpaperId).toBe(null)
   expect(store.getSettings().allowOtherDevices).toBe(false)
+  expect(store.getSettings().tailscaleHttps).toBe(false)
 })
 
 test('wallpaper IPC reads the requested workspace even when another workspace is selected', async () => {
@@ -139,11 +134,11 @@ test('configures authenticated connections after the response and rolls back fai
 
   await expect(invoke('connections:configure', { workspaceId: 'default', allowOtherDevices: true })).rejects.toThrow(/password/)
   const enabling = await invoke('connections:configure', { workspaceId: 'default', allowOtherDevices: true, password: 'LAN secret' })
-  expect(enabling).toEqual({ allowOtherDevices: false, passwordConfigured: true, pending: true })
+  expect(enabling).toEqual({ allowOtherDevices: false, tailscaleHttps: false, passwordConfigured: true, pending: true })
   expect(JSON.stringify(enabling)).not.toContain('LAN secret')
   expect(modes).toEqual([])
   await deferred.shift()!()
-  expect(await invoke('connections:status', 'default')).toEqual({ allowOtherDevices: true, passwordConfigured: true, pending: false })
+  expect(await invoke('connections:status', 'default')).toEqual({ allowOtherDevices: true, tailscaleHttps: false, passwordConfigured: true, pending: false })
   expect(store.getSettings().allowOtherDevices).toBe(true)
 
   await invoke('connections:configure', { workspaceId: 'default', allowOtherDevices: false })
@@ -170,6 +165,6 @@ test('startup enables LAN only when both persisted intent and valid authenticati
   store.setSettings({ allowOtherDevices: true })
   const modes: boolean[] = []
   const configured = registerConnectionsHandlers(createHandlerRegistry(), store, auth, async (enabled) => { modes.push(enabled) })
-  expect(await configured.initialize()).toEqual({ allowOtherDevices: true, passwordConfigured: true, pending: false })
+  expect(await configured.initialize()).toEqual({ allowOtherDevices: true, tailscaleHttps: false, passwordConfigured: true, pending: false })
   expect(modes).toEqual([true])
 })

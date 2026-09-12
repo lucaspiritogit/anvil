@@ -26,7 +26,7 @@ async function serve(runtime = registerTestIpc()) {
 
 test('HTTP exposes health, snapshots and validated domain handlers on loopback', async () => {
   const { url, rpc } = await serve()
-  expect(await (await fetch(`${url}/health`)).json()).toEqual({ ok: true, version: 'test' })
+  expect(await (await fetch(`${url}/health`)).json()).toEqual({ ok: true, service: 'anvil', version: 'test', ready: true })
   expect(await (await rpc('workspaces:snapshot')).json()).toMatchObject({ workspaces: expect.any(Array) })
   const invalid = await rpc('workspaces:rename', { workspaceId: '../outside', name: 'invalid' })
   expect(invalid.status).toBe(400)

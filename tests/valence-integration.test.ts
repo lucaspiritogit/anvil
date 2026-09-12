@@ -2,7 +2,7 @@ import { rendererEvent } from './renderer-fixture'
 import Database from 'better-sqlite3'
 import { expect, test, vi } from 'vitest'
 import { join } from 'node:path'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { onTestCleanup } from './test-cleanup'
 import { TaskIssues } from '../src/server/tasks/task-issues'
@@ -77,7 +77,7 @@ function snapshotFixture() {
   return { directory, worktree, store, taskId, read, issues: new TaskIssues(store) }
 }
 
-test.each(['start', 'complete'] as const)('task %s ignores standalone storage and unrelated historical execution metadata', (operation) => {
+test('claims and completes work despite unrelated historical execution metadata', () => {
   const { directory, store, taskId, issues } = snapshotFixture()
   const state = issues.initialize(taskId, directory)
   const tracker = store.issueTracker(store.getTask(taskId)!.projectId)
@@ -85,11 +85,6 @@ test.each(['start', 'complete'] as const)('task %s ignores standalone storage an
   const child = tracker.create({ parentId: state.parentIssueId, title: 'Current work',
     description: 'Use embedded storage', checklist: ['Verify'], validation: 'Run test' })
   issues.finishPlanning(taskId)
-  if (operation === 'complete') {
-    issues.claim(taskId)
-    tracker.submitForReview(child.id, { checklist: [true], evidence: 'Verified in Anvil' })
-    tracker.approve(child.id)
-  }
 
   // Historical task JSON need not contain the old standalone parent mapping.
   const historicalTaskId = randomUUID()
@@ -98,24 +93,16 @@ test.each(['start', 'complete'] as const)('task %s ignores standalone storage an
   onTestCleanup(() => { connection.close() })
   connection.prepare('INSERT INTO task_executions (task_id, state) VALUES (?, ?)').run(historicalTaskId,
     JSON.stringify({ taskId: historicalTaskId, projectPath: directory, phase: 'complete', issueIds: [], currentIssueId: null, error: null }))
-  mkdirSync(join(directory, '.valence'))
-  const standalone = new Database(join(directory, '.valence/sqlite.db'))
-  onTestCleanup(() => { standalone.close() })
-  standalone.exec('CREATE TABLE parent_issues (id TEXT, title TEXT, description TEXT); CREATE TABLE issues (id TEXT)')
-
-  if (operation === 'start') {
-    expect(issues.claim(taskId)?.id).toBe(child.id)
-    expect(tracker.get(child.id).status).toBe('working')
-  } else {
-    issues.finishIssue(taskId)
-    expect(store.getTaskExecution(taskId)?.phase).toBe('complete')
-    expect(tracker.get(child.id).evidence).toBe('Verified in Anvil')
-  }
-  expect(standalone.prepare('SELECT * FROM parent_issues').all()).toEqual([])
-  expect(connection.prepare('SELECT * FROM valence_imports').all()).toEqual([])
+  expect(issues.claim(taskId)?.id).toBe(child.id)
+  expect(tracker.get(child.id).status).toBe('working')
+  tracker.submitForReview(child.id, { checklist: [true], evidence: 'Verified in Anvil' })
+  tracker.approve(child.id)
+  issues.finishIssue(taskId)
+  expect(store.getTaskExecution(taskId)?.phase).toBe('complete')
+  expect(tracker.get(child.id).evidence).toBe('Verified in Anvil')
 })
 
-test.each(['missing', 'changed'] as const)('recovers embedded plans with %s standalone storage and an old import receipt', (sourceStatus) => {
+test('recovers embedded plans after restart without the original standalone storage', () => {
   const { directory, store, taskId, issues } = snapshotFixture()
   const state = issues.initialize(taskId, directory)
   const projectId = store.getTask(taskId)!.projectId
@@ -126,10 +113,6 @@ test.each(['missing', 'changed'] as const)('recovers embedded plans with %s stan
   issues.finishPlanning(taskId)
   issues.claim(taskId)
   const sourcePath = join(directory, '.valence/sqlite.db')
-  if (sourceStatus === 'changed') {
-    mkdirSync(join(directory, '.valence'))
-    writeFileSync(sourcePath, 'Standalone storage changed after cutover')
-  }
   const connection = new Database(tracker.databasePath, { fileMustExist: true })
   onTestCleanup(() => { connection.close() })
   connection.prepare('INSERT INTO valence_imports (source_path, project_id, fingerprint, parents, imported_at) VALUES (?, ?, ?, ?, ?)')

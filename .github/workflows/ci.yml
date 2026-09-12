@@ -77,7 +77,7 @@ jobs:
       - run: npm ci
       # Packaging disables npmRebuild, so build the SQLite native addon for Electron.
       - run: npx electron-rebuild --force --only better-sqlite3
-      - run: npx electron-vite build
+      - run: npm run build
       - run: npx electron-builder ${{ matrix.arguments }} --publish never
       - uses: actions/upload-artifact@v4
         with:

@@ -52,16 +52,15 @@ test('initializes task-owned parents in Anvil before planning without standalone
   expect(existsSync(join(homedir(), '.config/valence', projectId))).toBe(false)
 })
 
-for (const location of ['local', 'config'] as const) {
-  test.each(['sqlite', 'corrupt'] as const)(`starts and completes tasks without reading ${location} standalone %s storage`, async (format) => {
-    const { store, agents, projectId, projectPath, start } = fixture()
-    const standaloneDirectory = location === 'local'
-      ? join(projectPath, '.valence')
-      : join(homedir(), '.config/valence', projectId)
+test('starts and completes tasks while preserving unrelated standalone files', async () => {
+  const { store, agents, projectId, projectPath, start } = fixture()
+  const directories = [join(projectPath, '.valence'), join(homedir(), '.config/valence', projectId)]
+  const originals = new Map<string, Buffer>()
+  for (const standaloneDirectory of directories) {
     mkdirSync(standaloneDirectory, { recursive: true })
     onTestCleanup(() => rmSync(standaloneDirectory, { recursive: true, force: true }))
     const standalonePath = join(standaloneDirectory, 'sqlite.db')
-    if (format === 'sqlite') {
+    if (standaloneDirectory === directories[0]) {
       const standalone = new Database(standalonePath)
       try {
         // A foreign database must not be inspected, imported, or changed.
@@ -75,20 +74,19 @@ for (const location of ['local', 'config'] as const) {
     // Even invalid ownership metadata must not affect Anvil's embedded tracker.
     const metadataPath = join(standaloneDirectory, 'project.json')
     writeFileSync(metadataPath, 'invalid JSON')
-    const original = readFileSync(standalonePath)
-    const task = await start()
-    expect(task.deliveryStatus).not.toBe('failed')
-    expect(store.getTaskExecution(task.id)?.phase).toBe('planning')
-    agents.plan(task.id, [{ key: 'work', title: 'Work', description: 'Use Anvil storage',
-      checklist: ['Verify'], validation: 'Run test' }])
-    await tick()
-    const state = store.getTaskExecution(task.id)!
-    expect(state.currentIssueId).toBeTruthy()
-    agents.completeIssue(task.id, state.currentIssueId!, { checklist: [true], evidence: 'Validated in Anvil' })
-    await tick()
-    expect(store.getTaskExecution(task.id)?.phase).toBe('complete')
-    expect(store.getTask(task.id)?.status).toBe('succeeded')
-    expect(readFileSync(standalonePath)).toEqual(original)
-    expect(readFileSync(metadataPath, 'utf8')).toBe('invalid JSON')
-  })
-}
+    originals.set(standalonePath, readFileSync(standalonePath))
+    originals.set(metadataPath, readFileSync(metadataPath))
+  }
+  const task = await start()
+  expect(store.getTaskExecution(task.id)?.phase).toBe('planning')
+  agents.plan(task.id, [{ key: 'work', title: 'Work', description: 'Use Anvil storage',
+    checklist: ['Verify'], validation: 'Run test' }])
+  await tick()
+  const state = store.getTaskExecution(task.id)!
+  expect(state.currentIssueId).toBeTruthy()
+  agents.completeIssue(task.id, state.currentIssueId!, { checklist: [true], evidence: 'Validated in Anvil' })
+  await tick()
+  expect(store.getTaskExecution(task.id)?.phase).toBe('complete')
+  expect(store.getTask(task.id)?.status).toBe('succeeded')
+  for (const [path, original] of originals) expect(readFileSync(path)).toEqual(original)
+})

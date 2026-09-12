@@ -1,5 +1,4 @@
 import { test, expect, vi } from 'vitest'
-import { type AppReadiness } from '../src/shared/app-lifecycle'
 import { createEventLatch } from '../src/shared/event-latch'
 
 test('delivers a value to subscribers present at delivery time exactly once', () => {
@@ -32,11 +31,4 @@ test('stops delivering after unsubscribe and tolerates a double unsubscribe', ()
   unsubscribe()
   latch.deliver(1)
   expect(handler).not.toHaveBeenCalled()
-})
-
-test('readiness payload describes connection success and failure', () => {
-  const success: AppReadiness = { ok: true }
-  const failure: AppReadiness = { ok: false, message: 'service failed' }
-  expect(success).toEqual({ ok: true })
-  expect(failure).toEqual({ ok: false, message: 'service failed' })
 })

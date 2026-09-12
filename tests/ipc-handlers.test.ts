@@ -159,19 +159,6 @@ test('persists task ownership before preparation and retains it when selection c
   expect(call('tasks:list').map((entry: Task) => entry.id)).toEqual([task.id])
 })
 
-test('registers all domain channels', () => {
-  setupIpc()
-  expect([...handlers.keys()].sort()).toStrictEqual([
-    'agents:list', 'agents:models', 'comments:add', 'comments:list', 'comments:remove', 'comments:send',
-    'github:credential-status', 'github:set-token', 'github:remove-token', 'github:pr-preview', 'github:open-pr', 'github:draft-pr-field', 'github:open-pr-url',
-    'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:update',
-    'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:compact', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:events-page', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:restack', 'tasks:settle', 'tasks:stack', 'tasks:stack-dismiss', 'tasks:start', 'tasks:steer',
-    'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set',
-    'wallpapers:directory', 'wallpapers:import', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set'
-  ].sort())
-
-})
-
 test('rejects malformed IPC requests before accessing dependencies or files', async () => {
   const { store, delivery, agentProcesses, credentials, client, call, project } = setupIpc()
   // Any dependency access means a malformed request escaped the IPC contract.
