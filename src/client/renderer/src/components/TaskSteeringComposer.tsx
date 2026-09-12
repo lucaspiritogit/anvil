@@ -63,9 +63,7 @@ export function TaskSteeringComposer({ task, contextControl }: {
           rows={2}
           value={message}
           disabled={sending || unavailable}
-          placeholder={task.status === 'running'
-            ? !supported ? 'This agent can receive a follow-up after it stops...' : !task.sessionId ? 'Waiting for an agent session...' : 'Steer this task...'
-            : task.status === 'pending' || task.status === 'failed' || task.status === 'cancelled' ? 'Help this task continue...' : 'Continue this task...'}
+          placeholder={'Follow up'}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing) {
@@ -92,7 +90,7 @@ export function TaskSteeringComposer({ task, contextControl }: {
             type="submit"
             aria-label="Send message"
             title="Send message"
-            className={cn(btn.primary, 'grid h-10 w-14 shrink-0 place-items-center self-center px-0 py-0')}
+            className={cn(btn.primary, 'shrink-0 w-15 place-items-center')}
             disabled={sending || unavailable || !message.trim()}
           >
             <Icon icon={sending ? 'loader' : 'chevron-up'} size={16} className={cn(sending && 'animate-spin')} />
