@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { isQueuedStackTask } from '@shared/task-stacks'
 import type { Task } from '@shared/types'
 import { useStore } from '../state/store'
 import { Icon } from '../icons'
@@ -21,8 +22,9 @@ export function TaskStackStatus({ task }: { task: Task }) {
   if (!parent && !task.restackState && !suggested) return null
   return <div className="shrink-0 border-b border-line px-5 py-2 text-xs space-y-2">
     {parent && <button className="inline-flex items-center gap-1.5 text-accent hover:underline" onClick={() => openTask(parent.id)}><Icon icon="layers" size={14} />Stacked on {parent.title}</button>}
+    {parent && isQueuedStackTask(task) && <p role="status" className="text-dim">Queued. Waiting for {parent.title} to finish before starting.</p>}
     {task.restackState && <div role="status">
-      <span className="text-warn">{task.restackState === 'pending' ? 'Restack pending. Changes will apply after the current turn.' : 'Restack conflict'}</span>
+      <span className="text-warn">{task.restackState === 'pending' ? 'Restack pending. Waiting for the parent task to finish and the current turn to stop.' : 'Restack conflict'}</span>
       {task.restackState === 'conflict' && <>
         <p className="whitespace-pre-wrap text-dim">{task.deliveryError}</p>
         <button className={btn.ghost} disabled={busy || task.status === 'running'} onClick={() => void run(() => window.anvil.tasks.restack(task.id))}>Retry restack</button>

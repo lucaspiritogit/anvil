@@ -1,5 +1,6 @@
+import { isQueuedStackTask } from '@shared/task-stacks'
 import type { ComponentPropsWithRef, JSX } from 'react'
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import type { Project, Task, TaskIssueSnapshot } from '@shared/types'
 import { taskIssuePresentation } from '@shared/task-issue-presentation'
@@ -78,6 +79,9 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
 }): JSX.Element {
   const parent = useStore((state) => state.tasks.find((entry) => entry.id === (task.restackTarget?.parentTaskId ?? task.parentTaskId)))
   const stacked = Boolean(task.restackTarget?.parentTaskId ?? task.parentTaskId)
+  const queuedStack = isQueuedStackTask(task)
+  const articleRef = useRef<HTMLElement>(null)
+  const queuedHeight = useRef<number | null>(null)
   const openTask = useStore((state) => state.openTask)
   const settleTask = useStore((state) => state.settleTask)
   const [settling, setSettling] = useState(false)
@@ -95,7 +99,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const eligible = canSettleTask(task)
   const deadline = settlementDeadline(task)
   const presentation = taskIssuePresentation(task, snapshot)
-  const indicator = presentation ? taskIssueIndicator(presentation) : taskIndicator(task)
+  const indicator = queuedStack ? TASK_INDICATORS.queued : presentation ? taskIssueIndicator(presentation) : taskIndicator(task)
   const statusIcon = (
     <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex shrink-0', indicator?.tone ?? 'text-dim')}>
       <Icon
@@ -106,6 +110,31 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
       />
     </span>
   )
+
+  useLayoutEffect(() => {
+    const article = articleRef.current
+    if (!article) return
+    if (queuedStack) {
+      queuedHeight.current = article.offsetHeight
+      return
+    }
+    const previousHeight = queuedHeight.current
+    queuedHeight.current = null
+    if (previousHeight === null || previousHeight === article.offsetHeight ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    // Animate real height so the virtual list makes room without stretching text.
+    article.dataset.expanding = 'true'
+    const animation = article.animate([
+      { height: `${previousHeight}px`, overflow: 'clip' },
+      { height: `${article.offsetHeight}px`, overflow: 'clip' }
+    ], { duration: 360, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' })
+    animation.onfinish = () => { delete article.dataset.expanding }
+    return () => {
+      animation.cancel()
+      delete article.dataset.expanding
+    }
+  }, [queuedStack, compact])
 
   const settle = async (): Promise<void> => {
     if (settling) return
@@ -137,6 +166,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
     <li {...rowProps}>
       {stackStart && <StackSeparator />}
       <article
+        ref={articleRef}
         className={cn(
           'group relative transition-colors',
           stacked && 'bg-accent/5',
@@ -148,17 +178,17 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
         <button
           aria-label={`Open task: ${task.title}`}
           aria-current={active ? 'page' : undefined}
-          className={cn('w-full min-w-0 text-left focus-visible:outline focus-visible:outline-accent', compact || stacked ? 'flex items-center gap-2 px-2.5 py-2' : 'block px-3 py-3')}
+          className={cn('w-full min-w-0 text-left focus-visible:outline focus-visible:outline-accent', compact || queuedStack ? 'flex items-center gap-2 px-2.5 py-2' : 'block px-3 py-3')}
           onClick={open}
           onContextMenu={(event) => openTaskContextMenu(event, task.id)}
           title={parent ? `${task.prompt}\nStacked on ${parent.title}` : task.prompt}
         >
-          {stacked ? (
+          {queuedStack ? (
             <>
-              <Icon icon="layers" size={14} className="shrink-0 text-accent" />
+              {statusIcon}
               <span className="min-w-0 flex-1 truncate text-xs text-fg/80">{task.title}</span>
-              <span className={cn('shrink-0 text-[10px]', task.restackState ? 'text-warn' : indicator?.tone ?? 'text-dim')}>
-                {task.restackState ? `Restack ${task.restackState}` : indicator?.label ?? (task.status === 'cancelled' ? 'Cancelled' : task.status)}
+              <span className={cn('shrink-0 text-[10px]', indicator?.tone ?? 'text-dim')}>
+                Queued
               </span>
             </>
           ) : compact ? (
@@ -188,10 +218,10 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
               </span>
             </>
           )}
-          {!stacked && task.restackState && <span className="block text-[10px] text-warn">Restack {task.restackState}</span>}
-          {!stacked && presentation && <span className="block truncate px-1 text-[11px] text-dim" title={presentation.issue.title}>{presentation.label}: {presentation.issue.title}</span>}
+          {!queuedStack && task.restackState && <span className="block text-[10px] text-warn">Restack {task.restackState}</span>}
+          {!queuedStack && presentation && <span className="block truncate px-1 text-[11px] text-dim" title={presentation.issue.title}>{presentation.label}: {presentation.issue.title}</span>}
         </button>
-        {!stacked && !compact && eligible && (
+        {!queuedStack && !compact && eligible && (
           <button
             aria-label={`Settle task: ${task.title}`}
             title={deadline === undefined ? 'Settle task' : `Settle now. Automatically settles ${new Date(deadline).toLocaleString()}.`}
@@ -203,7 +233,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           </button>
         )}
         {error && <p role="alert" className="px-3 pb-2 text-xs text-danger">{error}</p>}
-        {!stacked && !compact && hasChildren && (
+        {!queuedStack && !compact && hasChildren && (
           <button
             type="button"
             aria-expanded={expanded}
@@ -217,7 +247,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           </button>
         )}
       </article>
-      {!stacked && hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="ml-4 mr-2 mt-1 mb-2 border-l border-line pl-2 space-y-1">
+      {!queuedStack && hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="ml-4 mr-2 mt-1 mb-2 border-l border-line pl-2 space-y-1">
         {snapshot?.children.map((issue) => <li key={issue.id}>
           <div
             className="flex w-full min-w-0 items-center gap-2 min-h-7 px-2 py-1 text-left text-[11px] text-dim"

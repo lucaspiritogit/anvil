@@ -1,4 +1,4 @@
-import { TaskStacks } from './task-stacks'
+import { TaskStacks, stackParentIsReady } from './task-stacks'
 import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
@@ -71,11 +71,21 @@ export function registerTaskExecution(
 
   // Each task runs one agent process at a time; other tasks have their own worktrees.
   const starting = new Set<string>()
+  const waitingForParent = new Set<string>()
+  const parentIsReady = (taskId: string): boolean => {
+    const task = store.getTask(taskId)
+    return Boolean(task && stackParentIsReady({ store, agentProcesses, gitDelivery, send }, task))
+  }
 
   const startNextTurn = async (taskId: string): Promise<void> => {
     if (closing || starting.has(taskId) || agentProcesses.isRunning(taskId)) return
     starting.add(taskId)
     try {
+      if (!parentIsReady(taskId)) {
+        waitingForParent.add(taskId)
+        return
+      }
+      waitingForParent.delete(taskId)
       await stacks.apply(taskId, true)
       if (store.getTask(taskId)?.restackState) throw new Error('Resolve the task restack before continuing')
       const task = store.getTask(taskId)
@@ -91,12 +101,17 @@ export function registerTaskExecution(
       if (task.branchName) {
         const checkout = await gitDelivery.checkoutBranch(project.path, taskId, task.branchName, task.baseBranch, () => {
           if (store.getTask(taskId)?.status !== 'running') throw new Error('Task stopped before the next issue')
+          if (!parentIsReady(taskId)) throw new Error('Wait for the parent task to finish before continuing')
         })
         cwd = checkout.cwd
         baseCommit = checkout.baseCommit
       }
       if (store.getTask(taskId)?.status !== 'running') {
         if (!store.getTask(taskId)) void gitDelivery.releaseWorktree(taskId)
+        return
+      }
+      if (!parentIsReady(taskId)) {
+        waitingForParent.add(taskId)
         return
       }
       const images = state.hasImages ? store.taskImages.read(taskId) : undefined
@@ -113,6 +128,11 @@ export function registerTaskExecution(
         taskId, issueId: issue.id, agent, cwd, projectPath: project.path, model: task.model,
         reasoningEffort: state.reasoningEffort,
         images,
+        beforeDispatch: () => {
+          if (store.getTask(taskId)?.status !== 'running' || !parentIsReady(taskId)) {
+            throw new Error('Task stopped or parent changed before dispatch')
+          }
+        },
         prompt: `${task.branchName ? GIT_SYSTEM_PROMPT : ''}\n\n${implementationPrompt(task.prompt, issue, project.path)}`
       })
     } catch (error) {
@@ -123,6 +143,20 @@ export function registerTaskExecution(
       starting.delete(taskId)
     }
   }
+
+  let parentCheckScheduled = false
+  store.subscribeActivity(() => {
+    if (closing || parentCheckScheduled || !waitingForParent.size) return
+    parentCheckScheduled = true
+    setImmediate(() => {
+      parentCheckScheduled = false
+      if (closing) return
+      for (const taskId of waitingForParent) {
+        if (store.getTask(taskId)?.status !== 'running') waitingForParent.delete(taskId)
+        else if (parentIsReady(taskId)) void startNextTurn(taskId)
+      }
+    })
+  })
 
   const scheduleRetry = (info: ExitInfo): boolean => {
     const retry = info.result?.retry
@@ -354,6 +388,7 @@ export function registerTaskExecution(
 
   const rejectIssue: TaskExecution['rejectIssue'] = (taskId) => {
     requireStoppedTurn(taskId)
+    if (!parentIsReady(taskId)) throw new Error('Wait for the parent task to finish before requesting changes')
     const task = store.getTask(taskId)
     if (task?.restackState) throw new Error('Finish restacking this task before reviewing an issue')
     if (!issueReviewReady(taskId)) throw new Error('This task is not ready for issue review')

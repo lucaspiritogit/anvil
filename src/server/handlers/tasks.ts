@@ -5,7 +5,7 @@ import { validateTaskImages } from '../task-images'
 import type { HandlerRegistry } from '../handler-registry'
 import { randomUUID } from 'node:crypto'
 import { getAgent } from '../agents/registry'
-import { planningPrompt } from '../agents/task-prompts'
+import { registerTaskStarts } from '../tasks/start'
 import type { TaskMemory } from '../memory/task-memory'
 import type { TaskContext } from '../tasks/context'
 import type { TaskEvents } from '../tasks/events'
@@ -24,6 +24,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
   issueReviewReady, initializeTask, stopTask, finishTaskTurn, requireFinishedTask, promptWithProjectMemory
 }: TaskHandlerDependencies): void {
   const stacks = new TaskStacks({ store, agentProcesses, gitDelivery, send })
+  const startTask = registerTaskStarts({ store, agentProcesses, gitDelivery, send, recordSystemEvent, stopTask, promptWithProjectMemory })
   ipc.handle('tasks:stack', (input) => stacks.stack(input.taskId, input.parentTaskId))
   ipc.handle('tasks:stack-dismiss', (taskId) => {
     const task = store.updateTask(taskId, { stackSuggestion: undefined })
@@ -41,9 +42,16 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
     if (task.deliveryStatus === 'approved' || task.deliveryStatus === 'no_changes' || task.status === 'cancelled') void stacks.restackChildren(task.id, task.deliveryStatus !== 'approved').catch(console.warn)
     else if (task.restackState === 'pending') void stacks.apply(task.id).catch(console.warn)
   }
+  const detachingChildren = new Set<string>()
   store.subscribeActivity(() => {
     for (const task of store.getTasks()) {
       if (task.restackState === 'pending') void stacks.apply(task.id).catch(console.warn)
+      if ((task.deliveryStatus === 'approved' || task.deliveryStatus === 'no_changes') && !detachingChildren.has(task.id) &&
+        store.getTasks(task.workspaceId).some((child) => (child.restackTarget?.parentTaskId ?? child.parentTaskId) === task.id)) {
+        detachingChildren.add(task.id)
+        void stacks.restackChildren(task.id, task.deliveryStatus !== 'approved')
+          .catch(console.warn).finally(() => { detachingChildren.delete(task.id) })
+      }
     }
   })
   // Retry cleanup for tasks that settled before the app last closed.
@@ -150,7 +158,6 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
         await validateTaskFileReferences(project.path, input.fileReferences)
         if (!store.getProjects(workspaceId).some((item) => item.id === project.id && item.path === project.path)) throw new Error('Project changed')
       }
-      const workspace = resolveWorkspaceExecution(store, workspaceId)
       const taskPrompt = promptWithFileReferences(input.prompt, project.path, input.fileReferences ?? [])
       const agent = getAgent(input.agentId)
       if (!agent) throw new Error(`Unknown agent: ${input.agentId}`)
@@ -186,97 +193,23 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       if (input.parentTaskId) requireStackParent(store, task, input.parentTaskId)
       task.parentTaskId = input.parentTaskId
       store.addTask(task)
-      const requireRunningTask = (): void => {
-        const current = store.getTask(task.id)
-        if (!current) throw new Error('Task was deleted')
-        if (current.status !== 'running') throw new Error('Task stopped during preparation')
-      }
       try {
         if (images?.length) store.taskImages.save(task.id, images)
-        const state = initializeTask(task.id, project.path, { reasoningEffort: input.reasoningEffort, ...(images?.length ? { hasImages: true } : {}) })
-        const prompt = planningPrompt(await promptWithProjectMemory(project.id, taskPrompt, task.workspaceId), state)
-        requireRunningTask()
-
-        // Without Git there is no task branch or diff. Run directly in the project folder.
-        const git = await gitDelivery.status(project.path)
-        requireRunningTask()
-        if (!git.isRepository) {
-          if (input.parentTaskId) throw new Error('Stacked tasks require a Git repository')
-          const unmanagedTask = store.updateTask(task.id, {
-            cwd: project.path,
-            deliveryStatus: 'unavailable'
-          })!
-          setImmediate(() => {
-            if (store.getTask(task.id)?.status !== 'running') return
-            agentProcesses.start({
-              workspace,
-              taskId: task.id,
-              agent,
-              prompt,
-              images,
-              model,
-              reasoningEffort: input.reasoningEffort,
-              cwd: project.path,
-              projectPath: project.path
-            })
-          })
-          return unmanagedTask
-        }
-
-        const parent = input.parentTaskId ? requireStackParent(store, task, input.parentTaskId) : undefined
-        const base = parent ? await gitDelivery.stackBase(project.path, parent.branchName) : undefined
-        const prepared = await gitDelivery.prepareBranch(project.path, task.id, () => {
-          requireRunningTask()
-          if (input.parentTaskId) requireStackParent(store, task, input.parentTaskId)
-        }, base)
-        const preparedTask = store.updateTask(task.id, {
-          cwd: prepared.cwd,
-          ...(store.getTask(task.id)?.status === 'running' ? { deliveryStatus: 'working' as const } : {}),
-          baseBranch: parent ? requireStackParent(store, task, parent.id).branchName : prepared.baseBranch,
-          branchName: prepared.branchName,
-          baseCommit: prepared.baseCommit
-        })!
-        requireRunningTask()
-        recordSystemEvent(task.id, `Task checkout: ${prepared.cwd}\nBranch: ${prepared.branchName}\nStarting commit: ${prepared.baseCommit}`)
-        if (prepared.initializedRepository) {
-          recordSystemEvent(task.id, 'Created the repository initial commit.')
-        }
-        setImmediate(() => {
-          if (store.getTask(task.id)?.status !== 'running') return
-          agentProcesses.start({
-            workspace,
-            taskId: task.id,
-            agent,
-            prompt,
-            images,
-            model,
-            reasoningEffort: input.reasoningEffort,
-            cwd: prepared.cwd,
-            projectPath: project.path
-          })
-        })
-        return preparedTask
+        initializeTask(task.id, project.path, { reasoningEffort: input.reasoningEffort, ...(images?.length ? { hasImages: true } : {}) })
       } catch (error) {
         store.taskImages.remove(task.id)
-        const current = store.getTask(task.id)
-        if (!current) {
-          await gitDelivery.releaseWorktree(task.id)
-          throw new Error('Task was deleted')
-        }
-        if (current.status !== 'running') return current
         const message = error instanceof Error ? error.message : String(error)
         const failed = store.updateTask(task.id, {
-          status: 'pending',
-          endedAt: Date.now(),
-          exitCode: null,
-          error: message,
-          deliveryStatus: 'failed',
-          deliveryError: message
+          status: 'pending', endedAt: Date.now(), error: message,
+          deliveryStatus: 'failed', deliveryError: message
         })!
         recordSystemEvent(task.id, `Could not start task: ${message}`, 'delivery', 'error')
         stopTask(task.id, message)
+        send('task:updated', failed)
         return failed
       }
+      if (task.parentTaskId) recordSystemEvent(task.id, 'Queued behind the parent task. Work starts after its Git delivery finishes.')
+      return startTask(task.id)
     }
   )
 

@@ -1,4 +1,5 @@
 import type { JSX } from 'react'
+import { canStackOnTask } from '@shared/task-stacks'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { hasTaskContent } from '@shared/task-images'
@@ -25,7 +26,7 @@ export function TaskComposer(): JSX.Element {
 function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; draftKey: string }): JSX.Element {
   const tasks = useStore((state) => state.tasks)
   const [parentTaskId, setParentTaskId] = useState('')
-  const parents = tasks.filter((task) => task.projectId === projectId && task.branchName && !task.restackState && task.settledAt === undefined && task.status !== 'cancelled' && ['working', 'reviewable'].includes(task.deliveryStatus))
+  const parents = tasks.filter((task) => task.projectId === projectId && canStackOnTask(task))
   const agents = useStore((state) => state.agents)
   const modelsByAgent = useStore((state) => state.modelsByAgent)
   const loadingModelsAgentId = useStore((state) => state.loadingModelsAgentId)
@@ -68,7 +69,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
 
   useEffect(() => { setSwitchingBranch(false) }, [projectId])
   useEffect(() => {
-    if (parentTaskId && !tasks.some((task) => task.id === parentTaskId && !task.restackState && task.status !== 'cancelled' && task.settledAt === undefined && ['working', 'reviewable'].includes(task.deliveryStatus))) setParentTaskId('')
+    if (parentTaskId && !tasks.some((task) => task.id === parentTaskId && canStackOnTask(task))) setParentTaskId('')
   }, [tasks, parentTaskId])
 
   useEffect(() => {

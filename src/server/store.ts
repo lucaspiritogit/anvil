@@ -15,6 +15,7 @@ import type { TaskEventsRequest, TaskEventsPage, TaskEventCursor } from '../shar
 import * as schema from './db/schema'
 import { canSettleTask, settlementDeadline } from '../shared/task-settlement'
 import { advanceTaskWorkingTime, isTaskWorking, type TaskWorkingTime } from '../shared/task-timing'
+import { isQueuedStackTask } from '../shared/task-stacks'
 import { DEFAULT_KEYBINDINGS, normalizeKeybindings } from '../shared/keybindings'
 import type { Project, Task, TaskComment, TaskEvent, Settings, TaskExecutionState, Workspace, WorkspacePreferences, ComposerPreferences } from '../shared/types'
 import { DEFAULT_FONT_SIZE, normalizeFontSize, DEFAULT_OVERVIEW_COLOR, OVERVIEW_COLOR_PATTERN, isWallpaperId } from '../shared/appearance'
@@ -419,6 +420,7 @@ export class Store {
   /** A task cannot outlive the app, so anything still 'running' died with it. */
   private recoverInterruptedTasks(workspaceId: string): void {
     for (const task of this.getTasks(workspaceId)) {
+      if (isQueuedStackTask(task)) continue
       const unfinishedDelivery = ['preparing', 'working', 'finalizing', 'did_not_commit'].includes(task.deliveryStatus)
       if (task.status !== 'running' && !unfinishedDelivery) continue
       // Old versions used cancellation for shutdown too. An unfinished delivery
@@ -805,6 +807,8 @@ export class Store {
       )
       // Restart stops Anvil execution, not other clients sharing Valence storage.
       for (const row of connection.db.select().from(schema.taskExecutions).all()) {
+        const task = this.getTask(row.state.taskId)
+        if (task && isQueuedStackTask(task)) continue
         if (row.state.phase === 'planning' || row.state.phase === 'working' || row.state.phase === 'recovering') {
           this.saveTaskExecution({ ...row.state, phase: 'blocked', error: 'Interrupted by app restart. Inspect Valence work before requeueing.' })
         }

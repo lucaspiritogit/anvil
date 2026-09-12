@@ -29,6 +29,7 @@ import { createTaskCompletion } from '../src/server/tasks/completion'
 import { registerTaskEvents } from '../src/server/tasks/events'
 import { registerTaskExecution } from '../src/server/tasks/task-execution'
 import { titleFor } from '../src/server/tasks/task-title'
+import { withTaskOperation } from '../src/server/tasks/operations'
 import { Store } from '../src/server/store'
 import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent } from '../src/shared/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome, shell, dialog } from './issue-tracker-doubles'
@@ -740,8 +741,8 @@ test('partial project preferences target the captured workspace after switching'
 })
 
 
-test('stacked start validates ownership and passes the parent commit to branch preparation', async () => {
-  const { store, call, gitDelivery, tick } = setupIpc()
+test('stacked tasks wait in order for final delivery and an active push before preparing their branches', async () => {
+  const { store, call, gitDelivery, agentProcesses, tick } = setupIpc()
   const parent = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Parent' }) as Task
   await tick()
   const stackBase = vi.fn(async () => ({ commit: 'parent-tip', branch: parent.branchName! }))
@@ -750,7 +751,44 @@ test('stacked start validates ownership and passes the parent commit to branch p
   const child = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Child', parentTaskId: parent.id }) as Task
   expect(child.parentTaskId).toBe(parent.id)
   expect(store.getTask(child.id)?.parentTaskId).toBe(parent.id)
+  const grandchild = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Grandchild', parentTaskId: child.id }) as Task
+  await tick()
+  expect(child.deliveryStatus).toBe('preparing')
+  expect(child.branchName).toBeUndefined()
+  expect(prepare).not.toHaveBeenCalled()
+  expect(agentProcesses.starts.map((start) => start.taskId)).toEqual([parent.id])
+
+  // Stopping the process, finishing an issue, and finalizing delivery all keep the child queued.
+  agentProcesses.active.delete(parent.id)
+  store.saveTaskExecution({ ...store.getTaskExecution(parent.id)!, phase: 'reviewing' })
+  store.activityChanged()
+  await tick()
+  expect(prepare).not.toHaveBeenCalled()
+  store.saveTaskExecution({ ...store.getTaskExecution(parent.id)!, phase: 'complete' })
+  store.updateTask(parent.id, { status: 'succeeded', deliveryStatus: 'finalizing' })
+  await tick()
+  expect(prepare).not.toHaveBeenCalled()
+  store.updateTask(parent.id, { deliveryStatus: 'failed' })
+  await tick()
+  expect(prepare).not.toHaveBeenCalled()
+
+  await withTaskOperation(store, parent.id, 'pull-request', async () => {
+    store.updateTask(parent.id, { deliveryStatus: 'reviewable', headCommit: 'parent-tip' })
+    await tick()
+    expect(prepare).not.toHaveBeenCalled()
+  })
+  await tick()
   expect(prepare).toHaveBeenCalledWith(testHome, child.id, expect.any(Function), { commit: 'parent-tip', branch: parent.branchName })
+  expect(agentProcesses.starts.map((start) => start.taskId)).toEqual([parent.id, child.id])
+  expect(store.getTask(grandchild.id)?.branchName).toBeUndefined()
+
+  agentProcesses.active.delete(child.id)
+  store.saveTaskExecution({ ...store.getTaskExecution(child.id)!, phase: 'complete' })
+  stackBase.mockResolvedValue({ commit: 'child-tip', branch: store.getTask(child.id)!.branchName! })
+  store.updateTask(child.id, { status: 'succeeded', deliveryStatus: 'reviewable', headCommit: 'child-tip' })
+  await tick()
+  expect(prepare).toHaveBeenCalledWith(testHome, grandchild.id, expect.any(Function), { commit: 'child-tip', branch: store.getTask(child.id)!.branchName })
+  expect(agentProcesses.starts.map((start) => start.taskId)).toEqual([parent.id, child.id, grandchild.id])
   const count = store.getTasks().length
   await expect(call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Invalid', parentTaskId: 'missing' })).rejects.toThrow('same project')
   expect(store.getTasks()).toHaveLength(count)

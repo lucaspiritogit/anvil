@@ -1,3 +1,4 @@
+import { isQueuedStackTask } from '@shared/task-stacks'
 import type { JSX } from 'react'
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -20,6 +21,10 @@ interface Props {
 export function SidebarTaskList({ id, tasks, snapshots, projectById, now, view, compact = false, emptyMessage }: Props): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const entries = useMemo(() => sidebarTaskStacks(tasks), [tasks])
+  const layoutKey = JSON.stringify([compact, entries.map(({ task, stackStart, stackEnd }) => [
+    task.id, task.restackTarget?.parentTaskId ?? task.parentTaskId, isQueuedStackTask(task), stackStart, stackEnd
+  ])])
+  const previousLayoutKey = useRef(layoutKey)
   const previousRows = useRef(new Map<string, { top: number; height: number }>())
   const getItemKey = useCallback((index: number) => entries[index].task.id, [entries])
   const virtualizer = useVirtualizer({
@@ -28,8 +33,8 @@ export function SidebarTaskList({ id, tasks, snapshots, projectById, now, view, 
     getItemKey,
     estimateSize: (index) => {
       const { task, stackStart, stackEnd } = entries[index]
-      const stacked = Boolean(task.restackTarget?.parentTaskId ?? task.parentTaskId)
-      const height = stacked ? 36 : compact ? 36 + (snapshots.get(task.id)?.children.length ?? 0) * 32 : 96
+      const queuedStack = isQueuedStackTask(task)
+      const height = queuedStack ? 36 : compact ? 36 + (snapshots.get(task.id)?.children.length ?? 0) * 32 : 96
       return height + (stackStart ? 28 : 0) + (stackEnd ? 28 : 0)
     },
     overscan: 3,
@@ -37,20 +42,32 @@ export function SidebarTaskList({ id, tasks, snapshots, projectById, now, view, 
   })
 
   useLayoutEffect(() => {
+    const layoutChanged = previousLayoutKey.current !== layoutKey
+    previousLayoutKey.current = layoutKey
     const nextRows = new Map<string, { top: number; height: number }>()
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const expanding = Boolean(scrollRef.current?.querySelector('[data-expanding="true"]'))
     for (const element of scrollRef.current?.querySelectorAll<HTMLElement>('[data-task-id]') ?? []) {
+      // ResizeObserver tracks each height frame. Measure the first frame here
+      // as well, before the browser can paint offsets from the full row height.
+      if (expanding) virtualizer.measureElement(element)
       const taskId = element.dataset.taskId!
       const top = Number(element.dataset.rowStart)
       const height = element.offsetHeight
       const previous = previousRows.current.get(taskId)
       nextRows.set(taskId, { top, height })
       const stacked = element.dataset.stacked === 'true'
+      const running = element.getAnimations()
       // Anchor the main task at the top immediately. Only queue entries move
       // into place; animating the parent upward makes the stack grow from below.
-      if (!reducedMotion && stacked && previous && height > 0 && (previous.top !== top || previous.height !== height)) {
+      // Mount and scroll measurements establish positions without animation.
+      // Only real stack changes can start movement; later measurements may
+      // adjust an animation already started by that change.
+      if (expanding || reducedMotion) {
+        for (const animation of running) animation.cancel()
+      } else if ((layoutChanged || running.length > 0) && stacked && previous && height > 0 &&
+        (previous.top !== top || previous.height !== height)) {
         const currentTransform = getComputedStyle(element).transform
-        const running = element.getAnimations()
         for (const animation of running) animation.cancel()
         element.animate([
           { transform: running.length ? currentTransform : `translateY(${previous.top}px) scaleY(${previous.height / height})` },

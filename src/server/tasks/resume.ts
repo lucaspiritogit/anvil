@@ -1,4 +1,4 @@
-import { requireStackParent } from './task-stacks'
+import { requireStackParent, stackParentIsReady } from './task-stacks'
 import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
@@ -24,6 +24,12 @@ export async function resumeTaskTurn(
 ): Promise<Task> {
   const task = check()
   validate(task)
+  const requireParentFinished = (current: Task): void => {
+    if (!stackParentIsReady({ store, agentProcesses, gitDelivery, send }, current)) {
+      throw new Error('Wait for the parent task to finish before resuming')
+    }
+  }
+  requireParentFinished(task)
   if (task.restackState && !allowRestack) throw new Error('Finish restacking this task before resuming')
   const workspace = resolveTaskWorkspace(store, task.id)
   if (task.settledAt !== undefined) throw new Error('This task is settled and cannot be resumed')
@@ -35,6 +41,7 @@ export async function resumeTaskTurn(
   const guard = (): Task => {
     const current = check()
     validate(current)
+    requireParentFinished(current)
     if (agentProcesses.isRunning(task.id)) throw new Error('This task is already running')
     return current
   }
@@ -79,7 +86,7 @@ export async function resumeTaskTurn(
       // No scheduled callback: startup errors return to the invoking handler.
       await agentProcesses.startResumed({
         workspace,
-        beforeDispatch: () => { check(running) },
+        beforeDispatch: () => { requireParentFinished(check(running)) },
         taskId: task.id, issueId: state?.currentIssueId ?? undefined, agent, cwd: running.cwd,
         projectPath: project.path, model: current.model, reasoningEffort: state?.reasoningEffort,
         resumeSessionId: current.sessionId,
