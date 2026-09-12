@@ -1,28 +1,32 @@
 # Anvil
 
-**A local control plane for running coding agents in parallel Git worktrees and reviewing their diffs.**
-
-Anvil gives every task its own branch and worktree, runs an agent there, and hands
-you one cumulative diff to review.
-
-Run Anvil as a desktop app or a standalone server. Use the same interface on the
-host machine, over a trusted LAN, or through Tailscale HTTPS.
+**A local-first control plane that runs coding agents in parallel Git worktrees and lets you review their diffs from your desktop or browser.**
 
 ![Anvil demo showing task creation, agent activity, stacked tasks, and workspace switching](./public/showcase/anvil-demo.gif)
 
 <img width="1440" height="900" alt="image" src="https://github.com/user-attachments/assets/b82dc5bb-43e3-426a-8a65-5df87447d946" />
 
+Run Anvil as a desktop app or a standalone server. Use the same interface on the host machine, over a trusted LAN, or through Tailscale HTTPS.
 
 ## What it does
 
-- **Runs tasks, not conversations.** Dispatch work to an agent and review the
-  result, there is no chat window in between.
-- **Parallel by default.** Every task gets its own branch and worktree from the
-  project's current commit, so many can run in the same repository at once.
-- **Diff-first review.** Anvil saves one cumulative final diff per task for you
-  to comment on and approve.
-- **Remote access.** Open Anvil from another device through Tailscale HTTPS or
-  use password-protected access on your local network.
+- **Runs tasks, not conversations.** Give an agent a job, follow the run when you
+  want, and return when there is code or a decision waiting.
+- **Keeps parallel work isolated.** Every task gets its own Git branch and
+  worktree, so agents never collide with your checkout or each other.
+- **Stacks dependent tasks.** Queue follow-up work as a chain. Each task waits
+  for its parent to finish, then starts from the delivered result.
+- **Shows you what is happening.** Follow live output, task status, issues,
+  elapsed time, context usage, tokens, and cost.
+- **Puts the diff first.** Review one cumulative diff, comment on exact lines,
+  request changes, merge the branch, or open a pull request.
+- **Separates your workspaces.** Each workspace keeps its own projects, agent
+  accounts, credentials, task history, settings, and project memory.
+- **Runs locally, opens anywhere.** Agents, repositories, and data stay on the
+  host machine. Use Anvil from its desktop app or connect through a browser over
+  your LAN or Tailscale.
+- **Makes each workspace recognizable.** Choose a color or import an image for
+  the project background.
 
 ## Install
 
@@ -37,10 +41,43 @@ source instead, see [Package for macOS](#package-for-macos).
 
 Anvil drives agent CLIs already on your PATH, with no hosted backend.
 
-| Agent | Command | Protocol |
-| --- | --- | --- |
-| OpenCode (default) | `opencode` | ACP server over stdio |
-| Codex | `codex` | app-server over stdio |
+- Opencode (default): Through ACP server over stdio
+- Codex: Throguh the codex app-server implementation over stdio
+
+## Development
+
+### Requirements
+
+- Node 20.19+
+- At least one agent CLI on your PATH.
+
+### Run locally
+
+```sh
+npm install
+unset ELECTRON_RUN_AS_NODE
+npm run dev
+```
+
+Development runs use `~/.anvil-composer-dev/`. Packaged apps use
+`~/.anvil-composer/`, preserving existing projects and settings. The SQLite
+database, settings, GitHub credentials, wallpapers, and embedded project memory
+are separate. Development starts with an empty project list.
+
+For self-development, use the installed app to run an agent on the Anvil repo
+and `npm run dev` to try its changes after merging the task branch. Both apps
+can stay open. Tasks use separate worktrees while Valence issues belong to the
+project checkout. A configured external PostgreSQL memory database
+also needs a separate URL if you want to isolate it.
+
+`npm run build` followed by `npm start` is still an unpackaged development run.
+The split uses Electron's `app.isPackaged`, not Vite's build mode. For disposable
+tests, set `ANVIL_DATA_DIR` to an absolute temporary directory before launching
+either version. This also isolates its Electron profile. For example:
+
+```sh
+ANVIL_DATA_DIR="$(mktemp -d /tmp/anvil-test.XXXXXX)" npm run dev
+```
 
 ## Server and remote access
 
@@ -123,41 +160,6 @@ Press Command+T on macOS or Ctrl+T to toggle the in-app terminal at the active
 project root. Hiding the drawer keeps the shell running. Closing it or switching
 projects or workspaces ends the session. OpenCode sign-in and sign-out use a
 terminal panel on the workspace account card. Cancelling stops the auth command.
-
-## Development
-
-### Requirements
-
-- Node 20.19+
-- At least one agent CLI on your PATH.
-
-### Run locally
-
-```sh
-npm install
-unset ELECTRON_RUN_AS_NODE
-npm run dev
-```
-
-Development runs use `~/.anvil-composer-dev/`. Packaged apps use
-`~/.anvil-composer/`, preserving existing projects and settings. The SQLite
-database, settings, GitHub credentials, wallpapers, and embedded project memory
-are separate. Development starts with an empty project list.
-
-For self-development, use the installed app to run an agent on the Anvil repo
-and `npm run dev` to try its changes after merging the task branch. Both apps
-can stay open. Tasks use separate worktrees while Valence issues belong to the
-project checkout. A configured external PostgreSQL memory database
-also needs a separate URL if you want to isolate it.
-
-`npm run build` followed by `npm start` is still an unpackaged development run.
-The split uses Electron's `app.isPackaged`, not Vite's build mode. For disposable
-tests, set `ANVIL_DATA_DIR` to an absolute temporary directory before launching
-either version. This also isolates its Electron profile. For example:
-
-```sh
-ANVIL_DATA_DIR="$(mktemp -d /tmp/anvil-test.XXXXXX)" npm run dev
-```
 
 ### Project memory
 

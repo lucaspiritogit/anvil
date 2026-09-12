@@ -21,6 +21,9 @@ try {
     throw new Error('Run this script through npm: npm run release -- patch')
   }
   const branch = git(['symbolic-ref', '--quiet', '--short', 'HEAD'], true)
+  if (branch !== 'main') {
+    throw new Error('Create releases from the main branch.')
+  }
   if (git(['status', '--porcelain'], true)) {
     throw new Error('Commit or stash all changes before creating a release.')
   }
@@ -29,21 +32,21 @@ try {
   execFileSync(process.execPath, [
     process.env.npm_execpath,
     'version', args[0],
-    '--git-tag-version=true',
-    '--tag-version-prefix=v',
-    '--message=chore: release %s'
+    '--git-tag-version=false'
   ], { cwd, stdio: 'inherit' })
 
   const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   const tag = `v${version}`
+  git(['add', 'package.json', 'package-lock.json'])
+  git(['commit', '-m', `chore: release ${version}`])
   try {
-    git(['push', '--atomic', 'origin', `HEAD:refs/heads/${branch}`, `refs/tags/${tag}`])
+    git(['push', 'origin', `HEAD:refs/heads/${branch}`])
   } catch (error) {
-    console.error(`Release ${tag} exists locally. After fixing the push failure, retry:`)
-    console.error(`git push --atomic origin HEAD:refs/heads/${branch} refs/tags/${tag}`)
+    console.error(`Release request ${tag} exists locally. After fixing the push failure, retry:`)
+    console.error(`git push origin HEAD:refs/heads/${branch}`)
     throw error
   }
-  console.log(`Pushed ${tag}. GitHub Actions will build and publish the release.`)
+  console.log(`Pushed release request ${tag}. GitHub Actions will create the tag after the build passes.`)
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1
