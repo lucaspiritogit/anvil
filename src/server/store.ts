@@ -150,7 +150,7 @@ function toTask(row: TaskRow): Task {
 }
 
 function withCurrentPullRequest(task: Task, link: TaskPullRequestRow | undefined): Task {
-  if (!link || task.status !== 'succeeded' || task.deliveryStatus !== 'reviewable' || task.headCommit !== link.headSha) return task
+  if (!link || task.status !== 'succeeded' || (task.deliveryStatus !== 'reviewable' && task.deliveryStatus !== 'approved') || task.headCommit !== link.headSha) return task
   return {
     ...task,
     pullRequest: {
