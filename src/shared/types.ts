@@ -284,7 +284,10 @@ export interface WorkspaceSettingsChange {
   settings: Settings
 }
 
+export type HeadlessAccessMode = 'password' | 'tailscale'
+
 export interface ConnectionsStatus {
+  headlessAccess?: HeadlessAccessMode
   tailscaleHttps: boolean
   tailscaleUrl?: string
   tailscaleSetupUrl?: string

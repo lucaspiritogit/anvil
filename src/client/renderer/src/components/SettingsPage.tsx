@@ -129,14 +129,15 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
   }
 
   const pending = status?.pending ?? false
-  const showPasswordForm = status !== null && (!status.passwordConfigured || settingPassword)
+  const tailscaleOnly = status?.headlessAccess === 'tailscale'
+  const showPasswordForm = status !== null && !tailscaleOnly && (!status.passwordConfigured || settingPassword)
   return (
     <div>
       <label className={modal.toggle}>
         <input
           type="checkbox"
           checked={status?.allowOtherDevices ?? false}
-          disabled={!status || pending}
+          disabled={!status || Boolean(status.headlessAccess) || pending}
           onChange={(event) => {
             if (event.target.checked && !status?.passwordConfigured) {
               setSettingPassword(true)
@@ -156,13 +157,17 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
         <input
           type="checkbox"
           checked={status?.tailscaleHttps ?? false}
-          disabled={!status?.allowOtherDevices || pending}
+          disabled={Boolean(status?.headlessAccess) || !status?.allowOtherDevices || pending}
           onChange={(event) => { void configure(true, undefined, event.target.checked) }}
         />
         <span>
           <strong className="block">Tailscale HTTPS</strong>
-          <small className={field.hint}>Access Anvil from another network using Tailscale. Install and connect Tailscale on this computer and your phone. Your Anvil password is still required.</small>
-          {!status?.allowOtherDevices && <small className="block text-xs text-dim">Enable Allow other devices first.</small>}
+          <small className={field.hint}>{tailscaleOnly
+            ? 'Access is managed by Tailscale. No Anvil username or password is required.'
+            : 'Access Anvil from another network using Tailscale. Install and connect Tailscale on this computer and your phone. Your Anvil password is still required.'}</small>
+          {status?.headlessAccess
+            ? <small className="block text-xs text-dim">Connection access is managed by the server startup command.</small>
+            : !status?.allowOtherDevices && <small className="block text-xs text-dim">Enable Allow other devices first.</small>}
         </span>
       </label>
       {status?.tailscaleUrl && (
@@ -174,7 +179,7 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
       )}
 
       {!status && !requestError && <p role="status" className="text-xs text-dim">Loading connection settings…</p>}
-      {status && <div className="mb-4 text-xs text-dim">
+      {status && !tailscaleOnly && <div className="mb-4 text-xs text-dim">
         <p>{status.passwordConfigured ? 'A server password is configured.' : 'Set a server password before allowing other devices.'}</p>
         {status.passwordConfigured && !settingPassword && (
           <button className={cn(btn.ghost, 'mt-3')} disabled={pending} onClick={() => {

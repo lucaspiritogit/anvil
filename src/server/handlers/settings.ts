@@ -2,7 +2,7 @@ import type { WallpaperLibrary } from '../wallpapers'
 import type { HandlerRegistry } from '../handler-registry'
 import type { Store } from '../store'
 import type { Settings, WorkspaceSettingsChange } from '../../shared/types'
-import type { ConnectionsStatus } from '../../shared/types'
+import type { ConnectionsStatus, HeadlessAccessMode } from '../../shared/types'
 import { BUILTIN_AGENTS, getAgent } from '../agents/registry'
 import type { ServerAuth } from '../server-auth'
 import type { TailscaleConnection } from '../tailscale'
@@ -44,7 +44,8 @@ export function registerConnectionsHandlers(
   auth: ServerAuth,
   rebind: (allowOtherDevices: boolean) => Promise<void>,
   changed: (workspaceId: string, status: ConnectionsStatus) => void = () => {},
-  tailscale?: TailscaleConnection
+  tailscale?: TailscaleConnection,
+  headlessAccess?: HeadlessAccessMode
 ): ConnectionsController {
   let allowOtherDevices = false
   let desiredAllowOtherDevices = false
@@ -55,9 +56,19 @@ export function registerConnectionsHandlers(
   let lastError: string | undefined
   let transitions = Promise.resolve()
 
-  const passwordConfigured = async (): Promise<boolean> => (await auth.status()).configured
+  const saveConnectionSettings = (workspaceId: string, patch: Partial<Pick<Settings, 'allowOtherDevices' | 'tailscaleHttps'>>): void => {
+    // CLI access stays fixed for this process, including across workspace changes.
+    // Leave saved desktop connection preferences intact.
+    if (!headlessAccess) store.setSettings(patch, workspaceId)
+  }
+
+  const passwordConfigured = async (): Promise<boolean> => {
+    if (headlessAccess === 'tailscale') return false
+    return (await auth.status()).configured
+  }
   const snapshot = async (): Promise<ConnectionsStatus> => ({
     allowOtherDevices,
+    ...(headlessAccess ? { headlessAccess } : {}),
     ...(tailscale?.status() ?? { tailscaleHttps: false }),
     passwordConfigured: await passwordConfigured(),
     pending,
@@ -72,7 +83,7 @@ export function registerConnectionsHandlers(
     if (closed) return
     const workspaceId = store.getActiveWorkspace().id
     desiredTailscaleHttps = false
-    store.setSettings({ tailscaleHttps: false }, workspaceId)
+    saveConnectionSettings(workspaceId, { tailscaleHttps: false })
     lastError = message
     void publish(workspaceId).catch((error) => console.error('Could not publish Tailscale status:', error))
   })
@@ -82,7 +93,7 @@ export function registerConnectionsHandlers(
       await tailscale?.configure(requested)
     } catch (error) {
       desiredTailscaleHttps = false
-      store.setSettings({ tailscaleHttps: false }, workspaceId)
+      saveConnectionSettings(workspaceId, { tailscaleHttps: false })
       lastError = error instanceof Error ? error.message : 'Could not configure Tailscale HTTPS.'
     }
   }
@@ -99,7 +110,7 @@ export function registerConnectionsHandlers(
         desiredAllowOtherDevices = false
         desiredTailscaleHttps = false
         await configureTailscale(workspaceId, false)
-        store.setSettings({ allowOtherDevices: false, tailscaleHttps: false }, workspaceId)
+        saveConnectionSettings(workspaceId, { allowOtherDevices: false, tailscaleHttps: false })
         lastError = error instanceof Error ? error.message : 'Could not change server connection mode.'
       } finally {
         queuedTransitions -= 1
@@ -118,11 +129,14 @@ export function registerConnectionsHandlers(
     if (closed) throw new Error('Anvil server is closing.')
     if (pending) throw new Error('Connection settings are still changing. Try again when the change finishes.')
     if (store.getActiveWorkspace().id !== workspaceId) throw new Error('Workspace changed; reload Connections and try again.')
+    if (headlessAccess === 'tailscale' || (headlessAccess === 'password' && (!requested || tailscaleHttps === true))) {
+      throw new Error('Connection access is managed by the headless startup command. Restart with the other command to change access.')
+    }
     if (password !== undefined) await auth.setPassword(password)
     if (requested && !await passwordConfigured()) throw new Error('Set a valid server password before allowing other devices.')
 
-    const requestedTailscale = requested && (tailscaleHttps ?? desiredTailscaleHttps)
-    store.setSettings({ allowOtherDevices: requested, tailscaleHttps: requestedTailscale }, workspaceId)
+    const requestedTailscale = !headlessAccess && requested && (tailscaleHttps ?? desiredTailscaleHttps)
+    saveConnectionSettings(workspaceId, { allowOtherDevices: requested, tailscaleHttps: requestedTailscale })
     lastError = undefined
     if (requested !== desiredAllowOtherDevices || requestedTailscale !== desiredTailscaleHttps) {
       desiredAllowOtherDevices = requested
@@ -138,18 +152,18 @@ export function registerConnectionsHandlers(
 
   const activateNow = async (workspaceId: string): Promise<ConnectionsStatus> => {
     const settings = store.getSettings(workspaceId)
-    const requested = settings.allowOtherDevices
-    const requestedTailscale = requested && settings.tailscaleHttps
+    const requested = headlessAccess ? headlessAccess === 'password' : settings.allowOtherDevices
+    const requestedTailscale = headlessAccess ? headlessAccess === 'tailscale' : requested && settings.tailscaleHttps
     desiredAllowOtherDevices = requested
     desiredTailscaleHttps = requestedTailscale
     lastError = undefined
     if (!requestedTailscale) await configureTailscale(workspaceId, false)
-    if (requested && !await passwordConfigured()) {
-      store.setSettings({ allowOtherDevices: false, tailscaleHttps: false }, workspaceId)
+    if (headlessAccess !== 'tailscale' && (requested || requestedTailscale) && !await passwordConfigured()) {
+      saveConnectionSettings(workspaceId, { allowOtherDevices: false, tailscaleHttps: false })
       desiredAllowOtherDevices = false
       desiredTailscaleHttps = false
       await configureTailscale(workspaceId, false)
-      lastError = 'The stored server password is missing or invalid; LAN access was disabled.'
+      lastError = 'The stored server password is missing or invalid; remote access was disabled.'
       if (allowOtherDevices) {
         try {
           await rebind(false)
@@ -165,7 +179,7 @@ export function registerConnectionsHandlers(
       allowOtherDevices = requested
       if (requestedTailscale) await configureTailscale(workspaceId, true)
     } catch (error) {
-      store.setSettings({ allowOtherDevices: false, tailscaleHttps: false }, workspaceId)
+      saveConnectionSettings(workspaceId, { allowOtherDevices: false, tailscaleHttps: false })
       desiredAllowOtherDevices = false
       desiredTailscaleHttps = false
       allowOtherDevices = false

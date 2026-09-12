@@ -33,7 +33,10 @@
     "test:integration": "vitest run --project integration",
     "test": "vitest run",
     "build:server": "node scripts/build-server.mjs",
-    "serve": "npm run build:server && node scripts/serve.cjs"
+    "serve": "npm run build:server && node scripts/serve.cjs",
+    "rebuild:headless": "node scripts/prepare-headless-native.cjs",
+    "serve:headless": "npm run build:server && node scripts/serve.cjs --headless",
+    "serve:headless:tailscale": "npm run build:server && node scripts/serve.cjs --headless --tailscale"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",

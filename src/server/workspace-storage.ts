@@ -27,7 +27,9 @@ export class WorkspaceStorage {
     const directory = this.workspaceDirectory(id)
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     mkdirSync(join(directory, 'wallpaper'), { recursive: true, mode: 0o700 })
-    const sqlite = new Database(join(directory, 'anvil.db'))
+    const sqlite = new Database(join(directory, 'anvil.db'), {
+      nativeBinding: process.env.ANVIL_SQLITE_BINDING
+    })
     try {
       sqlite.pragma('journal_mode = WAL')
       sqlite.pragma('synchronous = NORMAL')

@@ -35,6 +35,7 @@ import { registerTaskExecution } from './tasks/task-execution'
 import { Store } from './store'
 import type { TailscaleConnection } from './tailscale'
 import { TaskBranches } from './tasks/task-branch'
+import type { HeadlessAccessMode } from '../shared/types'
 import { IssueToolServer } from './issue-tools/server'
 
 export interface RuntimeOptions {
@@ -46,6 +47,7 @@ export interface RuntimeOptions {
   rebindHttp?(allowOtherDevices: boolean): Promise<void>
   serverAuth?: ServerAuth
   tailscale?: TailscaleConnection
+  headlessAccess?: HeadlessAccessMode
 }
 
 /** Owns the domain services independently of Electron and HTTP. */
@@ -122,7 +124,8 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     options.serverAuth ?? new ServerAuth(dataDirectory),
     options.rebindHttp ?? (async () => {}),
     (workspaceId, status) => broadcast('connections:changed', { workspaceId, status }),
-    options.tailscale
+    options.tailscale,
+    options.headlessAccess
   )
   registerWorkspaceHandlers(ipc, store, broadcast, async (workspaceId, name) => {
     const release = agentProcesses.acquireAccountChange(workspaceId)
