@@ -569,7 +569,7 @@ export function TaskView({ task }: Props): JSX.Element {
       </header>
 
       {issue && issueError && <Notice>Could not refresh subtask. Showing last known data. <button className={btn.text} onClick={refresh}>Retry</button></Notice>}
-      {(task.error || task.deliveryError) && <Notice>{task.error || task.deliveryError}</Notice>}
+      {(task.error || (task.restackState !== 'conflict' && task.deliveryError)) && <Notice>{task.error || task.deliveryError}</Notice>}
       {task.contextCompactionError && <Notice>{task.contextCompactionError}</Notice>}
       {reviewError && <Notice>{reviewError}</Notice>}
       {(reviewable || issue) && commentError && <Notice>{commentError}</Notice>}
