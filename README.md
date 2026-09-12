@@ -160,6 +160,12 @@ Press Command+T on macOS or Ctrl+T to toggle the in-app terminal at the active
 project root. Hiding the drawer keeps the shell running. Closing it or switching
 projects or workspaces ends the session. OpenCode sign-in and sign-out use a
 terminal panel on the workspace account card. Cancelling stops the auth command.
+When Anvil runs on another machine (e.g. a mini PC) and is driven from a
+different browser, Codex's ChatGPT subscription flow cannot complete because
+its callback URL is bound to localhost on the hosting machine. For that setup,
+choose the remote device-code option on the account card: it prints a
+verification link and one-time code in the in-app terminal, which can be
+entered from any device.
 
 ### Project memory
 
