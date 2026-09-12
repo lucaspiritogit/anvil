@@ -18,6 +18,7 @@ import gitBranch from './icons/git-branch.svg?raw'
 import keyboard from './icons/keyboard.svg?raw'
 import layers from './icons/layers.svg?raw'
 import loader from './icons/loader.svg?raw'
+import merge from './icons/merge.svg?raw'
 import monitor from './icons/monitor.svg?raw'
 import pencil from './icons/pencil.svg?raw'
 import search from './icons/search.svg?raw'
@@ -59,6 +60,7 @@ const artwork = {
   keyboard: body(keyboard),
   layers: body(layers),
   loader: body(loader),
+  merge: body(merge),
   monitor: body(monitor),
   pencil: body(pencil),
   search: body(search),
