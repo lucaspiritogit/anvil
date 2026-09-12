@@ -75,7 +75,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   compact?: boolean
   stackStart?: boolean
   stackEnd?: boolean
-  rowProps?: ComponentPropsWithRef<'li'> & { 'data-index'?: number; 'data-task-id'?: string; 'data-stacked'?: boolean; 'data-row-start'?: number }
+  rowProps?: ComponentPropsWithRef<'li'> & { 'data-index'?: number; 'data-task-id'?: string; 'data-stack-moving'?: boolean; 'data-row-start'?: number }
 }): JSX.Element {
   const parent = useStore((state) => state.tasks.find((entry) => entry.id === (task.restackTarget?.parentTaskId ?? task.parentTaskId)))
   const stacked = Boolean(task.restackTarget?.parentTaskId ?? task.parentTaskId)

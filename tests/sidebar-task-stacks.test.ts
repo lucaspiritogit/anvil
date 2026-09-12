@@ -12,10 +12,10 @@ function task(id: string, parentTaskId?: string): Task {
   }
 }
 
-test('keeps nested stacks after their parent and marks only the group boundaries', () => {
+test('puts nested stack descendants before their parent and marks only the group boundaries', () => {
   const rows = sidebarTaskStacks([task('grandchild', 'child'), task('other'), task('child', 'parent'), task('parent')])
   expect(rows.map((row) => [row.task.id, row.stackStart, row.stackEnd])).toEqual([
-    ['parent', true, false], ['child', false, false], ['grandchild', false, true], ['other', false, false]
+    ['grandchild', true, false], ['child', false, false], ['parent', false, true], ['other', false, false]
   ])
 })
 
@@ -27,15 +27,17 @@ test('keeps a filtered child visible with stack boundaries when its parent is ab
 test('moves a restacking child to its target group', () => {
   const child = task('child', 'old')
   child.restackTarget = { parentTaskId: 'new', branch: 'main', commit: 'abc123' }
-  const rows = sidebarTaskStacks([task('old'), child, task('new')])
-  expect(rows.map((row) => row.task.id)).toEqual(['old', 'new', 'child'])
+  const rows = sidebarTaskStacks([task('old'), task('grandchild', 'child'), child, task('new')])
+  expect(rows.map((row) => row.task.id)).toEqual(['old', 'grandchild', 'child', 'new'])
 })
 
-test('keeps the first child at the top when later children join the same stack', () => {
+test('inserts later siblings at the top of the stack in newest-first order', () => {
   const parent = task('parent')
   const first = { ...task('first', 'parent'), startedAt: 10 }
   const second = { ...task('second', 'parent'), startedAt: 20 }
   const third = { ...task('third', 'parent'), startedAt: 30 }
   const rows = sidebarTaskStacks([third, second, first, parent])
-  expect(rows.map((row) => row.task.id)).toEqual(['parent', 'first', 'second', 'third'])
+  expect(rows.map((row) => [row.task.id, row.stackStart, row.stackEnd])).toEqual([
+    ['third', true, false], ['second', false, false], ['first', false, false], ['parent', false, true]
+  ])
 })

@@ -18,17 +18,17 @@ export function sidebarTaskStacks(tasks: Task[]): { task: Task; stackStart: bool
     groups.set(root.id, group)
   }
   return [...groups.values()].flatMap((group) => {
-    // The main list is newest first. Inside a stack, retain creation order so
-    // later children join below the tasks already in the queue.
-    const queued = [...group].sort((first, second) => first.startedAt - second.startedAt || first.id.localeCompare(second.id))
+    // The main list is newest first. Visit children in the same direction and
+    // append each parent after its descendants so stacks grow down toward the root.
+    const queued = [...group].sort((first, second) => second.startedAt - first.startedAt || first.id.localeCompare(second.id))
     const ordered: Task[] = []
     const remaining = new Set(group)
     const append = (task: Task): void => {
       if (!remaining.delete(task)) return
-      ordered.push(task)
       for (const child of queued) {
         if ((child.restackTarget?.parentTaskId ?? child.parentTaskId) === task.id) append(child)
       }
+      ordered.push(task)
     }
     for (const task of group) {
       const parentId = task.restackTarget?.parentTaskId ?? task.parentTaskId

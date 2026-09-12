@@ -56,16 +56,16 @@ export function SidebarTaskList({ id, tasks, snapshots, projectById, now, view, 
       const height = element.offsetHeight
       const previous = previousRows.current.get(taskId)
       nextRows.set(taskId, { top, height })
-      const stacked = element.dataset.stacked === 'true'
+      const stackMoving = element.dataset.stackMoving === 'true'
       const running = element.getAnimations()
-      // Anchor the main task at the top immediately. Only queue entries move
-      // into place; animating the parent upward makes the stack grow from below.
+      // Anchor the root task at the bottom immediately. Descendants move into
+      // place above it so a newly stacked task settles from the top of the group.
       // Mount and scroll measurements establish positions without animation.
       // Only real stack changes can start movement; later measurements may
       // adjust an animation already started by that change.
       if (expanding || reducedMotion) {
         for (const animation of running) animation.cancel()
-      } else if ((layoutChanged || running.length > 0) && stacked && previous && height > 0 &&
+      } else if ((layoutChanged || running.length > 0) && stackMoving && previous && height > 0 &&
         (previous.top !== top || previous.height !== height)) {
         const currentTransform = getComputedStyle(element).transform
         for (const animation of running) animation.cancel()
@@ -89,7 +89,7 @@ export function SidebarTaskList({ id, tasks, snapshots, projectById, now, view, 
               ref: virtualizer.measureElement,
               'data-index': row.index,
               'data-task-id': task.id,
-              'data-stacked': Boolean(task.restackTarget?.parentTaskId ?? task.parentTaskId),
+              'data-stack-moving': !stackEnd && Boolean(task.restackTarget?.parentTaskId ?? task.parentTaskId),
               'data-row-start': row.start,
               'aria-posinset': row.index + 1,
               'aria-setsize': tasks.length,
