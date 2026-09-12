@@ -13,7 +13,7 @@ import type { Task } from '../src/shared/types'
 import { testHome } from './issue-tracker-doubles'
 
 function setupCaffeine() {
-  const database = join(testHome, `caffeine-${randomUUID()}`, 'anvil.db')
+  const database = join(testHome, `caffeine-${randomUUID()}`, 'config.json')
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   const store = new Store(database, options)
   onTestCleanup(() => store.close())

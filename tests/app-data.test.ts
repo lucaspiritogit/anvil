@@ -9,7 +9,7 @@ test('separates development storage from live packaged tasks', () => {
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   const productionDirectory = resolveAppDataDirectory(testHome, true)
   const developmentDirectory = resolveAppDataDirectory(testHome, false)
-  const production = new Store(join(productionDirectory, 'anvil.db'), options)
+  const production = new Store(join(productionDirectory, 'config.json'), options)
   production.addProject({ id: 'project', name: 'Production', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
   const task: Task = {
     workspaceId: 'default',
@@ -21,7 +21,7 @@ test('separates development storage from live packaged tasks', () => {
   production.addTask(task)
   production.saveTaskExecution({ taskId: task.id, projectPath: testHome, parentIssueId: 'parent', phase: 'working', issueIds: ['issue'], currentIssueId: 'issue', error: null })
   production.setSettings({ overviewBackgroundColor: '#123456' })
-  const development = new Store(join(developmentDirectory, 'anvil.db'), options)
+  const development = new Store(join(developmentDirectory, 'config.json'), options)
   try {
     expect(production.getTask(task.id)?.status, 'Opening development must not interrupt a live packaged-app task').toBe('running')
     expect(production.getTaskExecution(task.id)?.phase).toBe('working')

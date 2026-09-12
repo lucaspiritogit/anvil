@@ -14,7 +14,7 @@ import { registerTestIpc } from './test-ipc'
 import { onTestCleanup } from './test-cleanup'
 
 const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
-function setup(database = join(testHome, randomUUID(), 'anvil.db')) {
+function setup(database = join(testHome, randomUUID(), 'config.json')) {
   const store = new Store(database, options)
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0,
@@ -105,7 +105,7 @@ test('concurrent appends and snapshot updates preserve cursors and latest naviga
 })
 
 test('registered IPC validates limits and task-scoped cursors and handles empty and deleted tasks', () => {
-  const { store } = setup(join(testHome, '.anvil-composer/anvil.db'))
+  const { store } = setup(join(testHome, '.anvil-composer/config.json'))
   registerTestIpc()
   const call = (input: unknown): TaskEventsPage => handlers.get('tasks:events-page')!(rendererEvent, input)
   append(store, 4105)

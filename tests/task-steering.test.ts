@@ -3,7 +3,7 @@ import { expect, test } from 'vitest'
 import { onTestCleanup } from './test-cleanup'
 import { join } from 'node:path'
 import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
-import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git-delivery'
+import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git'
 import { getAgent } from '../src/server/agents/registry'
 import { registerTaskHandlers } from '../src/server/handlers/tasks'
 import { registerReviewHandlers } from '../src/server/handlers/review'
@@ -18,7 +18,7 @@ import type { Task } from '../src/shared/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome } from './issue-tracker-doubles'
 
 test('serializes steering and comments through resume, completion and recovery', async () => {
-  const databasePath = join(testHome, 'steering.db')
+  const databasePath = join(testHome, 'config.json')
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   const store = new Store(databasePath, options)
   {

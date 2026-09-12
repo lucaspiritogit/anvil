@@ -27,7 +27,7 @@ test('replays cumulative usage without double counting and preserves totals on r
   vi.spyOn(Date, 'now').mockReturnValue(1_000)
   const directory = mkdtempSync(join(testHome, 'anvil-task-usage-'))
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
-  const database = join(directory, 'test.db')
+  const database = join(directory, 'config.json')
   let store = new Store(database, options)
   try {
     store.addProject({ id: 'project', name: 'Test', path: directory, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })

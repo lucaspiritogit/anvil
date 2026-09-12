@@ -10,8 +10,7 @@ import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { onTestCleanup } from './test-cleanup'
 import type { ComposerPreferences, Settings, WorkspaceSnapshot } from '../src/shared/types'
 import { useStore } from '../src/client/renderer/src/state/store'
-import { importLegacyComposer, useComposerPreferences } from '../src/client/renderer/src/state/composer-preferences'
-import { enqueueWorkspaceRequest } from '../src/client/renderer/src/state/workspace-requests'
+import { useComposerPreferences } from '../src/client/renderer/src/state/composer-preferences'
 
 const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
 const composer: ComposerPreferences = {
@@ -27,7 +26,7 @@ function call(channel: string, value?: unknown): any {
 function snapshot(): WorkspaceSnapshot { return call('workspaces:snapshot') }
 
 beforeEach(() => {
-  database = join(testHome, `workspace-ipc-${randomUUID()}`, 'anvil.db')
+  database = join(testHome, `workspace-ipc-${randomUUID()}`, 'config.json')
   store = new Store(database, options)
   onTestCleanup(() => store.close())
   broadcast.mockClear()
@@ -79,36 +78,12 @@ test('independent settings and composer choices survive selection, rename and SQ
   expect(store.getSettings('default')).toEqual(original.settings)
 })
 
-test('legacy composer import is one-time, preserves newer SQLite values and persists its marker', () => {
-  call('workspaces:composer:import', composer)
-  expect(store.getWorkspacePreferences('default').composer).toEqual(composer)
-  store.setWorkspacePreferences({ composer: { agentId: '', modelsByAgent: {}, reasoningByAgentModel: {} } }, 'default')
-  store.close()
-  store = new Store(database, options)
-  store.importLegacyComposerPreferences(composer)
-  expect(store.getWorkspacePreferences('default').composer.agentId).toBe('')
-})
-
-test('newer SQLite composer writes win even before the first legacy import', () => {
-  const newer = { ...composer, agentId: 'opencode' }
-  store.setWorkspacePreferences({ composer: newer }, 'default')
-  store.importLegacyComposerPreferences(composer)
-  expect(store.getWorkspacePreferences('default').composer).toEqual(newer)
-})
-
 function rendererBridge(): void {
-  const storage = new Map<string, string>()
-  vi.stubGlobal('localStorage', {
-    getItem: (key: string) => storage.get(key) ?? null,
-    setItem: (key: string, value: string) => storage.set(key, value),
-    removeItem: (key: string) => storage.delete(key)
-  })
   vi.stubGlobal('window', { anvil: {
     workspaces: {
       snapshot: async () => snapshot(),
       select: async (id: string) => call('workspaces:select', id),
-      setPreferences: async (workspaceId: string, patch: unknown) => call('workspaces:preferences:set', { workspaceId, patch }),
-      importComposer: async (value: ComposerPreferences) => call('workspaces:composer:import', value)
+      setPreferences: async (workspaceId: string, patch: unknown) => call('workspaces:preferences:set', { workspaceId, patch })
     },
     agents: { list: async () => [] },
     settings: { set: async (workspaceId: string, patch: Partial<Settings>) => call('settings:set', { workspaceId, patch }) }
@@ -182,26 +157,6 @@ test('hydration ignores stale responses and exposes preferences only with a comp
   await Promise.all([load, selection])
   expect(useStore.getState().activeWorkspaceId).toBe(work.id)
   expect(useComposerPreferences.getState().modelsByAgent).toEqual(composer.modelsByAgent)
-})
-
-test('legacy source survives failed import, retries successfully and ignores malformed values', async () => {
-  rendererBridge()
-  const key = 'anvil-composer-preferences-v2'
-  const source = JSON.stringify({ state: composer, version: 0 })
-  localStorage.setItem(key, source)
-  const importComposer = window.anvil.workspaces.importComposer
-  window.anvil.workspaces.importComposer = async () => { throw new Error('Disk unavailable') }
-  await useStore.getState().load()
-  expect(useStore.getState()).toMatchObject({ ready: false, workspaceError: 'Disk unavailable' })
-  expect(localStorage.getItem(key)).toBe(source)
-  window.anvil.workspaces.importComposer = importComposer
-  await useStore.getState().load()
-  expect(localStorage.getItem(key)).toBeNull()
-  expect(useComposerPreferences.getState().reasoningByAgentModel).toEqual(composer.reasoningByAgentModel)
-  localStorage.setItem(key, '{bad')
-  await importLegacyComposer()
-  expect(localStorage.getItem(key)).toBe('{bad')
-  await enqueueWorkspaceRequest(async () => {})
 })
 
 test('last selected projects are independent and restored with the workspace snapshot', async () => {

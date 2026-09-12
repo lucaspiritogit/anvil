@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { taskState } from './task-state'
 import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
 import { agentRebasePrompt } from '../src/server/agents/task-prompts'
-import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git-delivery'
+import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git'
 import { registerAgentHandlers } from '../src/server/handlers/agents'
 import { registerGitHubHandlers } from '../src/server/handlers/github'
 import { GitHubClient } from '../src/server/github-client'
@@ -34,7 +34,7 @@ import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome, shell, dialog } from './issue-tracker-doubles'
 
 function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise<string>) {
-  const databaseFile = join(testHome, `ipc-${randomUUID()}`, 'anvil.db')
+  const databaseFile = join(testHome, `ipc-${randomUUID()}`, 'config.json')
   const store = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
   onTestCleanup(() => store.close())
   const tasks = { get: (id: string) => store.getTask(id), has: (id: string) => !!store.getTask(id) }
@@ -165,7 +165,7 @@ test('registers all domain channels', () => {
     'github:credential-status', 'github:set-token', 'github:remove-token', 'github:pr-preview', 'github:open-pr', 'github:draft-pr-field', 'github:open-pr-url',
     'projects:add', 'projects:branches', 'projects:checkout', 'projects:files', 'projects:git-init', 'projects:git-status', 'projects:list', 'projects:remove', 'projects:reveal', 'projects:update',
     'tasks:approve', 'tasks:approve-issue', 'tasks:cancel', 'tasks:compact', 'tasks:delete', 'tasks:diff', 'tasks:events', 'tasks:events-page', 'tasks:issue-diff', 'tasks:issues', 'tasks:list', 'tasks:merge-preview', 'tasks:rebase', 'tasks:rebase-agent', 'tasks:reject-issue', 'tasks:restack', 'tasks:settle', 'tasks:stack', 'tasks:stack-dismiss', 'tasks:start', 'tasks:steer',
-    'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set', 'workspaces:composer:import',
+    'workspaces:list', 'workspaces:snapshot', 'workspaces:create', 'workspaces:rename', 'workspaces:select', 'workspaces:preferences:get', 'workspaces:preferences:set',
     'wallpapers:directory', 'wallpapers:import', 'wallpapers:list', 'wallpapers:read', 'settings:get', 'settings:set'
   ].sort())
 

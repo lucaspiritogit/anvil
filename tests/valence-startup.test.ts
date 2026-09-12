@@ -15,7 +15,7 @@ async function tick(): Promise<void> {
 }
 
 function fixture() {
-  const store = new Store(join(testHome, '.anvil-composer/anvil.db'), {
+  const store = new Store(join(testHome, '.anvil-composer/config.json'), {
     migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
   })
   onTestCleanup(() => store.close())

@@ -105,7 +105,7 @@ test('reconciles tool and text snapshots and persists row identity', () => {
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   let store: Store | undefined
   try {
-    const database = join(directory, 'test.db')
+    const database = join(directory, 'config.json')
     store = new Store(database, options)
     store.addProject({ id: 'project', name: 'Test', path: directory, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
     store.addTask({

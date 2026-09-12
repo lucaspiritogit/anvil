@@ -9,11 +9,10 @@ import type { Settings, Task } from '../src/shared/types'
 import { migrateBefore, migrationsFolder } from './migration-fixture'
 import { onTestCleanup } from './test-cleanup'
 
-function fixture(legacy = false): { directory: string; database: string; open: () => Store } {
+function fixture(): { directory: string; database: string; open: () => Store } {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-workspaces-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
-  const database = join(directory, 'anvil.db')
-  if (legacy) migrateBefore(database, 11)
+  const database = join(directory, 'config.json')
   return {
     directory,
     database,
@@ -62,7 +61,8 @@ test('creates one Default workspace and starts new profiles with independent app
     memoryEnabled: true, memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://127.0.0.1:1234/v1',
     fontSize: 18, overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'test.png',
     defaultAgentId: 'codex', defaultModel: 'custom-model', rebaseMode: 'agent', confirmRebase: false,
-    caffeineMode: true, allowOtherDevices: true, keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K' }
+    caffeineMode: true, allowOtherDevices: true, tailscaleHttps: true,
+    keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K' }
   }
   expect(Object.keys(custom).sort()).toEqual(Object.keys(defaults).sort())
   store.setSettings(custom)
@@ -276,70 +276,6 @@ test('loads pull request metadata only for the current reviewable task revision'
 
   expect(reopened.updateTask(task.id, { headCommit: 'current-head', deliveryStatus: 'approved' })?.pullRequest).toBeUndefined()
   expect(reopened.getTask(task.id)?.pullRequest).toBeUndefined()
-})
-
-test('upgrades a legacy database twice without losing settings, sessions, execution or Valence ownership', () => {
-  const { open, database } = fixture(true)
-  const db = rawDatabase(database)
-  db.prepare("INSERT INTO projects (id, name, path, created_at, finish_on_push) VALUES ('project', 'Project', '/test/project', 1, 1)").run()
-  db.prepare(`INSERT INTO tasks (id, project_id, agent_id, agent_label, prompt, title, cwd, status, started_at,
-    delivery_status, session_id, branch_name) VALUES ('task', 'project', 'codex', 'Codex', 'Prompt', 'Title',
-    '/test/project', 'succeeded', 1, 'reviewable', 'saved-session', 'saved-branch')`).run()
-  db.prepare("INSERT INTO settings VALUES ('defaultAgentId', 'codex'), ('caffeineMode', 'true'), ('fontSize', '18')").run()
-  db.prepare("INSERT INTO parent_issues (id, anvil_task_id, title, description) VALUES ('parent', 'task', 'Parent', 'Description')").run()
-  for (const id of ['first', 'second']) {
-    db.prepare(`INSERT INTO issues (id, parent_id, title, description, checklist, validation, labels, priority, status,
-      evidence, started_at, base_commit, head_commit) VALUES (?, 'parent', 'Issue', 'Description', '["Check"]',
-      'Run tests', '[]', 'high', 'review', 'Passed', 42, 'base', 'head')`).run(id)
-  }
-  db.prepare("INSERT INTO issue_dependencies VALUES ('second', 'first', 0)").run()
-  const state = { taskId: 'task', projectPath: '/test/project', parentIssueId: 'parent', phase: 'reviewing',
-    issueIds: ['first', 'second'], currentIssueId: 'first', error: null }
-  db.prepare("INSERT INTO task_executions VALUES ('task', ?)").run(JSON.stringify(state))
-  db.prepare("INSERT INTO task_events (id, task_id, issue_id, ts, stream, text) VALUES ('event', 'task', 'first', 2, 'stdout', 'Saved output')").run()
-  db.prepare("INSERT INTO task_comments VALUES ('comment', 'task', 'file.ts', 'additions', 1, 'Saved comment', 2, NULL)").run()
-  db.prepare("INSERT INTO task_pull_requests VALUES ('task', 'owner/repo', 1, 'sha', 'branch', 'main')").run()
-  const tables = ['projects', 'parent_issues', 'issues', 'issue_dependencies', 'task_executions', 'task_events', 'task_comments', 'task_pull_requests']
-  const preserved = tables.map((table) => db.prepare<[], Record<string, unknown>>(`SELECT * FROM ${table}`).all())
-  const originalTask = db.prepare<[], Record<string, unknown>>('SELECT * FROM tasks').get()!
-  db.close()
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const store = open()
-    expect(store.getWorkspaces()).toHaveLength(1)
-    expect(store.getActiveWorkspace().id).toBe(DEFAULT_WORKSPACE_ID)
-    expect(store.getSettings()).toMatchObject({ defaultAgentId: 'codex', caffeineMode: true, fontSize: 18 })
-    const workspaceDb = rawDatabase(store.getWorkspaceDatabasePath('default'))
-    expect(workspaceDb.prepare('SELECT * FROM tasks').get()).toEqual({
-      ...originalTask,
-      workspace_id: DEFAULT_WORKSPACE_ID,
-      parent_task_id: null,
-      expected_files: null,
-      restack_state: null,
-      restack_target: null,
-      stack_suggestion: null,
-      context_used: null,
-      context_size: null,
-      context_compaction_error: null,
-      working_time_ms: 0,
-      working_started_at: null
-    })
-    expect(store.getTaskExecution('task')).toEqual(state)
-    const migrated = tables.map((table) => workspaceDb.prepare(`SELECT * FROM ${table}`).all())
-    expect(migrated).toEqual(preserved.map((rows, index) => tables[index] === 'issues'
-      ? rows.map((row) => ({ ...row, expected_files: null }))
-      : rows))
-    expect(store.issueTracker('project').list().map((issue) => issue.id)).toEqual(['first', 'second'])
-    expect(workspaceDb.pragma('foreign_key_check')).toEqual([])
-    store.close()
-  }
-  const store = open()
-  store.setSettings({ fontSize: 16 })
-  store.close()
-  const reopened = open()
-  expect(reopened.getSettings().fontSize, 'Bootstrap must not copy legacy settings again').toBe(16)
-  const work = reopened.createWorkspace('Work')
-  expect(reopened.getSettings(work.id)).toMatchObject({ defaultAgentId: 'opencode', caffeineMode: false, fontSize: 14 })
-  expect(reopened.getTasks(work.id)).toEqual([])
 })
 
 

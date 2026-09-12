@@ -9,10 +9,9 @@ import { invalidateWorkspaceModels, closeModelDiscovery, pauseWorkspaceModelDisc
 import { watchWorkspaceAuthChanges } from './agents/workspace-auth-changes'
 import { resolveTaskWorkspace } from './agents/workspace-execution'
 import { WallpaperLibrary } from './wallpapers'
-import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { AgentProcessManager } from './agents/process-manager'
-import { GitDeliveryManager } from './git-delivery'
+import { GitDeliveryManager } from './git'
 import { registerAgentHandlers } from './handlers/agents'
 import { registerGitHubHandlers } from './handlers/github'
 import { GitHubCredentials, type CredentialEncryption } from './github-credentials'
@@ -84,8 +83,6 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   rememberWorktreeOwners()
   const stopRememberingWorktreeOwners = store.subscribeActivity(rememberWorktreeOwners)
   const gitDelivery = new GitDeliveryManager((taskId) => {
-    const legacyRoot = join(dataDirectory, 'worktrees')
-    if (existsSync(join(legacyRoot, taskId))) return legacyRoot
     const task = store.getTask(taskId)
     const workspaceId = task?.workspaceId ?? worktreeOwners.get(taskId)
     if (!workspaceId) throw new Error('Task workspace not found')

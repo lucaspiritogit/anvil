@@ -1,5 +1,5 @@
 import type { PullRequestInfo, PullRequestPreview } from '../shared/types'
-import type { GitDeliveryManager } from './git-delivery'
+import type { GitDeliveryManager } from './git'
 import type { GitHubCredentials } from './github-credentials'
 import { GitHubClient } from './github-client'
 

@@ -7,7 +7,7 @@ import { ClientSideConnection, ndJsonStream } from '@agentclientprotocol/sdk'
 import { Store } from '../src/server/store'
 import { AgentProcessManager } from '../src/server/agents/process-manager'
 import { listModels } from '../src/server/agents/models'
-import { GitDeliveryManager } from '../src/server/git-delivery'
+import { GitDeliveryManager } from '../src/server/git'
 import { AgentProcessManager as DoubleAgent, GitDeliveryManager as DoubleGit, listModels as doubleModels, testHome } from './issue-tracker-doubles'
 import { onTestCleanup, cleanupTestResources } from './test-cleanup'
 import { registerTestIpc } from './test-ipc'
@@ -18,7 +18,7 @@ describe('Vitest runtime', () => {
     expect(process.env.USERPROFILE).toBe(testHome)
     expect(process.env.ANVIL_DATA_DIR).toBeUndefined()
     expect(process.env.ANVIL_TEST_NODE).toBe(process.execPath)
-    const store = new Store(join(testHome, '.anvil-composer', 'anvil.db'), {
+    const store = new Store(join(testHome, '.anvil-composer', 'config.json'), {
       migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
     })
     onTestCleanup(() => store.close())

@@ -120,7 +120,6 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'workspaces:select': workspaceId,
   'workspaces:preferences:get': workspaceId,
   'workspaces:preferences:set': object({ workspaceId, patch: object({ composer: optional(composer), lastProjectId: optional(nullable(id)) }) }),
-  'workspaces:composer:import': composer,
   'settings:get': optional(workspaceId),
   'settings:set': object({ workspaceId, patch: settingsPatch }),
   'connections:status': optional(workspaceId),

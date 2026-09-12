@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from '../src/server/store'
-import { GitDeliveryManager } from '../src/server/git-delivery'
+import { GitDeliveryManager } from '../src/server/git'
 import { TaskStacks, requireStackMergeable, requireStackParent } from '../src/server/tasks/task-stacks'
 import { TaskIssues } from '../src/server/tasks/task-issues'
 import { callIssueTool } from '../src/server/issue-tools/server'
@@ -27,7 +27,7 @@ async function fixture() {
   writeFileSync(join(repo, 'source.txt'), 'base\n')
   git(repo, 'add', '.')
   git(repo, 'commit', '-m', 'Base')
-  const database = join(root, 'data', 'anvil.db')
+  const database = join(root, 'data', 'config.json')
   const store = new Store(database, options)
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Project', path: repo, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })

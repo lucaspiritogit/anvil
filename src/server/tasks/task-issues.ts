@@ -1,6 +1,6 @@
 import type { Issue } from '../../shared/valence'
 import type { IssueTracker } from '../valence/tracker'
-import type { IssueDiffSource } from '../git-delivery'
+import type { IssueDiffSource } from '../git'
 import type { TaskExecutionState, TaskIssueSnapshot } from '../../shared/types'
 import type { Store } from '../store'
 

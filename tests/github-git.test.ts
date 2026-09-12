@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitDeliveryManager } from '../src/server/git-delivery'
+import { GitDeliveryManager } from '../src/server/git'
 import { githubRepository } from '../src/shared/github-repository'
 
 test('previews and pushes real repositories while preserving checkout, authorship and remote guards', async () => {

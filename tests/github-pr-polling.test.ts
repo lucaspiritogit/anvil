@@ -9,7 +9,7 @@ import type { Task } from '../src/shared/types'
 import { testHome } from './issue-tracker-doubles'
 
 test('recovers persisted PRs and handles caching, stale tasks, credentials, rate limits and shutdown', async () => {
-  const database = join(testHome, 'polling.db')
+  const database = join(testHome, 'config.json')
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   let store = new Store(database, options)
   store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })

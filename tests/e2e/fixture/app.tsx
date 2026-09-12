@@ -455,17 +455,8 @@ window.anvil = {
     getPreferences: async (id) => structuredClone(preferencesFor(id)),
     setPreferences: async (id, patch) => {
       workspacePreferences[id] = { ...preferencesFor(id), ...structuredClone(patch) }
-      if (id === 'default' && patch.composer) localStorage.setItem('fixture:imported', 'true')
       persistWorkspaces()
       return structuredClone(workspacePreferences[id])
-    },
-    importComposer: async (composer) => {
-      if (!localStorage.getItem('fixture:imported')) {
-        preferencesFor('default').composer = structuredClone(composer)
-        localStorage.setItem('fixture:imported', 'true')
-        persistWorkspaces()
-      }
-      return structuredClone(preferencesFor('default'))
     },
     onChanged: subscribe, onSelected: subscribe, onPreferencesChanged: subscribe
   },

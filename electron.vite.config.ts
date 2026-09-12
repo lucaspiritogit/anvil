@@ -33,7 +33,10 @@ export default defineConfig({
     plugins: [react(), tailwindcss()],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/client/renderer/index.html') }
+        input: {
+          index: resolve(__dirname, 'src/client/renderer/index.html'),
+          closing: resolve(__dirname, 'src/client/renderer/closing.html')
+        }
       }
     }
   }

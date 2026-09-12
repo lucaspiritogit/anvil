@@ -52,34 +52,6 @@ test('the last configuration survives provider switches, task submission, projec
   await expect(composer.getByRole('button', { name: 'Model: model', exact: true })).toBeVisible()
 })
 
-for (const saved of [
-  'not valid JSON',
-  JSON.stringify({ state: { agentId: 42, modelsByAgent: null, reasoningByAgentModel: [] }, version: 0 }),
-  JSON.stringify({ state: { agentId: 'removed-provider', modelsByAgent: { codex: 42 }, reasoningByAgentModel: null }, version: 0 })
-]) {
-  test(`invalid or unavailable saved configuration does not select a default provider: ${saved}`, async ({ page }) => {
-    await page.addInitScript((saved) => localStorage.setItem('anvil-composer-preferences-v2', saved), saved)
-    await page.goto(fixture)
-    const composer = page.getByRole('form', { name: 'Start a task' })
-    const provider = composer.getByRole('button', { name: /^(Choose a model|Model:)/ })
-    await expect(provider).toHaveText('Choose a model')
-    await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('')
-    await expect(composer.getByRole('button', { name: 'Choose a model', exact: true })).toBeEnabled()
-    await browseProvider(provider, 'codex')
-    await page.keyboard.press('Escape')
-    await expect(provider).toHaveText('Choose a model')
-  })
-}
-
-test('old composer preferences are isolated without migration', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('anvil-composer-preferences', JSON.stringify({ state: {
-    agentId: 'codex', modelsByAgent: { codex: 'gpt-5' }, thinkingLevel: 'High', modelEffort: 'max'
-  }, version: 0 })))
-  await page.goto(fixture)
-  await expect(page.getByRole('button', { name: /^(Choose a model|Model:)/ })).toHaveText('Choose a model')
-  await expect(page.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('')
-})
-
 test('workspace switching restores independent models and reasoning and clears personal drafts', async ({ page }) => {
   await page.goto(`${fixture}?workspaces`)
   const composer = page.getByRole('form', { name: 'Start a task' })

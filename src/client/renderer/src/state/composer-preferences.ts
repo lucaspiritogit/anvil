@@ -15,24 +15,6 @@ export function hydrateComposer(workspaceId: string, preferences: ComposerPrefer
   useComposerPreferences.setState({ workspaceId, ...preferences, saveError: null })
 }
 
-export async function importLegacyComposer(): Promise<void> {
-  const key = 'anvil-composer-preferences-v2'
-  const source = localStorage.getItem(key)
-  if (!source) return
-  let preferences: ComposerPreferences
-  try {
-    const saved = JSON.parse(source).state
-    const stringRecord = (value: unknown): boolean => Boolean(value && typeof value === 'object' && !Array.isArray(value) && Object.values(value).every((entry) => typeof entry === 'string'))
-    if (!saved || typeof saved.agentId !== 'string' || !stringRecord(saved.modelsByAgent) || !stringRecord(saved.reasoningByAgentModel)) return
-    preferences = { agentId: saved.agentId, modelsByAgent: saved.modelsByAgent, reasoningByAgentModel: saved.reasoningByAgentModel }
-  } catch {
-    return
-  }
-  await window.anvil.workspaces.importComposer(preferences)
-  // Preserve a source changed during the import, and all sources on failure.
-  if (localStorage.getItem(key) === source) localStorage.removeItem(key)
-}
-
 export const useComposerPreferences = create<ComposerPreferencesState>((set, get) => {
   const save = (patch: Partial<ComposerPreferences>): void => {
     const workspaceId = get().workspaceId

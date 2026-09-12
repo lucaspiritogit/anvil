@@ -3,6 +3,7 @@ import { Ghostty, Terminal, FitAddon } from 'ghostty-web'
 import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 import type { TerminalOutput } from '@shared/terminal'
 import { isTerminalShortcut } from '../keys'
+import { attachTerminalInput } from '../terminal-input'
 
 let ghostty: Promise<Ghostty> | undefined
 function loadGhostty(): Promise<Ghostty> {
@@ -46,6 +47,7 @@ export function GhosttyTerminal({ sessionId, className, visible = true, onExit }
       const input = term.onData((data) => {
         void window.anvil.terminals.write({ sessionId, data }).catch(reportRequestFailure)
       })
+      const detachInput = attachTerminalInput(host.current, term)
       const resize = term.onResize(({ cols, rows }) => {
         void window.anvil.terminals.resize({ sessionId, cols: Math.min(500, Math.max(2, cols)), rows: Math.min(300, Math.max(1, rows)) }).catch(reportRequestFailure)
       })
@@ -69,7 +71,7 @@ export function GhosttyTerminal({ sessionId, className, visible = true, onExit }
         if (host.current && host.current.clientHeight > 0) fit.fit()
       })
       observer.observe(host.current)
-      cleanup = () => { offOutput(); offExit(); observer.disconnect(); input.dispose(); resize.dispose(); term.dispose(); terminal.current = null }
+      cleanup = () => { offOutput(); offExit(); observer.disconnect(); detachInput(); input.dispose(); resize.dispose(); term.dispose(); terminal.current = null }
       const snapshot = await window.anvil.terminals.attach(sessionId)
       if (cancelled) return
       if (snapshot.data) term.write(snapshot.data)

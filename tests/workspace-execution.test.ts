@@ -24,7 +24,7 @@ import { GitDeliveryManager, testHome } from './issue-tracker-doubles'
 import { onTestCleanup } from './test-cleanup'
 
 function fixture(): { store: Store; work: string; personal: string; task: Task; database: string } {
-  const database = join(testHome, randomUUID(), 'anvil.db')
+  const database = join(testHome, randomUUID(), 'config.json')
   const store = new Store(database, { migrationsFolder: resolve('src/server/db/migrations') })
   onTestCleanup(() => store.close())
   const work = store.createWorkspace('Work').id

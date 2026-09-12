@@ -1,0 +1,35 @@
+body {
+  margin: 0;
+}
+
+.closing-processes {
+  height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 16px;
+  justify-items: center;
+  background: #0d0f12;
+  color: #e5e7eb;
+  font: 14px system-ui;
+}
+
+.closing-processes-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #363b45;
+  border-top-color: #e5e7eb;
+  border-radius: 50%;
+  animation: closing-processes-spin 0.8s linear infinite;
+}
+
+@keyframes closing-processes-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .closing-processes-spinner {
+    animation: none;
+  }
+}

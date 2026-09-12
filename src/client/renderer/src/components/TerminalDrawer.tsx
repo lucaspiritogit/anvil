@@ -1,5 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { GhosttyTerminal } from './GhosttyTerminal'
+import { TerminalCommandInput } from './TerminalCommandInput'
 
 export function TerminalDrawer({ projectId, visible, onClose }: {
   projectId: string
@@ -28,7 +29,12 @@ export function TerminalDrawer({ projectId, visible, onClose }: {
       <button onClick={onClose} aria-label="Close project terminal">Close</button>
     </div>
     {error ? <p role="alert">Could not open the project terminal. Close the panel and try again.</p>
-      : sessionId ? <GhosttyTerminal sessionId={sessionId} visible={visible} className="h-[calc(100%-24px)]" onExit={setExitCode} />
+      : sessionId ? <div className="flex h-[calc(100%-24px)] min-h-0 flex-col gap-1">
+        <GhosttyTerminal sessionId={sessionId} visible={visible} className="min-h-0 flex-1" onExit={setExitCode} />
+        <div className="hidden shrink-0 [@media(pointer:coarse)]:block">
+          <TerminalCommandInput key={sessionId} sessionId={sessionId} disabled={exitCode !== null} />
+        </div>
+      </div>
         : <p role="status">Starting terminal…</p>}
   </section>
 }

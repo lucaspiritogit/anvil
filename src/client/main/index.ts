@@ -44,7 +44,6 @@ function openSettings(): void {
 }
 
 function showClosingProcesses(): void {
-  // A native modal also works after the last main window has already closed.
   const closingWindow = new BrowserWindow({
     width: 320, height: 140, show: false, frame: false, resizable: false,
     backgroundColor: '#0d0f12', alwaysOnTop: true,
@@ -53,17 +52,10 @@ function showClosingProcesses(): void {
   })
   closingWindow.on('close', (event) => { if (isClosing()) event.preventDefault() })
   closingWindow.once('ready-to-show', () => closingWindow.show())
-  void closingWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
-    <!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-    <style>
-      body { margin: 0; height: 100vh; display: grid; place-content: center; gap: 16px; justify-items: center;
-        background: #0d0f12; color: #e5e7eb; font: 14px system-ui; }
-      .spinner { width: 20px; height: 20px; border: 2px solid #363b45; border-top-color: #e5e7eb;
-        border-radius: 50%; animation: spin 0.8s linear infinite; }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
-    </style></head><body role="status" aria-live="polite"><div class="spinner" aria-hidden="true"></div>closing up processes...</body></html>
-  `)}`).catch((error) => console.warn('Could not show closing window:', error))
+  const closingUrl = new URL('closing.html', rendererUrl).href
+  void closingWindow.loadURL(closingUrl).catch((error) => {
+    console.warn('Could not show closing window:', error)
+  })
 }
 
 function createWindow(openSettingsOnLoad = false): void {

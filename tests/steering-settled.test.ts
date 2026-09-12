@@ -3,7 +3,7 @@ import { expect, test } from 'vitest'
 import { onTestCleanup } from './test-cleanup'
 import { join } from 'node:path'
 import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
-import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git-delivery'
+import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git'
 import { registerSteeringHandlers } from '../src/server/handlers/steering'
 import { createTaskMemory } from '../src/server/memory/task-memory'
 import { createTaskCompletion } from '../src/server/tasks/completion'
@@ -14,7 +14,7 @@ import type { Task } from '../src/shared/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome } from './issue-tracker-doubles'
 
 test('rejects settled steering and preserves stopped resume and live steering paths', async () => {
-  const databasePath = join(testHome, 'steering-settled.db')
+  const databasePath = join(testHome, 'config.json')
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   const store = new Store(databasePath, options)
   {

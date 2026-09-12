@@ -7,25 +7,13 @@ import { OpenCodeAcpClient } from '../src/server/agents/opencode-acp'
 import { resolveTaskWorkspace, resolveWorkspaceExecution } from '../src/server/agents/workspace-execution'
 import { Store } from '../src/server/store'
 import type { Task } from '../src/shared/types'
-import { migrateBefore, migrationsFolder } from './migration-fixture'
+import { migrationsFolder } from './migration-fixture'
 import { openCodeWorkspaceFixture } from './opencode-workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 
-test('upgrades a legacy plan, runs both agents in both profiles and resumes their SQLite-owned sessions after restart', async () => {
+test('runs both agents in both profiles and preserves plans and sessions after restart', async () => {
   const fixture = await openCodeWorkspaceFixture()
-  const database = join(fixture.directory, 'anvil.db')
-  migrateBefore(database, 11)
-  const legacy = new Database(database)
-  try {
-    legacy.prepare("INSERT INTO projects (id, name, path, created_at) VALUES ('project', 'Project', ?, 1)").run(fixture.project)
-    legacy.prepare(`INSERT INTO tasks (id, project_id, agent_id, agent_label, prompt, title, cwd, status, started_at,
-      session_id) VALUES ('legacy-task', 'project', 'codex', 'Codex', 'Legacy prompt', 'Legacy task', ?, 'succeeded', 1,
-      'legacy-session')`).run(fixture.project)
-    legacy.prepare("INSERT INTO settings VALUES ('fontSize', '18')").run()
-    legacy.prepare("INSERT INTO parent_issues (id, anvil_task_id, title, description) VALUES ('legacy-plan', 'legacy-task', 'Saved plan', 'Keep this plan')").run()
-  } finally {
-    legacy.close()
-  }
+  const database = join(fixture.directory, 'config.json')
 
   const globalCodex = join(fixture.directory, 'global', '.codex')
   await mkdir(globalCodex, { recursive: true })
@@ -41,9 +29,17 @@ test('upgrades a legacy plan, runs both agents in both profiles and resumes thei
     return store
   }
   let store = open()
+  store.addProject({ id: 'project', name: 'Project', path: fixture.project, createdAt: 1,
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  store.addTask({ id: 'saved-task', projectId: 'project', agentId: 'codex', agentLabel: 'Codex',
+    prompt: 'Saved prompt', title: 'Saved task', cwd: fixture.project, status: 'succeeded', startedAt: 1,
+    sessionId: 'saved-session', deliveryStatus: 'unavailable', inputTokens: 0, outputTokens: 0,
+    cachedTokens: 0, totalTokens: 0, costUsd: null, filesChanged: 0, additions: 0, deletions: 0 })
+  store.setSettings({ fontSize: 18 })
+  const plan = store.issueTracker('project').createParent({ anvilTaskId: 'saved-task', title: 'Saved plan', description: 'Keep this plan' })
   expect(store.getActiveWorkspace().id).toBe('default')
   expect(store.getSettings().fontSize).toBe(18)
-  expect(store.getTask('legacy-task')).toMatchObject({ workspaceId: 'default', sessionId: 'legacy-session' })
+  expect(store.getTask('saved-task')).toMatchObject({ workspaceId: 'default', sessionId: 'saved-session' })
   const profiles = [store.createWorkspace('Work'), store.createWorkspace('Personal')]
   const tasks: Task[] = []
   for (const [index, profile] of profiles.entries()) {
@@ -115,7 +111,7 @@ test('upgrades a legacy plan, runs both agents in both profiles and resumes thei
   const persisted = new Database(store.getWorkspaceDatabasePath('default'))
   try {
     expect(persisted.prepare('SELECT id, anvil_task_id, description FROM parent_issues').all()).toEqual([
-      { id: 'legacy-plan', anvil_task_id: 'legacy-task', description: 'Keep this plan' }
+      { id: plan.id, anvil_task_id: 'saved-task', description: 'Keep this plan' }
     ])
     expect(persisted.pragma('foreign_key_check')).toEqual([])
   } finally {

@@ -9,7 +9,7 @@ import { testHome, AgentProcessManager } from './issue-tracker-doubles'
 import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
 import { taskBranchFixture, branchGit } from './task-branch-fixture'
 import { TaskBranches, taskBranchNaming } from '../src/server/tasks/task-branch'
-import { GitDeliveryManager } from '../src/server/git-delivery'
+import { GitDeliveryManager } from '../src/server/git'
 import { resumeTaskTurn } from '../src/server/tasks/resume'
 import { taskRecoveryPrompt } from '../src/server/agents/task-prompts'
 import { TaskIssues } from '../src/server/tasks/task-issues'
@@ -91,7 +91,8 @@ test('non-Git delivery skips branch preparation and naming on resume', async () 
 })
 
 test('migrates interrupted tasks while retaining sessions, output and execution state', () => {
-  const database = join(testHome, 'recovery.db')
+  const configFile = join(testHome, 'recovery', 'config.json')
+  const database = join(testHome, 'recovery', 'workspaces', 'Default', 'anvil.db')
   migrateBefore(database, 1)
   const legacyDb = new Database(database)
   onTestCleanup(() => { if (legacyDb.open) legacyDb.close() })
@@ -127,7 +128,7 @@ test('migrates interrupted tasks while retaining sessions, output and execution 
   }
   legacyDb.prepare("UPDATE tasks SET ended_at = 9000000 WHERE id = 'finished'").run()
   legacyDb.close()
-  const store = new Store(database, { migrationsFolder })
+  const store = new Store(configFile, { migrationsFolder })
   try {
     for (const task of store.getTasks()) {
       expect(task.workingTimeMs, 'Legacy lifetimes cannot reconstruct historical review gaps').toBe(0)

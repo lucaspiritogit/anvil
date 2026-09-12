@@ -49,9 +49,4 @@ export function registerWorkspaceHandlers(
     broadcast('workspaces:preferences:changed', { workspaceId, preferences })
     return preferences
   })
-  ipc.handle('workspaces:composer:import', (composer) => {
-    const preferences = store.importLegacyComposerPreferences(composer)
-    broadcast('workspaces:preferences:changed', { workspaceId: 'default', preferences })
-    return preferences
-  })
 }

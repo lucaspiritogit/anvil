@@ -12,7 +12,7 @@ import type { TaskContext } from '../src/server/tasks/context'
 test('gates memory access and discards retrieval when disabled', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-memory-settings-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
-  const store = new Store(join(directory, 'test.db'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const store = new Store(join(directory, 'config.json'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
   onTestCleanup(() => store.close())
   const calls: string[] = []
   let release: (() => void) | undefined

@@ -7,43 +7,82 @@ interface QuitApplication {
   exit(code: number): void
 }
 
-/** Run every cleanup once, then exit even if a service or window refuses to close. */
-export function registerAppShutdown(application: QuitApplication, options: {
+interface ShutdownOptions {
   showClosing(): void
   cleanup: Array<() => void | Promise<void>>
   finalize(): void
   reportError(error: unknown): void
   timeoutMs?: number
-}): () => boolean {
+}
+
+export function registerAppShutdown(application: QuitApplication, options: ShutdownOptions): () => boolean {
   let closing = false
-  let exited = false
-  const report = (error: unknown): void => {
-    try { options.reportError(error) } catch { /* Logging must not prevent exit. */ }
-  }
+
   application.on('before-quit', (event) => {
     event.preventDefault()
-    if (closing) return
-    closing = true
-    const finish = (code: number): void => {
-      if (exited) return
-      exited = true
-      clearTimeout(deadline)
-      try { options.finalize() } catch (error) { report(error); code = 1 }
-      // app.quit() can be cancelled again by window close/beforeunload listeners.
-      application.exit(code)
+    if (closing) {
+      return
     }
-    const deadline = setTimeout(() => {
-      report(new Error('App cleanup timed out'))
-      finish(1)
-    }, options.timeoutMs ?? 8_000)
-    try { options.showClosing() } catch (error) { report(error) }
-    // Wrap each call so one synchronous exception cannot skip the other services.
-    void Promise.allSettled(options.cleanup.map(async (cleanup) => cleanup())).then((results) => {
-      if (exited) return
-      const failures = results.filter((result) => result.status === 'rejected')
-      for (const result of failures) report(result.reason)
-      finish(failures.length ? 1 : 0)
-    })
+
+    closing = true
+    void shutDownApplication(application, options)
   })
+
   return () => closing
+}
+
+async function shutDownApplication(application: QuitApplication, options: ShutdownOptions): Promise<void> {
+  let exited = false
+
+  const finish = (exitCode: number): void => {
+    if (exited) {
+      return
+    }
+
+    exited = true
+    clearTimeout(deadline)
+
+    try {
+      options.finalize()
+    } catch (error) {
+      reportShutdownError(options, error)
+      exitCode = 1
+    }
+
+    application.exit(exitCode)
+  }
+
+  const deadline = setTimeout(() => {
+    reportShutdownError(options, new Error('App cleanup timed out'))
+    finish(1)
+  }, options.timeoutMs ?? 8_000)
+
+  try {
+    options.showClosing()
+  } catch (error) {
+    reportShutdownError(options, error)
+  }
+
+  const results = await Promise.allSettled(options.cleanup.map(async (cleanup) => cleanup()))
+  if (exited) {
+    return
+  }
+
+  let exitCode = 0
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      reportShutdownError(options, result.reason)
+      exitCode = 1
+    }
+  }
+
+  finish(exitCode)
+}
+
+function reportShutdownError(options: ShutdownOptions, error: unknown): void {
+  try {
+    options.reportError(error)
+  } catch {
+    // Logging must not prevent exit.
+  }
 }

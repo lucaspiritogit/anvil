@@ -45,10 +45,10 @@ test('model selection refreshes available efforts and remembers a valid choice p
 
 test('stale saved effort is replaced and persisted when metadata loads', async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('anvil-composer-preferences-v2', JSON.stringify({ state: {
+    localStorage.setItem('fixture:preferences', JSON.stringify({ default: { composer: {
       agentId: 'opencode', modelsByAgent: { opencode: 'openrouter/deepseek/deepseek-v4' },
       reasoningByAgentModel: { '["opencode","openrouter/deepseek/deepseek-v4"]': 'medium' }
-    }, version: 0 }))
+    }, lastProjectId: null } }))
   })
   await page.goto(fixture)
   await expect(page.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('high')
@@ -58,9 +58,9 @@ test('stale saved effort is replaced and persisted when metadata loads', async (
 
 test('late metadata refreshes only the selected agent and blocks stale effort submission while loading', async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('anvil-composer-preferences-v2', JSON.stringify({ state: {
+    localStorage.setItem('fixture:preferences', JSON.stringify({ default: { composer: {
       agentId: 'opencode', modelsByAgent: { opencode: 'openrouter/deepseek/deepseek-v4' }, reasoningByAgentModel: {}
-    }, version: 0 }))
+    }, lastProjectId: null } }))
   })
   await page.goto(fixture)
   await page.evaluate(() => {
@@ -148,10 +148,10 @@ test('the same model ID keeps separate agent choices and forwards the Codex opti
 })
 
 test('failed discovery disables reasoning and omits a saved choice', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('anvil-composer-preferences-v2', JSON.stringify({ state: {
+  await page.addInitScript(() => localStorage.setItem('fixture:preferences', JSON.stringify({ default: { composer: {
     agentId: '', modelsByAgent: { codex: 'gpt-5' },
     reasoningByAgentModel: { '["codex","gpt-5"]': 'native-max' }
-  }, version: 0 })))
+  }, lastProjectId: null } })))
   await page.goto(fixture)
   await page.evaluate(() => {
     window.anvil.agents.models = async () => { throw new Error('Discovery failed') }
@@ -170,10 +170,10 @@ test('failed discovery disables reasoning and omits a saved choice', async ({ pa
 
 for (const agentId of ['codex', 'opencode']) {
   test(`${agentId} submits the discovered effort immediately after delayed discovery`, async ({ page }) => {
-    await page.addInitScript((agentId) => localStorage.setItem('anvil-composer-preferences-v2', JSON.stringify({ state: {
+    await page.addInitScript((agentId) => localStorage.setItem('fixture:preferences', JSON.stringify({ default: { composer: {
       agentId: '', modelsByAgent: { [agentId]: 'shared-model' },
       reasoningByAgentModel: { [JSON.stringify([agentId, 'shared-model'])]: 'removed' }
-    }, version: 0 })), agentId)
+    }, lastProjectId: null } })), agentId)
     await page.goto(fixture)
     await page.evaluate((agentId) => {
       window.anvil.agents.models = async (requestedAgent) => {

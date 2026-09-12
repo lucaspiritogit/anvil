@@ -1,8 +1,7 @@
 import { IssueTracker } from './valence/tracker'
 import { WorkspaceStorage, type WorkspaceConnection } from './workspace-storage'
-import { moveWorkspaceDirectory } from './workspace-directories'
+import { moveWorkspaceDirectory, relocateTaskPaths } from './workspace-directories'
 import { normalizeWorkspaceName, readRootConfig, writeRootConfig, type RootConfig } from './root-config'
-import { archiveLegacyRoot, migrateLegacyRoot, relocateTaskPaths } from './legacy-root-storage'
 import { TaskImageStorage } from './task-image-storage'
 import type { PullRequestMerged } from '../shared/github-pull-request-state'
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
@@ -77,7 +76,7 @@ function decodeKeybindings(value: string): Settings['keybindings'] {
   }
 }
 
-const { projects, taskComments, taskEvents, tasks, workspaceSettings: settings, workspacePreferences, appState } = schema
+const { projects, taskComments, taskEvents, tasks, workspaceSettings: settings, workspacePreferences } = schema
 
 type ProjectRow = typeof projects.$inferSelect
 type TaskRow = typeof tasks.$inferSelect
@@ -261,22 +260,17 @@ export class Store {
 
   readonly taskImages: TaskImageStorage
 
-  constructor(databaseFile: string, options: StoreOptions) {
-    this.temporaryDirectory = databaseFile === ':memory:'
-    this.dataDirectory = this.temporaryDirectory ? mkdtempSync(join(tmpdir(), 'anvil-store-')) : dirname(databaseFile)
+  constructor(configFile: string, options: StoreOptions) {
+    this.temporaryDirectory = configFile === ':memory:'
+    this.dataDirectory = this.temporaryDirectory ? mkdtempSync(join(tmpdir(), 'anvil-store-')) : dirname(configFile)
     this.taskImages = new TaskImageStorage((taskId) => {
       const task = this.getTask(taskId)
       const workspaceId = task?.workspaceId ?? this.getActiveWorkspace().id
       return join(this.getWorkspaceDirectory(workspaceId), 'anvil.db.images')
     })
-    this.configFile = databaseFile.endsWith('.json') ? databaseFile : join(this.dataDirectory, 'config.json')
-    // Accept old Store callers while the on-disk root registry migrates to JSON.
-    const legacyDatabase = databaseFile.endsWith('.json') || this.temporaryDirectory
-      ? join(this.dataDirectory, 'anvil.db') : databaseFile
+    this.configFile = this.temporaryDirectory ? join(this.dataDirectory, 'config.json') : configFile
     if (existsSync(this.configFile)) {
       this.config = readRootConfig(this.configFile)
-    } else if (existsSync(legacyDatabase)) {
-      this.config = migrateLegacyRoot(legacyDatabase, options.migrationsFolder)
     } else {
       this.config = {
         version: 1,
@@ -284,12 +278,14 @@ export class Store {
         activeWorkspaceId: DEFAULT_WORKSPACE_ID
       }
     }
-    this.storage = new WorkspaceStorage(this.dataDirectory, options.migrationsFolder,
-      (id) => this.getWorkspaceDirectory(id), (id) => this.requireWorkspace(id))
+    this.storage = new WorkspaceStorage(
+      options.migrationsFolder,
+      (id) => this.getWorkspaceDirectory(id),
+      (id) => this.requireWorkspace(id)
+    )
     try {
       this.workspaceConnection(this.getActiveWorkspace().id)
       writeRootConfig(this.configFile, this.config)
-      archiveLegacyRoot(legacyDatabase)
     } catch (error) {
       this.storage.close()
       throw error
@@ -407,28 +403,7 @@ export class Store {
         ...(next.composer === undefined ? {} : { composer: structuredClone(next.composer) }),
         ...(next.lastProjectId === undefined ? {} : { lastProjectId: next.lastProjectId })
       }).where(eq(workspacePreferences.workspaceId, workspaceId)).run()
-      if (next.composer !== undefined && workspaceId === DEFAULT_WORKSPACE_ID) {
-        db.insert(appState).values({ key: 'legacyComposerImported', value: 'true' }).onConflictDoNothing().run()
-      }
       return this.getWorkspacePreferences(workspaceId)
-    })
-  }
-
-  /** Import and marker commit together; explicit SQLite choices always win. */
-  importLegacyComposerPreferences(composer: ComposerPreferences): WorkspacePreferences {
-    this.validateComposerPreferences(composer)
-    const db = this.workspaceConnection(DEFAULT_WORKSPACE_ID).db
-    return db.transaction(() => {
-      const key = 'legacyComposerImported'
-      const marker = db.select().from(appState).where(eq(appState.key, key)).get()
-      if (!marker) {
-        const current = this.getWorkspacePreferences(DEFAULT_WORKSPACE_ID).composer
-        if (!current.agentId && !Object.keys(current.modelsByAgent).length && !Object.keys(current.reasoningByAgentModel).length) {
-          this.setWorkspacePreferences({ composer }, DEFAULT_WORKSPACE_ID)
-        }
-        db.insert(appState).values({ key, value: 'true' }).onConflictDoNothing().run()
-      }
-      return this.getWorkspacePreferences(DEFAULT_WORKSPACE_ID)
     })
   }
 

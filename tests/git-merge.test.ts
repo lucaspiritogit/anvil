@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitDeliveryManager } from '../src/server/git-delivery'
+import { GitDeliveryManager } from '../src/server/git'
 
 test('merges into the current branch while guarding stale previews, local changes and conflicts', async () => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'anvil-merge-')))

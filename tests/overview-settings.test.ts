@@ -23,7 +23,7 @@ const call = (channel: string, value?: unknown): any => handlers.get(channel)!(r
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'anvil-overview-settings-'))
   onTestCleanup(() => rmSync(root, { recursive: true, force: true }))
-  database = join(root, 'settings.db')
+  database = join(root, 'config.json')
   store = new Store(database, options)
   onTestCleanup(() => store.close())
   wallpapers = new WallpaperLibrary(root)

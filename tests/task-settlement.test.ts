@@ -9,7 +9,7 @@ import { handlers, testHome } from './issue-tracker-doubles'
 
 test('settles eligible tasks at the review TTL and persists manual settlement', async () => {
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
-  const database = join(testHome, '.anvil-composer/anvil.db')
+  const database = join(testHome, '.anvil-composer/config.json')
   const store = new Store(database, options)
   registerTestIpc()
   store.addProject({

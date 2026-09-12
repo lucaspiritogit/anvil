@@ -1,4 +1,4 @@
-import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, ComposerPreferences, WorkspacePreferences, TaskComment, TaskMergePreview, ConnectionsConfigure } from './types'
+import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergePreview, ConnectionsConfigure } from './types'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
 export interface IpcRequests {
@@ -18,7 +18,6 @@ export interface IpcRequests {
   'workspaces:select': string
   'workspaces:preferences:get': string
   'workspaces:preferences:set': { workspaceId: string; patch: Partial<WorkspacePreferences> }
-  'workspaces:composer:import': ComposerPreferences
   'accounts:status': AgentAccountTarget
   'accounts:connect': AgentAccountConnect
   'accounts:disconnect': AgentAccountTarget

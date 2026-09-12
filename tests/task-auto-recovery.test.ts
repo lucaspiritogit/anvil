@@ -9,7 +9,7 @@ import { Store } from '../src/server/store'
 import { registerTaskExecution } from '../src/server/tasks/task-execution'
 import { registerTaskEvents } from '../src/server/tasks/events'
 import type { ExitInfo, AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
-import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git-delivery'
+import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git'
 import { AgentProcessManager, GitDeliveryManager, testHome } from './issue-tracker-doubles'
 import { onTestCleanup } from './test-cleanup'
 
@@ -18,7 +18,7 @@ async function tick(): Promise<void> {
 }
 
 async function setup() {
-  const store = new Store(join(testHome, randomUUID(), 'anvil.db'), {
+  const store = new Store(join(testHome, randomUUID(), 'config.json'), {
     migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
   })
   onTestCleanup(() => store.close())

@@ -10,18 +10,18 @@ import { migrateBefore, migrationsFolder } from './migration-fixture'
 function fixture(existing = false): { db: Database.Database; path: string } {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-valence-schema-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
-  const path = join(directory, 'anvil.db')
+  const path = join(directory, 'config.json')
+  const workspacePath = join(directory, 'workspaces', 'Default', 'anvil.db')
   let originalTasks: Record<string, unknown>[] | undefined
   if (existing) {
-    migrateBefore(path, 5)
-    const old = new Database(path)
+    migrateBefore(workspacePath, 5)
+    const old = new Database(workspacePath)
     try {
       seedTasks(old)
       originalTasks = old.prepare<[], Record<string, unknown>>('SELECT * FROM tasks ORDER BY id').all()
     } finally { old.close() }
   }
   const store = new Store(path, { migrationsFolder })
-  const workspacePath = store.getWorkspaceDatabasePath('default')
   store.close()
   const db = new Database(workspacePath)
   db.pragma('foreign_keys = ON')
@@ -111,9 +111,10 @@ for (const existing of [false, true]) {
 test('adds a nullable issue start timestamp without inventing history or changing existing records', () => {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-issue-start-migration-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
-  const path = join(directory, 'anvil.db')
-  migrateBefore(path, 10)
-  const db = new Database(path)
+  const path = join(directory, 'config.json')
+  const workspacePath = join(directory, 'workspaces', 'Default', 'anvil.db')
+  migrateBefore(workspacePath, 10)
+  const db = new Database(workspacePath)
   onTestCleanup(() => { if (db.open) db.close() })
   seedTasks(db)
   parent(db, 'parent', 'task-a')

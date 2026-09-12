@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '../../../../shared/types'
-import { hydrateComposer, importLegacyComposer } from './composer-preferences'
+import { hydrateComposer } from './composer-preferences'
 import { enqueueWorkspaceRequest } from './workspace-requests'
 import type { SettingsSectionId } from '../settings-sections'
 import type {
@@ -297,7 +297,6 @@ export const useStore = create<AnvilState>((set, get) => ({
     set(evictTaskEvents())
     try {
       await enqueueWorkspaceRequest(async () => {
-        await importLegacyComposer()
         const [snapshot, agents] = await Promise.all([window.anvil.workspaces.snapshot(), window.anvil.agents.list()])
         if (generation !== workspaceGeneration) return
         set({ agents })

@@ -8,7 +8,6 @@ import type {
   Workspace,
   WorkspaceSnapshot,
   WorkspacePreferences,
-  ComposerPreferences,
   WorkspaceSettingsChange,
   AgentDefinition,
   GitHubCredentialStatus,
@@ -100,7 +99,6 @@ export function createAnvilApi(url: string, host: ClientHost) {
       select: (workspaceId: string): Promise<WorkspaceSnapshot> => invoke('workspaces:select', workspaceId),
       getPreferences: (workspaceId: string): Promise<WorkspacePreferences> => invoke('workspaces:preferences:get', workspaceId),
       setPreferences: (workspaceId: string, patch: Partial<WorkspacePreferences>): Promise<WorkspacePreferences> => invoke('workspaces:preferences:set', { workspaceId, patch }),
-      importComposer: (composer: ComposerPreferences): Promise<WorkspacePreferences> => invoke('workspaces:composer:import', composer),
       onChanged: (handler: (workspaces: Workspace[]) => void): (() => void) => subscribe('workspaces:changed', handler),
       onSelected: (handler: (snapshot: WorkspaceSnapshot) => void): (() => void) => subscribe('workspaces:selected', handler),
       onPreferencesChanged: (handler: (change: { workspaceId: string; preferences: WorkspacePreferences }) => void): (() => void) => subscribe('workspaces:preferences:changed', handler)

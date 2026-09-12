@@ -11,7 +11,7 @@ import { handlers, testHome, AgentProcessManager, GitDeliveryManager } from './i
 
 test('schedules dependencies and priorities sequentially and retains final task review', async () => {
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
-  const database = join(testHome, '.anvil-composer/anvil.db')
+  const database = join(testHome, '.anvil-composer/config.json')
   const store = new Store(database, options)
   const workspaceDatabase = store.getWorkspaceDatabasePath('default')
   store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })

@@ -13,7 +13,7 @@ import { onTestCleanup } from './test-cleanup'
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-valence-core-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
-  const registryPath = join(directory, 'anvil.db')
+  const registryPath = join(directory, 'config.json')
   const store = new Store(registryPath, { migrationsFolder: resolve('src/server/db/migrations') })
   onTestCleanup(() => store.close())
   const path = store.getWorkspaceDatabasePath('default')

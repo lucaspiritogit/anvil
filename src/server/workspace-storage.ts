@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
@@ -16,62 +16,10 @@ export class WorkspaceStorage {
   private readonly connections = new Map<string, WorkspaceConnection>()
 
   constructor(
-    private readonly directory: string,
     private readonly migrationsFolder: string,
     private readonly workspaceDirectory: (id: string) => string,
     private readonly getWorkspace: (id: string) => Workspace
   ) {}
-
-  importLegacy(registry: Database.Database): void {
-    const migrated = registry.prepare("SELECT value FROM app_state WHERE key = 'workspaceStorageVersion'").get()
-    if (migrated) return
-    const workspaces = registry.prepare<[], { id: string }>('SELECT id FROM workspaces').all()
-    for (const workspace of workspaces) this.importWorkspace(registry, workspace.id)
-  }
-
-  private importWorkspace(registry: Database.Database, id: string): void {
-    const directory = this.workspaceDirectory(id)
-    mkdirSync(directory, { recursive: true, mode: 0o700 })
-    const target = join(directory, 'anvil.db')
-    // Publication is last. A completed workspace is never overwritten on retry.
-    if (existsSync(target)) return
-    const temporary = join(directory, 'anvil.migrating.db')
-    rmSync(temporary, { force: true })
-    registry.prepare('VACUUM INTO ?').run(temporary)
-    const database = new Database(temporary)
-    try {
-      database.pragma('foreign_keys = ON')
-      database.transaction(() => {
-        database.prepare('DELETE FROM tasks WHERE workspace_id <> ?').run(id)
-        database.prepare('DELETE FROM workspace_settings WHERE workspace_id <> ?').run(id)
-        database.prepare('DELETE FROM workspace_preferences WHERE workspace_id <> ?').run(id)
-        database.prepare('DELETE FROM workspaces WHERE id <> ?').run(id)
-        if (id !== 'default') {
-          database.prepare(`DELETE FROM projects WHERE id NOT IN (SELECT project_id FROM tasks)
-            AND id NOT IN (SELECT last_project_id FROM workspace_preferences WHERE last_project_id IS NOT NULL)`).run()
-        }
-        database.prepare('DELETE FROM settings').run()
-        database.prepare("DELETE FROM app_state WHERE key <> 'legacyComposerImported'").run()
-      })()
-      if ((database.pragma('foreign_key_check') as unknown[]).length) throw new Error('Workspace migration failed its foreign key check')
-      const copy = (source: string, destination: string): void => {
-        if (existsSync(source)) cpSync(source, destination, { recursive: true, force: false, errorOnExist: false })
-      }
-      copy(join(this.directory, 'wallpaper'), join(directory, 'wallpaper'))
-      if (id === 'default') {
-        copy(join(this.directory, 'github-token.enc'), join(directory, 'github-token.enc'))
-        copy(join(this.directory, 'memory'), join(directory, 'memory'))
-      }
-      const tasks = database.prepare<[], { id: string }>('SELECT id FROM tasks').all()
-      for (const task of tasks) {
-        if (!/^[A-Za-z0-9_-]+$/.test(task.id)) throw new Error('Invalid migrated task image owner')
-        copy(join(this.directory, 'anvil.db.images', task.id), join(directory, 'anvil.db.images', task.id))
-      }
-    } finally {
-      database.close()
-    }
-    renameSync(temporary, target)
-  }
 
   open(id: string): WorkspaceConnection {
     const cached = this.connections.get(id)

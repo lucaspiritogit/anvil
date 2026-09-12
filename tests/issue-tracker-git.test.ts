@@ -9,7 +9,7 @@ import { writeFileSync, existsSync, unlinkSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { Store } from '../src/server/store'
-import { GitDeliveryManager } from '../src/server/git-delivery'
+import { GitDeliveryManager } from '../src/server/git'
 import { registerTestIpc } from './test-ipc'
 import { taskState } from './task-state'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
@@ -41,7 +41,7 @@ async function turnFixture(issueCount = 2) {
   writeFileSync(join(repo, 'tracked.txt'), 'base\n')
   runGit(repo, 'add', '.')
   runGit(repo, 'commit', '-m', 'Base')
-  const store = new Store(join(root, 'anvil.db'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const store = new Store(join(root, 'config.json'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Project', path: repo, createdAt: 0,
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
@@ -123,7 +123,7 @@ test.each(['unchanged', 'empty commit', 'net-zero edits'] as const)('%s complete
   expect(f.tracker.get(f.next.id)).toMatchObject({ status: 'working', baseCommit: completed.headCommit })
   expect(f.agents.starts).toHaveLength(1)
   expect(f.snapshots.some((snapshot) => snapshot.ready)).toBe(false)
-  const reopened = new Store(join(f.repo, '..', 'anvil.db'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const reopened = new Store(join(f.repo, '..', 'config.json'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
   onTestCleanup(() => reopened.close())
   expect(new TaskIssues(reopened).list(f.task.id)[0]).toEqual(completed)
   expect(reopened.getTaskExecution(f.task.id)?.currentIssueId).toBe(f.next.id)
@@ -171,7 +171,7 @@ test.each([
   }
   await f.execution.finishTaskTurn({ taskId: task.id, code: 0, cancelled: false })
   expect(f.finish).toHaveBeenCalledTimes(1)
-  const reopened = new Store(join(f.repo, '..', 'anvil.db'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const reopened = new Store(join(f.repo, '..', 'config.json'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
   onTestCleanup(() => reopened.close())
   expect(reopened.getTask(task.id)).toEqual(task)
   const recovered = new TaskIssues(reopened)

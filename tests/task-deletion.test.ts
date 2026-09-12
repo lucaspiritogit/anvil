@@ -9,7 +9,7 @@ import type { Task, TaskComment } from '../src/shared/types'
 
 test('deletes finished, active and queued tasks without resurrecting persisted state', async () => {
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
-  const database = join(testHome, '.anvil-composer/anvil.db')
+  const database = join(testHome, '.anvil-composer/config.json')
   const store = new Store(database, options)
   store.addProject({
     id: 'project', name: 'Test', path: testHome, createdAt: Date.now(),

@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitDeliveryManager, type PreparedCheckout } from '../src/server/git-delivery'
+import { GitDeliveryManager, type PreparedCheckout } from '../src/server/git'
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 
@@ -345,19 +345,6 @@ test('rejects a successful commit whose hook leaves additional uncommitted files
   await expect(finish('dirty-hook', task)).rejects.toThrow(/still has uncommitted changes/)
   expect(git(task.cwd, 'rev-parse', 'HEAD')).not.toBe(task.baseCommit)
   expect(await readFile(join(task.cwd, 'generated.txt'), 'utf8')).toBe('generated\n')
-})
-
-test('legacy tasks migrate from a clean project checkout and preserve dirty legacy files', async () => {
-  const { repo, manager } = await fixture()
-  git(repo, 'switch', '-c', 'legacy-task')
-  await writeFile(join(repo, 'unfinished.txt'), 'legacy work\n')
-  await expect(manager.checkoutBranch(repo, 'legacy', 'legacy-task', 'main')).rejects.toThrow(/older task/)
-  expect(await readFile(join(repo, 'unfinished.txt'), 'utf8')).toBe('legacy work\n')
-  git(repo, 'add', '.')
-  git(repo, 'commit', '-m', 'Saved work')
-  const task = await manager.checkoutBranch(repo, 'legacy', 'legacy-task', 'main')
-  expect(git(repo, 'branch', '--show-current')).toBe('main')
-  expect(await readFile(join(task.cwd, 'unfinished.txt'), 'utf8')).toBe('legacy work\n')
 })
 
 test('ignored task files survive finalization, restart and manual rebase', async () => {

@@ -1,5 +1,5 @@
 import type { AgentProcessManager } from '../agents/process-manager'
-import type { GitDeliveryManager } from '../git-delivery'
+import type { GitDeliveryManager } from '../git'
 import type { Store } from '../store'
 import type { TaskEventCategory, TaskEventKind } from '../../shared/types'
 
