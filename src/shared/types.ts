@@ -457,7 +457,7 @@ export interface AgentAccountTarget {
 }
 
 export interface AgentAccountConnect extends AgentAccountTarget {
-  method: 'apiKey' | 'chatgpt' | 'native'
+  method: 'apiKey' | 'chatgpt' | 'deviceAuth' | 'native'
   apiKey?: string
 }
 

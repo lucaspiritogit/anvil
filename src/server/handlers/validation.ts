@@ -128,8 +128,10 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'accounts:disconnect': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
   'accounts:cancel': object({ workspaceId, agentId: oneOf('codex', 'opencode'), sessionId: id }),
   'accounts:connect': (value, field) => {
-    const input = object<IpcRequests['accounts:connect']>({ workspaceId, agentId: oneOf('codex', 'opencode'), method: oneOf('apiKey', 'chatgpt', 'native'), apiKey: optional(text(8192, true, /^[^\s]+$/)) })(value, field)
-    if (input.agentId === 'codex' ? input.method === 'native' : input.method !== 'native') invalid(field, 'has an unsupported agent login method')
+    const input = object<IpcRequests['accounts:connect']>({ workspaceId, agentId: oneOf('codex', 'opencode'), method: oneOf('apiKey', 'chatgpt', 'deviceAuth', 'native'), apiKey: optional(text(8192, true, /^[^\s]+$/)) })(value, field)
+    if (input.agentId === 'codex'
+      ? !['apiKey', 'chatgpt', 'deviceAuth'].includes(input.method)
+      : input.method !== 'native') invalid(field, 'has an unsupported agent login method')
     if ((input.method === 'apiKey') !== (input.apiKey !== undefined)) invalid(field, 'requires a key only for API key login')
     return input
   },
