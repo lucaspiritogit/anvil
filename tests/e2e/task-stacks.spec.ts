@@ -10,28 +10,27 @@ test('composer submits the selected stack parent', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.composerTest.starts[0]?.parentTaskId)).toBe('running')
 })
 
-test('suggestion accepts stacking and links the parent in the view and sidebar', async ({ page }, testInfo) => {
+test('legacy suggestions are hidden while an automatic stack links the parent', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
     window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, stackSuggestion: { parentTaskId: 'running', paths: ['src/server/store.ts'] } } }))
   })
-  await expect(page.getByText('This task expects to modify files')).toBeVisible()
-  await page.getByRole('button', { name: 'Stack', exact: true }).click()
+  await expect(page.getByText('This task expects to modify files')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Stack', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Dismiss', exact: true })).toHaveCount(0)
+  await page.evaluate(async () => {
+    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, parentTaskId: 'running', stackSuggestion: undefined } }))
+  })
   await expect(page.getByRole('button', { name: 'Stacked on Build streaming support', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('stacked-task.png'), fullPage: true })
   await page.getByRole('button', { name: 'Stacked on Build streaming support', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Build streaming support', exact: true })).toBeVisible()
 })
 
-test('dismisses overlap suggestions and displays a restack conflict', async ({ page }, testInfo) => {
+test('displays a restack conflict without overlap approval controls', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
-  await page.evaluate(async () => {
-    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
-    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, stackSuggestion: { parentTaskId: 'running', paths: ['source.ts'] } } }))
-  })
-  await page.getByRole('button', { name: 'Dismiss', exact: true }).click()
-  await expect(page.getByText('This task expects to modify files')).toHaveCount(0)
   await page.evaluate(async () => {
     const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
     window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, restackState: 'conflict', deliveryError: 'Resolve the conflict in source.ts.' } }))

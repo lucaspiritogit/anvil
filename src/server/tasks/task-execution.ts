@@ -285,7 +285,7 @@ export function registerTaskExecution(
       clearRetry(info.taskId)
       if (state.phase === 'planning') {
         issues.finishPlanning(info.taskId)
-        await stacks.suggest(info.taskId)
+        await stacks.autoStack(info.taskId)
       } else {
         const task = store.getTask(info.taskId)!
         let delivery: Awaited<ReturnType<typeof gitDelivery.finalizeBranch>> | undefined

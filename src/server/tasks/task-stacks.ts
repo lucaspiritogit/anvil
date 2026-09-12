@@ -180,20 +180,31 @@ export class TaskStacks {
     if (!store.getTask(taskId)?.restackState) store.activityChanged()
   }
 
-  async suggest(taskId: string): Promise<void> {
+  async autoStack(taskId: string): Promise<void> {
     const { store, gitDelivery } = this.context
     const task = store.getTask(taskId)
     if (!task || task.parentTaskId || task.restackState || !task.expectedFiles?.length) return
-    let best: Task['stackSuggestion']
+    const candidates: Array<{ parentTaskId: string; paths: string[] }> = []
     for (const candidate of store.getTasks(task.workspaceId)) {
       try { requireStackParent(store, task, candidate.id) } catch { continue }
       let files = candidate.expectedFiles ?? []
       if (candidate.baseCommit && candidate.branchName) {
-        try { files = [...files, ...await gitDelivery.changedFiles(this.project(task), candidate.baseCommit, candidate.branchName)] } catch { /* Declared paths still provide a suggestion. */ }
+        try { files = [...files, ...await gitDelivery.changedFiles(this.project(task), candidate.baseCommit, candidate.branchName)] } catch { /* Declared paths can still establish overlap. */ }
       }
       const paths = task.expectedFiles.filter((path) => files.includes(path))
-      if (paths.length && paths.length > (best?.paths.length ?? 0)) best = { parentTaskId: candidate.id, paths }
+      if (paths.length) candidates.push({ parentTaskId: candidate.id, paths })
     }
-    if (store.getTask(taskId) && best) this.update(taskId, { stackSuggestion: best })
+    candidates.sort((left, right) => right.paths.length - left.paths.length)
+    for (const candidate of candidates) {
+      const current = store.getTask(taskId)
+      if (!current || current.parentTaskId || current.restackState) return
+      try {
+        await this.stack(taskId, candidate.parentTaskId)
+        return
+      } catch {
+        // A task or candidate can change while changed files are being inspected.
+        // Revalidate weaker candidates instead of failing the completed plan.
+      }
+    }
   }
 }

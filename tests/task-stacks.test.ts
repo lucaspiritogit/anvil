@@ -208,24 +208,55 @@ test('validates cycles, project ownership, cancelled parents and pending restack
   expect(() => requireStackParent(f.store, child, parent.id)).toThrow('active branch')
 })
 
-test('planning unions declared files, suggests actual overlap, and accepts stacking while running', async () => {
+test('planning unions declared files and automatically queues the strongest overlapping parent', async () => {
   const f = await fixture()
   await f.add('parent')
   f.commit('parent', 'source.txt', 'parent\n')
+  const weaker = await f.add('weaker')
+  f.store.updateTask(weaker.id, { expectedFiles: ['next.txt'] })
   const child = await f.add('child')
   const issues = new TaskIssues(f.store)
   issues.initialize(child.id, f.repo)
   callIssueTool(f.store, child.id, child.workspaceId, 'anvil_create_issue', { title: 'Change', description: 'Change source', checklist: ['Check'], validation: 'Test', expectedFiles: ['source.txt', 'next.txt'] })
   issues.finishPlanning(child.id)
-  await f.stacks.suggest(child.id)
-  expect(f.store.getTask(child.id)?.stackSuggestion).toEqual({ parentTaskId: 'parent', paths: ['source.txt'] })
-  expect(f.store.getTask(child.id)?.expectedFiles).toEqual(['source.txt', 'next.txt'])
+  f.store.updateTask('parent', { expectedFiles: ['next.txt'] })
   f.active.add(child.id)
-  await f.stacks.stack(child.id, 'parent')
+  await f.stacks.autoStack(child.id)
+  expect(f.store.getTask(child.id)?.restackTarget?.parentTaskId).toBe('parent')
   expect(f.store.getTask(child.id)?.restackState).toBe('pending')
+  expect(f.store.getTask(child.id)?.stackSuggestion).toBeUndefined()
+  expect(f.store.getTask(child.id)?.expectedFiles).toEqual(['source.txt', 'next.txt'])
   f.active.delete(child.id)
   await f.stacks.apply(child.id)
   expect(f.store.getTask(child.id)?.parentTaskId).toBe('parent')
+})
+
+test('automatic stacking leaves tasks without overlap unstacked', async () => {
+  const f = await fixture()
+  await f.add('parent')
+  const child = await f.add('child')
+  f.store.updateTask(child.id, { expectedFiles: ['unrelated.txt'] })
+  await f.stacks.autoStack(child.id)
+  expect(f.store.getTask(child.id)).toMatchObject({ parentTaskId: undefined, restackState: undefined, restackTarget: undefined })
+})
+
+test('automatic stacking skips a strongest candidate that becomes ineligible', async () => {
+  const f = await fixture()
+  const strongest = await f.add('strongest')
+  f.store.updateTask(strongest.id, { expectedFiles: ['source.txt', 'next.txt'] })
+  const fallback = await f.add('fallback')
+  f.store.updateTask(fallback.id, { expectedFiles: ['source.txt'] })
+  const child = await f.add('child')
+  f.store.updateTask(child.id, { expectedFiles: ['source.txt', 'next.txt'] })
+  let inspected = 0
+  vi.spyOn(f.manager, 'changedFiles').mockImplementation(async () => {
+    inspected++
+    if (inspected === 2) f.store.updateTask(strongest.id, { restackState: 'pending' })
+    return []
+  })
+  f.active.add(child.id)
+  await f.stacks.autoStack(child.id)
+  expect(f.store.getTask(child.id)?.restackTarget?.parentTaskId).toBe(fallback.id)
 })
 
 test('restacks nested descendants and preserves parent links across restart', async () => {
