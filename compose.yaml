@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: anvil
       POSTGRES_PASSWORD: anvil
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/00-vector.sql:ro
@@ -19,7 +19,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -65,7 +65,7 @@ services:
       ANVIL_OLLAMA_BASE_URL: http://ollama:11434/v1
       ANVIL_MEMORY_EMBEDDING_MODEL: mxbai-embed-large
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     volumes:
       - sqlite_data:/home/node/.anvil-composer
       - ./:/workspace
