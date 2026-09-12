@@ -193,7 +193,7 @@ declare global {
       finishLoading: () => void
     }
     connectionsTest: {
-      calls: Array<{ allowOtherDevices: boolean; passwordProvided: boolean }>
+      calls: Array<{ allowOtherDevices: boolean; tailscaleHttps?: boolean; passwordProvided: boolean }>
       failNextRequest: boolean
       failNextRebind: boolean
     }
@@ -487,15 +487,22 @@ window.anvil = {
   },
   connections: {
     status: async () => structuredClone(connectionStatus),
-    configure: async ({ allowOtherDevices, password }: ConnectionsConfigure) => {
-      window.connectionsTest.calls.push({ allowOtherDevices, passwordProvided: password !== undefined })
+    configure: async ({ allowOtherDevices, tailscaleHttps, password }: ConnectionsConfigure) => {
+      window.connectionsTest.calls.push({
+        allowOtherDevices,
+        ...(tailscaleHttps !== undefined ? { tailscaleHttps } : {}),
+        passwordProvided: password !== undefined
+      })
       if (window.connectionsTest.failNextRequest) {
         window.connectionsTest.failNextRequest = false
         throw new Error('Connection request failed for testing')
       }
       if (password !== undefined) connectionStatus.passwordConfigured = true
-      if (allowOtherDevices && !connectionStatus.passwordConfigured) throw new Error('Set a valid server password before allowing other devices.')
-      if (allowOtherDevices === connectionStatus.allowOtherDevices) {
+      const nextTailscale = tailscaleHttps ?? connectionStatus.tailscaleHttps
+      if ((allowOtherDevices || nextTailscale) && !connectionStatus.passwordConfigured) {
+        throw new Error('Set a valid server password before enabling LAN or Tailscale access.')
+      }
+      if (allowOtherDevices === connectionStatus.allowOtherDevices && nextTailscale === connectionStatus.tailscaleHttps) {
         connectionStatus = { ...connectionStatus, pending: false, error: undefined }
         return structuredClone(connectionStatus)
       }
@@ -504,9 +511,9 @@ window.anvil = {
       window.setTimeout(() => {
         if (window.connectionsTest.failNextRebind) {
           window.connectionsTest.failNextRebind = false
-          connectionStatus = { ...connectionStatus, allowOtherDevices: false, pending: false, error: 'Port unavailable for testing' }
+          connectionStatus = { ...connectionStatus, allowOtherDevices: false, tailscaleHttps: nextTailscale, pending: false, error: 'Port unavailable for testing' }
         } else {
-          connectionStatus = { ...connectionStatus, allowOtherDevices, pending: false, error: undefined }
+          connectionStatus = { ...connectionStatus, allowOtherDevices, tailscaleHttps: nextTailscale, pending: false, error: undefined }
         }
         window.dispatchEvent(new CustomEvent('fixture:connections-changed', {
           detail: { workspaceId: selectedWorkspace, status: structuredClone(connectionStatus) }

@@ -10,6 +10,7 @@ import { WallpaperLibrary } from '../src/server/wallpapers'
 import { registerConnectionsHandlers, registerSettingsHandlers } from '../src/server/handlers/settings'
 import { createHandlerRegistry } from '../src/server/handler-registry'
 import { ServerAuth } from '../src/server/server-auth'
+import type { TailscaleConnection } from '../src/server/tailscale'
 import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { handlers } from './issue-tracker-doubles'
 
@@ -148,6 +149,48 @@ test('configures authenticated connections after the response and rolls back fai
   expect(await invoke('connections:status', 'default')).toMatchObject({ allowOtherDevices: false, passwordConfigured: true, pending: false, error: 'Port unavailable' })
   expect(store.getSettings().allowOtherDevices).toBe(false)
   expect(JSON.stringify(statuses)).not.toContain('LAN secret')
+})
+
+test('configures LAN and Tailscale independently', async () => {
+  const ipc = createHandlerRegistry()
+  const deferred: Array<() => void | Promise<void>> = []
+  const lanModes: boolean[] = []
+  const tailscaleModes: boolean[] = []
+  let tailscaleEnabled = false
+  const tailscale: TailscaleConnection = {
+    status: () => ({ tailscaleHttps: tailscaleEnabled }),
+    async configure(enabled) {
+      tailscaleModes.push(enabled)
+      tailscaleEnabled = enabled
+    },
+    onStopped: () => () => {},
+    async close() {}
+  }
+  registerConnectionsHandlers(ipc, store, new ServerAuth(root), async (enabled) => {
+    lanModes.push(enabled)
+  }, undefined, tailscale)
+  const invoke = (input: unknown) => ipc.invoke('connections:configure', input, {
+    deferUntilResponse: (action) => deferred.push(action)
+  })
+
+  await invoke({ workspaceId: 'default', allowOtherDevices: false, tailscaleHttps: true, password: 'remote secret' })
+  await deferred.shift()!()
+  expect(lanModes).toEqual([])
+  expect(tailscaleModes).toEqual([true])
+  expect(await ipc.invoke('connections:status', 'default')).toMatchObject({ allowOtherDevices: false, tailscaleHttps: true })
+  expect(store.getSettings()).toMatchObject({ allowOtherDevices: false, tailscaleHttps: true })
+
+  await invoke({ workspaceId: 'default', allowOtherDevices: true, tailscaleHttps: true })
+  await deferred.shift()!()
+  expect(lanModes).toEqual([true])
+  expect(tailscaleModes).toEqual([true])
+
+  await invoke({ workspaceId: 'default', allowOtherDevices: true, tailscaleHttps: false })
+  await deferred.shift()!()
+  expect(lanModes).toEqual([true])
+  expect(tailscaleModes).toEqual([true, false])
+  expect(await ipc.invoke('connections:status', 'default')).toMatchObject({ allowOtherDevices: true, tailscaleHttps: false })
+  expect(store.getSettings()).toMatchObject({ allowOtherDevices: true, tailscaleHttps: false })
 })
 
 test('startup enables LAN only when both persisted intent and valid authentication exist', async () => {

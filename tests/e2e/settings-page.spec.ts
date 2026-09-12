@@ -87,7 +87,7 @@ test('memory starts disabled and saves its model and Ollama URL', async ({ page 
   })
 })
 
-test('Connections gates first enablement on a password and supports later changes', async ({ page }) => {
+test('Connections gates first enablement on a password and keeps LAN and Tailscale independent', async ({ page }) => {
   await page.goto(fixture)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const navigation = page.getByRole('navigation', { name: 'Settings sections' })
@@ -96,13 +96,17 @@ test('Connections gates first enablement on a password and supports later change
   await connectionsButton.click()
 
   const toggle = page.getByRole('checkbox', { name: /Allow other devices/ })
+  const tailscale = page.getByRole('checkbox', { name: /Tailscale HTTPS/ })
   await expect(toggle).not.toBeChecked()
-  await expect(page.getByText('Set a server password before allowing other devices.')).toBeVisible()
+  await expect(tailscale).not.toBeChecked()
+  await expect(tailscale).toBeEnabled()
+  await expect(page.getByText('Set a server password before enabling LAN or Tailscale access.')).toBeVisible()
+  await expect(page.getByText('Trusted LAN only. Credentials and activity are not encrypted.')).toBeVisible()
   await toggle.click()
   const password = page.getByLabel('Server password', { exact: true })
   await expect(password).toHaveAttribute('type', 'password')
   await password.fill('fixture-secret')
-  await page.getByRole('button', { name: 'Set password and allow', exact: true }).click()
+  await page.getByRole('button', { name: 'Set password and enable LAN', exact: true }).click()
   await expect(toggle).toBeChecked()
   await expect(page.getByText('A server password is configured.')).toBeVisible()
   await expect(password).toHaveCount(0)
@@ -112,6 +116,11 @@ test('Connections gates first enablement on a password and supports later change
 
   await toggle.click()
   await expect(toggle).not.toBeChecked()
+  await tailscale.click()
+  await expect(tailscale).toBeChecked()
+  await expect(toggle).not.toBeChecked()
+  await tailscale.click()
+  await expect(tailscale).not.toBeChecked()
   await toggle.click()
   await expect(toggle).toBeChecked()
   await expect(page.getByLabel('Server password', { exact: true })).toHaveCount(0)

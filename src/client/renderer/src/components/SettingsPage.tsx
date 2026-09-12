@@ -24,7 +24,7 @@ function errorMessage(error: unknown, fallback: string): string {
 function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): JSX.Element {
   const [status, setStatus] = useState<ConnectionsStatus | null>(null)
   const [password, setPassword] = useState('')
-  const [settingPassword, setSettingPassword] = useState(false)
+  const [passwordPurpose, setPasswordPurpose] = useState<'lan' | 'tailscale' | 'replace' | null>(null)
   const [requestError, setRequestError] = useState('')
   const statusRevision = useRef(0)
   const requestInFlight = useRef(false)
@@ -33,7 +33,7 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
     let active = true
     setStatus(null)
     setPassword('')
-    setSettingPassword(false)
+    setPasswordPurpose(null)
     setRequestError('')
     if (!workspaceId) return
     statusRevision.current += 1
@@ -108,7 +108,7 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
       })
       // A completion event can arrive before the configure response.
       if (revision === statusRevision.current) setStatus(next)
-      if (nextPassword !== undefined) setSettingPassword(false)
+      if (nextPassword !== undefined) setPasswordPurpose(null)
     } catch (error) {
       if (revision === statusRevision.current) {
         setStatus({ ...previous, pending: false })
@@ -125,12 +125,17 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
       setRequestError('Enter a password before continuing.')
       return
     }
-    void configure(status?.passwordConfigured ? status.allowOtherDevices : true, password)
+    if (!status) return
+    void configure(
+      passwordPurpose === 'lan' ? true : status.allowOtherDevices,
+      password,
+      passwordPurpose === 'tailscale' ? true : status.tailscaleHttps
+    )
   }
 
   const pending = status?.pending ?? false
   const tailscaleOnly = status?.headlessAccess === 'tailscale'
-  const showPasswordForm = status !== null && !tailscaleOnly && (!status.passwordConfigured || settingPassword)
+  const showPasswordForm = status !== null && !tailscaleOnly && (!status.passwordConfigured || passwordPurpose !== null)
   return (
     <div>
       <label className={modal.toggle}>
@@ -140,7 +145,7 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
           disabled={!status || Boolean(status.headlessAccess) || pending}
           onChange={(event) => {
             if (event.target.checked && !status?.passwordConfigured) {
-              setSettingPassword(true)
+              setPasswordPurpose('lan')
               setRequestError('')
             } else {
               void configure(event.target.checked)
@@ -149,7 +154,8 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
         />
         <span>
           <strong className="block">Allow other devices</strong>
-          <small className={field.hint}>Make Anvil available on port 4780 to devices on this local network. Remote requests require the username <code>anvil</code> and your password.</small>
+          <small className={field.hint}>Make Anvil available over HTTP on port 4780 to devices on this local network. Remote requests require the username <code>anvil</code> and your password.</small>
+          <small className="mt-2 block text-xs text-warn">Trusted LAN only. Credentials and activity are not encrypted. Use Tailscale HTTPS on shared or remote networks.</small>
         </span>
       </label>
 
@@ -157,17 +163,22 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
         <input
           type="checkbox"
           checked={status?.tailscaleHttps ?? false}
-          disabled={Boolean(status?.headlessAccess) || !status?.allowOtherDevices || pending}
-          onChange={(event) => { void configure(true, undefined, event.target.checked) }}
+          disabled={!status || Boolean(status.headlessAccess) || pending}
+          onChange={(event) => {
+            if (event.target.checked && !status?.passwordConfigured) {
+              setPasswordPurpose('tailscale')
+              setRequestError('')
+            } else {
+              void configure(status?.allowOtherDevices ?? false, undefined, event.target.checked)
+            }
+          }}
         />
         <span>
           <strong className="block">Tailscale HTTPS</strong>
           <small className={field.hint}>{tailscaleOnly
             ? 'Access is managed by Tailscale. No Anvil username or password is required.'
             : 'Access Anvil from another network using Tailscale. Install and connect Tailscale on this computer and your phone. Your Anvil password is still required.'}</small>
-          {status?.headlessAccess
-            ? <small className="block text-xs text-dim">Connection access is managed by the server startup command.</small>
-            : !status?.allowOtherDevices && <small className="block text-xs text-dim">Enable Allow other devices first.</small>}
+          {status?.headlessAccess && <small className="block text-xs text-dim">Connection access is managed by the server startup command.</small>}
         </span>
       </label>
       {status?.tailscaleUrl && (
@@ -180,11 +191,11 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
 
       {!status && !requestError && <p role="status" className="text-xs text-dim">Loading connection settings…</p>}
       {status && !tailscaleOnly && <div className="mb-4 text-xs text-dim">
-        <p>{status.passwordConfigured ? 'A server password is configured.' : 'Set a server password before allowing other devices.'}</p>
-        {status.passwordConfigured && !settingPassword && (
+        <p>{status.passwordConfigured ? 'A server password is configured.' : 'Set a server password before enabling LAN or Tailscale access.'}</p>
+        {status.passwordConfigured && passwordPurpose === null && (
           <button className={cn(btn.ghost, 'mt-3')} disabled={pending} onClick={() => {
             setPassword('')
-            setSettingPassword(true)
+            setPasswordPurpose('replace')
             setRequestError('')
           }}>Replace password</button>
         )}
@@ -207,11 +218,17 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
           </label>
           <div className="flex items-center gap-3">
             <button className={btn.primary} type="submit" disabled={pending || password.length === 0}>
-              {status.passwordConfigured ? 'Save new password' : 'Set password and allow'}
+              {status.passwordConfigured
+                ? 'Save new password'
+                : passwordPurpose === 'lan'
+                  ? 'Set password and enable LAN'
+                  : passwordPurpose === 'tailscale'
+                    ? 'Set password and enable Tailscale'
+                    : 'Set server password'}
             </button>
             {status.passwordConfigured && <button className={btn.ghost} type="button" disabled={pending} onClick={() => {
               setPassword('')
-              setSettingPassword(false)
+              setPasswordPurpose(null)
               setRequestError('')
             }}>Cancel</button>}
           </div>

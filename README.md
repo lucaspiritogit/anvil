@@ -52,7 +52,7 @@ host machine. Remote devices only need a browser.
 
 For desktop LAN access, set a server password in **Settings > Connections** and
 enable **Allow other devices**. Anvil stores only an Argon2id password hash.
-Open `http://HOST:4780` from another device on the same trusted network and sign
+Open `http://host:4780` from another device on the same trusted network and sign
 in with username `anvil`.
 
 Enable **Tailscale HTTPS** to access the desktop server from another network.
