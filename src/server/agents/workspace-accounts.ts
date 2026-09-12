@@ -25,7 +25,7 @@ export interface AccountDependencies {
   connection?(workspace: WorkspaceExecutionContext, handlers: ConnectionHandlers): AccountConnection
   verifyOpenCode?(workspace: WorkspaceExecutionContext): Promise<void>
   readOpenCode?(workspace: WorkspaceExecutionContext): Promise<string>
-  terminals: Pick<TerminalSessionManager, 'createOpenCodeAuth' | 'dispose'>
+  terminals: Pick<TerminalSessionManager, 'createOpenCodeAuth' | 'createCodexAuth' | 'dispose'>
   changed?(state: WorkspaceAgentAccount): void
 }
 
@@ -186,7 +186,7 @@ export class WorkspaceAccounts {
     const workspace = this.workspace(input)
     const target: AgentAccountTarget = { workspaceId: input.workspaceId, agentId: input.agentId }
     const key = this.key(target)
-    if (target.agentId === 'codex' && !logout && !['apiKey', 'chatgpt'].includes(input.method ?? '')) throw new Error('Unsupported Codex login method')
+    if (target.agentId === 'codex' && !logout && !['apiKey', 'chatgpt', 'deviceAuth'].includes(input.method ?? '')) throw new Error('Unsupported Codex login method')
     if (target.agentId === 'opencode' && !logout && input.method !== 'native') throw new Error('Use native OpenCode login')
     let release: () => void
     try { release = this.dependencies.acquire(target.workspaceId) }
@@ -200,29 +200,47 @@ export class WorkspaceAccounts {
       await this.dependencies.invalidate(target.workspaceId)
       if (operation.finishing) return operation.finishing
       if (target.agentId === 'codex') {
-        operation.connection = this.connectCodex(workspace, (method, params) => {
-          if (method !== 'account/login/completed' || this.pending.get(key) !== operation || operation.finishing) return
-          if (!operation.loginId) { if (operation.earlyNotifications.length < 10) operation.earlyNotifications.push(params); return }
-          if (params.loginId === operation.loginId) void this.finish(operation, params.success === true ? undefined : 'Sign-in failed or was cancelled. Retry the connection.')
-        })
-        void operation.connection.failure.catch(() => {
-          if (!operation.finishing) void this.finish(operation, 'Native account connection stopped. Retry the connection.')
-        })
-        await this.initialize(operation.connection)
-        if (operation.finishing) return operation.finishing
-        if (logout) {
-          await operation.connection.request('account/logout', {})
-          return this.finish(operation)
+        if (input.method === 'deviceAuth') {
+          if (operation.finishing) return operation.finishing
+          const revision = await this.codexAuthRevision(workspace)
+          if (operation.finishing) return operation.finishing
+          const terminal = this.dependencies.terminals.createCodexAuth(workspace, (exitCode) => {
+            if (!operation.finishing) void this.finish(operation, exitCode === 0 ? undefined : 'Codex authentication stopped. Retry the connection.')
+          })
+          operation.terminalSessionId = terminal.sessionId
+          if (operation.finishing) {
+            await this.dependencies.terminals.dispose(terminal.sessionId)
+            return operation.finishing
+          }
+          this.publish(this.state(target, { status: 'pending', sessionId: operation.sessionId,
+            terminalSessionId: terminal.sessionId,
+            message: 'Complete Codex sign-in in the terminal panel: open the link and enter the one-time code.' }))
+          this.pollCodex(operation, workspace, revision)
+        } else {
+          operation.connection = this.connectCodex(workspace, (method, params) => {
+            if (method !== 'account/login/completed' || this.pending.get(key) !== operation || operation.finishing) return
+            if (!operation.loginId) { if (operation.earlyNotifications.length < 10) operation.earlyNotifications.push(params); return }
+            if (params.loginId === operation.loginId) void this.finish(operation, params.success === true ? undefined : 'Sign-in failed or was cancelled. Retry the connection.')
+          })
+          void operation.connection.failure.catch(() => {
+            if (!operation.finishing) void this.finish(operation, 'Native account connection stopped. Retry the connection.')
+          })
+          await this.initialize(operation.connection)
+          if (operation.finishing) return operation.finishing
+          if (logout) {
+            await operation.connection.request('account/logout', {})
+            return this.finish(operation)
+          }
+          const response = await operation.connection.request('account/login/start', input.method === 'apiKey'
+            ? { type: 'apiKey', apiKey: input.apiKey ?? '' } : { type: 'chatgpt' })
+          if (response.type === 'apiKey') return this.finish(operation)
+          operation.loginId = response.loginId
+          if (operation.finishing) return operation.finishing
+          await this.dependencies.openBrowser(response.authUrl)
+          const early = operation.earlyNotifications.find((item) => item.loginId === response.loginId)
+          if (early) return this.finish(operation, early.success === true ? undefined : 'Sign-in failed or was cancelled. Retry the connection.')
+          operation.earlyNotifications = []
         }
-        const response = await operation.connection.request('account/login/start', input.method === 'apiKey'
-          ? { type: 'apiKey', apiKey: input.apiKey ?? '' } : { type: 'chatgpt' })
-        if (response.type === 'apiKey') return this.finish(operation)
-        operation.loginId = response.loginId
-        if (operation.finishing) return operation.finishing
-        await this.dependencies.openBrowser(response.authUrl)
-        const early = operation.earlyNotifications.find((item) => item.loginId === response.loginId)
-        if (early) return this.finish(operation, early.success === true ? undefined : 'Sign-in failed or was cancelled. Retry the connection.')
-        operation.earlyNotifications = []
       } else {
         await this.verify(workspace)
         if (operation.finishing) return operation.finishing
@@ -272,6 +290,30 @@ export class WorkspaceAccounts {
           if (complete) { void this.finish(operation); return }
         } catch { /* The CLI can briefly fail while credentials are being written. */ }
         if (active()) this.pollOpenCode(operation, workspace, before, revision, logout)
+      })()
+    }, 3000)
+  }
+
+  private async codexAuthRevision(workspace: WorkspaceExecutionContext): Promise<string> {
+    try {
+      const file = await stat(join(workspace.codexHome, 'auth.json'), { bigint: true })
+      return `${file.ino}:${file.mtimeNs}:${file.ctimeNs}:${file.size}`
+    } catch { return '' }
+  }
+
+  private pollCodex(operation: PendingAccount, workspace: WorkspaceExecutionContext, revision: string): void {
+    const active = (): boolean => this.pending.get(this.key(operation.target)) === operation && !operation.finishing
+    operation.pollTimer = setTimeout(() => {
+      void (async () => {
+        if (!active()) return
+        try {
+          const current = await this.codexAuthRevision(workspace)
+          if (!active()) return
+          // The CLI clears existing auth before device login, so only a fresh
+          // credential write (a metadata revision that exists after the captured one) completes.
+          if (current !== '' && current !== revision) { void this.finish(operation); return }
+        } catch { /* The CLI can briefly fail while credentials are being written. */ }
+        if (active()) this.pollCodex(operation, workspace, revision)
       })()
     }, 3000)
   }

@@ -6,12 +6,25 @@ import { WorkspaceAccounts, parseOpenCodeAccounts } from '../src/server/agents/w
 import { AgentProcessManager } from '../src/server/agents/process-manager'
 import type { ConnectionHandlers } from '../src/server/agents/codex-app-server-connection'
 import type { CodexAccount, CodexAppServerRequests } from '../src/server/agents/codex-app-server-protocol'
-import type { AgentAccountTarget } from '../src/shared/types'
+import type { AgentAccountConnect, AgentAccountTarget } from '../src/shared/types'
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { getAgent } from '../src/server/agents/registry'
 
 vi.mock('../src/server/agents/resolve', () => ({ resolveCommand: () => ({ command: '/fake/opencode', prefixArgs: [], viaShell: false }) }))
+
+vi.mock('node:fs/promises', async () => {
+  const real = await vi.importActual<any>('node:fs/promises')
+  let gate: Promise<unknown> | undefined
+  return {
+    ...real,
+    async stat(path: unknown, options?: unknown) {
+      if (gate) await gate
+      return real.stat(path, options)
+    },
+    __setStatGate(promise: Promise<unknown> | undefined) { gate = promise }
+  }
+})
 
 const work: AgentAccountTarget = { workspaceId: 'work', agentId: 'codex' }
 const personal: AgentAccountTarget = { workspaceId: 'personal', agentId: 'codex' }
@@ -25,6 +38,7 @@ function fixture() {
   const invalidate = vi.fn(async (_workspaceId: string) => {})
   const openBrowser = vi.fn(async () => {})
   const createOpenCodeAuth = vi.fn<TerminalSessionManager['createOpenCodeAuth']>(() => ({ sessionId: 'auth-terminal' }))
+  const createCodexAuth = vi.fn<TerminalSessionManager['createCodexAuth']>(() => ({ sessionId: 'codex-terminal' }))
   const dispose = vi.fn(async () => {})
   const readOpenCode = vi.fn(async (workspace: { workspaceId: string }): Promise<string> => profiles.has(workspace.workspaceId) ? '● OpenAI oauth\n1 credential' : '0 credentials')
   let rejectKey = false
@@ -40,7 +54,7 @@ function fixture() {
       return () => { locked.delete(id) }
     },
     busy: (id) => active.has(id), invalidate, changed, openBrowser,
-    verifyOpenCode: async () => {}, readOpenCode, terminals: { createOpenCodeAuth, dispose },
+    verifyOpenCode: async () => {}, readOpenCode, terminals: { createOpenCodeAuth, createCodexAuth, dispose },
     connection: (workspace, handlers) => {
       const connection = { workspaceId: workspace.workspaceId, handlers, close: vi.fn(async () => {}), loginId: `login-${connections.length}` }
       connections.push(connection)
@@ -74,7 +88,7 @@ function fixture() {
     }
   })
   onTestCleanup(() => accounts.close())
-  return { accounts, profiles, connections, locked, active, changed, invalidate, openBrowser, createOpenCodeAuth, dispose, readOpenCode, requests,
+  return { accounts, profiles, connections, locked, active, changed, invalidate, openBrowser, createOpenCodeAuth, createCodexAuth, dispose, readOpenCode, requests,
     rejectKey: () => { rejectKey = true }, early: () => { early = true } }
 }
 
@@ -274,4 +288,126 @@ test('OpenCode process exit finishes authentication and disposes the PTY', async
   await vi.waitFor(() => expect(f.locked.size).toBe(0))
   expect(f.dispose).toHaveBeenCalledWith('auth-terminal')
   expect((await f.accounts.status(target)).status).toBe('signed-out')
+})
+
+test('Codex device auth launches the CLI terminal and completes on a fresh auth.json write', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const f = fixture()
+  const pending = await f.accounts.connect({ ...work, method: 'deviceAuth' })
+  expect(pending).toMatchObject({ status: 'pending', workspaceId: 'work', terminalSessionId: 'codex-terminal' })
+  expect(pending.message).toContain('one-time code')
+  expect(f.createCodexAuth).toHaveBeenCalledWith(
+    expect.objectContaining({ workspaceId: 'work', codexHome: expect.stringContaining(join('codex')) }),
+    expect.any(Function))
+  expect(f.createOpenCodeAuth).not.toHaveBeenCalled()
+  expect(f.openBrowser).not.toHaveBeenCalled()
+  expect(f.requests).not.toContain('account/login/start')
+  const directory = join(testWorkspace('work').codexHome)
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(join(directory, 'auth.json'), '{"tokens":{"openai":{"access_token":"device"}}}')
+  f.profiles.set('work', { type: 'chatgpt', email: 'remote@example.test', planType: 'plus' })
+  await vi.advanceTimersByTimeAsync(3000)
+  await vi.waitFor(() => expect(f.locked.size).toBe(0))
+  expect((await f.accounts.status(work)).status).toBe('connected')
+  expect((await f.accounts.status(personal)).status).toBe('signed-out')
+  expect(f.dispose).toHaveBeenCalledWith('codex-terminal')
+  expect(f.invalidate.mock.calls.every(([id]) => id === 'work')).toBe(true)
+})
+
+test('Codex device auth is gated per agent', async () => {
+  const f = fixture()
+  const pending = await f.accounts.connect({ ...work, method: 'deviceAuth' })
+  expect(pending.status).toBe('pending')
+  const target = { ...work, agentId: 'opencode' as const }
+  await expect(f.accounts.connect({ ...target, method: 'deviceAuth' })).rejects.toThrow('Use native OpenCode login')
+  await expect(f.accounts.connect({ ...work, method: 'unsupported' } as AgentAccountConnect)).rejects.toThrow('Unsupported Codex login method')
+  expect((await f.accounts.cancel(work, pending.sessionId!)).status).toBe('cancelled')
+  expect(f.locked.size).toBe(0)
+})
+
+test('Codex device auth cancellation and timeout release the workspace', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const f = fixture()
+  const first = await f.accounts.connect({ ...work, method: 'deviceAuth' })
+  expect(first.sessionId).toBeTruthy()
+  expect((await f.accounts.cancel(work, 'stale')).status).toBe('pending')
+  expect((await f.accounts.cancel(work, first.sessionId!)).status).toBe('cancelled')
+  expect(f.locked.size).toBe(0)
+  expect(f.dispose).toHaveBeenCalledWith('codex-terminal')
+  await f.accounts.connect({ ...work, method: 'deviceAuth' })
+  await vi.advanceTimersByTimeAsync(10 * 60_000)
+  await vi.waitFor(() => expect(f.locked.size).toBe(0))
+  expect(f.changed.mock.lastCall?.[0].message).toContain('timed out')
+})
+
+test('Codex device auth terminal exit and launch failure use fixed messages', async () => {
+  const f = fixture()
+  f.createCodexAuth.mockImplementationOnce(() => { throw new Error('sensitive launcher details') })
+  const failed = await f.accounts.connect({ ...work, method: 'deviceAuth' })
+  expect(failed.status).toBe('error')
+  expect(failed.message).toBe('Account operation failed. Check the native agent installation and retry.')
+  expect(JSON.stringify(f.changed.mock.calls)).not.toContain('sensitive launcher details')
+  expect(f.locked.size).toBe(0)
+  await f.accounts.connect({ ...work, method: 'deviceAuth' })
+  f.createCodexAuth.mock.lastCall![1](1)
+  await vi.waitFor(() => expect(f.locked.size).toBe(0))
+  expect(f.changed.mock.lastCall?.[0].status).toBe('error')
+  expect(f.changed.mock.lastCall?.[0].message).toBe('Codex authentication stopped. Retry the connection.')
+  await f.accounts.connect({ ...work, method: 'deviceAuth' })
+  f.createCodexAuth.mock.lastCall![1](0)
+  await vi.waitFor(() => expect(f.locked.size).toBe(0))
+  expect((await f.accounts.status(work)).status).toBe('signed-out')
+})
+
+test('Codex device auth isolates stale in-flight polls from the next operation', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const fsPromises = await import('node:fs/promises')
+  const setStatGate = (fsPromises as unknown as { __setStatGate(promise: Promise<unknown> | undefined): void }).__setStatGate
+  const f = fixture()
+  const directory = join(testWorkspace('work').codexHome)
+  mkdirSync(directory, { recursive: true })
+  const authFile = join(directory, 'auth.json')
+  writeFileSync(authFile, '{}')
+  const first = await f.accounts.connect({ ...work, method: 'deviceAuth' })
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  setStatGate(gate)
+  try {
+    await vi.advanceTimersByTimeAsync(3000)
+    expect((await f.accounts.status(work)).status).toBe('pending')
+    const cancelled = await f.accounts.cancel(work, first.sessionId!)
+    expect(cancelled.status).toBe('cancelled')
+    release()
+    await vi.waitFor(() => expect(f.locked.size).toBe(0))
+    expect(f.changed.mock.lastCall?.[0].status).toBe('cancelled')
+    const second = await f.accounts.connect({ ...work, method: 'deviceAuth' })
+    expect(second.status).toBe('pending')
+    await vi.advanceTimersByTimeAsync(3000)
+    // The stale signal (the auth.json written before the new poll started) does not complete the new operation.
+    expect((await f.accounts.status(work)).sessionId).toBe(second.sessionId)
+    writeFileSync(authFile, '{"tokens":{"fresh":true}}')
+    f.profiles.set('work', { type: 'chatgpt', email: 'stale@example.test', planType: 'plus' })
+    await vi.advanceTimersByTimeAsync(3000)
+    await vi.waitFor(() => expect(f.locked.size).toBe(0))
+    expect((await f.accounts.status(work)).status).toBe('connected')
+  } finally {
+    setStatGate(undefined)
+  }
+})
+
+test('Codex device auth stays scoped to its workspace', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const f = fixture()
+  const pending = await f.accounts.connect({ ...work, method: 'deviceAuth' })
+  expect(pending.status).toBe('pending')
+  expect((await f.accounts.status(personal)).status).toBe('signed-out')
+  const directory = join(testWorkspace('work').codexHome)
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(join(directory, 'auth.json'), '{"scope":"work"}')
+  f.profiles.set('work', { type: 'apiKey' })
+  await vi.advanceTimersByTimeAsync(3000)
+  await vi.waitFor(() => expect(f.locked.size).toBe(0))
+  expect((await f.accounts.status(work)).status).toBe('connected')
+  expect((await f.accounts.status(personal)).status).toBe('signed-out')
+  expect(f.invalidate.mock.calls.every(([id]) => id === 'work')).toBe(true)
 })
