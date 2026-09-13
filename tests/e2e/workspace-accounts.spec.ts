@@ -18,7 +18,7 @@ test('workspace API key connect, redacted failure, retry and disconnect apply im
   await openAccounts(page)
   const codex = card(page)
   await expect(codex.getByText('Signed out', { exact: true })).toBeVisible()
-  await codex.getByLabel('Codex sign-in method for Default').selectOption('apiKey')
+  await codex.getByLabel('Codex account type for Default').selectOption('apiKey')
   const key = codex.getByLabel('Codex API key for Default')
   await expect(key).toHaveAttribute('type', 'password')
   await key.fill('fixture-fail')
@@ -78,11 +78,11 @@ for (const method of ['api', 'subscription']) {
   })
 }
 
-test('Codex remote device-code sign-in shows the terminal guide and can be cancelled', async ({ page }, testInfo) => {
+test('Codex ChatGPT device-code sign-in shows the terminal guide and can be cancelled', async ({ page }, testInfo) => {
   await openAccounts(page)
   const codex = card(page)
-  await codex.getByLabel('Codex sign-in method for Default').selectOption('deviceAuth')
-  await expect(codex.getByText('Open the verification link from any device and enter the one-time code in the terminal panel.')).toBeVisible()
+  await codex.getByLabel('ChatGPT sign-in flow for Default').selectOption('deviceCode')
+  await expect(codex.getByText('Open the verification link from any device and enter the one-time code in the terminal panel. This signs Codex in with your ChatGPT subscription.')).toBeVisible()
   await codex.getByRole('button', { name: 'Connect Codex for Default', exact: true }).click()
   await expect(codex.locator('canvas')).toBeVisible()
   await expect(codex.getByText('enter the one-time code', { exact: false })).toBeVisible()

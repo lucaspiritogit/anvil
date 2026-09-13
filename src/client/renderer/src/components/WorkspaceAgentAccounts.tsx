@@ -7,7 +7,8 @@ import { btn, cn, field } from '../ui'
 function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget & { workspaceName: string }): JSX.Element {
   const [account, setAccount] = useState<WorkspaceAgentAccount | null>(null)
   const [apiKey, setApiKey] = useState('')
-  const [method, setMethod] = useState<'apiKey' | 'chatgpt' | 'deviceAuth'>('chatgpt')
+  const [accountType, setAccountType] = useState<'apiKey' | 'chatgpt'>('chatgpt')
+  const [chatgptSignInFlow, setChatgptSignInFlow] = useState<'browser' | 'deviceCode'>('browser')
   const [requesting, setRequesting] = useState(false)
   const [revealed, setRevealed] = useState(false)
   const mounted = useRef(true)
@@ -43,8 +44,12 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
     } finally { if (mounted.current) setRequesting(false) }
   }
   const connect = (): void => {
-    const input: AgentAccountConnect = { ...target, method: agentId === 'opencode' ? 'native' : method,
-      ...(agentId === 'codex' && method === 'apiKey' ? { apiKey } : {}) }
+    let method: AgentAccountConnect['method'] = 'native'
+    if (agentId === 'codex' && accountType === 'apiKey') method = 'apiKey'
+    if (agentId === 'codex' && accountType === 'chatgpt' && chatgptSignInFlow === 'browser') method = 'chatgpt'
+    if (agentId === 'codex' && accountType === 'chatgpt' && chatgptSignInFlow === 'deviceCode') method = 'deviceAuth'
+    const input: AgentAccountConnect = { ...target, method,
+      ...(agentId === 'codex' && accountType === 'apiKey' ? { apiKey } : {}) }
     setApiKey('')
     void run(() => window.anvil.accounts.connect(input))
   }
@@ -69,23 +74,29 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
       </div>
       {agentId === 'codex' && !pending && <>
         <label className={field.wrap}>
-          <span className={field.label}>Codex sign-in method for {workspaceName}</span>
-          <select className={field.sized} value={method} disabled={disabled} onChange={(event) => { setMethod(event.target.value as typeof method); setApiKey('') }}>
+          <span className={field.label}>Codex account type for {workspaceName}</span>
+          <select className={field.sized} value={accountType} disabled={disabled} onChange={(event) => { setAccountType(event.target.value as typeof accountType); setApiKey('') }}>
             <option value="chatgpt">ChatGPT subscription</option>
             <option value="apiKey">API key</option>
-            <option value="deviceAuth">Connect remotely (one-time code)</option>
           </select>
         </label>
-        {method === 'apiKey' && <label className={field.wrap}>
+        {accountType === 'chatgpt' && <label className={field.wrap}>
+          <span className={field.label}>ChatGPT sign-in flow for {workspaceName}</span>
+          <select className={field.sized} value={chatgptSignInFlow} disabled={disabled} onChange={(event) => setChatgptSignInFlow(event.target.value as typeof chatgptSignInFlow)}>
+            <option value="browser">Browser on this Mac</option>
+            <option value="deviceCode">One-time device code</option>
+          </select>
+        </label>}
+        {accountType === 'apiKey' && <label className={field.wrap}>
           <span className={field.label}>Codex API key for {workspaceName}</span>
           <input className={field.sized} type="password" autoComplete="off" spellCheck={false} value={apiKey}
             disabled={disabled} onChange={(event) => setApiKey(event.target.value)} />
         </label>}
-        {method === 'deviceAuth' && <p className="my-2 text-xs text-dim">Open the verification link from any device and enter the one-time code in the terminal panel.</p>}
+        {accountType === 'chatgpt' && chatgptSignInFlow === 'deviceCode' && <p className="my-2 text-xs text-dim">Open the verification link from any device and enter the one-time code in the terminal panel. This signs Codex in with your ChatGPT subscription.</p>}
       </>}
       {agentId === 'opencode' && <p className="my-2 text-xs text-dim">Choose an API key or a subscription in the native provider prompts. Subscription availability depends on the provider.</p>}
       <div className="flex flex-wrap gap-2">
-        <button className={btn.primary} disabled={disabled || (agentId === 'codex' && method === 'apiKey' && !apiKey.trim())} onClick={connect}>Connect {label} for {workspaceName}</button>
+        <button className={btn.primary} disabled={disabled || (agentId === 'codex' && accountType === 'apiKey' && !apiKey.trim())} onClick={connect}>Connect {label} for {workspaceName}</button>
         <button className={btn.ghost} disabled={disabled} onClick={() => void run(() => window.anvil.accounts.disconnect(target))}>Disconnect {label} for {workspaceName}</button>
         <button className={btn.ghost} disabled={requesting || pending} onClick={() => void run(() => window.anvil.accounts.status(target))}>Refresh {label} for {workspaceName}</button>
         {pending && account.sessionId && <button className={btn.ghost} onClick={() => void run(() => window.anvil.accounts.cancel({ ...target, sessionId: account.sessionId! }))}>Cancel {label} for {workspaceName}</button>}
