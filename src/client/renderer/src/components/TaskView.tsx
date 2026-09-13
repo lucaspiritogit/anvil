@@ -334,6 +334,56 @@ function StatBlock({ label, value, detail }: {
   )
 }
 
+function TaskDetails({ task, workspaceName, projectName, projectPath, now, mobile = false }: {
+  task: Task
+  workspaceName: string
+  projectName: string
+  projectPath?: string
+  now: number
+  mobile?: boolean
+}): JSX.Element {
+  return (
+    <div className={mobile ? 'grid gap-3 pt-2' : 'flex flex-wrap items-center justify-between gap-x-5 gap-y-1'}>
+      <div className={mobile ? 'grid min-w-0 gap-2' : 'flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1'}>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate" title={workspaceName} aria-label="Task workspace">{workspaceName}</span>
+          <span aria-hidden="true">/</span>
+          <span className="truncate" title={projectPath}>{projectName}</span>
+        </span>
+        <span className={cn('flex items-center gap-1.5', mobile && 'min-w-0')}>
+          <AgentIcon agentId={task.agentId} label={task.agentLabel} size={14} />
+          <span className={mobile ? 'shrink-0' : undefined}>{task.agentLabel}</span>
+          {task.model && <span className={mobile ? 'min-w-0 break-all' : '[overflow-wrap:anywhere]'}>· {task.model}</span>}
+        </span>
+        {task.branchName && (
+          <span className="flex min-w-0 items-center gap-1.5">
+            {task.baseBranch && <span className="min-w-0 truncate" title={task.baseBranch}>{task.baseBranch} ←</span>}
+            <CopyableText label="branch name" value={task.branchName} />
+          </span>
+        )}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="shrink-0">ID</span>
+          <CopyableText label="task ID" value={task.id} />
+        </span>
+      </div>
+      <div aria-label="Task statistics" role="group" className={mobile
+        ? 'grid grid-cols-2 gap-x-3 gap-y-2 border-t border-line pt-2'
+        : 'flex flex-wrap items-center gap-x-4 gap-y-1'}>
+        <StatBlock label="Elapsed" value={formatDuration(task, now)} />
+        <StatBlock label="Tokens" detail={tokenBreakdown(task)} value={
+          <span className="flex gap-x-1.5">
+            <span>{formatTokens(task.inputTokens)} <span className="text-dim">in</span></span>
+            <span className="text-dim">/</span>
+            <span>{formatTokens(task.outputTokens)} <span className="text-dim">out</span></span>
+          </span>
+        } />
+        <StatBlock label="Cached" value={formatTokens(task.cachedTokens)} detail={`${formatTokens(task.cachedTokens)} cached input`} />
+        <StatBlock label="Cost" value={formatCost(task.costUsd)} />
+      </div>
+    </div>
+  )
+}
+
 function Notice({ tone = 'danger', children }: { tone?: 'danger' | 'warn'; children: ReactNode }): JSX.Element {
   return (
     <div role="alert" className={cn('shrink-0 max-h-20 overflow-auto px-5 py-2 text-xs [overflow-wrap:anywhere]', tone === 'danger' ? 'text-danger bg-danger/8' : 'text-warn bg-warn/8')}>
@@ -490,12 +540,12 @@ export function TaskView({ task }: Props): JSX.Element {
         ))}
 
       <TaskStackStatus key={`stack-${task.id}`} task={task} />
-      <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4">
+      <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4 @max-[760px]:pt-2">
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 @max-[760px]:flex-col">
           <h1 className="min-w-0 flex-1 truncate text-base font-medium leading-snug @max-[760px]:w-full @max-[760px]:flex-none" title={task.title}>{task.title}</h1>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:justify-start">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
             {issue ? <>
-              <span aria-label="Task status" className={cn('font-medium', ISSUE_STATUS[issuePresentation(issue, snapshot, task).status].tone)}>{saving ? 'Saving changes…' : issuePresentation(issue, snapshot, task).label}{`: ${issue.title}`}</span>
+              <span aria-label="Task status" className={cn('min-w-0 font-medium [overflow-wrap:anywhere]', ISSUE_STATUS[issuePresentation(issue, snapshot, task).status].tone)}>{saving ? 'Saving changes…' : issuePresentation(issue, snapshot, task).label}{`: ${issue.title}`}</span>
               {issue.status === 'review' && <>
                 <button className={cn(btn.ghost, 'ml-2')} disabled={reviewDisabled} onClick={() => void reviewIssue('reject')}>
                   {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
@@ -505,7 +555,7 @@ export function TaskView({ task }: Props): JSX.Element {
                 </button>
               </>}
             </> : <>
-              <span aria-label="Task status" className="flex items-center gap-2">
+              <span aria-label="Task status" className="flex min-w-0 flex-wrap items-center gap-2">
                 {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
                 <span className={dot(task.status)} />
                 <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : saving ? 'Saving changes…' : STATUS_LABEL[task.status]}</span>
@@ -516,7 +566,7 @@ export function TaskView({ task }: Props): JSX.Element {
                 </span>
                 </>}
               </span>
-              {reviewable && <span className="ml-2 flex items-center gap-2">
+              {reviewable && <span className="ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
                 {!approved && pending.length > 0 && <button className={btn.ghost} disabled={sending} onClick={() => void sendComments(task.id)}>
                   {sending ? 'Sending…' : `Send ${pending.length} comment${pending.length === 1 ? '' : 's'}`}
                 </button>}
@@ -530,42 +580,16 @@ export function TaskView({ task }: Props): JSX.Element {
             </>}
           </div>
         </div>
-        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-5 gap-y-1 text-[11.5px] text-dim">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate" title={workspaceName} aria-label="Task workspace">{workspaceName}</span>
-              <span aria-hidden="true">/</span>
-              <span className="truncate" title={project?.path}>{project?.name ?? 'Tasks'}</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <AgentIcon agentId={task.agentId} label={task.agentLabel} size={14} />
-              {task.agentLabel}
-              {task.model && <span className="[overflow-wrap:anywhere]">· {task.model}</span>}
-            </span>
-            {task.branchName && (
-              <span className="flex min-w-0 items-center gap-1.5">
-                {task.baseBranch && <span className="truncate" title={task.baseBranch}>{task.baseBranch} ←</span>}
-                <CopyableText label="branch name" value={task.branchName} />
-              </span>
-            )}
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className="shrink-0">ID</span>
-              <CopyableText label="task ID" value={task.id} />
-            </span>
-          </div>
-          <div aria-label="Task statistics" role="group" className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <StatBlock label="Elapsed" value={formatDuration(task, now)} />
-            <StatBlock label="Tokens" detail={tokenBreakdown(task)} value={
-              <span className="flex gap-x-1.5">
-                <span>{formatTokens(task.inputTokens)} <span className="text-dim">in</span></span>
-                <span className="text-dim">/</span>
-                <span>{formatTokens(task.outputTokens)} <span className="text-dim">out</span></span>
-              </span>
-            } />
-            <StatBlock label="Cached" value={formatTokens(task.cachedTokens)} detail={`${formatTokens(task.cachedTokens)} cached input`} />
-            <StatBlock label="Cost" value={formatCost(task.costUsd)} />
-          </div>
+        <div className="mt-1.5 text-[11.5px] text-dim @max-[760px]:hidden">
+          <TaskDetails task={task} workspaceName={workspaceName} projectName={project?.name ?? 'Tasks'} projectPath={project?.path} now={now} />
         </div>
+        <details className="group mt-1.5 hidden text-[11.5px] text-dim @max-[760px]:block">
+          <summary className="flex w-fit cursor-pointer select-none list-none items-center gap-1 py-1 font-medium text-dim hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+            Details
+            <Icon icon="chevron-down" size={14} className="transition-transform group-open:rotate-180" aria-hidden="true" />
+          </summary>
+          <TaskDetails task={task} workspaceName={workspaceName} projectName={project?.name ?? 'Tasks'} projectPath={project?.path} now={now} mobile />
+        </details>
       </header>
 
       {issue && issueError && <Notice>Could not refresh subtask. Showing last known data. <button className={btn.text} onClick={refresh}>Retry</button></Notice>}
@@ -574,7 +598,7 @@ export function TaskView({ task }: Props): JSX.Element {
       {reviewError && <Notice>{reviewError}</Notice>}
       {(reviewable || issue) && commentError && <Notice>{commentError}</Notice>}
 
-      <div className="flex shrink-0 items-stretch gap-1 px-3 border-b border-line" role="tablist" aria-label="Task panels">
+      <div className="flex min-w-0 shrink-0 items-stretch gap-1 border-b border-line px-3 @max-[760px]:gap-0 @max-[760px]:px-2" role="tablist" aria-label="Task panels">
         {panels.map((panel) => {
           const selected = activePanel === panel
           return (
@@ -585,7 +609,7 @@ export function TaskView({ task }: Props): JSX.Element {
               aria-controls={`task-panel-${panel}`}
               aria-selected={selected}
               className={cn(
-                'relative flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-accent',
+                'relative flex min-w-0 items-center gap-1.5 px-2.5 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-accent @max-[760px]:flex-1 @max-[760px]:justify-center @max-[760px]:gap-1 @max-[760px]:px-1',
                 selected ? 'text-fg' : 'text-dim hover:text-fg'
               )}
               onClick={() => setActivePanel(panel)}

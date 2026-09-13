@@ -67,6 +67,53 @@ test('long task titles truncate to one line and the composer persists across pan
   await page.screenshot({ path: testInfo.outputPath('long-title-changes.png') })
 })
 
+test('mobile header keeps review actions and every task panel usable without overflow', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 720 })
+  await page.goto('/tests/e2e/fixture/?scenario=review')
+  const longTitle = 'Review a narrow layout with an exceptionally long title '.repeat(5)
+  await page.evaluate(async (title) => {
+    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    useStore.setState((state) => ({
+      tasks: state.tasks.map((task) => task.id === 'review' ? {
+        ...task,
+        title,
+        model: `vendor/${'long-model-name-'.repeat(8)}`,
+        branchName: `anvil/${'long-responsive-branch-'.repeat(8)}`
+      } : task)
+    }))
+  }, longTitle)
+
+  const main = page.getByRole('main')
+  const heading = main.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveText(longTitle)
+  expect((await heading.boundingBox())!.height).toBeLessThan(40)
+  await expect(main.getByLabel('Task status')).toBeVisible()
+  await expect(main.getByRole('button', { name: 'Open PR', exact: true })).toBeVisible()
+  await expect(main.getByRole('button', { name: 'Merge', exact: true })).toBeVisible()
+
+  for (const name of ['Output', 'Changes', 'Issues']) {
+    await expect(main.getByRole('tab', { name: new RegExp(`^${name}`) })).toBeVisible()
+  }
+  await main.getByRole('tab', { name: /^Changes/ }).click()
+  await expect(main.getByRole('region', { name: 'Code changes' })).toBeVisible()
+  await main.getByRole('tab', { name: 'Issues', exact: true }).click()
+  await expect(main.getByRole('tabpanel', { name: 'Issues' })).toBeVisible()
+
+  await main.getByRole('button', { name: 'Details', exact: true }).click()
+  await expect(main.getByRole('button', { name: 'Copy branch name' })).toBeVisible()
+  const overflow = await page.evaluate(() => ({
+    document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    main: document.querySelector('main')!.scrollWidth - document.querySelector('main')!.clientWidth
+  }))
+  expect(overflow.document).toBeLessThanOrEqual(1)
+  expect(overflow.main).toBeLessThanOrEqual(1)
+
+  await main.getByRole('button', { name: 'Open PR', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Open PR' })).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await page.screenshot({ path: testInfo.outputPath('mobile-review-header.png') })
+})
+
 test('stale child selection renders its owner with continuous output', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
