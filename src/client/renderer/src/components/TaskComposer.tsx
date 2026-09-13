@@ -129,7 +129,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
             aria-describedby={keyboardHelpId}
             ref={promptRef}
             rows={5}
-            className="block w-full resize-none bg-transparent px-5 pb-3 pt-4 text-sm leading-relaxed outline-none placeholder:text-dim/60"
+            className="block w-full resize-none bg-transparent px-5 pb-3 pt-4 text-sm leading-relaxed outline-none placeholder:text-dim/60 max-[700px]:min-h-[clamp(10rem,28dvh,12rem)] max-[700px]:px-4"
             placeholder="Describe the work you want done"
             value={prompt}
             onChange={(event) => { setPrompt(event.target.value); mentions.syncSelection() }}
@@ -155,7 +155,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
           />
           {mentions.open && <ComposerFilePicker id={mentions.id} paths={mentions.paths} selected={mentions.selected} loading={mentions.loading} result={mentions.result} onChoose={mentions.choose} onRetry={mentions.retry} />}
           {attachments.images.length > 0 && (
-            <ul aria-label="Image attachments" className="flex flex-wrap gap-3 px-5 pb-3">
+            <ul aria-label="Image attachments" className="flex flex-wrap gap-3 px-5 pb-3 max-[700px]:px-4">
               {attachments.images.map((image) => (
                 <li key={image.id} className="w-36 border border-line p-2 text-xs">
                   {image.preview && <img src={image.preview} alt={`Preview of ${image.filename}`} className="h-20 w-full object-contain" />}
@@ -167,8 +167,8 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
               ))}
             </ul>
           )}
-          {attachments.pasteError && <p role="alert" className="px-5 pb-3 text-xs text-danger">{attachments.pasteError}</p>}
-          <div className="flex min-w-0 items-center gap-1 px-3 pb-3 pt-1">
+          {attachments.pasteError && <p role="alert" className="px-5 pb-3 text-xs text-danger max-[700px]:px-4">{attachments.pasteError}</p>}
+          <div className="flex min-w-0 items-center gap-1 px-3 pb-3 pt-1 max-[700px]:px-2">
             <ComposerModelPicker
               agentId={agentId}
               agents={agents}
@@ -205,7 +205,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
             </div>
           </div>
         </fieldset>
-        {error && <p role="alert" className="px-5 pb-4 text-xs text-danger">{error}</p>}
+        {error && <p role="alert" className="px-5 pb-4 text-xs text-danger max-[700px]:px-4">{error}</p>}
       </form>
     </div>
   )

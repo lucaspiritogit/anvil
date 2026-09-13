@@ -35,6 +35,7 @@ function GitAlert({ project }: { project: Project }): JSX.Element | null {
     <div
       className={cn(
         'flex gap-4 items-center justify-between px-[18px] py-3.5 mb-6',
+        'max-[700px]:mb-4 max-[700px]:flex-col max-[700px]:items-stretch max-[700px]:gap-3 max-[700px]:px-4',
         'text-warn bg-warn/8 border border-warn/35'
       )}
       role="status"
@@ -46,7 +47,7 @@ function GitAlert({ project }: { project: Project }): JSX.Element | null {
       </div>
       {canInit && (
         <button
-          className="flex-none px-3.5 py-[7px] font-medium text-warn whitespace-nowrap border border-warn/45 enabled:hover:bg-warn/12 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-none self-start px-3.5 py-[7px] font-medium text-warn whitespace-nowrap border border-warn/45 enabled:hover:bg-warn/12 disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={pending}
           onClick={() => void initGitRepo(project.id)}
         >
@@ -61,7 +62,7 @@ export function ProjectOverview({ project }: Props): JSX.Element {
   return (
     <div
       data-testid="project-overview"
-      className="relative flex h-full min-h-0 flex-col overflow-y-auto px-8 py-8 max-[980px]:px-[22px]"
+      className="relative flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto px-8 py-8 max-[980px]:px-[22px] max-[700px]:px-3 max-[700px]:py-2"
     >
       <div className={cn(SPREAD, 'my-auto')}>
         <GitAlert project={project} />

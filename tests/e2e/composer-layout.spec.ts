@@ -55,6 +55,73 @@ test('compact composer keeps the model and Send aligned, with other controls beh
   expect(await composer.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
 })
 
+test('phone composer grows the prompt and keeps controls and attachments contained in short views', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 })
+  await page.goto(`/tests/e2e/fixture/?composerModel=${encodeURIComponent(longModel)}`)
+  const overview = page.getByTestId('project-overview')
+  const composer = page.getByRole('form', { name: 'Start a task' })
+  const prompt = composer.getByRole('textbox', { name: 'Task prompt' })
+  await chooseProvider(composer.getByRole('button', { name: /^(Choose a model|Model:)/ }), 'opencode')
+  await composer.getByRole('button', { name: 'Model: model', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Choose model' }).getByRole('button', { name: 'nemotron-3-ultra-550b-a55b:free', exact: true }).click()
+  await prompt.fill('Keep this phone draft')
+
+  const desktopPrompt = await prompt.boundingBox()
+  expect(desktopPrompt).not.toBeNull()
+  expect(desktopPrompt!.height).toBeLessThan(160)
+
+  await page.setViewportSize({ width: 390, height: 360 })
+  const phonePrompt = await prompt.boundingBox()
+  expect(phonePrompt).not.toBeNull()
+  expect(phonePrompt!.height).toBeGreaterThanOrEqual(160)
+  expect(phonePrompt!.height).toBeGreaterThan(desktopPrompt!.height)
+  await expect(overview).toHaveCSS('padding-left', '12px')
+  await expect(overview).toHaveCSS('padding-top', '8px')
+
+  const model = composer.getByRole('button', { name: 'Model: nemotron-3-ultra-550b-a55b:free', exact: true })
+  const more = composer.getByRole('button', { name: 'More task options', exact: true })
+  const send = composer.getByRole('button', { name: 'Send', exact: true })
+  await send.scrollIntoViewIfNeeded()
+  await expect(model).toBeInViewport()
+  await expect(more).toBeInViewport()
+  await expect(send).toBeInViewport()
+  const modelBounds = (await model.boundingBox())!
+  const moreBounds = (await more.boundingBox())!
+  const sendBounds = (await send.boundingBox())!
+  expect(Math.abs(modelBounds.y + modelBounds.height / 2 - sendBounds.y - sendBounds.height / 2)).toBeLessThan(2)
+  expect(Math.abs(moreBounds.y + moreBounds.height / 2 - sendBounds.y - sendBounds.height / 2)).toBeLessThan(2)
+
+  await prompt.evaluate((element) => {
+    const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+Xw4AAAAASUVORK5CYII='), (value) => value.charCodeAt(0))
+    const file = new File([bytes], 'a-very-long-phone-attachment-name.png', { type: 'image/png' })
+    const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { items: [{ kind: 'file', type: file.type, getAsFile: () => file }] } })
+    element.dispatchEvent(event)
+  })
+  const attachments = composer.getByRole('list', { name: 'Image attachments' })
+  await expect(attachments.getByText('a-very-long-phone-attachment-name.png', { exact: true })).toBeVisible()
+  await send.scrollIntoViewIfNeeded()
+  await expect(send).toBeInViewport()
+  expect(await composer.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  expect(await overview.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  expect(await overview.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
+
+  await more.click()
+  await expect(page.getByRole('group', { name: 'Task options', exact: true })).toBeInViewport()
+  await page.keyboard.press('Escape')
+
+  await page.evaluate(() => {
+    window.anvil.projects.gitStatus = async () => ({ isRepository: false, gitAvailable: true, pathExists: true })
+    window.composerTest.selectProject('project-1')
+  })
+  const gitAlert = overview.locator('[role="status"]').filter({ hasText: 'This project is not using Git' })
+  const initializeGit = gitAlert.getByRole('button', { name: 'Initialize Git repository', exact: true })
+  await expect(gitAlert).toHaveCSS('flex-direction', 'column')
+  await initializeGit.scrollIntoViewIfNeeded()
+  await expect(initializeGit).toBeInViewport()
+  expect(await gitAlert.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+})
+
 for (const platform of ['darwin', 'linux']) {
   for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     for (const height of [900, 360]) {
