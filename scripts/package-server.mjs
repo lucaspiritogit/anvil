@@ -15,7 +15,7 @@ await rm(stagingDirectory, { recursive: true, force: true })
 await mkdir(appDirectory, { recursive: true })
 await mkdir(runtimeDirectory, { recursive: true })
 await cp(join(root, 'out', 'server'), join(appDirectory, 'server'), { recursive: true })
-await cp(join(root, 'out', 'browser'), join(appDirectory, 'browser'), { recursive: true })
+await cp(join(root, 'out', 'renderer'), join(appDirectory, 'renderer'), { recursive: true })
 const serverPackage = { ...packageJson, scripts: {} }
 await writeFile(join(appDirectory, 'package.json'), `${JSON.stringify(serverPackage, null, 2)}\n`)
 await copyFile(join(root, 'package-lock.json'), join(appDirectory, 'package-lock.json'))

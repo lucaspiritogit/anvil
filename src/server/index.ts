@@ -38,7 +38,7 @@ async function main(): Promise<void> {
   const httpOptions = {
     version,
     rendererOrigin: process.env.ANVIL_RENDERER_ORIGIN ?? 'http://localhost:5173',
-    rendererDirectory: join(__dirname, '../browser'),
+    rendererDirectory: join(__dirname, '../renderer'),
     auth: serverAuth,
     // Local desktop clients share this listener; remote clients still authenticate.
     isReady: () => runtime !== undefined

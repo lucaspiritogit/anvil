@@ -2,7 +2,6 @@ import { app, BrowserWindow, dialog, Menu, shell, powerSaveBlocker } from 'elect
 import { showNotificationSettings } from './mac-notifications'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
 import { createDesktopIpc, openExternalCodexLogin, openExternalPullRequest, protectRendererWindow } from './renderer-security'
 import { registerAppShutdown } from './app-shutdown'
 import { registerCaffeineMode } from './caffeine-mode'
@@ -19,9 +18,11 @@ if (!app.isPackaged || process.env.ANVIL_DATA_DIR) {
 }
 if (!app.isPackaged) app.setName('Anvil Dev')
 
-const rendererUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL
+// In development the window loads the Vite dev server; otherwise it loads the
+// UI served over HTTP by the Anvil server once the connection is established.
+let rendererUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL
   ? process.env.ELECTRON_RENDERER_URL
-  : pathToFileURL(join(__dirname, '../renderer/index.html')).href
+  : ''
 
 let mainWindow: BrowserWindow | null = null
 let serverUrl = ''
@@ -106,10 +107,11 @@ if (ownsInstance) app.whenReady().then(async () => {
       executable: process.execPath,
       entry: join(__dirname, '../server/index.js'),
       dataDirectory,
-      rendererUrl,
+      rendererOrigin: rendererUrl ? new URL(rendererUrl).origin : undefined,
       packaged: app.isPackaged
     })
     serverUrl = connection.url
+    if (!rendererUrl) rendererUrl = `${serverUrl}/`
     const stopCaffeineMode = registerCaffeineMode(createServerCaffeineActivity(serverUrl), powerSaveBlocker)
     isClosing = registerAppShutdown(app, {
       showClosing: showClosingProcesses,

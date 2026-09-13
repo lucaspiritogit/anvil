@@ -41,7 +41,7 @@ export async function connectToServer(options: {
   executable: string
   entry: string
   dataDirectory: string
-  rendererUrl: string
+  rendererOrigin?: string
   packaged: boolean
   environment?: NodeJS.ProcessEnv
 }): Promise<ServerConnection> {
@@ -57,7 +57,9 @@ export async function connectToServer(options: {
   if (existing) return existing
   const child = spawn(options.executable, [options.entry], {
     env: { ...environment, ELECTRON_RUN_AS_NODE: '1', ANVIL_DATA_DIR: options.dataDirectory,
-      ANVIL_PACKAGED: options.packaged ? '1' : '0', ANVIL_RENDERER_ORIGIN: new URL(options.rendererUrl).origin },
+      ANVIL_PACKAGED: options.packaged ? '1' : '0',
+      // Packaged windows load the server's own origin; only the dev server needs an allowance.
+      ...(options.rendererOrigin ? { ANVIL_RENDERER_ORIGIN: options.rendererOrigin } : {}) },
     stdio: ['ignore', 'inherit', 'inherit', 'ipc']
   })
   let stopped: Promise<void> | undefined

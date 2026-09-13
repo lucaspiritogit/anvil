@@ -199,6 +199,7 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: {
   )
   if (options.rendererDirectory) {
     app.get('/', serveStatic({ root: options.rendererDirectory, path: 'index.html' }))
+    app.get('/closing.html', serveStatic({ root: options.rendererDirectory }))
     app.get('/assets/*', serveStatic({ root: options.rendererDirectory }))
   }
   app.notFound((context) => context.json({ error: 'Not found' }, 404))

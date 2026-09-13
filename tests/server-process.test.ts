@@ -8,7 +8,7 @@ vi.mock('node:child_process', () => ({ spawn: vi.fn() }))
 
 const options = {
   executable: '/electron', entry: '/app/out/server/index.js', dataDirectory: '/data',
-  rendererUrl: 'file:///app/out/renderer/index.html', packaged: true, environment: {}
+  rendererOrigin: 'http://localhost:5173', packaged: false, environment: {}
 }
 
 function childProcess() {
@@ -45,7 +45,7 @@ test('spawns Electron as Node, waits for its own ready signal and closes only it
   const connection = await pending
   expect(health).toHaveBeenCalledTimes(2)
   expect(spawn).toHaveBeenCalledWith('/electron', ['/app/out/server/index.js'], expect.objectContaining({
-    env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1', ANVIL_SERVER_PORT: '4790', ANVIL_DATA_DIR: '/data', ANVIL_RENDERER_ORIGIN: 'null' })
+    env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1', ANVIL_SERVER_PORT: '4790', ANVIL_DATA_DIR: '/data', ANVIL_RENDERER_ORIGIN: 'http://localhost:5173' })
   }))
   await Promise.all([connection.close(), connection.close()])
   expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM')
