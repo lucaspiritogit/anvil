@@ -197,6 +197,11 @@ declare global {
       failNextRequest: boolean
       failNextRebind: boolean
     }
+    terminalTest: {
+      creates: Array<{ input: IpcRequests['terminals:create']; sessionId: string }>
+      attaches: string[]
+      disposes: string[]
+    }
   }
 }
 
@@ -285,11 +290,22 @@ window.composerTest = {
   overview: () => useStore.setState({ view: { kind: 'home' } })
 }
 
+let projectTerminalSequence = 0
+window.terminalTest = { creates: [], attaches: [], disposes: [] }
 window.anvil = {
   terminals: {
-    create: async ({ projectId }) => ({ sessionId: `terminal-${projectId}` }),
-    attach: async () => ({ data: 'Anvil terminal fixture\r\n$ ', sequence: 0 }),
-    write: async () => {}, resize: async () => {}, dispose: async () => {},
+    create: async (input) => {
+      const sessionId = `project-${input.projectId}-${++projectTerminalSequence}`
+      window.terminalTest.creates.push({ input, sessionId })
+      return { sessionId }
+    },
+    attach: async (sessionId) => {
+      window.terminalTest.attaches.push(sessionId)
+      return { data: sessionId.startsWith('auth-')
+        ? `Authentication terminal ${sessionId}\r\n`
+        : `Project terminal ${sessionId}\r\n$ `, sequence: 0 }
+    },
+    write: async () => {}, resize: async () => {}, dispose: async (sessionId) => { window.terminalTest.disposes.push(sessionId) },
     onOutput: () => () => {}, onExit: () => () => {}
   },
   platform: query.get('platform') === 'darwin' ? 'darwin' : query.get('platform') === 'win32' ? 'win32' : 'linux',

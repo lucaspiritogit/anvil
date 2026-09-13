@@ -8,6 +8,30 @@ async function openAccounts(page: Page, query = 'workspaces'): Promise<void> {
 
 const card = (page: Page, provider = 'Codex', workspace = 'Default') => page.getByRole('region', { name: `${provider} account for ${workspace}`, exact: true })
 
+async function renderedTerminalSession(page: Page, provider: 'Codex' | 'OpenCode'): Promise<string> {
+  const terminal = card(page, provider).locator('[data-terminal-session]')
+  await expect(terminal.locator('canvas')).toBeVisible()
+  const sessionId = await terminal.getAttribute('data-terminal-session')
+  if (!sessionId) throw new Error(`${provider} terminal session was not rendered`)
+  return sessionId
+}
+
+async function openFreshProjectTerminal(page: Page, obsoleteSessionIds: string[]): Promise<string> {
+  await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
+  await page.keyboard.press('Control+t')
+  const panel = page.getByRole('region', { name: 'Project terminal', exact: true })
+  await expect(panel.locator('canvas')).toBeVisible()
+  const sessionId = await panel.locator('[data-terminal-session]').getAttribute('data-terminal-session')
+  if (!sessionId) throw new Error('Project terminal session was not rendered')
+  for (const obsoleteSessionId of obsoleteSessionIds) {
+    await expect(page.locator(`[data-terminal-session="${obsoleteSessionId}"]`)).toHaveCount(0)
+  }
+  const calls = await page.evaluate(() => structuredClone(window.terminalTest))
+  expect(calls.creates.map((call) => call.sessionId)).toEqual([sessionId])
+  expect(calls.attaches.filter((attached) => attached.startsWith('project-'))).toEqual([sessionId])
+  return sessionId
+}
+
 async function complete(page: Page, workspaceId = 'default', success = true): Promise<void> {
   await page.evaluate(({ workspaceId, success }) => window.dispatchEvent(new CustomEvent('fixture:account-complete', {
     detail: { workspaceId, agentId: 'codex', success }
@@ -63,7 +87,7 @@ for (const method of ['api', 'subscription']) {
     await openAccounts(page)
     const opencode = card(page, 'OpenCode')
     await opencode.getByRole('button', { name: 'Connect OpenCode for Default', exact: true }).click()
-    await expect(opencode.locator('canvas')).toBeVisible()
+    const firstSessionId = await renderedTerminalSession(page, 'OpenCode')
     await expect(opencode.getByText('Complete sign-in or sign-out in the terminal panel.', { exact: false })).toBeVisible()
     await expect(opencode.getByRole('button', { name: 'Connect OpenCode for Default', exact: true })).toBeDisabled()
     await page.screenshot({ path: testInfo.outputPath(`opencode-terminal-${method}.png`) })
@@ -71,10 +95,16 @@ for (const method of ['api', 'subscription']) {
       detail: { workspaceId: 'default', agentId: 'opencode', success: true, method }
     })), method)
     await expect(opencode.getByRole('status')).toHaveText(method === 'api' ? 'OpenAI: API key' : 'OpenAI: subscription')
+    await expect(page.locator(`[data-terminal-session="${firstSessionId}"]`)).toHaveCount(0)
     await expect(opencode.getByRole('button', { name: 'Cancel OpenCode for Default', exact: true })).toHaveCount(0)
     await opencode.getByRole('button', { name: 'Connect OpenCode for Default', exact: true }).click()
+    const secondSessionId = await renderedTerminalSession(page, 'OpenCode')
+    expect(secondSessionId).not.toBe(firstSessionId)
+    await expect(page.locator(`[data-terminal-session="${firstSessionId}"]`)).toHaveCount(0)
     await opencode.getByRole('button', { name: 'Cancel OpenCode for Default', exact: true }).click()
     await expect(opencode.getByRole('status')).toHaveText('Connection cancelled.')
+    await expect(page.locator(`[data-terminal-session="${secondSessionId}"]`)).toHaveCount(0)
+    await openFreshProjectTerminal(page, [firstSessionId, secondSessionId])
   })
 }
 
@@ -84,16 +114,21 @@ test('Codex ChatGPT device-code sign-in shows the terminal guide and can be canc
   await codex.getByLabel('ChatGPT sign-in flow for Default').selectOption('deviceCode')
   await expect(codex.getByText('Open the verification link from any device and enter the one-time code in the terminal panel. This signs Codex in with your ChatGPT subscription.')).toBeVisible()
   await codex.getByRole('button', { name: 'Connect Codex for Default', exact: true }).click()
-  await expect(codex.locator('canvas')).toBeVisible()
+  const firstSessionId = await renderedTerminalSession(page, 'Codex')
   await expect(codex.getByText('enter the one-time code', { exact: false })).toBeVisible()
   await expect(codex.getByRole('button', { name: 'Connect Codex for Default', exact: true })).toBeDisabled()
   await page.screenshot({ path: testInfo.outputPath('codex-device-auth-terminal.png') })
   await complete(page)
   await expect(codex.getByRole('status')).toHaveText('ChatGPT: fixture@example.test (plus)')
+  await expect(page.locator(`[data-terminal-session="${firstSessionId}"]`)).toHaveCount(0)
   await codex.getByRole('button', { name: 'Connect Codex for Default', exact: true }).click()
-  await expect(codex.locator('canvas')).toBeVisible()
+  const secondSessionId = await renderedTerminalSession(page, 'Codex')
+  expect(secondSessionId).not.toBe(firstSessionId)
+  await expect(page.locator(`[data-terminal-session="${firstSessionId}"]`)).toHaveCount(0)
   await codex.getByRole('button', { name: 'Cancel Codex for Default', exact: true }).click()
   await expect(codex.getByRole('status')).toHaveText('Connection cancelled.')
+  await expect(page.locator(`[data-terminal-session="${secondSessionId}"]`)).toHaveCount(0)
+  await openFreshProjectTerminal(page, [firstSessionId, secondSessionId])
 })
 
 test('busy work explains why account changes are disabled', async ({ page }) => {

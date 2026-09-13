@@ -53,6 +53,10 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     if (settingsOpen || switching) setCommandPaletteOpen(false)
+    if (settingsOpen) {
+      setTerminalOpen(false)
+      setTerminalCreated(false)
+    }
   }, [settingsOpen, switching])
 
   const closeMobileNavigation = useCallback((returnFocus: boolean): void => {
@@ -274,7 +278,7 @@ export function App(): JSX.Element {
           inert={settingsOpen || switching || (mobileNavigation && mobileNavigationOpen)}>
           <div className="min-h-0 flex-1"><Workspace key={workspaceId} mobileNavigation={mobileNavigation}
             mobileNavigationOpen={mobileNavigationOpen} navigationButtonRef={mobileNavigationButtonRef} onToggleNavigation={toggleNavigation} /></div>
-          {terminalCreated && projectId && <TerminalDrawer key={`${workspaceId}:${projectId}`} projectId={projectId} visible={terminalOpen} onClose={() => { setTerminalCreated(false); setTerminalOpen(false) }} />}
+          {!settingsOpen && terminalCreated && projectId && <TerminalDrawer key={`${workspaceId}:${projectId}`} projectId={projectId} visible={terminalOpen} onClose={() => { setTerminalCreated(false); setTerminalOpen(false) }} />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
         {settingsOpen && <div className="contents" inert={switching}><Suspense fallback={<p role="status" className="p-5 text-sm text-dim">Loading settings…</p>}><SettingsPage key={workspaceId} /></Suspense></div>}
