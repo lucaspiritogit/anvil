@@ -669,7 +669,7 @@ export function TaskView({ task }: Props): JSX.Element {
                 </button>
                 {!approved
                   ? <MergeActions
-                    disabled={!diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)}
+                    disabled={!!reviewBusy || !diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)}
                     title={task.restackState ? 'Finish restacking before merging' : task.parentTaskId ? 'Merge the parent task first' : undefined}
                     onSelect={(action) => setDeliveryRequest({ taskId: task.id, action })}
                   />
