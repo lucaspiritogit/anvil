@@ -13,14 +13,15 @@ import type {
   PullRequestGitPreview,
   RebaseStep,
   TaskDiff,
-  TaskMergePreview
+  TaskMergePreview,
+  TaskPushPreview
 } from '../../shared/types'
 import { status, init, branches, switchProjectBranch, stackBase, commonBase, withRepoLock } from './repository'
 import { releaseWorktree, prepareBranch, checkoutBranch, worktreeHead } from './worktrees'
 import { renameTaskBranch, restackBranch, finalizeBranch } from './task-branches'
 import { rebase } from './rebase'
 import { getPullRequestPreview, pushPullRequestBranch } from './pull-requests'
-import { getMergePreview, merge } from './merge'
+import { getMergePreview, getPushPreview, merge, push } from './merge'
 import { changedFiles, getDiff, getIssueDiff } from './diff'
 
 export type { PreparedCheckout, RebasedBranch, FinalizeOptions, FinalizedCheckout, IssueDiffSource } from './types'
@@ -157,8 +158,21 @@ export class GitDeliveryManager {
     branchName: string,
     expected: TaskMergePreview,
     check: () => void = () => {}
-  ): Promise<void> {
+  ): Promise<string> {
     return merge(this.context, projectPath, branchName, expected, check)
+  }
+
+  getPushPreview(projectPath: string, expectedTargetBranch?: string, requiredCommit?: string): Promise<TaskPushPreview> {
+    return getPushPreview(this.context, projectPath, expectedTargetBranch, requiredCommit)
+  }
+
+  push(
+    projectPath: string,
+    expected: TaskPushPreview,
+    requiredCommit?: string,
+    check: () => void = () => {}
+  ): Promise<void> {
+    return push(this.context, projectPath, expected, requiredCommit, check)
   }
 
   getDiff(repoPath: string, baseCommit: string, headCommit: string): Promise<TaskDiff> {

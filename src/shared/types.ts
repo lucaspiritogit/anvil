@@ -86,6 +86,22 @@ export interface TaskMergePreview {
   commitCount: number
 }
 
+export interface TaskPushPreview {
+  targetBranch: string
+  targetCommit: string
+  remote: 'origin'
+  remoteTargetCommit: string | null
+  /** Opaque identity used to reject a push when origin changes after preview. */
+  remoteUrlHash: string
+}
+
+export interface TaskMergeAndPushPreview extends TaskMergePreview {
+  remote: 'origin'
+  remoteTargetCommit: string | null
+  /** Opaque identity used to reject a push when origin changes after preview. */
+  remoteUrlHash: string
+}
+
 export interface PullRequestGitPreview extends TaskMergePreview {
   repository: string
   remote: 'origin'

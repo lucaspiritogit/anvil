@@ -27,7 +27,9 @@ import type {
   TaskEvent,
   TaskEventsRequest,
   TaskEventsPage,
+  TaskMergeAndPushPreview,
   TaskMergePreview,
+  TaskPushPreview,
   Settings,
   Wallpaper
 } from '../../shared/types'
@@ -172,6 +174,10 @@ export function createAnvilApi(url: string, host: ClientHost) {
         invoke('tasks:rebase-agent', taskId),
       mergePreview: (taskId: string): Promise<TaskMergePreview> => invoke('tasks:merge-preview', taskId),
       approve: (input: IpcRequests['tasks:approve']): Promise<Task> => invoke('tasks:approve', input),
+      mergeAndPushPreview: (taskId: string): Promise<TaskMergeAndPushPreview> => invoke('tasks:merge-and-push-preview', taskId),
+      mergeAndPush: (input: IpcRequests['tasks:merge-and-push']): Promise<Task> => invoke('tasks:merge-and-push', input),
+      pushPreview: (taskId: string): Promise<TaskPushPreview> => invoke('tasks:push-preview', taskId),
+      push: (input: IpcRequests['tasks:push']): Promise<Task> => invoke('tasks:push', input),
       approveIssue: (input: IpcRequests['tasks:approve-issue']): Promise<Task> => invoke('tasks:approve-issue', input),
       rejectIssue: (input: IpcRequests['tasks:reject-issue']): Promise<Task> => invoke('tasks:reject-issue', input),
       onEvent: (handler: (event: TaskEvent) => void): (() => void) =>
