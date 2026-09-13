@@ -1,12 +1,12 @@
 import { IssueTracker } from './valence/tracker'
-import { WorkspaceStorage, type WorkspaceConnection } from './workspace-storage'
+import { WorkspaceStorage, type AnvilDatabase, type WorkspaceConnection } from './workspace-storage'
+import { sqliteTransaction } from './sqlite-transaction'
 import { moveWorkspaceDirectory, relocateTaskPaths } from './workspace-directories'
 import { resolveWorkspaceDirectory } from '../shared/app-data'
 import { normalizeWorkspaceName, readRootConfig, writeRootConfig, type RootConfig } from './root-config'
 import { TaskImageStorage } from './task-image-storage'
 import type { PullRequestMerged } from '../shared/github-pull-request-state'
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -294,7 +294,7 @@ export class Store {
     }
   }
 
-  private seedWorkspace(workspaceId: string, db: BetterSQLite3Database<typeof schema>): void {
+  private seedWorkspace(workspaceId: string, db: AnvilDatabase): void {
     db.insert(settings).values(
       SETTING_KEYS.map((key) => ({ workspaceId, key, value: encodeSetting(key, DEFAULT_SETTINGS[key]) }))
     ).onConflictDoNothing().run()
@@ -400,13 +400,13 @@ export class Store {
     this.requireWorkspace(workspaceId)
     if (next.composer !== undefined) this.validateComposerPreferences(next.composer)
     if (next.composer === undefined && next.lastProjectId === undefined) return this.getWorkspacePreferences(workspaceId)
-    return db.transaction(() => {
+    return sqliteTransaction(db.$client, () => {
       db.update(workspacePreferences).set({
         ...(next.composer === undefined ? {} : { composer: structuredClone(next.composer) }),
         ...(next.lastProjectId === undefined ? {} : { lastProjectId: next.lastProjectId })
       }).where(eq(workspacePreferences.workspaceId, workspaceId)).run()
       return this.getWorkspacePreferences(workspaceId)
-    })
+    }, 'immediate')
   }
 
   private validateComposerPreferences(composer: ComposerPreferences): void {
@@ -455,7 +455,7 @@ export class Store {
   approveMergedPullRequest(event: PullRequestMerged, workspaceId?: string): Task[] {
     if (workspaceId === undefined) return this.getOpenedWorkspaces().flatMap((workspace) => this.approveMergedPullRequest(event, workspace.id))
     const db = this.workspaceConnection(workspaceId).db
-    return db.transaction(() => {
+    return sqliteTransaction(db.$client, () => {
       const links = db.select().from(schema.taskPullRequests).where(and(
         eq(schema.taskPullRequests.repository, event.repository.toLowerCase()),
         eq(schema.taskPullRequests.number, event.number)
@@ -470,7 +470,7 @@ export class Store {
         if (approved) updated.push(approved)
       }
       return updated
-    })
+    }, 'immediate')
   }
 
   getSettings(workspaceId = this.getActiveWorkspace().id): Settings {
@@ -516,14 +516,14 @@ export class Store {
       value: encodeSetting(key, next[key]!)
     }))
     if (rows.length) {
-      db.transaction((tx) => {
+      sqliteTransaction(db.$client, () => {
         for (const row of rows) {
-          tx.insert(settings)
+          db.insert(settings)
             .values(row)
             .onConflictDoUpdate({ target: [settings.workspaceId, settings.key], set: { value: row.value } })
             .run()
         }
-      })
+      }, 'immediate')
     }
     if (next.caffeineMode !== undefined) this.activityChanged()
     return this.getSettings(workspaceId)
@@ -727,7 +727,7 @@ export class Store {
     if (!this.getTask(taskId)) return empty
     const connection = this.taskConnection(taskId)
     // Keep rows and navigation metadata in the same read snapshot.
-    return connection.sqlite.transaction(() => {
+    return sqliteTransaction(connection.sqlite, () => {
       const scope = eq(taskEvents.taskId, taskId)
       const rows = connection.db.select().from(taskEvents).where(and(scope,
         before ? lt(taskEvents.sequence, before.sequence) : after ? gt(taskEvents.sequence, after.sequence) : undefined
@@ -746,7 +746,7 @@ export class Store {
         hasOlder: oldest !== undefined && exists(lt(taskEvents.sequence, oldest)),
         hasNewer: newest !== undefined && exists(gt(taskEvents.sequence, newest))
       }
-    })()
+    })
   }
 
   /** Select messages before applying the bound so tool traffic cannot crowd out the final summary. */
@@ -777,7 +777,7 @@ export class Store {
     this.activityDepth++
     let committed = false
     try {
-      const result = connection.sqlite.transaction(operation).immediate()
+      const result = sqliteTransaction(connection.sqlite, operation, 'immediate')
       committed = true
       return result
     } finally {
@@ -833,12 +833,12 @@ export class Store {
     const now = Date.now()
     for (const workspaceId of this.initializedWorkspaces) {
       const db = this.storage.open(workspaceId).db
-      db.transaction(() => {
+      sqliteTransaction(db.$client, () => {
         for (const row of db.select().from(tasks).where(isNotNull(tasks.workingStartedAt)).all()) {
           const timing = advanceTaskWorkingTime(toTask(row), false, now)
           db.update(tasks).set({ workingTimeMs: timing.workingTimeMs, workingStartedAt: null }).where(eq(tasks.id, row.id)).run()
         }
-      })
+      }, 'immediate')
     }
     this.storage.close()
     this.closed = true

@@ -1,33 +1,34 @@
 // Adapted from @lpirito/valence 0.1.0, by lpirito. Maintained in Anvil.
-import type Database from 'better-sqlite3'
 import { randomBytes } from 'node:crypto'
+import type { DatabaseSync } from 'node:sqlite'
 import { and, eq, inArray } from 'drizzle-orm'
-import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
+import { drizzle, type NodeSQLiteDatabase } from 'drizzle-orm/node-sqlite'
 import { parentIssues, issues, issueDependencies, projects, tasks } from '../db/schema'
 import { requiredText, validateIssueInput, validateParentInput } from './validation'
 import type {
   ParentIssue, CreateParentIssue, UpdateParentIssue, Issue, CreateIssue, UpdateIssue,
   BatchIssue, IssueSelection, Completion
 } from '../../shared/valence'
+import { sqliteTransaction } from '../sqlite-transaction'
 
 /** Project-scoped core over an already migrated Anvil database.
  * Borrowed connections belong to Store. Direct callers can transfer ownership by
  * passing 'owned' and must close the connection themselves if construction fails.
  */
 export class IssueTracker {
-  private readonly database: BetterSQLite3Database
+  private readonly database: NodeSQLiteDatabase
   private closed = false
 
   constructor(
-    private readonly connection: Database.Database,
+    private readonly connection: DatabaseSync,
     readonly projectId: string,
     private readonly ownership: 'borrowed' | 'owned' = 'borrowed'
   ) {
     requiredText(projectId, 'projectId')
     // BEGIN IMMEDIATE waits for other SQLite writers before reading claim candidates.
-    connection.pragma('busy_timeout = 5000')
-    connection.pragma('foreign_keys = ON')
-    this.database = drizzle(connection)
+    connection.exec('PRAGMA busy_timeout = 5000')
+    connection.exec('PRAGMA foreign_keys = ON')
+    this.database = drizzle({ client: connection })
     if (!this.database.select().from(projects).where(eq(projects.id, projectId)).get()) {
       throw new Error(`Project not found: ${projectId}`)
     }
@@ -49,18 +50,18 @@ export class IssueTracker {
   }
 
   get databasePath(): string {
-    return this.connection.name
+    return this.connection.location() ?? ':memory:'
   }
 
   createParent(input: CreateParentIssue): ParentIssue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       this.assertOpen()
       const parent = { ...validateParentInput(input), id: randomBytes(8).toString('hex') }
       if (!this.database.select().from(tasks).where(and(eq(tasks.id, parent.anvilTaskId), eq(tasks.projectId, this.projectId))).get())
         throw new Error(`Task not found: ${parent.anvilTaskId}`)
       this.database.insert(parentIssues).values(parent).run()
       return this.getParent(parent.id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   getParent(id: string): ParentIssue {
@@ -76,7 +77,7 @@ export class IssueTracker {
   }
 
   updateParent(id: string, patch: UpdateParentIssue): ParentIssue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       const { anvilTaskId, title, description } = this.getParent(id)
       if (!patch || typeof patch !== 'object' || Array.isArray(patch))
         throw new Error('Expected a parent issue update object')
@@ -84,7 +85,7 @@ export class IssueTracker {
       const input = validateParentInput({ anvilTaskId, title, description, ...patch })
       this.database.update(parentIssues).set(input).where(eq(parentIssues.id, id)).run()
       return this.getParent(id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   create(input: CreateIssue): Issue {
@@ -93,7 +94,7 @@ export class IssueTracker {
 
   /** Create a graph in input order, resolving batch keys to stable issue IDs. */
   createMany(inputs: BatchIssue[]): Issue[] {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       if (!Array.isArray(inputs) || !inputs.length)
         throw new Error('Expected a nonempty issue batch')
       const existing = new Map(this.list().map((issue) => [issue.id, issue]))
@@ -143,11 +144,11 @@ export class IssueTracker {
         this.database.insert(issues).values(issue).run()
       for (const issue of batch) this.replaceDependencies(issue.id, issue.dependencies)
       return batch.map((issue) => this.get(issue.id))
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   update(id: string, patch: UpdateIssue): Issue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       const current = this.get(id)
       if (current.status !== 'queued' && current.status !== 'blocked')
         throw new Error('Only queued or blocked issues can be updated')
@@ -178,7 +179,7 @@ export class IssueTracker {
       this.database.update(issues).set(fields).where(eq(issues.id, id)).run()
       this.replaceDependencies(id, nextDependencies)
       return this.get(id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   get(id: string): Issue {
@@ -196,7 +197,7 @@ export class IssueTracker {
   }
 
   start(id: string): Issue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       const issue = this.get(id)
       if (issue.status !== 'queued')
         throw new Error('Only queued issues can be started')
@@ -207,7 +208,7 @@ export class IssueTracker {
         status: 'working', startedAt: issue.startedAt ?? Date.now()
       }).where(eq(issues.id, id)).run()
       return this.get(id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   /** Claim the highest-priority ready issue, without racing other clients. */
@@ -224,16 +225,16 @@ export class IssueTracker {
         selectedIds = new Set(Array.from(selection.ids, (id) => requiredText(id, 'id')))
     }
 
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       if (selectedIds) for (const id of selectedIds) this.get(id)
       const issue = this.ready(selection?.parentId).find((candidate) => selectedIds === undefined || selectedIds.has(candidate.id))
       return issue ? this.start(issue.id) : undefined
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   /** Confirm the checklist with evidence; Anvil finalizes the turn before deciding completion or review. */
   submitForReview(id: string, completion: Completion): Issue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       const issue = this.get(id)
       if (issue.status !== 'working')
         throw new Error('Only working issues can be submitted for review')
@@ -247,12 +248,12 @@ export class IssueTracker {
         status: 'review', evidence
       }).where(eq(issues.id, id)).run()
       return this.get(id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   /** Persist the task worktree commit range captured for an issue's review diff. */
   recordCommits(id: string, commits: { baseCommit?: string; headCommit?: string }): Issue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       const patch: { baseCommit?: string; headCommit?: string } = {}
       if (commits.baseCommit !== undefined) patch.baseCommit = requiredText(commits.baseCommit, 'baseCommit')
       if (commits.headCommit !== undefined) patch.headCommit = requiredText(commits.headCommit, 'headCommit')
@@ -260,12 +261,12 @@ export class IssueTracker {
       this.get(id)
       this.database.update(issues).set(patch).where(eq(issues.id, id)).run()
       return this.get(id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   /** Internal completion after Anvil verifies a clean worktree and an empty finalized diff. */
   completeNoChanges(id: string, range: { baseCommit: string; headCommit: string }): Issue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       const issue = this.get(id)
       if (issue.status !== 'review') throw new Error('Only submitted issues can complete without review')
       requiredText(issue.evidence, 'evidence')
@@ -277,12 +278,12 @@ export class IssueTracker {
         status: 'complete', completedAt: Date.now(), reviewedAt: null
       }).where(eq(issues.id, id)).run()
       return this.get(id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   /** Developer approval completes changed issues; dependencies gate on completion. */
   approve(id: string): Issue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       const issue = this.get(id)
       if (issue.status !== 'review')
         throw new Error('Only issues in review can be approved')
@@ -291,12 +292,12 @@ export class IssueTracker {
         status: 'complete', completedAt: now, reviewedAt: now
       }).where(eq(issues.id, id)).run()
       return this.get(id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   /** Send a review issue back to work; submitted evidence is no longer valid. */
   reject(id: string): Issue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       const issue = this.get(id)
       if (issue.status !== 'review')
         throw new Error('Only issues in review can be rejected')
@@ -304,27 +305,27 @@ export class IssueTracker {
         status: 'working', evidence: null
       }).where(eq(issues.id, id)).run()
       return this.get(id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   block(id: string): Issue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       const issue = this.get(id)
       if (issue.status !== 'queued' && issue.status !== 'working' && issue.status !== 'review')
         throw new Error('Only queued, working, or review issues can be blocked')
       this.database.update(issues).set({ status: 'blocked' }).where(eq(issues.id, id)).run()
       return this.get(id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   requeue(id: string): Issue {
-    return this.database.transaction(() => {
+    return sqliteTransaction(this.connection, () => {
       const issue = this.get(id)
       if (issue.status !== 'working' && issue.status !== 'blocked' && issue.status !== 'review')
         throw new Error('Only working, blocked, or review issues can be requeued')
       this.database.update(issues).set({ status: 'queued' }).where(eq(issues.id, id)).run()
       return this.get(id)
-    }, { behavior: 'immediate' })
+    }, 'immediate')
   }
 
   ready(parentId?: string): Issue[] {

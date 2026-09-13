@@ -28,8 +28,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          # Node 24.20.0 headers crash better-sqlite3 during statement cleanup.
-          node-version: '24.14.1'
+          node-version: '24.20.0'
           cache: npm
       - run: npm ci
       - name: Read release version
@@ -88,8 +87,7 @@ jobs:
           ref: ${{ needs.check.outputs.release_commit }}
       - uses: actions/setup-node@v4
         with:
-          # Node 24.20.0 headers crash better-sqlite3 during statement cleanup.
-          node-version: '24.14.1'
+          node-version: '24.20.0'
           cache: npm
       - run: npm ci
       - run: npm run build

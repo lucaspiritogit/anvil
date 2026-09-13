@@ -83,7 +83,7 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
         {accountType === 'chatgpt' && <label className={field.wrap}>
           <span className={field.label}>ChatGPT sign-in flow for {workspaceName}</span>
           <select className={field.sized} value={chatgptSignInFlow} disabled={disabled} onChange={(event) => setChatgptSignInFlow(event.target.value as typeof chatgptSignInFlow)}>
-            <option value="browser">Browser on this Mac</option>
+            <option value="browser">Browser on this PC</option>
             <option value="deviceCode">One-time device code</option>
           </select>
         </label>}

@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { Store } from '../src/server/store'
 import type { Task } from '../src/shared/types'
@@ -94,8 +94,8 @@ test('migrates interrupted tasks while retaining sessions, output and execution 
   const configFile = join(testHome, 'recovery', 'config.json')
   const database = join(testHome, 'recovery', 'workspaces', 'Default', 'anvil.db')
   migrateBefore(database, 1)
-  const legacyDb = new Database(database)
-  onTestCleanup(() => { if (legacyDb.open) legacyDb.close() })
+  const legacyDb = new DatabaseSync(database)
+  onTestCleanup(() => { if (legacyDb.isOpen) legacyDb.close() })
   legacyDb.prepare("INSERT INTO projects (id, name, path, created_at) VALUES ('project', 'Test', ?, 0)").run(testHome)
   const base: Task = {
     workspaceId: 'default',
@@ -113,13 +113,17 @@ test('migrates interrupted tasks while retaining sessions, output and execution 
     cancelled: { status: 'cancelled', deliveryStatus: 'agent_failed' },
     review: { status: 'failed', deliveryStatus: 'agent_failed' }
   }) as [string, Partial<Task>][]) {
+    const task = { ...base, ...patch, id }
     legacyDb.prepare(`INSERT INTO tasks (id, project_id, title, prompt, agent_id, agent_label,
       cwd, status, delivery_status, started_at, input_tokens, output_tokens, cached_tokens,
       total_tokens, cost_usd, files_changed, additions, deletions, session_id, branch_name)
-      VALUES (@id, @projectId, @title, @prompt, @agentId, @agentLabel, @cwd, @status,
-      @deliveryStatus, @startedAt, @inputTokens, @outputTokens, @cachedTokens, @totalTokens,
-      @costUsd, @filesChanged, @additions, @deletions, @sessionId, @branchName)`)
-      .run({ ...base, ...patch, id })
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      task.id, task.projectId, task.title, task.prompt, task.agentId, task.agentLabel,
+      task.cwd, task.status, task.deliveryStatus, task.startedAt, task.inputTokens,
+      task.outputTokens, task.cachedTokens, task.totalTokens, task.costUsd,
+      task.filesChanged, task.additions, task.deletions, task.sessionId ?? null,
+      task.branchName ?? null
+    )
     legacyDb.prepare('INSERT INTO task_events (id, task_id, ts, stream, kind, category, text) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(`${id}-event`, id, 2, 'system', 'output', 'system', id === 'stopped' ? 'Stop requested by user.' : 'Saved output')
     legacyDb.prepare('INSERT INTO task_executions (task_id, state) VALUES (?, ?)').run(id, JSON.stringify({ taskId: id, projectPath: testHome, parentIssueId: 'saved-parent',

@@ -15,12 +15,9 @@ function dropDatabase() {
 }
 
 function migrate(arguments_) {
-  // The installed SQLite addon belongs to Electron; run Kit with the same ABI.
   mkdirSync(dirname(workspaceDatabase()), { recursive: true })
   const kit = join(dirname(require.resolve('drizzle-kit')), 'bin.cjs')
-  const result = spawnSync(require('electron'), [kit, 'migrate', ...arguments_], {
-    stdio: 'inherit', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
-  })
+  const result = spawnSync(process.execPath, [kit, 'migrate', ...arguments_], { stdio: 'inherit' })
   if (result.error) throw result.error
   return result.status ?? 1
 }

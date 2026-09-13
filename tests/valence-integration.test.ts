@@ -1,5 +1,5 @@
 import { rendererEvent } from './renderer-fixture'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { join } from 'node:path'
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
@@ -89,7 +89,7 @@ test('claims and completes work despite unrelated historical execution metadata'
   // Historical task JSON need not contain the old standalone parent mapping.
   const historicalTaskId = randomUUID()
   store.addTask({ ...store.getTask(taskId)!, id: historicalTaskId })
-  const connection = new Database(tracker.databasePath, { fileMustExist: true })
+  const connection = new DatabaseSync(tracker.databasePath)
   onTestCleanup(() => { connection.close() })
   connection.prepare('INSERT INTO task_executions (task_id, state) VALUES (?, ?)').run(historicalTaskId,
     JSON.stringify({ taskId: historicalTaskId, projectPath: directory, phase: 'complete', issueIds: [], currentIssueId: null, error: null }))
@@ -113,7 +113,7 @@ test('recovers embedded plans after restart without the original standalone stor
   issues.finishPlanning(taskId)
   issues.claim(taskId)
   const sourcePath = join(directory, '.valence/sqlite.db')
-  const connection = new Database(tracker.databasePath, { fileMustExist: true })
+  const connection = new DatabaseSync(tracker.databasePath)
   onTestCleanup(() => { connection.close() })
   connection.prepare('INSERT INTO valence_imports (source_path, project_id, fingerprint, parents, imported_at) VALUES (?, ?, ?, ?, ?)')
     .run(sourcePath, projectId, 'old-fingerprint', JSON.stringify({ [state.parentIssueId]: taskId }), 1)

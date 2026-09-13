@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -244,7 +244,7 @@ test('crash recovery keeps persisted checkpoints and discards the interval with 
   const workspaceDatabase = store.getWorkspaceDatabasePath('default')
   store.close()
   // Reproduce the on-disk open interval left by an abrupt process exit.
-  const database = new Database(workspaceDatabase)
+  const database = new DatabaseSync(workspaceDatabase)
   try {
     database.prepare('UPDATE tasks SET working_started_at = 2000 WHERE id = ?').run('task')
   } finally { database.close() }

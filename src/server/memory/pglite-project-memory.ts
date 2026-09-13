@@ -18,7 +18,7 @@ const { projectMemories } = schema
 /** Embedded, filesystem-backed project memory for the desktop client. */
 export class PgliteProjectMemory extends EmbeddingProjectMemory {
   private client?: PGlite
-  private database?: PgliteDatabase<typeof schema>
+  private database?: PgliteDatabase
   private readonly ready: Promise<void>
 
   constructor(dataDirectory: string, migrationsFolder: string, embeddingOptions: EmbeddingOptions) {
@@ -31,8 +31,9 @@ export class PgliteProjectMemory extends EmbeddingProjectMemory {
     this.client = await PGlite.create(dataDirectory, { extensions: { vector } })
     // pgvector is a database prerequisite, not part of Drizzle's table models.
     await this.client.exec('CREATE EXTENSION IF NOT EXISTS vector')
-    this.database = drizzle(this.client, { schema })
-    await migrate(this.database, { migrationsFolder })
+    const database = drizzle({ client: this.client })
+    this.database = database
+    await migrate(database, { migrationsFolder })
   }
 
   async connect(): Promise<void> {
@@ -91,7 +92,7 @@ export class PgliteProjectMemory extends EmbeddingProjectMemory {
     await this.client?.close()
   }
 
-  private async getDatabase(): Promise<PgliteDatabase<typeof schema>> {
+  private async getDatabase(): Promise<PgliteDatabase> {
     await this.ready
     if (!this.database) throw new Error('PGlite project memory did not initialize')
     return this.database

@@ -47,7 +47,7 @@ Anvil drives agent CLIs already on your PATH, with no hosted backend.
 
 ### Requirements
 
-- Node 20.19+
+- Node 24.15+
 - At least one agent CLI on your PATH.
 
 ### Run locally
@@ -200,7 +200,7 @@ backend and embedding settings.
 
 App state lives in `~/.anvil-composer-dev/workspaces/<name>/anvil.db` during development and
 `~/.anvil-composer/workspaces/<name>/anvil.db` in packaged apps, via Drizzle on
-better-sqlite3: projects, tasks, events, comments, settings, and execution metadata.
+Node's built-in SQLite driver: projects, tasks, events, comments, settings, and execution metadata.
 Valence is Anvil's internal issue tracker. Its parents, issues, dependencies and
 validation evidence share this SQLite database. Each parent references the real
 Anvil task through `parent_issues.anvil_task_id`. Project memory has its own database.
@@ -212,8 +212,7 @@ Anvil task through `parent_issues.anvil_task_id`. Project memory has its own dat
 
 Commit schema changes and generated migrations together. Anvil applies pending
 SQLite migrations on startup. To apply them without opening Anvil, quit the app
-and run `npm run db:migrate`. The launcher runs Drizzle Kit under Electron's Node
-with `ELECTRON_RUN_AS_NODE=1` because `better-sqlite3` is compiled for Electron.
+and run `npm run db:migrate`.
 Repository database commands and `npm run memory:inspect` follow the selected
 workspace in development storage. They share `scripts/maintenance.cjs`; PGlite
 inspection reads that workspace's `memory/pglite` directory. Set `ANVIL_DATA_DIR="$HOME/.anvil-composer"` explicitly to maintain the
@@ -250,8 +249,6 @@ Project repositories and installed agent CLIs must be available inside the conta
 
 - `scripts/maintenance.cjs`: SQLite migration/drop and project-memory inspection.
   Existing `db:migrate`, `db:drop`, `db:reset`, and `memory:inspect` npm commands remain.
-- `scripts/prepare-node-native.cjs`: one Node-compatible SQLite cache shared by
-  headless source runs and Vitest. Electron's installed native addon is unchanged.
 - `scripts/tests/`: standalone verification scripts and their shared Electron
   fixture. Run them from the repository root after building, for example
   `node scripts/tests/test-caffeine-persistence.mjs`.

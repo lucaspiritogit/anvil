@@ -427,7 +427,9 @@ export const useStore = create<AnvilState>((set, get) => ({
     })
     if (generation !== workspaceGeneration) return
     set((s) => ({
-      tasks: [task, ...s.tasks.filter((item) => item.id !== task.id)],
+      // SSE may deliver preparation, cancellation, or failure before the RPC
+      // response arrives. The creation snapshot must not undo those updates.
+      tasks: [s.tasks.find((item) => item.id === task.id) ?? task, ...s.tasks.filter((item) => item.id !== task.id)],
       ...(s.activeProjectId === projectId && s.view === view
         ? { ...evictTaskEvents(), view: { kind: 'task' as const, taskId: task.id } }
         : {})

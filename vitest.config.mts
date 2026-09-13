@@ -48,7 +48,6 @@ export default defineConfig({
           name: 'integration',
           include: ['tests/*.test.ts'],
           exclude: [...unitSuites, 'tests/e2e/**', 'tests/fixtures/**'],
-          globalSetup: ['tests/vitest.integration.setup.ts'],
           setupFiles: ['tests/vitest.setup.ts'],
           fileParallelism: false
         }

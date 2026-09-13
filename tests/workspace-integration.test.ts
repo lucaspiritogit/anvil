@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, vi } from 'vitest'
@@ -108,12 +108,12 @@ test('runs both agents in both profiles and preserves plans and sessions after r
     expect(await readFile(globalAuth, 'utf8')).toBe('{"fixtureAccount":"global-account"}')
     await fixture.assertGlobalUnchanged()
   }
-  const persisted = new Database(store.getWorkspaceDatabasePath('default'))
+  const persisted = new DatabaseSync(store.getWorkspaceDatabasePath('default'))
   try {
     expect(persisted.prepare('SELECT id, anvil_task_id, description FROM parent_issues').all()).toEqual([
       { id: plan.id, anvil_task_id: 'saved-task', description: 'Keep this plan' }
     ])
-    expect(persisted.pragma('foreign_key_check')).toEqual([])
+  expect(persisted.prepare('PRAGMA foreign_key_check').all()).toEqual([])
   } finally {
     persisted.close()
   }

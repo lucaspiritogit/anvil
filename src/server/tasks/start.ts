@@ -44,9 +44,6 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         const images = state.hasImages ? store.taskImages.read(task.id) : undefined
         if (state.hasImages && !images) throw new Error('The original task images were cleared')
         const workspace = resolveWorkspaceExecution(store, task.workspaceId)
-        const prompt = planningPrompt(await promptWithProjectMemory(project.id, task.prompt, task.workspaceId), state)
-        requireRunningTask()
-
         // Without Git there is no task branch or diff. Run directly in the project folder.
         const git = await gitDelivery.status(project.path)
         requireRunningTask()
@@ -57,6 +54,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
             deliveryStatus: 'unavailable'
           })!
           send('task:updated', unmanagedTask)
+          const prompt = planningPrompt(await promptWithProjectMemory(project.id, task.prompt, task.workspaceId), state)
           requireRunningTask()
           agentProcesses.start({
             workspace,
@@ -93,6 +91,9 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         if (prepared.initializedRepository) {
           recordSystemEvent(task.id, 'Created the repository initial commit.')
         }
+        // Memory enriches agent input; it must not hold up branch creation.
+        const prompt = planningPrompt(await promptWithProjectMemory(project.id, task.prompt, task.workspaceId), state)
+        requireRunningTask()
         agentProcesses.start({
           workspace,
           taskId: task.id,

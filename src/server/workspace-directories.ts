@@ -1,7 +1,7 @@
-import type Database from 'better-sqlite3'
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import type { DatabaseSync } from 'node:sqlite'
 
 export { validateWorkspaceFolderName } from '../shared/app-data'
 
@@ -35,7 +35,7 @@ export function moveWorkspaceDirectory(source: string, destination: string): voi
   }
 }
 
-export function relocateTaskPaths(sqlite: Database.Database, previous: string, directory: string): void {
+export function relocateTaskPaths(sqlite: DatabaseSync, previous: string, directory: string): void {
   if (previous === directory) return
   sqlite.prepare(`UPDATE tasks SET cwd = ? || substr(cwd, ?) WHERE substr(cwd, 1, ?) = ?`)
     .run(directory, previous.length + 1, previous.length + 1, previous + '/')

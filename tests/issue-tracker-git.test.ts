@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { writeFileSync, existsSync, unlinkSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { Store } from '../src/server/store'
 import { GitDeliveryManager } from '../src/server/git'
 import { registerTestIpc } from './test-ipc'
@@ -233,7 +233,7 @@ test.each(['working', 'blocked', 'missing range', 'failed diff', 'unavailable Gi
   if (condition !== 'working' && condition !== 'blocked') f.submit()
   if (condition === 'blocked') f.tracker.block(f.issue.id)
   if (condition === 'missing range') {
-    const db = new Database(f.store.getWorkspaceDatabasePath(f.task.workspaceId))
+    const db = new DatabaseSync(f.store.getWorkspaceDatabasePath(f.task.workspaceId))
     try { db.prepare('UPDATE issues SET base_commit = NULL WHERE id = ?').run(f.issue.id) } finally { db.close() }
   }
   if (condition === 'failed diff') vi.spyOn(f.git, 'getDiff').mockRejectedValue(new Error('Git diff failed'))
@@ -621,7 +621,7 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   expect(secondDiff?.patch).not.toMatch(/first\.txt/)
   expect(secondDiff?.commits.map(({ subject }) => subject).sort()).toEqual(['feat: second attempt', 'fix: second rework'])
 
-  const connection = new Database(store.getWorkspaceDatabasePath('default'), { fileMustExist: true })
+  const connection = new DatabaseSync(store.getWorkspaceDatabasePath('default'))
   try {
     connection.prepare('UPDATE issues SET base_commit = NULL, head_commit = NULL WHERE id = ?').run(first.id)
   } finally {

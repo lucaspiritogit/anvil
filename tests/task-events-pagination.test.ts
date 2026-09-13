@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { Store } from '../src/server/store'
@@ -40,7 +40,7 @@ const emptyPage = { events: [], oldestCursor: null, newestCursor: null, hasOlder
 test('defaults to the latest 500, enforces the 4000 maximum and limits history in SQL', () => {
   const { store } = setup()
   append(store, 4105)
-  const prepare = vi.spyOn(Database.prototype, 'prepare')
+  const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
   const page = store.readEventsPage({ taskId: 'task' })
   expect(page.events).toHaveLength(DEFAULT_TASK_EVENT_PAGE_SIZE)
   expect(page.events[0].id).toBe('task-3605')

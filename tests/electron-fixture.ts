@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 
-// Electron-only integration checks must execute in Electron, with its native
-// addon and ASAR filesystem. Do not run Vitest itself under Electron's Node 20.
+// Electron-only integration checks must execute in Electron to cover its embedded
+// Node runtime and ASAR filesystem. Do not run Vitest itself under Electron.
 export async function runElectronFixture(entry: string): Promise<string> {
   const require = createRequire(import.meta.url)
   const electron = require('electron') as string

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,10 +24,10 @@ function fixture(): { directory: string; database: string; open: () => Store } {
   }
 }
 
-function rawDatabase(path: string): Database.Database {
-  const db = new Database(path)
-  db.pragma('foreign_keys = ON')
-  onTestCleanup(() => { if (db.open) db.close() })
+function rawDatabase(path: string): DatabaseSync {
+  const db = new DatabaseSync(path)
+  db.exec('PRAGMA foreign_keys = ON')
+  onTestCleanup(() => { if (db.isOpen) db.close() })
   return db
 }
 
@@ -88,7 +88,7 @@ test('creates one Default workspace and starts new profiles with independent app
   const db = rawDatabase(store.getWorkspaceDatabasePath(work.id))
   expect(db.prepare('SELECT count(*) AS count FROM workspace_settings WHERE workspace_id = ?').get(work.id))
     .toEqual({ count: Object.keys(defaults).length })
-  expect(db.pragma('foreign_key_check')).toEqual([])
+  expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
   store.close()
   const reopened = open()
   expect(reopened.getSettings(initial.id)).toEqual(custom)
@@ -248,7 +248,7 @@ test('enforces foreign keys, immutable task ownership and independent project se
   expect(store.getWorkspacePreferences(DEFAULT_WORKSPACE_ID).lastProjectId).toBe('project')
   expect(store.getWorkspaces()).toHaveLength(2)
   expect(store.getTasks().map((task) => task.id)).toEqual([defaultTask.id])
-  expect(db.pragma('foreign_key_check')).toEqual([])
+  expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
 })
 
 test('loads pull request metadata only for the current task revision', () => {

@@ -2,8 +2,7 @@ import { afterAll, afterEach, expect, vi } from 'vitest'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { createRequire } from 'node:module'
-import type Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { cleanupTestResources } from './test-cleanup'
 
 const originalEnvironment = { ...process.env }
@@ -18,31 +17,17 @@ process.env.ANVIL_TEST_NODE = process.execPath
 delete process.env.ANVIL_DATA_DIR
 const suiteEnvironment = { ...process.env }
 
-// Both Vite imports and bundled CommonJS modules use the same real
-// host-native SQLite constructor. Electron subprocesses keep their own addon.
-const require = createRequire(import.meta.url)
-const sqliteId = require.resolve('better-sqlite3')
-require(sqliteId)
-const sqliteModule = require.cache[sqliteId]!
-const originalSqlite = sqliteModule.exports
-const binding = process.env.ANVIL_TEST_SQLITE_BINDING
-if (!binding) throw new Error('Integration SQLite was not prepared')
-const HostDatabase = originalSqlite as typeof Database
-const databases = new Set<Database.Database>()
-const TestDatabase = new Proxy(HostDatabase, {
-  construct(target, args) {
-    const database = Reflect.construct(target, [args[0], { ...args[1], nativeBinding: binding }]) as Database.Database
-    databases.add(database)
-    return database
-  },
-  apply(target, _thisArg, args) {
-    const database = Reflect.construct(target, [args[0], { ...args[1], nativeBinding: binding }]) as Database.Database
-    databases.add(database)
-    return database
+const databases = new Set<DatabaseSync>()
+class TestDatabase extends DatabaseSync {
+  constructor(...args: ConstructorParameters<typeof DatabaseSync>) {
+    super(...args)
+    databases.add(this)
   }
-})
-sqliteModule.exports = TestDatabase
-vi.doMock('better-sqlite3', () => ({ default: TestDatabase }))
+}
+vi.doMock('node:sqlite', async () => ({
+  ...await vi.importActual<typeof import('node:sqlite')>('node:sqlite'),
+  DatabaseSync: TestDatabase
+}))
 vi.doMock('electron', () => import('./issue-tracker-doubles'))
 const realGitSuites = new Set(['task-branch', 'task-recovery', 'issue-tools', 'task-stacks', 'issue-tracker-git', 'git-delivery', 'git-merge', 'github-git', 'vitest-runtime'])
 const suite = basename(expect.getState().testPath ?? '', '.test.ts')
@@ -54,7 +39,7 @@ async function cleanup(): Promise<void> {
   try {
     await cleanupTestResources()
   } finally {
-    for (const database of databases) if (database.open) database.close()
+    for (const database of databases) if (database.isOpen) database.close()
     databases.clear()
     const doubles = await import('./issue-tracker-doubles')
     doubles.resetTestDoubles()
@@ -68,7 +53,6 @@ async function cleanup(): Promise<void> {
 afterEach(cleanup)
 afterAll(async () => {
   try { await cleanup() } finally {
-    sqliteModule.exports = originalSqlite
     for (const key of Object.keys(process.env)) if (!(key in originalEnvironment)) delete process.env[key]
     Object.assign(process.env, originalEnvironment)
     rmSync(home, { recursive: true, force: true })

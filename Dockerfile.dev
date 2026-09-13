@@ -1,4 +1,4 @@
-FROM node:24.14.1-bookworm-slim AS tooling
+FROM node:24.20.0-bookworm-slim AS tooling
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential git python3 ca-certificates \
@@ -7,14 +7,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY package.json package-lock.json ./
 # The container runs Node only; skip the root Electron postinstall.
-RUN npm ci --ignore-scripts && npm rebuild better-sqlite3 node-pty argon2
+RUN npm ci --ignore-scripts && npm rebuild node-pty argon2
 COPY . .
 RUN npm run build
 
 FROM tooling AS production-dependencies
 RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 
-FROM node:24.14.1-bookworm-slim
+FROM node:24.20.0-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

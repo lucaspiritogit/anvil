@@ -1,6 +1,6 @@
 import { rendererEvent } from './renderer-fixture'
 import { expect, test } from 'vitest'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -61,7 +61,7 @@ test('starts and completes tasks while preserving unrelated standalone files', a
     onTestCleanup(() => rmSync(standaloneDirectory, { recursive: true, force: true }))
     const standalonePath = join(standaloneDirectory, 'sqlite.db')
     if (standaloneDirectory === directories[0]) {
-      const standalone = new Database(standalonePath)
+  const standalone = new DatabaseSync(standalonePath)
       try {
         // A foreign database must not be inspected, imported, or changed.
         standalone.exec('CREATE TABLE unrelated (value TEXT); INSERT INTO unrelated VALUES (\'Preserve me\')')

@@ -26,7 +26,6 @@ export const electron = {
     if (!env.ANVIL_DATA_DIR && !options.env?.HOME) throw new Error('Electron checks require an isolated profile')
     const key = `${env.ANVIL_DATA_DIR ?? env.HOME}:${options.executablePath ?? 'development'}`
     env.ANVIL_SERVER_PORT = await isolatedServerPort(key)
-    delete env.ANVIL_SQLITE_BINDING
     delete env.ANVIL_SERVER_URL
     delete env.ELECTRON_RUN_AS_NODE
     return _electron.launch({ ...options, env })

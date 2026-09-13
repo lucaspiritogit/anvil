@@ -1,0 +1,1 @@
+ALTER TABLE "project_memories" DROP CONSTRAINT "project_memories_kind_valid", ADD CONSTRAINT "project_memories_kind_valid" CHECK ("kind" IN ('task_result'));

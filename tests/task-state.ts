@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { IssueTracker } from '../src/server/valence/tracker'
 import { testHome } from './issue-tracker-doubles'
@@ -18,7 +18,7 @@ export function taskState(store: Store, taskId: string) {
 
 /** Independent test connection: never constructs Store or runs startup recovery. */
 export function openTaskTracker(projectPath: string, databasePath = join(testHome, '.anvil-composer/workspaces/Default/anvil.db')): IssueTracker {
-  const connection = new Database(databasePath, { fileMustExist: true })
+  const connection = new DatabaseSync(databasePath)
   try {
     const project = connection.prepare('SELECT id FROM projects WHERE path = ?').get(projectPath) as { id: string } | undefined
     if (!project) throw new Error('Project not found')

@@ -209,7 +209,11 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
         return failed
       }
       if (task.parentTaskId) recordSystemEvent(task.id, 'Queued behind the parent task. Work starts after its Git delivery finishes.')
-      return startTask(task.id)
+      // Creation is acknowledged independently of memory lookup and checkout.
+      // Every client must see preparing tasks, including tasks queued on a parent.
+      send('task:updated', task)
+      void startTask(task.id).catch((error) => console.warn('Could not start created task:', error))
+      return task
     }
   )
 

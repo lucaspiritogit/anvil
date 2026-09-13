@@ -1,6 +1,6 @@
 import { onTestCleanup } from './test-cleanup'
 import { test, expect, beforeEach } from 'vitest'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -99,7 +99,7 @@ test('persists settings and wallpaper selection across restarts', async () => {
 test('recovers corrupt and legacy settings while preserving other preferences', async () => {
   store.setSettings({ caffeineMode: true })
   store.close()
-  const raw = new Database(join(root, 'workspaces', 'Default', 'anvil.db'))
+  const raw = new DatabaseSync(join(root, 'workspaces', 'Default', 'anvil.db'))
   for (const [key, value] of Object.entries({ fontSize: 'garbage', overviewBackgroundMode: 'garbage', overviewBackgroundColor: 'url(file:///secret)', overviewWallpaperId: '../secret.png' })) {
     raw.prepare('UPDATE workspace_settings SET value = ? WHERE key = ?').run(value, key)
   }
@@ -111,7 +111,7 @@ test('recovers corrupt and legacy settings while preserving other preferences', 
   expect(store.getSettings().caffeineMode).toBe(true)
   expect(store.getSettings().fontSize, 'Invalid font size falls back').toBe(14)
   store.close()
-  const legacy = new Database(join(root, 'workspaces', 'Default', 'anvil.db'))
+  const legacy = new DatabaseSync(join(root, 'workspaces', 'Default', 'anvil.db'))
   legacy.prepare("DELETE FROM workspace_settings WHERE key LIKE 'overview%'").run()
   legacy.close()
   store = new Store(database, options)

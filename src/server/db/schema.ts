@@ -1,12 +1,3 @@
-/**
- * Anvil's database schema, declared once.
- *
- * `drizzle-kit generate` diffs this against the stored snapshot and writes a
- * numbered migration into `src/server/db/migrations`; the app applies whatever is
- * outstanding when it opens the database. Nothing here is hand-written DDL, and
- * no migration is hand-written either — change a table below and run
- * `npm run db:generate`.
- */
 import { sql, type SQL } from 'drizzle-orm'
 import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH } from '../../shared/types'
 import type { ComposerPreferences } from '../../shared/types'

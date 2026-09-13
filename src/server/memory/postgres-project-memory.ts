@@ -15,12 +15,12 @@ const { projectMemories } = schema
 /** Project memory for self-hosted PostgreSQL and future managed deployments. */
 export class PostgresProjectMemory extends EmbeddingProjectMemory {
   private readonly pool: Pool
-  private readonly db: NodePgDatabase<typeof schema>
+  private readonly db: NodePgDatabase
 
   constructor(databaseUrl: string, embeddingOptions: EmbeddingOptions, private readonly workspaceId = 'default') {
     super(embeddingOptions)
     this.pool = new Pool({ connectionString: databaseUrl, max: 4 })
-    this.db = drizzle(this.pool, { schema })
+    this.db = drizzle({ client: this.pool })
   }
 
   async connect(): Promise<void> {

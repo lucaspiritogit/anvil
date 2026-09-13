@@ -1,8 +1,8 @@
 import { expect, test, vi } from 'vitest'
-import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
 import { build } from 'esbuild'
 import { Store } from '../src/server/store'
@@ -17,7 +17,7 @@ function fixture() {
   const store = new Store(registryPath, { migrationsFolder: resolve('src/server/db/migrations') })
   onTestCleanup(() => store.close())
   const path = store.getWorkspaceDatabasePath('default')
-  const db = new Database(path)
+  const db = new DatabaseSync(path)
   onTestCleanup(() => { db.close() })
   for (const project of ['a', 'b']) {
     db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, 1)').run(project, project, `/${project}`)
@@ -129,7 +129,7 @@ test('dependency write failures roll back batch rows and field replacements', ()
     { ...input(), key: 'first' }, { ...input(), key: 'second', dependencies: ['first'] }
   ])).toThrow('dependency failure')
   expect(a.list()).toEqual([dependency, issue])
-  expect(db.pragma('foreign_key_check')).toEqual([])
+  expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
 })
 
 test('priority then creation ordering, completion evidence, transitions and array replacement', () => {
@@ -315,11 +315,11 @@ test('borrowed tracker disposal leaves Store open; owned disposal closes only it
   a.close()
   expect(() => a.list()).toThrow(/closed/)
   expect(store.issueTracker('a').listParents()).toHaveLength(1)
-  const connection = new Database(path)
+  const connection = new DatabaseSync(path)
   const owned = new IssueTracker(connection, 'a', 'owned')
   owned.close()
   owned.close()
-  expect(connection.open).toBe(false)
+  expect(connection.isOpen).toBe(false)
   expect(store.issueTracker('a').list()).toEqual([])
 })
 
@@ -328,17 +328,14 @@ test('independent SQLite connections contend and claim each issue exactly once',
   const issues = a.createMany(Array.from({ length: 30 }, (_, index) => ({ ...input(), key: `${index}` })))
   const bundle = join(directory, 'tracker.cjs')
   await build({
-    entryPoints: [resolve('src/server/valence/tracker.ts')], outfile: bundle, bundle: true, platform: 'node', format: 'cjs',
-    plugins: [{ name: 'host-sqlite', setup(build) {
-      build.onResolve({ filter: /^better-sqlite3$/ }, () => ({ path: join(dirname(dirname(dirname(process.env.ANVIL_TEST_SQLITE_BINDING!))), 'lib/index.js'), external: true }))
-    } }]
+    entryPoints: [resolve('src/server/valence/tracker.ts')], outfile: bundle, bundle: true, platform: 'node', format: 'cjs'
   })
   const barrier = new SharedArrayBuffer(4)
   const code = `
     const { parentPort, workerData } = require('node:worker_threads')
-    const Database = require(workerData.sqlite)
+    const { DatabaseSync } = require('node:sqlite')
     const { IssueTracker } = require(workerData.bundle)
-    const db = new Database(workerData.path)
+    const db = new DatabaseSync(workerData.path, { timeout: 5000 })
     const tracker = new IssueTracker(db, 'a', 'owned')
     parentPort.postMessage('ready')
     Atomics.wait(new Int32Array(workerData.barrier), 0, 0)
@@ -349,7 +346,7 @@ test('independent SQLite connections contend and claim each issue exactly once',
     parentPort.postMessage(ids)
   `
   const workers = Array.from({ length: 4 }, () => new Worker(code, { eval: true, workerData: {
-    sqlite: dirname(dirname(dirname(process.env.ANVIL_TEST_SQLITE_BINDING!))), bundle, path, barrier
+    bundle, path, barrier
   } }))
   onTestCleanup(async () => { await Promise.all(workers.map((worker) => worker.terminate())) })
   const results: Promise<string[]>[] = []

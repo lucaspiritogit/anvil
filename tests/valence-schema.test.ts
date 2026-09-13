@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,7 +7,7 @@ import { Store } from '../src/server/store'
 import { onTestCleanup } from './test-cleanup'
 import { migrateBefore, migrationsFolder } from './migration-fixture'
 
-function fixture(existing = false): { db: Database.Database; path: string } {
+function fixture(existing = false): { db: DatabaseSync; path: string } {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-valence-schema-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
   const path = join(directory, 'config.json')
@@ -15,17 +15,17 @@ function fixture(existing = false): { db: Database.Database; path: string } {
   let originalTasks: Record<string, unknown>[] | undefined
   if (existing) {
     migrateBefore(workspacePath, 5)
-    const old = new Database(workspacePath)
+    const old = new DatabaseSync(workspacePath)
     try {
       seedTasks(old)
-      originalTasks = old.prepare<[], Record<string, unknown>>('SELECT * FROM tasks ORDER BY id').all()
+      originalTasks = old.prepare('SELECT * FROM tasks ORDER BY id').all()
     } finally { old.close() }
   }
   const store = new Store(path, { migrationsFolder })
   store.close()
-  const db = new Database(workspacePath)
-  db.pragma('foreign_keys = ON')
-  onTestCleanup(() => { if (db.open) db.close() })
+  const db = new DatabaseSync(workspacePath)
+  db.exec('PRAGMA foreign_keys = ON')
+  onTestCleanup(() => { if (db.isOpen) db.close() })
   if (!existing) seedTasks(db)
   if (originalTasks) {
     expect(db.prepare('SELECT * FROM tasks ORDER BY id').all()).toEqual(originalTasks.map((row) => ({
@@ -46,7 +46,7 @@ function fixture(existing = false): { db: Database.Database; path: string } {
   return { db, path }
 }
 
-function seedTasks(db: Database.Database): void {
+function seedTasks(db: DatabaseSync): void {
   db.prepare("INSERT INTO projects (id, name, path, created_at) VALUES ('project', 'Project', '/test', 1)").run()
   for (const id of ['task-a', 'task-b']) {
     db.prepare(`INSERT INTO tasks (id, project_id, agent_id, agent_label, prompt, title, cwd, status, started_at)
@@ -54,12 +54,12 @@ function seedTasks(db: Database.Database): void {
   }
 }
 
-function parent(db: Database.Database, id: string, taskId: string | null): void {
+function parent(db: DatabaseSync, id: string, taskId: string | null): void {
   db.prepare('INSERT INTO parent_issues (id, anvil_task_id, title, description) VALUES (?, ?, ?, ?)')
     .run(id, taskId, 'Parent', 'Description')
 }
 
-function issue(db: Database.Database, id: string, parentId: string): void {
+function issue(db: DatabaseSync, id: string, parentId: string): void {
   db.prepare(`INSERT INTO issues (id, parent_id, title, description, checklist, validation, labels,
     priority, status, evidence, completed_at) VALUES (?, ?, 'Issue', 'Description', '["Check"]',
     'Run tests', '["schema"]', 'high', 'complete', 'Passed', 123)`).run(id, parentId)
@@ -104,7 +104,7 @@ for (const existing of [false, true]) {
     expect(db.prepare('SELECT id FROM issues ORDER BY sequence').all())
       .toEqual([{ id: 'z' }, { id: 'a' }, { id: 'm' }])
     expect(db.prepare('SELECT * FROM tasks ORDER BY id').all()).toEqual(before)
-    expect(db.pragma('foreign_key_check')).toEqual([])
+    expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 }
 
@@ -114,8 +114,8 @@ test('adds a nullable issue start timestamp without inventing history or changin
   const path = join(directory, 'config.json')
   const workspacePath = join(directory, 'workspaces', 'Default', 'anvil.db')
   migrateBefore(workspacePath, 10)
-  const db = new Database(workspacePath)
-  onTestCleanup(() => { if (db.open) db.close() })
+  const db = new DatabaseSync(workspacePath)
+  onTestCleanup(() => { if (db.isOpen) db.close() })
   seedTasks(db)
   parent(db, 'parent', 'task-a')
   for (const status of ['queued', 'working', 'review', 'complete']) {
@@ -124,20 +124,20 @@ test('adds a nullable issue start timestamp without inventing history or changin
       .run(status, 'base', 'head', status)
   }
   db.prepare('INSERT INTO issue_dependencies VALUES (?, ?, ?)').run('queued', 'complete', 0)
-  const before = db.prepare<[], Record<string, unknown>>('SELECT * FROM issues ORDER BY sequence').all()
+  const before = db.prepare('SELECT * FROM issues ORDER BY sequence').all()
   expect(before.every((row) => !Object.hasOwn(row, 'started_at'))).toBe(true)
 
   db.close()
   const migrated = new Store(path, { migrationsFolder })
   onTestCleanup(() => migrated.close())
-  const workspaceDb = new Database(migrated.getWorkspaceDatabasePath('default'))
+  const workspaceDb = new DatabaseSync(migrated.getWorkspaceDatabasePath('default'))
   onTestCleanup(() => { workspaceDb.close() })
   expect(workspaceDb.prepare('SELECT * FROM issues ORDER BY sequence').all())
     .toEqual(before.map((row) => ({ ...row, started_at: null, expected_files: null })))
   expect(migrated.issueTracker('project').list().every((entry) => entry.startedAt === undefined)).toBe(true)
   expect(workspaceDb.prepare('SELECT * FROM issue_dependencies').all())
     .toEqual([{ issue_id: 'queued', dependency_id: 'complete', position: 0 }])
-  expect(workspaceDb.pragma('foreign_key_check')).toEqual([])
+  expect(workspaceDb.prepare('PRAGMA foreign_key_check').all()).toEqual([])
 })
 
 test('issues accept review status and reject unknown statuses', () => {
@@ -171,5 +171,5 @@ test('task and project deletion remove owned Valence records and incoming depend
   for (const table of ['tasks', 'parent_issues', 'issues', 'issue_dependencies']) {
     expect(db.prepare(`SELECT * FROM ${table}`).all()).toEqual([])
   }
-  expect(db.pragma('foreign_key_check')).toEqual([])
+  expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
 })
