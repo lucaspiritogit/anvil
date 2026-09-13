@@ -16,7 +16,9 @@ import type {
   TaskEvent,
   TaskEventCursor,
   TaskEventsRequest,
+  TaskMergeAndPushPreview,
   TaskMergePreview,
+  TaskPushPreview,
   Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange
 } from '@shared/types'
 
@@ -142,6 +144,8 @@ interface AnvilState {
   initGitRepo: (id: string) => Promise<void>
 
   approveTask: (taskId: string, preview: TaskMergePreview) => Promise<void>
+  mergeAndPushTask: (taskId: string, preview: TaskMergeAndPushPreview) => Promise<void>
+  pushTask: (taskId: string, preview: TaskPushPreview) => Promise<void>
   approveIssue: (taskId: string, issueId: string, headCommit: string | null) => Promise<void>
   rejectIssue: (taskId: string, issueId: string, comment?: string, headCommit?: string | null) => Promise<void>
   openRebase: (taskId: string | null) => void
@@ -646,6 +650,22 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   approveTask: async (taskId, preview) => {
     const task = await window.anvil.tasks.approve({ taskId, preview })
+    set((s) => ({
+      tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+      commentError: null
+    }))
+  },
+
+  mergeAndPushTask: async (taskId, preview) => {
+    const task = await window.anvil.tasks.mergeAndPush({ taskId, preview })
+    set((s) => ({
+      tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+      commentError: null
+    }))
+  },
+
+  pushTask: async (taskId, preview) => {
+    const task = await window.anvil.tasks.push({ taskId, preview })
     set((s) => ({
       tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
       commentError: null
