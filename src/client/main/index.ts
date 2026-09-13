@@ -44,7 +44,7 @@ function openSettings(): void {
   else request()
 }
 
-function showClosingProcesses(): void {
+async function showClosingProcesses(): Promise<void> {
   const closingWindow = new BrowserWindow({
     width: 320, height: 140, show: false, frame: false, resizable: false,
     backgroundColor: '#0d0f12', alwaysOnTop: true,
@@ -52,11 +52,21 @@ function showClosingProcesses(): void {
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false }
   })
   closingWindow.on('close', (event) => { if (isClosing()) event.preventDefault() })
-  closingWindow.once('ready-to-show', () => closingWindow.show())
-  const closingUrl = new URL('closing.html', rendererUrl).href
-  void closingWindow.loadURL(closingUrl).catch((error) => {
-    console.warn('Could not show closing window:', error)
+  const closingWindowReady = new Promise<void>((resolve) => {
+    closingWindow.once('ready-to-show', () => {
+      if (!closingWindow.isDestroyed()) {
+        closingWindow.show()
+      }
+      resolve()
+    })
   })
+  const closingUrl = new URL('closing.html', rendererUrl).href
+  try {
+    await closingWindow.loadURL(closingUrl)
+    await closingWindowReady
+  } catch (error) {
+    console.warn('Could not show closing window:', error)
+  }
 }
 
 function createWindow(openSettingsOnLoad = false): void {

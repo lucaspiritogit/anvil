@@ -41,6 +41,22 @@ test('repeated Cmd+Q waits for cleanup once and exits without a second cancellab
   expect(application.exit).toHaveBeenCalledOnce()
 })
 
+test('cleanup waits for the closing UI to finish loading', async () => {
+  let showClosingWindow!: () => void
+  const showClosing = vi.fn(() => new Promise<void>((resolve) => { showClosingWindow = resolve }))
+  const cleanup = vi.fn()
+  const { application } = setup([cleanup], showClosing)
+
+  application.quit()
+  expect(showClosing).toHaveBeenCalledOnce()
+  expect(cleanup).not.toHaveBeenCalled()
+
+  showClosingWindow()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(cleanup).toHaveBeenCalledOnce()
+  expect(application.exit).toHaveBeenCalledExactlyOnceWith(0)
+})
+
 test('cleanup errors do not skip other services or trap quit', async () => {
   let finish!: () => void
   const error = new Error('Cleanup failed')

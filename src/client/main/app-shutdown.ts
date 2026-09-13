@@ -8,7 +8,7 @@ interface QuitApplication {
 }
 
 interface ShutdownOptions {
-  showClosing(): void
+  showClosing(): void | Promise<void>
   cleanup: Array<() => void | Promise<void>>
   finalize(): void
   reportError(error: unknown): void
@@ -58,9 +58,16 @@ async function shutDownApplication(application: QuitApplication, options: Shutdo
   }, options.timeoutMs ?? 8_000)
 
   try {
-    options.showClosing()
+    const closingWindow = options.showClosing()
+    if (closingWindow) {
+      await closingWindow
+    }
   } catch (error) {
     reportShutdownError(options, error)
+  }
+
+  if (exited) {
+    return
   }
 
   const results = await Promise.allSettled(options.cleanup.map(async (cleanup) => cleanup()))
