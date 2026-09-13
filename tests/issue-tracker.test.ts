@@ -98,7 +98,8 @@ test('schedules dependencies and priorities sequentially and retains final task 
   agentProcesses.emit('usage', { taskId, inputTokens: 5, outputTokens: 2, cachedTokens: 0, totalTokens: 7, costUsd: null })
   expect(store.getTask(taskId)?.totalTokens).toBe(7)
   const startsBeforeSubmit = agentProcesses.starts.length
-  GitDeliveryManager.worktreeHeadValue = 'issue-head'
+  const issueHead = 'd'.repeat(40)
+  GitDeliveryManager.worktreeHeadValue = issueHead
   const firstIssueId = await submit(taskId)
   await assertReadOnlySnapshot(['queued', 'queued', 'review'])
   expect(store.getTaskExecution(taskId)?.phase, 'The loop pauses while an issue awaits developer review').toBe('reviewing')
@@ -106,7 +107,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   expect(agentProcesses.starts.length, 'No next issue is claimed before approval').toBe(startsBeforeSubmit)
   expect(store.getTask(taskId)?.status).toBe('running')
   expect(GitDeliveryManager.head, 'The issue is finalized before review').toBe(deliveriesBeforeCompletion + 1)
-  expect((await call('tasks:issue-diff', { taskId, issueId: firstIssueId })).patch, 'The review diff covers only the reviewed issue').toBe('base..issue-head')
+  expect((await call('tasks:issue-diff', { taskId, issueId: firstIssueId })).patch, 'The review diff covers only the reviewed issue').toBe(`base..${issueHead}`)
   await expect(call('tasks:issue-diff', { taskId, issueId: dependent.id })).rejects.toThrow(/not finished preparing/)
   await expect(call('tasks:issue-diff', { taskId, issueId: unrelated.id })).rejects.toThrow(/does not belong to this task plan/)
   agentProcesses.emit('usage', { taskId, inputTokens: 3, outputTokens: 1, cachedTokens: 0, totalTokens: 4, costUsd: null })
@@ -168,7 +169,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   await assertReadOnlySnapshot(['complete', 'complete', 'complete'])
   expect(store.getTaskExecution(taskId)?.phase).toBe('complete')
   expect(store.getTask(taskId)?.deliveryStatus).toBe('reviewable')
-  expect((await call('tasks:diff', taskId)).patch).toBe('base..issue-head')
+  expect((await call('tasks:diff', taskId)).patch).toBe(`base..${issueHead}`)
   await call('tasks:approve', { taskId, preview: await call('tasks:merge-preview', taskId) })
   expect(store.getTask(taskId)?.deliveryStatus).toBe('approved')
 

@@ -313,7 +313,8 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(tasks.get(task.id)?.deliveryStatus).toBe('reviewable')
   expect(tasks.get(task.id)?.totalTokens, 'Usage accumulates across sequential processes').toBe(11)
   expect(tasks.get(task.id)?.costUsd).toBe(0.2)
-  expect((await call('tasks:diff', task.id)).patch).toMatch(/base\.\.commit-/)
+  expect(tasks.get(task.id)?.headCommit).toMatch(/^[0-9a-f]{40}$/)
+  expect((await call('tasks:diff', task.id)).patch).toBe(`base..${tasks.get(task.id)?.headCommit}`)
 
   expect(() => call('comments:add', { taskId: task.id, body: ' ' })).toThrow(/Invalid IPC request/)
   const draft: TaskComment[] = call('comments:add', { taskId: task.id, file: 'file.ts', side: 'additions', lineNumber: 9, body: ' Fix this ' })

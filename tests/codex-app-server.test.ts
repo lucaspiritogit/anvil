@@ -423,12 +423,16 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
     expect(transient.sessionId).toBe('thread-test')
     if (process.platform !== 'win32') expect((await client('orphan').execute(input, () => {})).status).toBe('failed')
     expect((await client('interrupted').execute(input, () => {})).status).toBe('cancelled')
-    const startup = await new CodexAppServerClient({ workspace: testWorkspace(),
+    await Promise.all(clients.splice(0).map((executor) => executor.close()))
+    const startupClient = new CodexAppServerClient({ workspace: testWorkspace(),
       command: process.execPath, args: [fixture, 'startup-hang', transcript], requestTimeoutMs: 30
-    }).execute(input, () => {})
+    })
+    const startup = await startupClient.execute(input, () => {})
     expect(startup.error!).toMatch(/initialize request timed out/)
+    await startupClient.close()
 
-    expect((await client('permissions').execute(input, () => {})).status).toBe('succeeded')
+    const permissions = await client('permissions').execute(input, () => {})
+    expect(permissions.status, permissions.error).toBe('succeeded')
     const permissionResponses = (await requests()).filter((request) => !request.method && request.id !== undefined)
     expect(permissionResponses.find((response) => response.id === 1).result.decision).toBe('accept')
     expect(permissionResponses.find((response) => response.id === 'file').result.decision).toBe('accept')

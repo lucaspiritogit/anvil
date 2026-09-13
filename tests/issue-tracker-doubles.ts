@@ -124,16 +124,18 @@ export class GitDeliveryManager {
   async finalizeBranch(): Promise<any> {
     if (GitDeliveryManager.failFinalize) throw new Error('finalize failed')
     GitDeliveryManager.head++
-    return { headCommit: GitDeliveryManager.worktreeHeadValue ?? `commit-${GitDeliveryManager.head}`, hasChanges: true, filesChanged: 1, additions: 1, deletions: 0 }
+    return { headCommit: GitDeliveryManager.currentHeadCommit(), hasChanges: true, filesChanged: 1, additions: 1, deletions: 0 }
   }
   async getMergePreview(_path: string, branchName: string): Promise<any> {
-    const sourceCommit = GitDeliveryManager.worktreeHeadValue ??
-      (GitDeliveryManager.head > 0 ? `commit-${GitDeliveryManager.head}` : 'a'.repeat(40))
+    const sourceCommit = GitDeliveryManager.currentHeadCommit()
     return { sourceBranch: branchName, targetBranch: 'main', sourceCommit, targetCommit: 'b'.repeat(40), commitCount: 1 }
   }
   async merge(): Promise<void> {}
   async getDiff(_path: string, base: string, head: string): Promise<any> { return { patch: `${base}..${head}`, commits: [] } }
   static worktreeHeadValue: string | null = null
+  static currentHeadCommit(): string {
+    return GitDeliveryManager.worktreeHeadValue ?? GitDeliveryManager.head.toString(16).padStart(40, '0')
+  }
   worktreeHead(): string | null { return GitDeliveryManager.worktreeHeadValue }
   async getIssueDiff(_path: string, source: any): Promise<any> {
     if (source.baseCommit && source.headCommit) return { patch: `${source.baseCommit}..${source.headCommit}`, commits: [] }
