@@ -7,6 +7,7 @@ import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
 import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { TaskContextMenu } from './components/TaskContextMenu'
+import { CommandPalette } from './components/CommandPalette'
 import { matchesAccelerator, isTerminalShortcut } from './keys'
 import { cn } from './ui'
 import { useStore } from './state/store'
@@ -21,6 +22,7 @@ const SettingsPage = lazy(async () => {
 export function App(): JSX.Element {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalCreated, setTerminalCreated] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [mobileNavigation, setMobileNavigation] = useState(() => window.matchMedia('(max-width: 700px)').matches)
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
   const projectId = useStore((s) => s.activeProjectId ?? s.projects[0]?.id)
@@ -31,7 +33,11 @@ export function App(): JSX.Element {
   const fontSize = useStore((s) => s.settings?.fontSize)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const workspaceId = useStore((s) => s.activeWorkspaceId)
-  useEffect(() => { setTerminalOpen(false); setTerminalCreated(false) }, [workspaceId])
+  useEffect(() => {
+    setTerminalOpen(false)
+    setTerminalCreated(false)
+    setCommandPaletteOpen(false)
+  }, [workspaceId])
   const switching = useStore((s) => s.workspaceSwitching)
   const workspaceError = useStore((s) => s.workspaceError)
   const ready = useStore((s) => s.ready)
@@ -44,6 +50,10 @@ export function App(): JSX.Element {
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const focusTaskComposer = useStore((s) => s.focusTaskComposer)
   const keybindings = useStore((s) => s.settings?.keybindings) ?? DEFAULT_KEYBINDINGS
+
+  useEffect(() => {
+    if (settingsOpen || switching) setCommandPaletteOpen(false)
+  }, [settingsOpen, switching])
 
   const closeMobileNavigation = useCallback((returnFocus: boolean): void => {
     setMobileNavigationOpen(false)
@@ -61,6 +71,12 @@ export function App(): JSX.Element {
     if (mobileNavigationOpen) closeMobileNavigation(true)
     else setMobileNavigationOpen(true)
   }, [closeMobileNavigation, mobileNavigation, mobileNavigationOpen, toggleSidebar])
+
+  const openTerminal = useCallback((): void => {
+    if (!projectId) return
+    setTerminalCreated(true)
+    setTerminalOpen(true)
+  }, [projectId])
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 700px)')
@@ -141,6 +157,22 @@ export function App(): JSX.Element {
     }
   }, [sidebarCollapsed])
 
+  // F1 is captured separately so dialogs and terminal widgets that contain
+  // their own key events cannot allow the browser help action to escape.
+  useEffect(() => {
+    const onF1 = (event: KeyboardEvent): void => {
+      if (event.key !== 'F1') return
+      event.preventDefault()
+      const state = useStore.getState()
+      if (event.repeat || !state.ready || state.workspaceSwitching || state.settingsOpen) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('[data-terminal]') || document.querySelector('dialog:modal')) return
+      setCommandPaletteOpen(true)
+    }
+    window.addEventListener('keydown', onF1, true)
+    return () => window.removeEventListener('keydown', onF1, true)
+  }, [])
+
   // Capture fields stop propagation so recording a shortcut never invokes it.
   useEffect(() => {
     const actions: Record<ShortcutId, () => void> = { toggleSidebar: toggleNavigation, focusTaskComposer }
@@ -148,12 +180,13 @@ export function App(): JSX.Element {
       // Auto-repeat fires while a chord is held down; a shortcut is an action
       // per press, so only the first event of a hold counts.
       if (event.repeat || useStore.getState().workspaceSwitching) return
+      if (commandPaletteOpen) return
       if (isTerminalShortcut(event)) {
         event.preventDefault()
         if (projectId) {
           setSettingsOpen(false)
-          setTerminalCreated(true)
-          setTerminalOpen((open) => !open)
+          if (terminalOpen) setTerminalOpen(false)
+          else openTerminal()
         }
         return
       }
@@ -184,7 +217,7 @@ export function App(): JSX.Element {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [keybindings, toggleNavigation, focusTaskComposer, settingsOpen, setSettingsOpen, projectId,
-    mobileNavigation, mobileNavigationOpen, closeMobileNavigation])
+    mobileNavigation, mobileNavigationOpen, closeMobileNavigation, commandPaletteOpen, terminalOpen, openTerminal])
 
   useEffect(() => {
     const offEvent = window.anvil.tasks.onEvent(applyEvent)
@@ -232,8 +265,7 @@ export function App(): JSX.Element {
             onNavigate={() => closeMobileNavigation(false)}
             terminalAvailable={Boolean(projectId)} onOpenTerminal={() => {
             if (!projectId) return
-            setTerminalCreated(true)
-            setTerminalOpen(true)
+            openTerminal()
             if (mobileNavigation) closeMobileNavigation(false)
           }} />
         </div>
@@ -252,6 +284,7 @@ export function App(): JSX.Element {
         <p>{workspaceError}</p>
         <button className="mt-2 text-accent" onClick={() => { void load() }}>Retry workspace</button>
       </div>}
+      <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenTerminal={openTerminal} />
     </>
   )
 }
