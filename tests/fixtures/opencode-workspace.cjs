@@ -1,4 +1,5 @@
 const { createServer } = require('node:net')
+const { createServer: createHttpServer } = require('node:http')
 const { createInterface } = require('node:readline')
 const { mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync } = require('node:fs')
 const { join } = require('node:path')
@@ -33,6 +34,39 @@ if (args[0] === 'models') {
   console.log('{\n}')
   process.exit(0)
 }
+if (args[0] === 'serve') {
+  const hostname = args.find((arg) => arg.startsWith('--hostname='))?.split('=')[1]
+  const requestedPort = Number(args.find((arg) => arg.startsWith('--port='))?.split('=')[1])
+  if (hostname !== '127.0.0.1' || requestedPort !== 0 || !args.includes('--mdns=false')) process.exit(10)
+  const server = createHttpServer((request, response) => {
+    if (!request.url?.startsWith('/provider')) {
+      response.writeHead(404).end()
+      return
+    }
+    const model = `openai/${key}`
+    response.setHeader('Content-Type', 'application/json')
+    response.end(JSON.stringify({
+      all: [
+        { id: 'openai', name: 'OpenAI', env: ['OPENAI_API_KEY'], models: {
+          [key]: { id: key, variants: { high: {} }, capabilities: { input: { image: true } } }
+        } },
+        { id: 'amazon-bedrock', name: 'Amazon Bedrock', env: ['AWS_PROFILE'], models: {
+          'global-chain': { id: 'global-chain', variants: {}, capabilities: { input: { image: false } } }
+        } }
+      ],
+      default: { openai: model },
+      connected: Object.keys(readAuth())
+    }))
+  })
+  const listen = (port) => server.listen(port, hostname, () => {
+    const address = server.address()
+    record({ event: 'sdk-listening', port: address.port, hostname: address.address })
+    console.log(`opencode server listening on http://${hostname}:${address.port}`)
+  })
+  server.once('error', () => listen(0))
+  listen(4096)
+  process.once('SIGTERM', () => server.close(() => process.exit(0)))
+} else {
 const option = (name) => args[args.indexOf(name) + 1]
 const hostname = option('--hostname')
 const port = Number(option('--port'))
@@ -74,3 +108,4 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     return respond(id, { stopReason: 'end_turn' })
   }
 })
+}

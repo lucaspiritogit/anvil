@@ -5,8 +5,7 @@ import { requireOpenCodeImageModel } from './opencode-models'
 import { AcpOutput } from './acp-output'
 import { OpenCodeAcpConnection, type OpenCodeAcpOptions } from './opencode-acp-connection'
 import { LazyAgentServer } from './lazy-agent-server'
-import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceEnvironment, requireOpenCodeProjectIsolation, requireWorkspaceOpenCodeModel } from './opencode-workspace'
-import { verifyWorkspaceOpenCode } from './opencode-model-output'
+import { OPEN_CODE_ACP_ARGS, requireOpenCodeProjectIsolation, requireWorkspaceOpenCodeModel } from './opencode-workspace'
 import { retryableAgentFailure } from './agent-failure'
 
 interface AcpExecution {
@@ -20,8 +19,6 @@ interface AcpExecution {
 export class OpenCodeAcpClient implements AgentClientProtocol {
   private readonly server = new LazyAgentServer<OpenCodeAcpConnection>()
   private readonly executions = new Set<AcpExecution>()
-  private verifiedVersion?: Promise<void>
-  private versionAbort?: AbortController
   private closing?: Promise<void>
   private startingConnection?: OpenCodeAcpConnection
 
@@ -29,8 +26,7 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
 
   close(): Promise<void> {
     if (this.closing) return this.closing
-    this.versionAbort?.abort()
-    this.closing = Promise.all([this.server.close(), this.verifiedVersion?.catch(() => {})]).then(() => {})
+    this.closing = this.server.close()
     return this.closing
   }
 
@@ -103,15 +99,6 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
         requireOpenCodeProjectIsolation(input.cwd)
         requireOpenCodeProjectIsolation(this.options.workspace.home)
         requireWorkspaceOpenCodeModel(input.model)
-        if (!this.verifiedVersion) {
-          this.versionAbort = new AbortController()
-          this.verifiedVersion = verifyWorkspaceOpenCode(this.options.command ?? 'opencode', this.options.workspace.home, openCodeWorkspaceEnvironment(this.options.workspace), this.versionAbort.signal).catch((error) => {
-            this.verifiedVersion = undefined
-            throw error
-          })
-        }
-        await Promise.race([this.verifiedVersion, interrupted])
-        input.signal?.throwIfAborted()
       }
       const ready = this.server.get(() => {
         const command = this.options.command ?? 'opencode'
@@ -150,7 +137,9 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       const request = <Response>(promise: Promise<Response>): Promise<Response> => Promise.race([promise, connection!.failure, interrupted])
       if (input.images?.length) {
         if (!connection.supportsImages) throw new Error('This OpenCode server does not support image prompts. Update OpenCode or remove the images.')
-        await request(requireOpenCodeImageModel(this.options.command ?? 'opencode', this.options.modelArgs ?? ['models', '--verbose'], input.cwd, input.model, input.signal, this.options.workspace ? openCodeWorkspaceEnvironment(this.options.workspace) : this.options.environment))
+        if (!this.options.catalogue) throw new Error('OpenCode model capability discovery is unavailable.')
+        const catalogue = await Promise.race([this.options.catalogue(), interrupted])
+        requireOpenCodeImageModel(catalogue, input.model)
       }
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
       startupTimer = setTimeout(() => connection?.fail(new Error('OpenCode ACP session startup timed out.')), this.options.startupTimeoutMs ?? 60_000)
@@ -240,9 +229,6 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       await connection?.drainDiagnostic()
       this.executions.delete(execution)
       if (input.signal?.aborted && this.executions.size === 0 && !sessionReady) {
-        const verification = this.verifiedVersion
-        this.versionAbort?.abort()
-        await verification?.catch(() => {})
         const abandoned = connection ?? this.startingConnection
         abandoned?.fail(new Error('OpenCode startup cancelled'))
         await abandoned?.close()

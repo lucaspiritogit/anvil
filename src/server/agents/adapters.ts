@@ -3,11 +3,10 @@ import type { AgentDefinition, ProviderModelList } from '../../shared/types'
 import type { AgentExecutor } from './agent-executor'
 import { CodexAppServerClient } from './codex-app-server'
 import { OpenCodeAcpClient } from './opencode-acp'
-import { parseOpenCodeModels } from './opencode-models'
-import { readOpenCodeModelOutput, verifyWorkspaceOpenCode } from './opencode-model-output'
-import { isWorkspaceOpenCodeModel, openCodeWorkspaceCommand } from './opencode-workspace'
+import { discoverOpenCodeModels } from './opencode-sdk'
+import { isWorkspaceOpenCodeModel } from './opencode-workspace'
 
-export type AgentModelCatalogue = Pick<ProviderModelList, 'models' | 'reasoningByModel'>
+export type AgentModelCatalogue = Pick<ProviderModelList, 'models' | 'reasoningByModel' | 'capabilitiesByModel'>
 
 /** Provider discovery and execution share one registration point. */
 export interface AgentAdapter {
@@ -33,15 +32,18 @@ export class AgentAdapterRegistry {
 
 export const openCodeAdapter: AgentAdapter = {
   id: 'opencode',
-  createExecutor: (workspace) => new OpenCodeAcpClient({ workspace }),
+  createExecutor: (workspace, catalogue) => new OpenCodeAcpClient({ workspace, catalogue }),
   async listModels(agent, workspace, signal) {
-    const launch = openCodeWorkspaceCommand(workspace, ['models', '--refresh', '--verbose'])
-    await verifyWorkspaceOpenCode(agent.command, launch.cwd, launch.environment, signal)
-    const stdout = await readOpenCodeModelOutput(agent.command, launch.args, launch.cwd, signal, launch.environment)
-    const catalogue = parseOpenCodeModels(stdout)
-    catalogue.models = catalogue.models.filter(isWorkspaceOpenCodeModel)
-    catalogue.reasoningByModel = Object.fromEntries(Object.entries(catalogue.reasoningByModel ?? {}).filter(([model]) => isWorkspaceOpenCodeModel(model)))
-    return catalogue
+    const discovered = await discoverOpenCodeModels(agent, workspace, signal)
+    const models = discovered.models.filter(isWorkspaceOpenCodeModel)
+    const included = new Set(models)
+    const reasoningByModel = Object.fromEntries(
+      Object.entries(discovered.reasoningByModel ?? {}).filter(([model]) => included.has(model))
+    )
+    const capabilitiesByModel = Object.fromEntries(
+      Object.entries(discovered.capabilitiesByModel ?? {}).filter(([model]) => included.has(model))
+    )
+    return { models, reasoningByModel, capabilitiesByModel }
   }
 }
 

@@ -55,7 +55,7 @@ function fixture() {
       return () => { locked.delete(id) }
     },
     busy: (id) => active.has(id), invalidate, changed, openBrowser,
-    verifyOpenCode: async () => {}, readOpenCode, terminals: { createOpenCodeAuth, createCodexAuth, dispose },
+    readOpenCode, terminals: { createOpenCodeAuth, createCodexAuth, dispose },
     connection: (workspace, handlers) => {
       const connection = { workspaceId: workspace.workspaceId, handlers, close: vi.fn(async () => {}), loginId: `login-${connections.length}` }
       connections.push(connection)

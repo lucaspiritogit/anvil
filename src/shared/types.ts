@@ -151,6 +151,11 @@ export interface ModelReasoningCapabilities {
   default?: string
 }
 
+export interface ProviderModelCapabilities {
+  /** True only when the provider explicitly reports image input support. */
+  imageInput: boolean
+}
+
 /**
  * The models one agent offers, spelled the way that agent's CLI expects them.
  * Deliberately generic: anything that can produce an array of strings — a
@@ -161,6 +166,8 @@ export interface ProviderModelList {
   models: string[]
   /** Missing entries mean discovery is unavailable, never an empty option list. */
   reasoningByModel?: Record<string, ModelReasoningCapabilities>
+  /** Provider-reported input capabilities used by the server before dispatch. */
+  capabilitiesByModel?: Record<string, ProviderModelCapabilities>
   /** Why the list came back empty; unset when the source succeeded. */
   error?: string
 }

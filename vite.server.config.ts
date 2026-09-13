@@ -32,6 +32,11 @@ const copyMigrations: Plugin = {
 export default defineConfig({
   plugins: [forbidElectron, copyMigrations],
   publicDir: false,
+  ssr: {
+    // The OpenCode SDK only publishes ESM exports. Bundle it so this server's
+    // CommonJS output never asks Node or Electron to require the package.
+    noExternal: ['@opencode-ai/sdk']
+  },
   build: {
     ssr: resolve(__dirname, 'src/server/index.ts'),
     outDir: 'out/server',
