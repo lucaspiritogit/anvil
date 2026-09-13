@@ -1,5 +1,5 @@
 import { rendererEvent } from './renderer-fixture'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { onTestCleanup } from './test-cleanup'
 import { join } from 'node:path'
 import { Store } from '../src/server/store'
@@ -15,8 +15,9 @@ test('deletes finished, active and queued tasks without resurrecting persisted s
     id: 'project', name: 'Test', path: testHome, createdAt: Date.now(),
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
   })
-  const { agentProcesses: registeredAgentProcesses } = registerTestIpc()
+  const { agentProcesses: registeredAgentProcesses, gitDelivery } = registerTestIpc()
   const agentProcesses = registeredAgentProcesses as unknown as AgentProcessManager
+  const releaseWorktree = vi.spyOn(gitDelivery, 'releaseWorktree')
   const call = (name: string, input: unknown): any => handlers.get(name)!(rendererEvent, input)
   const tick = async (): Promise<void> => {
     for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve))
@@ -61,6 +62,7 @@ test('deletes finished, active and queued tasks without resurrecting persisted s
   expect(store.getComments(finished.id).length).toBe(1)
   call('tasks:delete', finished.id)
   assertDeleted(finished.id)
+  expect(releaseWorktree).toHaveBeenCalledWith(testHome, finished.id, finished.branchName)
   expect(store.getTask(kept.id)).toBeTruthy()
   expect(store.getTaskExecution(kept.id)).toBeTruthy()
   expect(store.readEvents(kept.id).length).toBeTruthy()
@@ -71,6 +73,7 @@ test('deletes finished, active and queued tasks without resurrecting persisted s
   const active = await start()
   agentProcesses.plan(active.id, [issue, { ...issue, key: 'second' }])
   await tick()
+  const activeBranch = store.getTask(active.id)!.branchName!
   expect(agentProcesses.isRunning(active.id)).toBeTruthy()
   const startsBeforeDelete = agentProcesses.starts.length
   call('tasks:delete', active.id)
@@ -80,6 +83,7 @@ test('deletes finished, active and queued tasks without resurrecting persisted s
   agentProcesses.emit('usage', { taskId: active.id, inputTokens: 1, outputTokens: 1, cachedTokens: 0, totalTokens: 2, costUsd: null })
   await tick()
   assertDeleted(active.id)
+  expect(releaseWorktree).toHaveBeenCalledWith(testHome, active.id, activeBranch)
   expect(agentProcesses.starts.length).toBe(startsBeforeDelete)
 
   const between = await start()
@@ -141,5 +145,8 @@ test('deletes finished, active and queued tasks without resurrecting persisted s
   expect(restarted.readEvents(finished.id)).toStrictEqual([])
   expect(restarted.getTask(kept.id)).toBeTruthy()
   restarted.close()
+  await call('projects:remove', 'project')
+  assertDeleted(kept.id)
+  expect(releaseWorktree).toHaveBeenCalledWith(testHome, kept.id, kept.branchName)
   store.close()
 })

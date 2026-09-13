@@ -112,7 +112,7 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   registerWorkspaceHandlers(rendererIpc, store, context.send)
   registerSettingsHandlers(rendererIpc, context.store, new WallpaperLibrary(testHome))
   registerAgentHandlers(rendererIpc, store)
-  registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask })
+  registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, deferTaskCleanup: execution.deferTaskCleanup })
   const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, name === 'settings:set' ? { workspaceId: 'default', patch: input } : input)
   const tick = async (): Promise<void> => {
     for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve))
@@ -598,7 +598,7 @@ test('releases image preparation on cancellation, deletion and memory failures w
     expect(store.taskImages.read(task.id)).toBeUndefined()
     if (action === 'tasks:delete') {
       expect(store.getTask(task.id)).toBeUndefined()
-      expect(releaseWorktree).toHaveBeenCalledWith(task.id)
+      expect(releaseWorktree).toHaveBeenCalledWith(project.path, task.id, task.branchName)
     } else {
       expect(store.getTask(task.id)?.branchName).toBe(task.branchName)
       if (action === 'failure') {

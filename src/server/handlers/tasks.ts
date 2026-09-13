@@ -21,7 +21,7 @@ interface TaskHandlerDependencies extends TaskContext, TaskEvents, TaskExecution
 
 export function registerTaskHandlers(ipc: HandlerRegistry, {
   store, agentProcesses, gitDelivery, send, recordSystemEvent, forgetUsage,
-  issueReviewReady, initializeTask, stopTask, finishTaskTurn, requireFinishedTask, promptWithProjectMemory
+  issueReviewReady, initializeTask, stopTask, deferTaskCleanup, finishTaskTurn, requireFinishedTask, promptWithProjectMemory
 }: TaskHandlerDependencies): void {
   const stacks = new TaskStacks({ store, agentProcesses, gitDelivery, send })
   const startTask = registerTaskStarts({ store, agentProcesses, gitDelivery, send, recordSystemEvent, stopTask, promptWithProjectMemory })
@@ -56,11 +56,16 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
   })
   // Retry cleanup for tasks that settled before the app last closed.
   for (const task of store.getTasks()) {
-    if (task.settledAt !== undefined) void gitDelivery.releaseWorktree(task.id)
+    const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
+    if (task.settledAt !== undefined && project && task.branchName) {
+      void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
+    } else if (task.settledAt !== undefined) void gitDelivery.releaseWorktree(task.id)
   }
   const settleDueTasks = (): void => {
     for (const task of store.settleDueTasks()) {
-      void gitDelivery.releaseWorktree(task.id)
+      const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
+      if (project && task.branchName) void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
+      else void gitDelivery.releaseWorktree(task.id)
       send('task:updated', task)
     }
   }
@@ -90,12 +95,16 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
   ipc.handle('tasks:settle', (taskId: string): Task => {
     requireFinishedTask(taskId)
     const task = store.settleTask(taskId)
-    void gitDelivery.releaseWorktree(taskId)
+    const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
+    if (project && task.branchName) void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
+    else void gitDelivery.releaseWorktree(task.id)
     send('task:updated', task)
     return task
   })
   ipc.handle('tasks:delete', async (taskId: string): Promise<void> => {
     cancelTaskOperation(store, taskId)
+    const deletedTask = store.getTask(taskId)
+    const project = deletedTask && store.getProjects(deletedTask.workspaceId).find((entry) => entry.id === deletedTask.projectId)
     if (store.getTasks().some((task) => task.parentTaskId === taskId || task.restackTarget?.parentTaskId === taskId)) {
       stopTask(taskId, 'Anvil task deleted.')
       store.updateTask(taskId, { status: 'cancelled' })
@@ -103,13 +112,16 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       await stacks.restackChildren(taskId, true)
     }
     // Release only this process's claim; the independent Valence records survive deletion.
+    const running = agentProcesses.isRunning(taskId)
+    if (running && project && deletedTask?.branchName) deferTaskCleanup(taskId, project.path, deletedTask.branchName)
     store.transaction(() => {
       stopTask(taskId, 'Anvil task deleted.')
       // Remove before cancellation so late callbacks cannot restore Anvil metadata.
       store.deleteTaskCascade(taskId)
     }, store.getTask(taskId)?.workspaceId)
     forgetUsage(taskId)
-    if (agentProcesses.isRunning(taskId)) agentProcesses.cancel(taskId)
+    if (running) agentProcesses.cancel(taskId)
+    else if (project && deletedTask?.branchName) void gitDelivery.releaseWorktree(project.path, taskId, deletedTask.branchName)
     else void gitDelivery.releaseWorktree(taskId)
   })
   const issues = new TaskIssues(store)

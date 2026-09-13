@@ -120,7 +120,7 @@ export class GitDeliveryManager {
     return { cwd: testHome, baseCommit: 'base', branchName: 'task', baseBranch: 'main' }
   }
   async checkoutBranch(): Promise<any> { return this.prepareBranch() }
-  async releaseWorktree(): Promise<void> {}
+  async releaseWorktree(_projectPathOrTaskId: string, _taskId?: string, _expectedBranch?: string): Promise<void> {}
   async finalizeBranch(): Promise<any> {
     if (GitDeliveryManager.failFinalize) throw new Error('finalize failed')
     GitDeliveryManager.head++

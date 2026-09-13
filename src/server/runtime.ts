@@ -169,7 +169,8 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     invalidateWorkspaceModels(workspaceId)
     broadcast('agents:models:changed', workspaceId)
   })
-  registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask, projectMemory, projectsChanged: (workspaceId) => {
+  registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask,
+    deferTaskCleanup: execution.deferTaskCleanup, projectMemory, projectsChanged: (workspaceId) => {
     if (workspaceId === store.getActiveWorkspace().id) broadcast('projects:changed', store.getProjects(workspaceId))
   } })
   registerTaskHandlers(ipc, {

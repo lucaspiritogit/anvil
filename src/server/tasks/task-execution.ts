@@ -25,6 +25,7 @@ export interface TaskExecution {
   acceptTaskResume(taskId: string): void
   rollbackTaskResume(taskId: string, previousState: TaskExecutionState): void
   stopTask(taskId: string, error: string): void
+  deferTaskCleanup(taskId: string, projectPath: string, branchName: string): void
   finishTaskTurn(info: ExitInfo): Promise<void>
   requireFinishedTask(taskId: string): void
   issueReviewReady(taskId: string): boolean
@@ -42,6 +43,7 @@ export function registerTaskExecution(
   // Retries belong to this running scheduler. App restarts retain the existing
   // interrupted-task recovery policy instead of silently relaunching work.
   const retries = new Map<string, TaskRetry>()
+  const deferredTaskCleanup = new Map<string, { projectPath: string; branchName: string }>()
   let closing = false
   const clearRetry = (taskId: string): void => {
     clearTimeout(retries.get(taskId)?.timer)
@@ -107,7 +109,10 @@ export function registerTaskExecution(
         baseCommit = checkout.baseCommit
       }
       if (store.getTask(taskId)?.status !== 'running') {
-        if (!store.getTask(taskId)) void gitDelivery.releaseWorktree(taskId)
+        if (!store.getTask(taskId)) {
+          if (task.branchName) void gitDelivery.releaseWorktree(project.path, taskId, task.branchName)
+          else void gitDelivery.releaseWorktree(taskId)
+        }
         return
       }
       if (!parentIsReady(taskId)) {
@@ -360,9 +365,18 @@ export function registerTaskExecution(
   }
 
   agentProcesses.on('exit', (info: ExitInfo) => {
-    if (!store.getTask(info.taskId)) void gitDelivery.releaseWorktree(info.taskId)
+    if (!store.getTask(info.taskId)) {
+      const cleanup = deferredTaskCleanup.get(info.taskId)
+      deferredTaskCleanup.delete(info.taskId)
+      if (cleanup) void gitDelivery.releaseWorktree(cleanup.projectPath, info.taskId, cleanup.branchName)
+      else void gitDelivery.releaseWorktree(info.taskId)
+    }
     void finishTaskTurn(info)
   })
+
+  const deferTaskCleanup: TaskExecution['deferTaskCleanup'] = (taskId, projectPath, branchName) => {
+    deferredTaskCleanup.set(taskId, { projectPath, branchName })
+  }
 
   const requireStoppedTurn = (taskId: string): void => {
     if (starting.has(taskId) || finishing.has(taskId) || agentProcesses.isRunning(taskId)) {
@@ -445,5 +459,5 @@ export function registerTaskExecution(
   }
 
   return { issueReviewReady, initializeTask, resumeTask, acceptTaskResume, rollbackTaskResume,
-    stopTask, finishTaskTurn, requireFinishedTask, approveIssue, rejectIssue }
+    stopTask, deferTaskCleanup, finishTaskTurn, requireFinishedTask, approveIssue, rejectIssue }
 }

@@ -5,13 +5,14 @@ import { Store } from '../src/server/store'
 import { TaskIssues } from '../src/server/tasks/task-issues'
 import { registerTestIpc } from './test-ipc'
 import type { Task } from '../src/shared/types'
-import { handlers, testHome } from './issue-tracker-doubles'
+import { GitDeliveryManager, handlers, testHome } from './issue-tracker-doubles'
 
 test('settles eligible tasks at the review TTL and persists manual settlement', async () => {
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   const database = join(testHome, '.anvil-composer/config.json')
   const store = new Store(database, options)
-  registerTestIpc()
+  const { gitDelivery } = registerTestIpc()
+  const releaseWorktree = vi.spyOn(gitDelivery, 'releaseWorktree')
   store.addProject({
     id: 'project', name: 'Test', path: testHome, createdAt: 0,
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
@@ -43,12 +44,14 @@ test('settles eligible tasks at the review TTL and persists manual settlement', 
     now += 1
     call('tasks:list')
     expect(store.getTask('reviewed')?.settledAt, 'Settles at the two-day boundary').toBe(now)
+    expect(releaseWorktree).toHaveBeenCalledWith(testHome, 'reviewed', 'task')
     expect(store.getTaskExecution('reviewed'), 'Settling retains execution metadata').toBeTruthy()
     expect(store.readEvents('reviewed').length, 'Settling retains output').toBeTruthy()
 
     addTask('manual', { deliveryStatus: 'approved', reviewedAt: now })
     const manual: Task = call('tasks:settle', 'manual')
     expect(manual.settledAt, 'Manual settling does not wait for the TTL').toBe(now)
+    expect(releaseWorktree).toHaveBeenCalledWith(testHome, 'manual', 'task')
     now += 1
     expect(call('tasks:settle', 'manual').settledAt, 'Settling is idempotent').toBe(manual.settledAt)
 
@@ -80,4 +83,26 @@ test('settles eligible tasks at the review TTL and persists manual settlement', 
   } finally {
     store.close()
   }
+})
+
+test('retries branch-aware cleanup for tasks settled before startup', () => {
+  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+  const database = join(testHome, '.anvil-composer/config.json')
+  const store = new Store(database, options)
+  store.addProject({
+    id: 'project', name: 'Test', path: testHome, createdAt: 0,
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+  })
+  store.addTask({
+    workspaceId: 'default', id: 'settled', projectId: 'project', title: 'Settled', prompt: 'Settled',
+    agentId: 'codex', agentLabel: 'Codex', cwd: testHome, status: 'succeeded', deliveryStatus: 'approved',
+    branchName: 'anvil/settled', startedAt: 1, endedAt: 2, reviewedAt: 3, settledAt: 4,
+    inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: 0,
+    filesChanged: 1, additions: 1, deletions: 0
+  })
+  store.close()
+
+  const releaseWorktree = vi.spyOn(GitDeliveryManager.prototype, 'releaseWorktree')
+  registerTestIpc()
+  expect(releaseWorktree).toHaveBeenCalledWith(testHome, 'settled', 'anvil/settled')
 })

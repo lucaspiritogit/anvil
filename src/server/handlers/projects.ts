@@ -10,12 +10,13 @@ import { listProjectFiles, projectFileError } from '../project-files'
 
 interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDelivery' | 'agentProcesses'> {
   stopTask: TaskExecution['stopTask']
+  deferTaskCleanup: TaskExecution['deferTaskCleanup']
   projectMemory?: ProjectMemory
   projectsChanged?(workspaceId: string): void
 }
 
 export function registerProjectHandlers(ipc: HandlerRegistry, {
-  store, gitDelivery, agentProcesses, stopTask, projectMemory, projectsChanged
+  store, gitDelivery, agentProcesses, stopTask, deferTaskCleanup, projectMemory, projectsChanged
 }: ProjectHandlerDependencies): void {
   ipc.handle('projects:list', () => store.getProjects())
   ipc.handle('projects:files', async ({ projectId }) => {
@@ -49,15 +50,20 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
 
   ipc.handle('projects:remove', async (id: string) => {
     const workspaceId = store.getActiveWorkspace().id
+    const project = store.getProjects(workspaceId).find((entry) => entry.id === id)
     const memory = projectMemory && 'forWorkspace' in projectMemory
       ? (projectMemory as import('../memory/workspace-project-memory').WorkspaceProjectMemory).forWorkspace(workspaceId) : projectMemory
     const projectTasks = store.getTasks(workspaceId).filter((task) => task.projectId === id)
+    for (const task of projectTasks) {
+      if (project && task.branchName && agentProcesses.isRunning(task.id)) deferTaskCleanup(task.id, project.path, task.branchName)
+    }
     store.transaction(() => {
       for (const task of projectTasks) stopTask(task.id, 'Anvil project removed.')
       store.removeProject(id, workspaceId)
     }, workspaceId)
     for (const task of projectTasks) {
       if (agentProcesses.isRunning(task.id)) agentProcesses.cancel(task.id)
+      else if (project && task.branchName) void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
       else void gitDelivery.releaseWorktree(task.id)
     }
     if (memory) {
