@@ -20,13 +20,13 @@ Anvil is an Electron desktop app built with TypeScript, React, Zustand, and Tail
 - `npm run pack:mac` / `npm run dist:mac`: build a local unsigned macOS app or DMG in `release/` for the current architecture.
 - `npm run db:generate` / `npm run memory:generate`: generate migrations after changing the corresponding schema. Include generated SQL, snapshots, and journal changes together; do not hand-edit generated migrations.
 
-## Coding style
-
-Use two-space indentation, single quotes, and no semicolons. Keep TypeScript strict and use explicit types at IPC boundaries. Name React components in PascalCase, functions and variables in camelCase, and utility modules in kebab-case. Reuse `ui.ts` helpers and existing Tailwind classes. No formatter or lint command is configured; follow nearby code and run typecheck.
-
 ## Testing
 
-Run `npm run typecheck` to verify that the code works, do not run tests unless explicitly told so
+Run `npm run typecheck` to verify that the code works, only run unit or integration tests focused on the task to verify behavior, do not run the full suite of tests unless explicitly told so.
+
+## Coding guidelines
+
+Do not add comments to the code, unless explicitly told so
 
 ## Commits and pull requests
 
