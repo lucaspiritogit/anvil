@@ -51,6 +51,26 @@ export function GhosttyTerminal({ sessionId, className, visible = true, onExit }
       const resize = term.onResize(({ cols, rows }) => {
         void window.anvil.terminals.resize({ sessionId, cols: Math.min(500, Math.max(2, cols)), rows: Math.min(300, Math.max(1, rows)) }).catch(reportRequestFailure)
       })
+      let fitFrame = 0
+      let trailingFitTimer: ReturnType<typeof setTimeout> | undefined
+      const fitToHost = (): void => {
+        if (!host.current || host.current.clientWidth <= 0 || host.current.clientHeight <= 0) return
+        fit.fit()
+      }
+      const scheduleFit = (): void => {
+        if (fitFrame) cancelAnimationFrame(fitFrame)
+        fitFrame = requestAnimationFrame(() => {
+          fitFrame = 0
+          fitToHost()
+        })
+        if (trailingFitTimer) clearTimeout(trailingFitTimer)
+        // FitAddon ignores resize requests for 50 ms after it changes the grid.
+        // Keep a trailing fit so layout changes during that window are not lost.
+        trailingFitTimer = setTimeout(() => {
+          trailingFitTimer = undefined
+          fitToHost()
+        }, 100)
+      }
       let attached = false
       let sequence = 0
       const queued: TerminalOutput[] = []
@@ -67,11 +87,21 @@ export function GhosttyTerminal({ sessionId, className, visible = true, onExit }
       const offExit = window.anvil.terminals.onExit((event) => {
         if (event.sessionId === sessionId) exitHandler.current?.(event.exitCode)
       })
-      const observer = new ResizeObserver(() => {
-        if (host.current && host.current.clientHeight > 0) fit.fit()
-      })
+      const observer = new ResizeObserver(scheduleFit)
       observer.observe(host.current)
-      cleanup = () => { offOutput(); offExit(); observer.disconnect(); detachInput(); input.dispose(); resize.dispose(); term.dispose(); terminal.current = null }
+      fitToHost()
+      cleanup = () => {
+        offOutput()
+        offExit()
+        observer.disconnect()
+        if (fitFrame) cancelAnimationFrame(fitFrame)
+        if (trailingFitTimer) clearTimeout(trailingFitTimer)
+        detachInput()
+        input.dispose()
+        resize.dispose()
+        term.dispose()
+        terminal.current = null
+      }
       const snapshot = await window.anvil.terminals.attach(sessionId)
       if (cancelled) return
       if (snapshot.data) term.write(snapshot.data)
@@ -79,7 +109,7 @@ export function GhosttyTerminal({ sessionId, className, visible = true, onExit }
       attached = true
       for (const output of queued) write(output)
       if (snapshot.exitCode !== undefined) exitHandler.current?.(snapshot.exitCode)
-      fit.fit()
+      scheduleFit()
       term.focus()
     })().catch((error) => {
       console.error('Terminal initialization failed', error)
