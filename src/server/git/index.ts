@@ -48,8 +48,11 @@ export class GitDeliveryManager {
     return switchProjectBranch(this.context, projectPath, branchName)
   }
 
-  releaseWorktree(taskId: string): Promise<void> {
-    return releaseWorktree(this.context, taskId)
+  releaseWorktree(taskId: string): Promise<void>
+  releaseWorktree(projectPath: string, taskId: string, expectedBranch: string): Promise<void>
+  releaseWorktree(projectPathOrTaskId: string, taskId?: string, expectedBranch?: string): Promise<void> {
+    if (taskId === undefined) return releaseWorktree(this.context, projectPathOrTaskId)
+    return releaseWorktree(this.context, taskId, projectPathOrTaskId, expectedBranch)
   }
 
   prepareBranch(

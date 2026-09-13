@@ -179,6 +179,32 @@ test('failed delivery preserves files until task deletion', async () => {
   expect(existsSync(task.cwd)).toBe(false)
 })
 
+test('release removes the managed task worktree and its exact local branch', async () => {
+  const { repo, manager } = await fixture()
+  const task = await manager.prepareBranch(repo, 'release')
+  git(repo, 'branch', 'unrelated')
+
+  await manager.releaseWorktree(repo, 'release', task.branchName)
+
+  expect(existsSync(task.cwd)).toBe(false)
+  expect(git(repo, 'branch', '--list', task.branchName)).toBe('')
+  expect(git(repo, 'branch', '--list', 'unrelated')).toBe('unrelated')
+  expect(git(repo, 'branch', '--show-current')).toBe('main')
+})
+
+test('release retries branch cleanup after the task worktree is already gone', async () => {
+  const { repo, manager } = await fixture()
+  const task = await manager.prepareBranch(repo, 'partial-release')
+  git(repo, 'worktree', 'remove', '--force', task.cwd)
+
+  await manager.releaseWorktree(repo, 'partial-release', task.branchName)
+  await manager.releaseWorktree(repo, 'partial-release', task.branchName)
+
+  expect(existsSync(task.cwd)).toBe(false)
+  expect(git(repo, 'branch', '--list', task.branchName)).toBe('')
+  expect(git(repo, 'branch', '--show-current')).toBe('main')
+})
+
 test('renaming preserves committed and dirty work, nested checkout location, and later delivery after restart', async () => {
   const { repo, manager, worktrees } = await fixture()
   const task = await manager.prepareBranch(join(repo, 'app'), 'rename')

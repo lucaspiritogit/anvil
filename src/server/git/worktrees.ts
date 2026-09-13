@@ -17,21 +17,40 @@ export function taskWorktree(context: GitContext, taskId: string): string {
 }
 
 /** Called only after deletion or settlement, once the agent has stopped. */
-export async function releaseWorktree(context: GitContext, taskId: string): Promise<void> {
+export async function releaseWorktree(
+  context: GitContext,
+  taskId: string,
+  projectPath?: string,
+  expectedBranch?: string
+): Promise<void> {
   const worktree = taskWorktree(context, taskId)
-  if (!existsSync(worktree)) {
-    return
-  }
   try {
-    await withRepoLock(context, worktree, async () => {
+    // Older callers only know the task ID. Keep their worktree cleanup working
+    // until lifecycle code can supply the persisted repository and branch.
+    if (projectPath === undefined || expectedBranch === undefined) {
+      if (!existsSync(worktree)) return
+      await withRepoLock(context, worktree, async () => {
+        if (existsSync(worktree)) {
+          const commonDir = (await git(worktree, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).stdout.trim()
+          await git(commonDir, ['worktree', 'remove', '--force', worktree])
+        }
+      })
+      return
+    }
+
+    const repoRoot = await repositoryRoot(projectPath)
+    await withRepoLock(context, repoRoot, async () => {
       if (existsSync(worktree)) {
+        await verifyTaskWorktree(repoRoot, worktree, expectedBranch)
         // Windows cannot remove the working directory of the Git process itself.
         const commonDir = (await git(worktree, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).stdout.trim()
         await git(commonDir, ['worktree', 'remove', '--force', worktree])
       }
+      const branch = await git(repoRoot, ['show-ref', '--verify', `refs/heads/${expectedBranch}`], [0, 1])
+      if (branch.exitCode === 0) await git(repoRoot, ['branch', '-D', '--', expectedBranch])
     })
   } catch (error) {
-    console.warn(`Could not clean up task worktree ${taskId}:`, error)
+    console.warn(`Could not clean up task worktree and branch for ${taskId}:`, error)
   }
 }
 
