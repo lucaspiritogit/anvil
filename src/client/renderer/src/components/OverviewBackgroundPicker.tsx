@@ -83,11 +83,16 @@ export function OverviewBackgroundPicker({ value, onChange }: {
     return () => { cancelled = true }
   }, [revision, workspaceId])
   const pages = Math.ceil(library.length / PAGE_SIZE)
+  const imageMode = value.overviewBackgroundMode === 'image'
   return (
     <fieldset className={cn(modal.section, 'min-w-0')}>
       <legend className="text-[13px] font-semibold">Overview background</legend>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <p className="min-w-0 text-[11px] text-dim">Project preview only · PNG, JPEG or WebP · the color is the fallback.</p>
+        <p className="min-w-0 text-[11px] text-dim">
+          {imageMode
+            ? 'Project preview only · the color is used while an image is unavailable.'
+            : 'Project preview only · PNG, JPEG or WebP.'}
+        </p>
         <div role="radiogroup" aria-label="Overview background mode" className="inline-flex shrink-0 rounded-full border border-line p-0.5">
           {MODES.map((mode) => {
             const selected = value.overviewBackgroundMode === mode.value
@@ -103,14 +108,8 @@ export function OverviewBackgroundPicker({ value, onChange }: {
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <label className="flex items-center gap-2.5 text-xs text-dim">
-          Background color
-          <input type="color" value={value.overviewBackgroundColor}
-            className="h-6 w-9 cursor-pointer rounded border border-line bg-transparent p-0"
-            onChange={(event) => onChange({ ...value, overviewBackgroundColor: event.target.value })} />
-        </label>
-        <div className="flex items-center gap-2">
+      {imageMode ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <button type="button" className={btn.ghost} disabled={loading || importing} onClick={() => void addWallpaper()}>
             {importing ? 'Adding image…' : 'Add image…'}
           </button>
@@ -128,10 +127,18 @@ export function OverviewBackgroundPicker({ value, onChange }: {
             </button>
           </div>}
         </div>
-      </div>
+      ) : (
+        <label className="mt-3 flex items-center gap-2.5 text-xs text-dim">
+          Background color
+          <input type="color" value={value.overviewBackgroundColor}
+            className="h-6 w-9 cursor-pointer rounded border border-line bg-transparent p-0"
+            onChange={(event) => onChange({ ...value, overviewBackgroundColor: event.target.value })} />
+        </label>
+      )}
 
-      {importError && <p role="alert" className="mt-2 text-xs text-danger">{importError}</p>}
-      {loading ? <p role="status" className={field.hint}>Loading wallpapers…</p> : error ? (
+      {imageMode && <>
+        {importError && <p role="alert" className="mt-2 text-xs text-danger">{importError}</p>}
+        {loading ? <p role="status" className={field.hint}>Loading wallpapers…</p> : error ? (
         <div className="mt-2">
           <p role="alert" className="text-xs text-danger">Cannot load wallpapers. Check folder permissions and try again.</p>
           <button type="button" className={cn(btn.ghost, 'mt-2')} disabled={importing} onClick={() => setRevision((current) => current + 1)}>Retry</button>
@@ -141,7 +148,7 @@ export function OverviewBackgroundPicker({ value, onChange }: {
         {value.overviewWallpaperId && !library.some((item) => item.id === value.overviewWallpaperId) && (
           <p role="status" className={cn(field.hint, 'break-words')}>Selected image {value.overviewWallpaperId} is unavailable. Add it again or choose another image. The background color will be used until it is available.</p>
         )}
-        {value.overviewBackgroundMode === 'image' && library.length > 0 && (
+        {library.length > 0 && (
           <div className="mt-3 grid min-w-0 grid-cols-3 gap-2" aria-label="Wallpapers">
             {library.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((wallpaper) => {
               const selected = value.overviewWallpaperId === wallpaper.id
@@ -157,6 +164,7 @@ export function OverviewBackgroundPicker({ value, onChange }: {
             })}
           </div>
         )}
+      </>}
       </>}
     </fieldset>
   )
