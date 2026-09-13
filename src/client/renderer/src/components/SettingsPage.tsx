@@ -10,6 +10,7 @@ import { GitHubSettings } from './GitHubSettings'
 import { acceleratorFromEvent, IS_MAC } from '../keys'
 import { autosave, retryAutosave, useSettingsAutosave } from '../state/settings-autosave'
 import { useStore } from '../state/store'
+import { useAgentModels } from '../state/agent-models'
 import { btn, cn, field, hint, modal } from '../ui'
 import { DEFAULT_KEYBINDINGS, formatAccelerator, SHORTCUTS } from '@shared/keybindings'
 import type { Keybindings, ShortcutDefinition } from '@shared/keybindings'
@@ -312,9 +313,6 @@ export function SettingsPage(): JSX.Element {
   const selectProject = useStore((s) => s.setSettingsProject)
   const settings = useStore((s) => s.settings)
   const agents = useStore((s) => s.agents)
-  const modelsByAgent = useStore((s) => s.modelsByAgent)
-  const loadingModelsAgentId = useStore((s) => s.loadingModelsAgentId)
-  const loadAgentModels = useStore((s) => s.loadAgentModels)
   const projects = useStore((s) => s.projects)
   const activeProjectId = useStore((s) => s.settingsProjectId)
   const removeProject = useStore((s) => s.removeProject)
@@ -366,11 +364,7 @@ export function SettingsPage(): JSX.Element {
 
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? projects[0]
 
-  const catalogue = modelsByAgent[defaultAgentId]
-
-  useEffect(() => {
-    void loadAgentModels(defaultAgentId)
-  }, [defaultAgentId, loadAgentModels])
+  const catalogue = useAgentModels(defaultAgentId)
 
   const currentSection = SETTINGS_SECTIONS.find((item) => item.id === section)!
 
@@ -434,7 +428,7 @@ export function SettingsPage(): JSX.Element {
                     setDefaultModel(value)
                     persist({ defaultModel: value.trim() }, { defaultModel: value })
                   }}
-                  loading={loadingModelsAgentId === defaultAgentId && !catalogue}
+                  loading={Boolean(defaultAgentId) && !catalogue}
                   error={catalogue?.error}
                 />
               </label>

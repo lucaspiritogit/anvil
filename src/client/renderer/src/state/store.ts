@@ -64,6 +64,7 @@ const eventCursor = (event: TaskEvent | undefined): TaskEventCursor | null =>
 
 // A new selection invalidates asynchronous responses from the previous profile.
 const modelGenerations = new Map<string, number>()
+const modelRequests = new Map<string, Promise<void>>()
 let workspaceGeneration = 0
 const taskDiffRequests = new Map<string, { view: CenterView; revision: string; generation: number }>()
 const taskDiffRevision = (task?: Task): string => JSON.stringify(task ? [
@@ -390,25 +391,31 @@ export const useStore = create<AnvilState>((set, get) => ({
     const workspaceId = get().activeWorkspaceId
     if (!workspaceId || get().workspaceSwitching) return
     const modelGeneration = modelGenerations.get(workspaceId) ?? 0
-    const generation = workspaceGeneration
-    const current = (): boolean => get().activeWorkspaceId === workspaceId && generation === workspaceGeneration && modelGeneration === (modelGenerations.get(workspaceId) ?? 0)
-    if (get().modelsByAgent[agentId] || get().loadingModelsAgentId === agentId) return
+    const current = (): boolean => get().activeWorkspaceId === workspaceId && modelGeneration === (modelGenerations.get(workspaceId) ?? 0)
+    const requestKey = JSON.stringify([workspaceId, agentId, modelGeneration])
+    if (get().modelsByAgent[agentId]) return
+    const pending = modelRequests.get(requestKey)
+    if (pending) return pending
     set({ loadingModelsAgentId: agentId })
-    try {
-      const list = await window.anvil.agents.models(agentId, workspaceId)
+    const request = (async () => {
+      let list: ProviderModelList
+      try {
+        list = await window.anvil.agents.models(agentId, workspaceId)
+      } catch (err) {
+        list = { agentId, models: [], error: err instanceof Error ? err.message : String(err) }
+      }
       if (!current()) return
       set((s) => ({
         modelsByAgent: { ...s.modelsByAgent, [agentId]: list },
-        modelsByWorkspace: { ...s.modelsByWorkspace, [workspaceId]: { ...s.modelsByWorkspace[workspaceId], [agentId]: list } }
+        modelsByWorkspace: { ...s.modelsByWorkspace, [workspaceId]: { ...s.modelsByWorkspace[workspaceId], [agentId]: list } },
+        ...(s.loadingModelsAgentId === agentId ? { loadingModelsAgentId: null } : {})
       }))
-    } catch (err) {
-      if (!current()) return
-      const message = err instanceof Error ? err.message : String(err)
-      set((s) => ({
-        modelsByAgent: { ...s.modelsByAgent, [agentId]: { agentId, models: [], error: message } }
-      }))
+    })()
+    modelRequests.set(requestKey, request)
+    try {
+      await request
     } finally {
-      set((s) => (current() && s.loadingModelsAgentId === agentId ? { loadingModelsAgentId: null } : s))
+      modelRequests.delete(requestKey)
     }
   },
 

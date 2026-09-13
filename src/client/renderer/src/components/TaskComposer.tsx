@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { hasTaskContent } from '@shared/task-images'
 import { useStore } from '../state/store'
+import { useAgentModels } from '../state/agent-models'
 import { useComposerPreferences } from '../state/composer-preferences'
 import { ComposerFilePicker } from './ComposerFilePicker'
 import { useComposerFileMentions } from '../state/composer-file-mentions'
@@ -28,9 +29,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const [parentTaskId, setParentTaskId] = useState('')
   const parents = tasks.filter((task) => task.projectId === projectId && canStackOnTask(task))
   const agents = useStore((state) => state.agents)
-  const modelsByAgent = useStore((state) => state.modelsByAgent)
-  const loadingModelsAgentId = useStore((state) => state.loadingModelsAgentId)
-  const loadAgentModels = useStore((state) => state.loadAgentModels)
   const startTask = useStore((state) => state.startTask)
   const taskComposerFocusRequest = useStore((state) => state.taskComposerFocusRequest)
   const promptRef = useRef<HTMLTextAreaElement>(null)
@@ -53,9 +51,9 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const [switchingBranch, setSwitchingBranch] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const submitting = useRef(false)
-  const catalogue = modelsByAgent[agentId]
+  const catalogue = useAgentModels(agentId)
   const capabilities = catalogue?.reasoningByModel?.[model]
-  const loadingEfforts = Boolean(agentId) && (!catalogue || loadingModelsAgentId === agentId)
+  const loadingEfforts = Boolean(agentId) && !catalogue
   const reasoningOptions = loadingEfforts || catalogue?.error ? [] : capabilities?.options ?? []
   const savedEffort = preferences.reasoningByAgentModel[JSON.stringify([agentId, model])]
   const reasoningEffort = reasoningOptions.find((option) => option.id === savedEffort)?.id
@@ -75,10 +73,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   useEffect(() => {
     promptRef.current?.focus()
   }, [taskComposerFocusRequest])
-
-  useEffect(() => {
-    if (agentId) void loadAgentModels(agentId)
-  }, [agentId, loadAgentModels])
 
   const submit = async (): Promise<void> => {
     if (!projectId || useStore.getState().activeProjectId !== projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || switchingBranch || submitting.current) return
@@ -178,9 +172,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
             <ComposerModelPicker
               agentId={agentId}
               agents={agents}
-              modelsByAgent={modelsByAgent}
               selectedModels={preferences.modelsByAgent}
-              loadModels={loadAgentModels}
               value={model}
               onChange={preferences.setSelection}
             />

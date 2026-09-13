@@ -1,22 +1,21 @@
 import type { JSX, RefObject } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons'
+import { useAgentModels } from '../state/agent-models'
 import { cn, field } from '../ui'
 import { PickerDialog } from './PickerDialog'
-import type { AgentDefinition, ProviderModelList } from '@shared/types'
+import type { AgentDefinition } from '@shared/types'
 import { AgentIcon } from './AgentIcon'
 import { ProviderIcon } from './ProviderIcon'
 
 import { describeModel, groupModelsBySubscription, type ModelOption } from '../model-options'
 
-export function ComposerModelPicker({ agents, agentId, modelsByAgent, selectedModels, value, onChange, loadModels }: {
+export function ComposerModelPicker({ agents, agentId, selectedModels, value, onChange }: {
   agents: AgentDefinition[]
   agentId: string
-  modelsByAgent: Record<string, ProviderModelList>
   selectedModels: Record<string, string>
   value: string
   onChange: (agentId: string, model: string) => void
-  loadModels: (agentId: string) => Promise<void>
 }): JSX.Element {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -47,9 +46,7 @@ export function ComposerModelPicker({ agents, agentId, modelsByAgent, selectedMo
           anchorRef={triggerRef}
           agentId={agentId}
           agents={agents}
-          modelsByAgent={modelsByAgent}
           selectedModels={selectedModels}
-          loadModels={loadModels}
           onClose={() => setOpen(false)}
           onSelect={(providerId, model) => {
             onChange(providerId, model)
@@ -61,13 +58,11 @@ export function ComposerModelPicker({ agents, agentId, modelsByAgent, selectedMo
   )
 }
 
-function ModelPickerDialog({ anchorRef, agentId, agents, modelsByAgent, selectedModels, loadModels, onClose, onSelect }: {
+function ModelPickerDialog({ anchorRef, agentId, agents, selectedModels, onClose, onSelect }: {
   anchorRef: RefObject<HTMLButtonElement | null>
   agentId: string
   agents: AgentDefinition[]
-  modelsByAgent: Record<string, ProviderModelList>
   selectedModels: Record<string, string>
-  loadModels: (agentId: string) => Promise<void>
   onClose: () => void
   onSelect: (agentId: string, model: string) => void
 }): JSX.Element {
@@ -76,7 +71,7 @@ function ModelPickerDialog({ anchorRef, agentId, agents, modelsByAgent, selected
   const listRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState('')
   const [customModel, setCustomModel] = useState(selectedModels[providerId] ?? '')
-  const catalogue = modelsByAgent[providerId]
+  const catalogue = useAgentModels(providerId)
   const loading = Boolean(providerId) && !catalogue
   const error = catalogue?.error
   const value = selectedModels[providerId]?.trim() ?? ''
@@ -85,10 +80,6 @@ function ModelPickerDialog({ anchorRef, agentId, agents, modelsByAgent, selected
   const options = useMemo(() => [...new Set(value ? [value, ...(models ?? [])] : models ?? [])]
     .map((model) => describeModel(model, providerId)), [providerId, models, value])
   const selectModel = (model: string): void => onSelect(providerId, model)
-
-  useEffect(() => {
-    if (providerId) void loadModels(providerId)
-  }, [providerId, loadModels])
 
   const browseProvider = (id: string): void => {
     setProviderId(id)
