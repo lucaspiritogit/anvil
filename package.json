@@ -33,9 +33,11 @@
     "test:integration": "vitest run --project integration",
     "test": "vitest run",
     "build:server": "node scripts/build-server.mjs",
+    "package:server": "npm run build:server && node scripts/package-server.mjs",
     "serve": "npm run build:server && node scripts/serve.cjs",
     "rebuild:headless": "node scripts/prepare-headless-native.cjs",
     "serve:headless": "npm run build:server && node scripts/serve.cjs --headless",
+    "serve:headless:lan": "npm run build:server && node scripts/serve.cjs --headless --lan",
     "serve:headless:tailscale": "npm run build:server && node scripts/serve.cjs --headless --tailscale"
   },
   "dependencies": {

@@ -135,7 +135,7 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
 
   const pending = status?.pending ?? false
   const tailscaleOnly = status?.headlessAccess === 'tailscale'
-  const showPasswordForm = status !== null && !tailscaleOnly && (!status.passwordConfigured || passwordPurpose !== null)
+  const showPasswordForm = status !== null && !status.headlessAccess && (!status.passwordConfigured || passwordPurpose !== null)
   return (
     <div>
       <label className={modal.toggle}>
@@ -190,7 +190,7 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
       )}
 
       {!status && !requestError && <p role="status" className="text-xs text-dim">Loading connection settings…</p>}
-      {status && !tailscaleOnly && <div className="mb-4 text-xs text-dim">
+      {status && !status.headlessAccess && <div className="mb-4 text-xs text-dim">
         <p>{status.passwordConfigured ? 'A server password is configured.' : 'Set a server password before enabling LAN or Tailscale access.'}</p>
         {status.passwordConfigured && passwordPurpose === null && (
           <button className={cn(btn.ghost, 'mt-3')} disabled={pending} onClick={() => {

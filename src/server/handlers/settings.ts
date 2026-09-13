@@ -143,10 +143,10 @@ export function registerConnectionsHandlers(
     if (store.getActiveWorkspace().id !== workspaceId) throw new Error('Workspace changed; reload Connections and try again.')
     const requestedTailscale = headlessAccess === 'tailscale'
       ? true
-      : headlessAccess === 'password'
+      : headlessAccess
         ? false
         : tailscaleHttps ?? desiredTailscaleHttps
-    if (headlessAccess === 'tailscale' || (headlessAccess === 'password' && (!requested || tailscaleHttps === true))) {
+    if (headlessAccess) {
       throw new Error('Connection access is managed by the headless startup command. Restart with the other command to change access.')
     }
     if (password !== undefined) await auth.setPassword(password)
@@ -170,8 +170,8 @@ export function registerConnectionsHandlers(
 
   const activateNow = async (workspaceId: string): Promise<ConnectionsStatus> => {
     const settings = store.getSettings(workspaceId)
-    const requested = headlessAccess === 'password' ? true : headlessAccess === 'tailscale' ? false : settings.allowOtherDevices
-    const requestedTailscale = headlessAccess === 'tailscale' ? true : headlessAccess === 'password' ? false : settings.tailscaleHttps
+    const requested = headlessAccess === 'lan' ? true : headlessAccess ? false : settings.allowOtherDevices
+    const requestedTailscale = headlessAccess === 'tailscale' ? true : headlessAccess ? false : settings.tailscaleHttps
     desiredAllowOtherDevices = requested
     desiredTailscaleHttps = requestedTailscale
     lastError = undefined

@@ -3,7 +3,7 @@ const { resolve } = require('node:path')
 
 const serveArguments = process.argv.slice(2)
 for (const argument of serveArguments) {
-  if (argument !== '--headless' && argument !== '--tailscale') {
+  if (argument !== '--headless' && argument !== '--lan' && argument !== '--tailscale') {
     throw new Error(`Unknown serve argument: ${argument}`)
   }
 }

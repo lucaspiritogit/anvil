@@ -34,8 +34,7 @@ Download the latest DMG from
 [Releases](https://github.com/lucaspiritogit/anvil/releases), open it, drag Anvil
 into Applications, and launch it there.
 
-The builds are unsigned for now, so macOS may warn on first launch. To build from
-source instead, see [Package for macOS](#package-for-macos).
+The builds are unsigned for now, so macOS may warn on first launch.
 
 ## Supported agents
 
@@ -87,8 +86,22 @@ host machine. Remote devices only need a browser.
 | Mode | Start | Access |
 | --- | --- | --- |
 | Desktop | Launch Anvil, then open **Settings > Connections** | Local by default, with optional LAN or Tailscale access |
-| Headless LAN | `npm run serve:headless` | `http://host:4780` with username `anvil` and your server password |
+| Headless local | `npm run serve:headless` | `http://127.0.0.1:4780`, without authentication |
+| Headless LAN | `npm run serve:headless:lan` | `http://host:4780` with username `anvil` and your server password |
 | Headless Tailscale | `npm run serve:headless:tailscale` | Private HTTPS address managed by Tailscale |
+
+GitHub releases also include self-contained `Anvil-server-*` archives. They
+include Node.js, native dependencies, the browser UI, and database migrations,
+so the server machine does not need Node.js or build tools installed. Extract
+the archive and run:
+
+```sh
+./anvil-server
+./anvil-server --lan
+./anvil-server --tailscale
+```
+
+On Windows, use `anvil-server.cmd`.
 
 For desktop LAN access, set a server password in **Settings > Connections** and
 enable **Allow other devices**. Anvil stores only an Argon2id password hash.
@@ -102,7 +115,7 @@ by Anvil. Desktop Tailscale access still requires the Anvil username and passwor
 For an unattended headless LAN server, provide the password through a file:
 
 ```sh
-ANVIL_SERVER_PASSWORD_FILE=/absolute/path/to/password npm run serve:headless
+ANVIL_SERVER_PASSWORD_FILE=/absolute/path/to/password npm run serve:headless:lan
 ```
 
 Without a password file, the first terminal launch prompts for a password. The
@@ -155,17 +168,6 @@ through completion, restart, and follow-ups. Worktrees are removed only when the
 task is deleted or settled; committed branches remain available. Approved tasks
 settle automatically two days after review, and no-change tasks two days after
 completion. Tasks can also be settled manually.
-
-Press Command+T on macOS or Ctrl+T to toggle the in-app terminal at the active
-project root. Hiding the drawer keeps the shell running. Closing it or switching
-projects or workspaces ends the session. OpenCode sign-in and sign-out use a
-terminal panel on the workspace account card. Cancelling stops the auth command.
-When Anvil runs on another machine (e.g. a mini PC) and is driven from a
-different browser, Codex's ChatGPT subscription flow cannot complete because
-its callback URL is bound to localhost on the hosting machine. For that setup,
-choose the remote device-code option on the account card: it prints a
-verification link and one-time code in the in-app terminal, which can be
-entered from any device.
 
 ### Project memory
 

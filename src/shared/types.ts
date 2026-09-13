@@ -284,7 +284,7 @@ export interface WorkspaceSettingsChange {
   settings: Settings
 }
 
-export type HeadlessAccessMode = 'password' | 'tailscale'
+export type HeadlessAccessMode = 'local' | 'lan' | 'tailscale'
 
 export interface ConnectionsStatus {
   headlessAccess?: HeadlessAccessMode
