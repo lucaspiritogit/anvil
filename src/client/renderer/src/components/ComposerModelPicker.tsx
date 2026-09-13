@@ -58,17 +58,21 @@ export function ComposerModelPicker({ agents, agentId, selectedModels, value, on
   )
 }
 
-function ModelPickerDialog({ anchorRef, agentId, agents, selectedModels, onClose, onSelect }: {
+export interface ModelPickerDialogProps {
   anchorRef: RefObject<HTMLButtonElement | null>
   agentId: string
   agents: AgentDefinition[]
   selectedModels: Record<string, string>
   onClose: () => void
   onSelect: (agentId: string, model: string) => void
-}): JSX.Element {
+}
+
+export function ModelPickerDialog({ anchorRef, agentId, agents, selectedModels, onClose, onSelect }: ModelPickerDialogProps): JSX.Element {
   const [providerId, setProviderId] = useState(agentId || agents.find((agent) => agent.id === 'codex')?.id || agents[0]?.id || '')
+  const providerListRef = useRef<HTMLElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const customModelRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [customModel, setCustomModel] = useState(selectedModels[providerId] ?? '')
   const catalogue = useAgentModels(providerId)
@@ -91,11 +95,22 @@ function ModelPickerDialog({ anchorRef, agentId, agents, selectedModels, onClose
   const filtered = options.filter((option) =>
     `${option.name} ${option.id} ${option.company} ${option.providerName}`.toLowerCase().includes(search))
   const subscriptionGroups = groupModelsBySubscription(filtered)
+  const focusProvider = (): void => {
+    const providers = providerListRef.current
+    const selectedProvider = providers?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')
+    const provider = selectedProvider ?? providers?.querySelector<HTMLButtonElement>('button')
+    provider?.focus()
+  }
+  const focusFirstModel = (): void => {
+    const firstModel = listRef.current?.querySelector<HTMLButtonElement>('button')
+    const modelControl = firstModel ?? customModelRef.current
+    modelControl?.focus()
+  }
 
   return (
     <PickerDialog anchorRef={anchorRef} label="Choose model" onClose={onClose} wide>
       <div className="flex h-full">
-        <nav aria-label="Providers" className="w-36 shrink-0 overflow-y-auto border-r border-line bg-canvas p-2 max-[480px]:w-24"
+        <nav ref={providerListRef} aria-label="Providers" className="w-36 shrink-0 overflow-y-auto border-r border-line bg-canvas p-2 max-[480px]:w-24"
           onKeyDown={(event) => {
             if (event.key === 'ArrowRight') { event.preventDefault(); searchRef.current?.focus(); return }
             if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
@@ -131,7 +146,10 @@ function ModelPickerDialog({ anchorRef, agentId, agents, selectedModels, onClose
               onKeyDown={(event) => {
                 if (event.key === 'ArrowDown') {
                   event.preventDefault()
-                  listRef.current?.querySelector('button')?.focus()
+                  focusFirstModel()
+                } else if (event.key === 'ArrowUp' || (event.key === 'ArrowLeft' && event.currentTarget.selectionStart === 0)) {
+                  event.preventDefault()
+                  focusProvider()
                 }
               }}
             />
@@ -146,11 +164,24 @@ function ModelPickerDialog({ anchorRef, agentId, agents, selectedModels, onClose
             aria-busy={loading}
             className="min-h-0 flex-1 overflow-y-auto p-2"
             onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft') {
+                event.preventDefault()
+                focusProvider()
+                return
+              }
               if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
               const buttons = [...event.currentTarget.querySelectorAll('button')]
               const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
               if (index < 0) return
               event.preventDefault()
+              if (event.key === 'ArrowUp' && index === 0) {
+                searchRef.current?.focus()
+                return
+              }
+              if (event.key === 'ArrowDown' && index === buttons.length - 1 && customModelRef.current) {
+                customModelRef.current.focus()
+                return
+              }
               const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
                 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
               buttons[nextIndex]?.focus()
@@ -176,6 +207,7 @@ function ModelPickerDialog({ anchorRef, agentId, agents, selectedModels, onClose
               <label className="block text-[11px] text-dim">
                 Custom model
                 <input
+                  ref={customModelRef}
                   className={cn(field.sized, 'mt-1 text-xs')}
                   placeholder="provider/model"
                   value={customModel}
@@ -184,6 +216,15 @@ function ModelPickerDialog({ anchorRef, agentId, agents, selectedModels, onClose
                     if (event.key === 'Enter' && customModel.trim()) {
                       event.preventDefault()
                       selectModel(customModel.trim())
+                    } else if (event.key === 'ArrowUp') {
+                      event.preventDefault()
+                      const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>('button')
+                      const lastModel = buttons?.item((buttons?.length ?? 0) - 1)
+                      const previousControl = lastModel || searchRef.current
+                      previousControl?.focus()
+                    } else if (event.key === 'ArrowLeft' && event.currentTarget.selectionStart === 0) {
+                      event.preventDefault()
+                      focusProvider()
                     }
                   }}
                 />
