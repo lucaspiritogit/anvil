@@ -86,9 +86,9 @@ host machine. Remote devices only need a browser.
 | Mode | Start | Access |
 | --- | --- | --- |
 | Desktop | Launch Anvil, then open **Settings > Connections** | Local by default, with optional LAN or Tailscale access |
-| Headless local | `npm run serve:headless` | `http://127.0.0.1:4780`, without authentication |
-| Headless LAN | `npm run serve:headless:lan` | `http://host:4780` with username `anvil` and your server password |
-| Headless Tailscale | `npm run serve:headless:tailscale` | Private HTTPS address managed by Tailscale |
+| Headless local | `npm run serve` | `http://127.0.0.1:4780`, without authentication |
+| Headless LAN | `npm run serve:lan` | `http://host:4780` with username `anvil` and your server password |
+| Headless Tailscale | `npm run serve:tailscale` | Private HTTPS address managed by Tailscale |
 
 GitHub releases also include self-contained `Anvil-server-*` archives. They
 include Node.js, native dependencies, the browser UI, and database migrations,
@@ -115,7 +115,7 @@ by Anvil. Desktop Tailscale access still requires the Anvil username and passwor
 For an unattended headless LAN server, provide the password through a file:
 
 ```sh
-ANVIL_SERVER_PASSWORD_FILE=/absolute/path/to/password npm run serve:headless:lan
+ANVIL_SERVER_PASSWORD_FILE=/absolute/path/to/password npm run serve:lan
 ```
 
 Without a password file, the first terminal launch prompts for a password. The
