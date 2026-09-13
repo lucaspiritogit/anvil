@@ -8,7 +8,7 @@ import { useStore } from '../state/store'
 import { btn, cn, deliveryTone, dot, field, ISSUE_STATUS, statusTone } from '../ui'
 import { AgentIcon } from './AgentIcon'
 import { AgentRebaseModal } from './AgentRebaseModal'
-import { ApproveTaskModal } from './ApproveTaskModal'
+import { ApproveTaskModal, type TaskDeliveryAction } from './ApproveTaskModal'
 import { OpenPullRequestModal } from './OpenPullRequestModal'
 import { CopyableText } from './CopyableText'
 import { RebaseModal } from './RebaseModal'
@@ -392,6 +392,95 @@ function Notice({ tone = 'danger', children }: { tone?: 'danger' | 'warn'; child
   )
 }
 
+function MergeActions({ disabled, title, onSelect }: {
+  disabled: boolean
+  title?: string
+  onSelect: (action: 'merge' | 'merge-and-push') => void
+}): JSX.Element {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const menuItemRef = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    menuItemRef.current?.focus()
+    const close = (event: PointerEvent): void => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [open])
+
+  useEffect(() => {
+    if (disabled) setOpen(false)
+  }, [disabled])
+
+  const select = (action: 'merge' | 'merge-and-push'): void => {
+    if (action === 'merge-and-push') toggleRef.current?.focus()
+    setOpen(false)
+    onSelect(action)
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative inline-flex shrink-0"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.preventDefault()
+          setOpen(false)
+          toggleRef.current?.focus()
+        }
+      }}
+    >
+      <button
+        className={cn(btn.primary, 'bg-ok')}
+        disabled={disabled}
+        title={title}
+        onClick={() => select('merge')}
+      >
+        Merge
+      </button>
+      <button
+        ref={toggleRef}
+        className={cn(btn.primary, 'border-l border-canvas/25 bg-ok px-2')}
+        disabled={disabled}
+        title={title ?? 'More merge actions'}
+        aria-label="More merge actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
+      >
+        <Icon icon="chevron-down" size={14} aria-hidden="true" />
+      </button>
+      {open && <div
+        role="menu"
+        aria-label="Merge actions"
+        className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full border border-line bg-raised p-1 shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
+      >
+        <button
+          ref={menuItemRef}
+          role="menuitem"
+          className="block w-full px-3 py-2 text-left font-medium whitespace-nowrap text-fg hover:bg-hover focus:bg-hover focus:outline-none"
+          onClick={() => select('merge-and-push')}
+        >
+          Merge &amp; Push
+        </button>
+      </div>}
+    </div>
+  )
+}
+
 export function TaskView({ task }: Props): JSX.Element {
   const { snapshot, error: issueError, refresh } = useTaskIssues(task.id, true)
   const issue = task.status !== 'succeeded' && task.status !== 'cancelled' ? snapshot?.children.find((child) => child.status === 'review' &&
@@ -433,7 +522,7 @@ export function TaskView({ task }: Props): JSX.Element {
   const rebaseWithAgent = useStore((s) => s.rebaseWithAgent)
   const rebasing = useStore((s) => s.rebasing === task.id)
   const rebaseTaskId = useStore((s) => s.rebaseTaskId)
-  const [approvalTaskId, setApprovalTaskId] = useState<string | null>(null)
+  const [deliveryRequest, setDeliveryRequest] = useState<{ taskId: string; action: TaskDeliveryAction } | null>(null)
   const [pullRequestTaskId, setPullRequestTaskId] = useState<string | null>(null)
   const approved = task.deliveryStatus === 'approved'
   const openPullRequest = task.deliveryStatus === 'reviewable' ? task.pullRequest : undefined
@@ -529,8 +618,13 @@ export function TaskView({ task }: Props): JSX.Element {
       {pullRequestTaskId === task.id && (
         <OpenPullRequestModal key={task.id} task={task} onClose={() => setPullRequestTaskId(null)} />
       )}
-      {approvalTaskId === task.id && (
-        <ApproveTaskModal key={task.id} taskId={task.id} onClose={() => setApprovalTaskId(null)} />
+      {deliveryRequest?.taskId === task.id && (
+        <ApproveTaskModal
+          key={`${task.id}:${deliveryRequest.action}`}
+          taskId={task.id}
+          action={deliveryRequest.action}
+          onClose={() => setDeliveryRequest(null)}
+        />
       )}
       {rebaseTaskId === task.id &&
         (settings?.rebaseMode === 'agent' ? (
@@ -573,9 +667,20 @@ export function TaskView({ task }: Props): JSX.Element {
                 <button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
                   Open PR
                 </button>
-                {!approved && <button className={cn(btn.primary, 'bg-ok')} disabled={!diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)} title={task.restackState ? 'Finish restacking before merging' : task.parentTaskId ? 'Merge the parent task first' : undefined} onClick={() => setApprovalTaskId(task.id)}>
-                  Merge
-                </button>}
+                {!approved
+                  ? <MergeActions
+                    disabled={!diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)}
+                    title={task.restackState ? 'Finish restacking before merging' : task.parentTaskId ? 'Merge the parent task first' : undefined}
+                    onSelect={(action) => setDeliveryRequest({ taskId: task.id, action })}
+                  />
+                  : <button
+                    className={cn(btn.primary, 'bg-ok')}
+                    disabled={!diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)}
+                    title={task.restackState ? 'Finish restacking before pushing' : task.parentTaskId ? 'Merge the parent task first' : undefined}
+                    onClick={() => setDeliveryRequest({ taskId: task.id, action: 'push' })}
+                  >
+                    Push
+                  </button>}
               </span>}
             </>}
           </div>

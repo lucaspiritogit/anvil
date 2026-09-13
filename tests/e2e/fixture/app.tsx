@@ -3,7 +3,7 @@ import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
 import { useTaskIssues } from '../../../src/client/renderer/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
-import type { Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergePreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure } from '../../../src/shared/types'
+import type { Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure } from '../../../src/shared/types'
 import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import type { IpcRequests } from '../../../src/shared/ipc-requests'
@@ -619,6 +619,22 @@ window.anvil = {
       await new Promise((resolve) => setTimeout(resolve, 200))
       if (query.has('mergeFailure')) throw new Error('Merge failed. The task was not merged.')
       return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', reviewedAt: Date.now() })
+    },
+    mergeAndPushPreview: async (taskId: string): Promise<TaskMergeAndPushPreview> => ({
+      ...await window.anvil.tasks.mergePreview(taskId),
+      remote: 'origin', remoteTargetCommit: 'c'.repeat(40), remoteUrlHash: 'd'.repeat(64)
+    }),
+    mergeAndPush: async (input) => {
+      window.dispatchEvent(new CustomEvent('fixture:merge-and-push', { detail: input }))
+      return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', reviewedAt: Date.now() })
+    },
+    pushPreview: async (): Promise<TaskPushPreview> => ({
+      targetBranch: 'user-current', targetCommit: 'e'.repeat(40), remote: 'origin',
+      remoteTargetCommit: 'c'.repeat(40), remoteUrlHash: 'd'.repeat(64)
+    }),
+    push: async (input) => {
+      window.dispatchEvent(new CustomEvent('fixture:push', { detail: input }))
+      return tasks.find((task) => task.id === input.taskId)!
     },
     approveIssue: async ({ taskId }: { taskId: string; issueId: string; headCommit: string | null }) => {
       window.dispatchEvent(new CustomEvent('fixture:issue-approval', { detail: { taskId } }))

@@ -1,4 +1,4 @@
-import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergePreview, ConnectionsConfigure } from './types'
+import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure } from './types'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
 export interface IpcRequests {
@@ -58,6 +58,10 @@ export interface IpcRequests {
   'tasks:rebase-agent': string
   'tasks:merge-preview': string
   'tasks:approve': { taskId: string; preview: TaskMergePreview }
+  'tasks:merge-and-push-preview': string
+  'tasks:merge-and-push': { taskId: string; preview: TaskMergeAndPushPreview }
+  'tasks:push-preview': string
+  'tasks:push': { taskId: string; preview: TaskPushPreview }
   'tasks:approve-issue': { taskId: string; issueId: string; headCommit: string | null }
   'tasks:reject-issue': { taskId: string; issueId: string; headCommit: string | null; comment?: string }
   'comments:list': string

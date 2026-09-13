@@ -8,7 +8,7 @@ import { resumeTaskTurn } from '../tasks/resume'
 import { issueReworkPrompt, reviewPrompt } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
-import type { Task, TaskMergePreview } from '../../shared/types'
+import type { Task, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview } from '../../shared/types'
 import { isTaskSettled } from '../../shared/task-settlement'
 
 interface ReviewHandlerDependencies extends TaskContext {
@@ -27,21 +27,41 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     if (!task) throw new Error('Task not found')
     requireStackMergeable(store, task)
     if (task.deliveryStatus !== 'reviewable') throw new Error('This task is not awaiting review')
-    if (!task.branchName) throw new Error('This task has no branch to merge')
+    if (!task.branchName || !task.headCommit) throw new Error('This task has no finalized branch to merge')
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
-    return { project, branchName: task.branchName }
+    return { project, branchName: task.branchName, headCommit: task.headCommit }
+  }
+
+  const requireApprovedTask = (taskId: string) => {
+    requireFinishedTask(taskId)
+    const task = store.getTask(taskId)
+    if (!task) throw new Error('Task not found')
+    if (task.deliveryStatus !== 'approved') throw new Error('Merge this task before pushing its target branch')
+    if (!task.headCommit) throw new Error('This task has no finalized commit to push')
+    const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
+    if (!project) throw new Error('Project not found')
+    return { task, project, headCommit: task.headCommit }
+  }
+
+  const getReviewableMergePreview = async (taskId: string): Promise<TaskMergePreview> => {
+    const { project, branchName, headCommit } = requireReviewableTask(taskId)
+    const preview = await gitDelivery.getMergePreview(project.path, branchName)
+    if (preview.sourceCommit !== headCommit) {
+      throw new Error('The task branch changed after review. Refresh or restore its finalized commit before merging.')
+    }
+    return preview
   }
 
   ipc.handle('tasks:merge-preview', async (taskId: string): Promise<TaskMergePreview> => {
-    const { project, branchName } = requireReviewableTask(taskId)
-    return gitDelivery.getMergePreview(project.path, branchName)
+    return getReviewableMergePreview(taskId)
   })
 
   ipc.handle('tasks:approve', async (input): Promise<Task> => {
     const { taskId, preview } = input
     return withTaskOperation(store, taskId, 'merge', async (check) => {
-      const { project, branchName } = requireReviewableTask(taskId)
+      const { project, branchName, headCommit } = requireReviewableTask(taskId)
+      if (preview.sourceCommit !== headCommit) throw new Error('The task branch changed after review. Refresh the merge details.')
       const guard = () => {
         check()
         requireReviewableTask(taskId)
@@ -54,6 +74,93 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       send('task:updated', approved)
       await new TaskStacks({ store, agentProcesses, gitDelivery, send }).restackChildren(taskId)
       return approved
+    })
+  })
+
+  ipc.handle('tasks:merge-and-push-preview', async (taskId: string): Promise<TaskMergeAndPushPreview> => {
+    const { project } = requireReviewableTask(taskId)
+    const mergePreview = await getReviewableMergePreview(taskId)
+    const pushPreview = await gitDelivery.getPushPreview(project.path, mergePreview.targetBranch)
+    if (pushPreview.targetCommit !== mergePreview.targetCommit) {
+      throw new Error('The target branch changed while loading the delivery details. Refresh and try again.')
+    }
+    return {
+      ...mergePreview,
+      remote: pushPreview.remote,
+      remoteTargetCommit: pushPreview.remoteTargetCommit,
+      remoteUrlHash: pushPreview.remoteUrlHash
+    }
+  })
+
+  ipc.handle('tasks:merge-and-push', async (input): Promise<Task> => {
+    const { taskId, preview } = input
+    return withTaskOperation(store, taskId, 'merge', async (check) => {
+      const { project, branchName, headCommit } = requireReviewableTask(taskId)
+      if (preview.sourceCommit !== headCommit) throw new Error('The task branch changed after review. Refresh the delivery details.')
+      const reviewableGuard = () => {
+        check()
+        requireReviewableTask(taskId)
+      }
+      const mergedCommit = await gitDelivery.merge(project.path, branchName, preview, reviewableGuard)
+      reviewableGuard()
+      const approved = store.updateTask(taskId, { deliveryStatus: 'approved', reviewedAt: Date.now() })
+      if (!approved) throw new Error('Task was deleted')
+      recordSystemEvent(taskId, `Merged ${branchName} into ${preview.targetBranch} with git merge, bringing in ${preview.commitCount} commit${preview.commitCount === 1 ? '' : 's'}.`)
+      send('task:updated', approved)
+
+      const pushPreview: TaskPushPreview = {
+        targetBranch: preview.targetBranch,
+        targetCommit: mergedCommit,
+        remote: preview.remote,
+        remoteTargetCommit: preview.remoteTargetCommit,
+        remoteUrlHash: preview.remoteUrlHash
+      }
+      let pushError: unknown
+      try {
+        await gitDelivery.push(project.path, pushPreview, headCommit, () => {
+          check(approved)
+          requireApprovedTask(taskId)
+        })
+        recordSystemEvent(taskId, `Pushed ${preview.targetBranch} at ${mergedCommit} to origin.`)
+        send('task:updated', approved)
+      } catch (error) {
+        pushError = error
+        recordSystemEvent(taskId, `The task was merged locally, but ${preview.targetBranch} could not be pushed to origin: ${error instanceof Error ? error.message : String(error)}`, 'delivery', 'error')
+      }
+
+      try {
+        await new TaskStacks({ store, agentProcesses, gitDelivery, send }).restackChildren(taskId)
+      } catch (error) {
+        if (!pushError) throw error
+        recordSystemEvent(taskId, `Child restacking also failed after the local merge: ${error instanceof Error ? error.message : String(error)}`, 'delivery', 'error')
+      }
+      if (pushError) throw pushError
+      return approved
+    })
+  })
+
+  ipc.handle('tasks:push-preview', async (taskId: string): Promise<TaskPushPreview> => {
+    const { project, headCommit } = requireApprovedTask(taskId)
+    return gitDelivery.getPushPreview(project.path, undefined, headCommit)
+  })
+
+  ipc.handle('tasks:push', async (input): Promise<Task> => {
+    const { taskId, preview } = input
+    return withTaskOperation(store, taskId, 'push', async (check) => {
+      const { project, headCommit } = requireApprovedTask(taskId)
+      try {
+        await gitDelivery.push(project.path, preview, headCommit, () => {
+          check()
+          requireApprovedTask(taskId)
+        })
+      } catch (error) {
+        recordSystemEvent(taskId, `Could not push ${preview.targetBranch} to origin: ${error instanceof Error ? error.message : String(error)}`, 'delivery', 'error')
+        throw error
+      }
+      const task = requireApprovedTask(taskId).task
+      recordSystemEvent(taskId, `Pushed ${preview.targetBranch} at ${preview.targetCommit} to origin.`)
+      send('task:updated', task)
+      return task
     })
   })
 

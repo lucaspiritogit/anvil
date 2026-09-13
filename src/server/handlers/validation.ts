@@ -77,6 +77,12 @@ const file: Check<string> = (value, field) => {
 const mergePreview = {
   sourceBranch: branch, targetBranch: branch, sourceCommit: sha, targetCommit: sha, commitCount: number(0)
 }
+const pushRemotePreview = {
+  remote: oneOf('origin'), remoteTargetCommit: nullable(sha), remoteUrlHash: sha
+}
+const pushPreview = {
+  targetBranch: branch, targetCommit: sha, ...pushRemotePreview
+}
 
 const settingsPatch = object<IpcRequests['settings:set']['patch']>({
   memoryEnabled: optional(boolean),
@@ -186,6 +192,10 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:rebase-agent': id,
   'tasks:merge-preview': id,
   'tasks:approve': object({ taskId: id, preview: object(mergePreview) }),
+  'tasks:merge-and-push-preview': id,
+  'tasks:merge-and-push': object({ taskId: id, preview: object({ ...mergePreview, ...pushRemotePreview }) }),
+  'tasks:push-preview': id,
+  'tasks:push': object({ taskId: id, preview: object(pushPreview) }),
   'tasks:approve-issue': object({ taskId: id, issueId: id, headCommit: nullable(id) }),
   'tasks:reject-issue': object({ taskId: id, issueId: id, headCommit: nullable(id), comment: optional(text(20_000)) }),
   'comments:list': id,
