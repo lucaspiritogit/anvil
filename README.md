@@ -41,42 +41,25 @@ The builds are unsigned for now, so your OS may warn on first launch. I recommen
 Anvil drives agent CLIs already on your PATH, with no hosted backend.
 
 - Opencode (default): Through ACP server over stdio
-- Codex: Throguh the codex app-server implementation over stdio
+- Codex: Through the codex app-server implementation over stdio
 
-## Development
+## Usage
 
-### Requirements
+1. Add a project folder from the sidebar.
+2. Start a new task, pick an agent, describe the work, and dispatch.
+3. Follow execution in Output. Issues advance automatically after validation.
+4. When the task finishes, open Changes to review the cumulative diff, leave
+   comments, or approve.
 
-- Node 24.15+
-- At least one agent CLI on your PATH.
-
-### Run locally
-
-```sh
-npm install
-unset ELECTRON_RUN_AS_NODE
-npm run dev
-```
-
-Development runs use `~/.anvil-composer-dev/`. Packaged apps use
-`~/.anvil-composer/`, preserving existing projects and settings. The SQLite
-database, settings, GitHub credentials, wallpapers, and embedded project memory
-are separate. Development starts with an empty project list.
-
-For self-development, use the installed app to run an agent on the Anvil repo
-and `npm run dev` to try its changes after merging the task branch. Both apps
-can stay open. Tasks use separate worktrees while Valence issues belong to the
-project checkout. A configured external PostgreSQL memory database
-also needs a separate URL if you want to isolate it.
-
-`npm run build` followed by `npm start` is still an unpackaged development run.
-The split uses Electron's `app.isPackaged`, not Vite's build mode. For disposable
-tests, set `ANVIL_DATA_DIR` to an absolute temporary directory before launching
-either version. This also isolates its Electron profile. For example:
-
-```sh
-ANVIL_DATA_DIR="$(mktemp -d /tmp/anvil-test.XXXXXX)" npm run dev
-```
+Each task creates its own branch and worktree from the project's current commit,
+so tasks can run in parallel in the same repository. Local project changes stay
+in the project checkout. Use the branch selector above the composer to switch
+the project branch for new tasks. Branches checked out in other worktrees appear
+as in use. Anvil saves one cumulative final diff and keeps each task's worktree
+through completion, restart, and follow-ups. Worktrees are removed only when the
+task is deleted or settled; committed branches remain available. Approved tasks
+settle automatically two days after review, and no-change tasks two days after
+completion. Tasks can also be settled manually.
 
 ## Server and remote access
 
@@ -104,61 +87,17 @@ the archive and run:
 On Windows, use `anvil-server.cmd`.
 
 For desktop LAN access, set a server password in **Settings > Connections** and
-enable **Allow other devices**. Anvil stores only an Argon2id password hash.
-Open `http://host:4780` from another device on the same trusted network and sign
-in with username `anvil`.
+enable **Allow other devices**. Open `http://host:4780` from another device on
+the same trusted network and sign in with username `anvil`.
 
 Enable **Tailscale HTTPS** to access the desktop server from another network.
 Install and connect Tailscale on both devices, then open the HTTPS address shown
 by Anvil. Desktop Tailscale access still requires the Anvil username and password.
 
-For an unattended headless LAN server, provide the password through a file:
+See [SECURITY.md](SECURITY.md) for agent permissions, password handling, and
+network exposure details.
 
-```sh
-ANVIL_SERVER_PASSWORD_FILE=/absolute/path/to/password npm run serve:lan
-```
-
-Without a password file, the first terminal launch prompts for a password. The
-headless Tailscale command delegates access control to Tailscale and does not read
-the password file.
-
-LAN mode uses HTTP, so use it only on a trusted network. Use Tailscale for private
-HTTPS access outside that network.
-
-## Philosophy
-
-Coding agents have changed programming, but an agent is still a tool.
-In Anvil, it is an instrument you point at a problem, like a compiler or a test
-runner. There is no chat window or persona to interact with.
-
-Treating agents as teammates, with personalities and conversations you steer
-turn by turn, shifts decisions away from the developer. Anvil keeps the focus on
-the work and the diff you review.
-
-Researching and asking questions are completely valid ways to use AI. But
-following an agent's suggestion without investigating it yourself means accepting
-a decision you may not understand. You still need the context to know what
-you're building and why.
-
-## Usage
-
-1. Add a project folder from the sidebar.
-2. Start a new task, pick an agent, describe the work, and dispatch.
-3. Follow execution in Output. Issues advance automatically after validation.
-4. When the task finishes, open Changes to review the cumulative diff, leave
-   comments, or approve.
-
-Each task creates its own branch and worktree from the project's current commit,
-so tasks can run in parallel in the same repository. Local project changes stay
-in the project checkout. Use the branch selector above the composer to switch
-the project branch for new tasks. Branches checked out in other worktrees appear
-as in use. Anvil saves one cumulative final diff and keeps each task's worktree
-through completion, restart, and follow-ups. Worktrees are removed only when the
-task is deleted or settled; committed branches remain available. Approved tasks
-settle automatically two days after review, and no-change tasks two days after
-completion. Tasks can also be settled manually.
-
-### Project memory
+## Project memory
 
 Project memory is off by default. Enable it in **Settings > Memory** to save
 completed-task context and include relevant memories in future tasks. The enabled
@@ -185,39 +124,28 @@ npm run dev
 This setup requires Docker Compose. See [.env.example](.env.example) for memory
 backend and embedding settings.
 
-### Storage and migrations
+## Philosophy
 
-App state lives in `~/.anvil-composer-dev/workspaces/<name>/anvil.db` during development and
-`~/.anvil-composer/workspaces/<name>/anvil.db` in packaged apps, via Drizzle on
-Node's built-in SQLite driver: projects, tasks, events, comments, settings, and execution metadata.
-Valence is Anvil's internal issue tracker. Its parents, issues, dependencies and
-validation evidence share this SQLite database. Each parent references the real
-Anvil task through `parent_issues.anvil_task_id`. Project memory has its own database.
+Coding agents have changed programming, but an agent is still a tool.
+In Anvil, it is an instrument you point at a problem, like a compiler or a test
+runner. There is no chat window or persona to interact with.
 
-| Database | Schema | Generate migrations |
-| --- | --- | --- |
-| App state | `src/server/db/schema.ts` | `npm run db:generate` |
-| Project memory | `src/server/memory/schema.ts` | `npm run memory:generate` |
+Treating agents as teammates, with personalities and conversations you steer
+turn by turn, shifts decisions away from the developer. Anvil keeps the focus on
+the work and the diff you review.
 
-Commit schema changes and generated migrations together. Anvil applies pending
-SQLite migrations on startup. To apply them without opening Anvil, quit the app
-and run `npm run db:migrate`.
-Repository database commands and `npm run memory:inspect` follow the selected
-workspace in development storage. They share `scripts/maintenance.cjs`; PGlite
-inspection reads that workspace's `memory/pglite` directory. Set `ANVIL_DATA_DIR="$HOME/.anvil-composer"` explicitly to maintain the
-packaged app's data after quitting that app.
+Researching and asking questions are completely valid ways to use AI. But
+following an agent's suggestion without investigating it yourself means accepting
+a decision you may not understand. You still need the context to know what
+you're building and why.
 
-### Reset app data
+## Development
 
-Quit the development app before running either command. Both delete its SQLite
-app data and leave project memory untouched.
-
-- `npm run db:drop` deletes `~/.anvil-composer-dev/workspaces/<name>/anvil.db` and its sidecar files,
-  or the database under `ANVIL_DATA_DIR` when set.
-- `npm run db:reset` drops the database and reapplies migrations. It creates the
-  schema only; Anvil seeds default settings on its next startup.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, storage, migrations, and
+commit conventions.
 
 ## Acknowledgments
+
 These videos from Jaymin and Brett helped me put Anvil's philosophy into words.
 If you feel like Anvil's idea is great, please, check both of them out and their projects.
 
