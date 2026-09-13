@@ -25,6 +25,7 @@ test('settles eligible tasks at the review TTL and persists manual settlement', 
       workspaceId: 'default',
       id, projectId: 'project', title: id, prompt: id, agentId: 'codex', agentLabel: 'Codex',
       cwd: testHome, status: 'succeeded', deliveryStatus: 'reviewable', branchName: 'task',
+      headCommit: 'a'.repeat(40),
       startedAt: now - 24 * 60 * 60 * 1000, endedAt: now - 3 * 24 * 60 * 60 * 1000,
       inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: 0,
       filesChanged: 1, additions: 1, deletions: 0, ...patch

@@ -127,7 +127,9 @@ export class GitDeliveryManager {
     return { headCommit: GitDeliveryManager.worktreeHeadValue ?? `commit-${GitDeliveryManager.head}`, hasChanges: true, filesChanged: 1, additions: 1, deletions: 0 }
   }
   async getMergePreview(_path: string, branchName: string): Promise<any> {
-    return { sourceBranch: branchName, targetBranch: 'main', sourceCommit: 'a'.repeat(40), targetCommit: 'b'.repeat(40), commitCount: 1 }
+    const sourceCommit = GitDeliveryManager.worktreeHeadValue ??
+      (GitDeliveryManager.head > 0 ? `commit-${GitDeliveryManager.head}` : 'a'.repeat(40))
+    return { sourceBranch: branchName, targetBranch: 'main', sourceCommit, targetCommit: 'b'.repeat(40), commitCount: 1 }
   }
   async merge(): Promise<void> {}
   async getDiff(_path: string, base: string, head: string): Promise<any> { return { patch: `${base}..${head}`, commits: [] } }

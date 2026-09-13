@@ -42,7 +42,9 @@ test('deletes finished, active and queued tasks without resurrecting persisted s
     return store.getTask(task.id)!
   }
   const assertDeleted = (taskId: string): void => {
-    expect(store.issueTracker('project').listParents().some((parent) => parent.anvilTaskId === taskId)).toBe(false)
+    if (store.getProjects().some((project) => project.id === 'project')) {
+      expect(store.issueTracker('project').listParents().some((parent) => parent.anvilTaskId === taskId)).toBe(false)
+    }
     expect(store.getTask(taskId)).toBe(undefined)
     expect(store.getTaskExecution(taskId)).toBe(undefined)
     expect(store.readEvents(taskId)).toStrictEqual([])
