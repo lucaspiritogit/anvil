@@ -1,4 +1,5 @@
 import { GhosttyTerminal } from './GhosttyTerminal'
+import { Select } from './Select'
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { AgentAccountConnect, AgentAccountTarget, WorkspaceAgentAccount } from '@shared/types'
 import { useStore } from '../state/store'
@@ -75,17 +76,17 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
       {agentId === 'codex' && !pending && <>
         <label className={field.wrap}>
           <span className={field.label}>Codex account type for {workspaceName}</span>
-          <select className={field.sized} value={accountType} disabled={disabled} onChange={(event) => { setAccountType(event.target.value as typeof accountType); setApiKey('') }}>
+          <Select value={accountType} disabled={disabled} onChange={(event) => { setAccountType(event.target.value as typeof accountType); setApiKey('') }}>
             <option value="chatgpt">ChatGPT subscription</option>
             <option value="apiKey">API key</option>
-          </select>
+          </Select>
         </label>
         {accountType === 'chatgpt' && <label className={field.wrap}>
           <span className={field.label}>ChatGPT sign-in flow for {workspaceName}</span>
-          <select className={field.sized} value={chatgptSignInFlow} disabled={disabled} onChange={(event) => setChatgptSignInFlow(event.target.value as typeof chatgptSignInFlow)}>
+          <Select value={chatgptSignInFlow} disabled={disabled} onChange={(event) => setChatgptSignInFlow(event.target.value as typeof chatgptSignInFlow)}>
             <option value="browser">Browser on this PC</option>
             <option value="deviceCode">One-time device code</option>
-          </select>
+          </Select>
         </label>}
         {accountType === 'apiKey' && <label className={field.wrap}>
           <span className={field.label}>Codex API key for {workspaceName}</span>
@@ -95,11 +96,15 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
         {accountType === 'chatgpt' && chatgptSignInFlow === 'deviceCode' && <p className="my-2 text-xs text-dim">Open the verification link from any device and enter the one-time code in the terminal panel. This signs Codex in with your ChatGPT subscription.</p>}
       </>}
       {agentId === 'opencode' && <p className="my-2 text-xs text-dim">Choose an API key or a subscription in the native provider prompts. Subscription availability depends on the provider.</p>}
-      <div className="flex flex-wrap gap-2">
-        <button className={btn.primary} disabled={disabled || (agentId === 'codex' && accountType === 'apiKey' && !apiKey.trim())} onClick={connect}>Connect {label} for {workspaceName}</button>
-        <button className={btn.ghost} disabled={disabled} onClick={() => void run(() => window.anvil.accounts.disconnect(target))}>Disconnect {label} for {workspaceName}</button>
-        <button className={btn.ghost} disabled={requesting || pending} onClick={() => void run(() => window.anvil.accounts.status(target))}>Refresh {label} for {workspaceName}</button>
-        {pending && account.sessionId && <button className={btn.ghost} onClick={() => void run(() => window.anvil.accounts.cancel({ ...target, sessionId: account.sessionId! }))}>Cancel {label} for {workspaceName}</button>}
+      <div className="flex flex-wrap items-center gap-2">
+        <button className={btn.primary} aria-label={`Connect ${label} for ${workspaceName}`}
+          disabled={disabled || (agentId === 'codex' && accountType === 'apiKey' && !apiKey.trim())} onClick={connect}>Connect</button>
+        {account?.status === 'connected' && <button className={btn.ghost} aria-label={`Disconnect ${label} for ${workspaceName}`}
+          disabled={disabled} onClick={() => void run(() => window.anvil.accounts.disconnect(target))}>Disconnect</button>}
+        <button className={btn.ghost} aria-label={`Refresh ${label} for ${workspaceName}`}
+          disabled={requesting || pending} onClick={() => void run(() => window.anvil.accounts.status(target))}>Refresh</button>
+        {pending && account.sessionId && <button className={btn.ghost} aria-label={`Cancel ${label} for ${workspaceName}`}
+          onClick={() => void run(() => window.anvil.accounts.cancel({ ...target, sessionId: account.sessionId! }))}>Cancel</button>}
       </div>
       {pending && agentId === 'opencode' && <p className="mt-3 text-xs text-dim">Complete sign-in or sign-out in the terminal panel. Cancelling stops the command.</p>}
       {pending && account.terminalSessionId && <GhosttyTerminal key={account.terminalSessionId} sessionId={account.terminalSessionId} className="mt-3 h-[180px]" />}

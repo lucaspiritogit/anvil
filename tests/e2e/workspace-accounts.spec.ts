@@ -135,6 +135,6 @@ test('busy work explains why account changes are disabled', async ({ page }) => 
   await openAccounts(page, 'accountBusy')
   await expect(card(page).getByText('Active work in Default must finish before changing accounts.')).toBeVisible()
   await expect(card(page).getByRole('button', { name: 'Connect Codex for Default', exact: true })).toBeDisabled()
-  await expect(card(page).getByRole('button', { name: 'Disconnect Codex for Default', exact: true })).toBeDisabled()
+  await expect(card(page).getByRole('button', { name: 'Disconnect Codex for Default', exact: true })).toHaveCount(0)
   await expect(card(page).getByRole('button', { name: 'Refresh Codex for Default', exact: true })).toBeEnabled()
 })

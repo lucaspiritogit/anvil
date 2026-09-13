@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
 import { useMemo } from 'react'
+import { Select } from './Select'
 import { field } from '../ui'
 
 /**
@@ -74,8 +75,7 @@ export function ProviderModelSelect({
 
   return (
     <>
-      <select
-        className={field.sized}
+      <Select
         value={value}
         disabled={loading}
         onChange={(e) => onChange(e.target.value)}
@@ -99,7 +99,7 @@ export function ProviderModelSelect({
             ))
           )
         )}
-      </select>
+      </Select>
       {error && <span className={field.hint}>{error}</span>}
     </>
   )
