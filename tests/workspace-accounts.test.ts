@@ -41,7 +41,11 @@ function fixture() {
   const createOpenCodeAuth = vi.fn<TerminalSessionManager['createOpenCodeAuth']>(() => ({ sessionId: 'auth-terminal' }))
   const createCodexAuth = vi.fn<TerminalSessionManager['createCodexAuth']>(() => ({ sessionId: 'codex-terminal' }))
   const dispose = vi.fn(async () => {})
-  const readOpenCode = vi.fn(async (workspace: { workspaceId: string }): Promise<string> => profiles.has(workspace.workspaceId) ? '● OpenAI oauth\n1 credential' : '0 credentials')
+  let readGate: Promise<void> | undefined
+  const readOpenCode = vi.fn(async (workspace: { workspaceId: string }): Promise<string> => {
+    if (readGate) await readGate
+    return profiles.has(workspace.workspaceId) ? '● OpenAI oauth\n1 credential' : '0 credentials'
+  })
   let rejectKey = false
   let early = false
   const requests: string[] = []
@@ -66,7 +70,10 @@ function fixture() {
           let result: unknown = {}
           if (method === 'config/read') result = { config: { cli_auth_credentials_store: 'file' } }
           if (method === 'initialize') result = { userAgent: 'fake' }
-          if (method === 'account/read') result = { account: profiles.get(workspace.workspaceId) ?? null, requiresOpenaiAuth: true, secret: 'never-return-this' }
+          if (method === 'account/read') {
+            if (readGate) await readGate
+            result = { account: profiles.get(workspace.workspaceId) ?? null, requiresOpenaiAuth: true, secret: 'never-return-this' }
+          }
           if (method === 'account/login/start') {
             const login = params as CodexAppServerRequests['account/login/start']['params']
             if (login.type === 'apiKey') {
@@ -90,8 +97,123 @@ function fixture() {
   })
   onTestCleanup(() => accounts.close())
   return { accounts, profiles, connections, locked, active, changed, invalidate, openBrowser, createOpenCodeAuth, createCodexAuth, dispose, readOpenCode, requests,
-    rejectKey: () => { rejectKey = true }, early: () => { early = true } }
+    rejectKey: () => { rejectKey = true }, early: () => { early = true }, setReadGate: (gate?: Promise<void>) => { readGate = gate } }
 }
+
+function deferred(): { promise: Promise<void>; resolve(): void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
+interface TerminalAuthCase {
+  name: string
+  target: AgentAccountTarget
+  connect: AgentAccountConnect
+  terminalSessionId: string
+  exit(f: ReturnType<typeof fixture>, exitCode: number): void
+}
+
+const terminalAuthCases: TerminalAuthCase[] = [
+  {
+    name: 'Codex device auth', target: work, connect: { ...work, method: 'deviceAuth' }, terminalSessionId: 'codex-terminal',
+    exit: (f, exitCode) => { f.createCodexAuth.mock.lastCall![1](exitCode) }
+  },
+  {
+    name: 'OpenCode native auth', target: { ...work, agentId: 'opencode' }, connect: { ...work, agentId: 'opencode', method: 'native' }, terminalSessionId: 'auth-terminal',
+    exit: (f, exitCode) => { f.createOpenCodeAuth.mock.lastCall![2](exitCode) }
+  }
+]
+
+test.each(terminalAuthCases)('$name detaches its terminal before delayed cleanup and refresh complete', async ({ target, connect, terminalSessionId, exit }) => {
+  const f = fixture()
+  const disposal = deferred()
+  const refresh = deferred()
+  f.dispose.mockImplementationOnce(() => disposal.promise)
+  const pending = await f.accounts.connect(connect)
+  const readsBeforeFinish = target.agentId === 'opencode'
+    ? f.readOpenCode.mock.calls.length
+    : f.requests.filter((method) => method === 'account/read').length
+  f.profiles.set(target.workspaceId, { type: 'apiKey' })
+  f.setReadGate(refresh.promise)
+  const changesBeforeFinish = f.changed.mock.calls.length
+
+  exit(f, 0)
+  await vi.waitFor(() => expect(f.changed.mock.calls.length).toBe(changesBeforeFinish + 1))
+  expect(f.changed.mock.calls[changesBeforeFinish][0]).toMatchObject({ status: 'pending', sessionId: pending.sessionId })
+  expect(f.changed.mock.calls[changesBeforeFinish][0].terminalSessionId).toBeUndefined()
+  expect(await f.accounts.status(target)).toMatchObject({ status: 'pending', sessionId: pending.sessionId })
+  expect((await f.accounts.status(target)).terminalSessionId).toBeUndefined()
+  expect(f.dispose).toHaveBeenCalledOnce()
+  expect(f.dispose).toHaveBeenCalledWith(terminalSessionId)
+  expect(f.locked.has(target.workspaceId)).toBe(true)
+
+  exit(f, 1)
+  await Promise.resolve()
+  expect(f.dispose).toHaveBeenCalledOnce()
+  expect(f.changed.mock.calls.length).toBe(changesBeforeFinish + 1)
+
+  disposal.resolve()
+  await vi.waitFor(() => {
+    const reads = target.agentId === 'opencode'
+      ? f.readOpenCode.mock.calls.length
+      : f.requests.filter((method) => method === 'account/read').length
+    expect(reads).toBe(readsBeforeFinish + 1)
+  })
+  expect((await f.accounts.status(target)).terminalSessionId).toBeUndefined()
+  expect(f.locked.has(target.workspaceId)).toBe(true)
+
+  refresh.resolve()
+  await vi.waitFor(() => expect(f.locked.has(target.workspaceId)).toBe(false))
+  expect(await f.accounts.status(target)).toMatchObject({ status: 'connected' })
+  expect((await f.accounts.status(target)).terminalSessionId).toBeUndefined()
+})
+
+test.each(terminalAuthCases)('$name cancellation detaches its terminal while retaining operation ownership', async ({ target, connect, terminalSessionId, exit }) => {
+  const f = fixture()
+  const disposal = deferred()
+  f.dispose.mockImplementationOnce(() => disposal.promise)
+  const pending = await f.accounts.connect(connect)
+  const changesBeforeFinish = f.changed.mock.calls.length
+
+  const cancellation = f.accounts.cancel(target, pending.sessionId!)
+  await vi.waitFor(() => expect(f.changed.mock.calls.length).toBe(changesBeforeFinish + 1))
+  expect(await f.accounts.status(target)).toMatchObject({ status: 'pending', sessionId: pending.sessionId })
+  expect((await f.accounts.status(target)).terminalSessionId).toBeUndefined()
+  expect(f.dispose).toHaveBeenCalledWith(terminalSessionId)
+  expect(f.locked.has(target.workspaceId)).toBe(true)
+
+  exit(f, 1)
+  await Promise.resolve()
+  expect(f.dispose).toHaveBeenCalledOnce()
+  expect(f.changed.mock.calls.length).toBe(changesBeforeFinish + 1)
+
+  disposal.resolve()
+  expect(await cancellation).toMatchObject({ status: 'cancelled', message: 'Connection cancelled.' })
+  expect(f.locked.has(target.workspaceId)).toBe(false)
+  expect((await f.accounts.status(target)).terminalSessionId).toBeUndefined()
+})
+
+test.each(terminalAuthCases)('$name publishes terminal detachment before failed cleanup', async ({ target, connect, exit }) => {
+  const f = fixture()
+  f.dispose.mockRejectedValueOnce(new Error('native teardown failed'))
+  await f.accounts.connect(connect)
+  const changesBeforeFinish = f.changed.mock.calls.length
+
+  exit(f, 0)
+  await vi.waitFor(() => expect(f.changed.mock.calls.length).toBe(changesBeforeFinish + 2))
+  expect(f.changed.mock.calls[changesBeforeFinish][0]).toMatchObject({ status: 'pending' })
+  expect(f.changed.mock.calls[changesBeforeFinish][0].terminalSessionId).toBeUndefined()
+  expect(f.changed.mock.calls[changesBeforeFinish + 1][0]).toMatchObject({
+    status: 'error', message: 'Could not finish account cleanup. Restart Anvil before retrying.'
+  })
+  expect(f.locked.has(target.workspaceId)).toBe(true)
+
+  exit(f, 1)
+  await Promise.resolve()
+  expect(f.dispose).toHaveBeenCalledOnce()
+  expect(f.changed.mock.calls.length).toBe(changesBeforeFinish + 2)
+})
 
 test('API key success, failure redaction, logout and native summaries are workspace scoped', async () => {
   const f = fixture()
