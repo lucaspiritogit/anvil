@@ -263,7 +263,7 @@ test('server credential encryption persists a private key and authenticates ciph
   const encryption = createCredentialEncryption(path)
   const ciphertext = encryption.encryptString('fixture-token')
   expect(ciphertext.includes(Buffer.from('fixture-token'))).toBe(false)
-  expect(statSync(path).mode & 0o777).toBe(0o600)
+  if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600)
   expect(readFileSync(path)).toHaveLength(32)
   expect(createCredentialEncryption(path).decryptString(ciphertext)).toBe('fixture-token')
   ciphertext[ciphertext.length - 1] ^= 1

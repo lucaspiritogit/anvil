@@ -520,7 +520,8 @@ test('keeps image bytes separate through memory preparation and both startup pat
       expect(store.taskImages.read(task.id)).toEqual(images)
       expect(dispatched.images[0].bytes).not.toBe(images[0].bytes)
       expect(task.prompt).toBe('Inspect image')
-      expect(task.deliveryStatus).toBe(repository ? 'working' : 'unavailable')
+      expect(task.deliveryStatus).toBe('preparing')
+      expect(store.getTask(task.id)?.deliveryStatus).toBe(repository ? 'working' : 'unavailable')
       expect(JSON.stringify(store.getTask(task.id))).not.toContain('bytes')
       expect(JSON.stringify(store.readEvents(task.id))).not.toContain(Buffer.from(images[0].bytes).toString('base64'))
       call('tasks:delete', task.id)
@@ -575,24 +576,39 @@ test('releases image preparation on cancellation, deletion and memory failures w
     const entered = new Promise<void>((resolve) => { prepared = resolve })
     let finish!: () => void
     const pending = new Promise<void>((resolve) => { finish = resolve })
-    const { call, project, store, tick, agentProcesses } = setupIpc(async (_projectId, prompt) => {
+    const { call, project, store, tick, agentProcesses, delivery, notifications } = setupIpc(async (_projectId, prompt) => {
       prepared()
       await pending
       if (action === 'failure') throw new Error('Memory unavailable')
       return prompt
     })
-    const starting: Promise<Task> = call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Inspect image', images })
+    onTestCleanup(() => finish())
+    const releaseWorktree = vi.spyOn(delivery, 'releaseWorktree')
+    const accepted: Task = await call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Inspect image', images })
+    expect(accepted.deliveryStatus).toBe('preparing')
+    expect(notifications).toContainEqual({ channel: 'task:updated', payload: accepted })
     await entered
     const task = store.getTasks().find((task) => task.prompt === 'Inspect image')!
+    expect(task.branchName).toBeTruthy()
+    expect(agentProcesses.starts).toHaveLength(0)
     if (action !== 'failure') call(action, task.id)
     finish()
-    if (action === 'tasks:delete') await expect(starting).rejects.toThrow('Task was deleted')
-    else await starting
     await tick()
     expect(agentProcesses.starts).toHaveLength(0)
     expect(store.taskImages.read(task.id)).toBeUndefined()
-    expect(store.getTask(task.id)?.branchName).toBeUndefined()
-    if (action === 'failure') expect(store.getTask(task.id)?.error).toBe('Memory unavailable')
+    if (action === 'tasks:delete') {
+      expect(store.getTask(task.id)).toBeUndefined()
+      expect(releaseWorktree).toHaveBeenCalledWith(task.id)
+    } else {
+      expect(store.getTask(task.id)?.branchName).toBe(task.branchName)
+      if (action === 'failure') {
+        expect(store.getTask(task.id)?.error).toBe('Memory unavailable')
+        expect(store.getTask(task.id)?.deliveryStatus).toBe('failed')
+      } else {
+        expect(store.getTask(task.id)?.status).toBe('cancelled')
+      }
+      expect(notifications).toContainEqual({ channel: 'task:updated', payload: store.getTask(task.id) })
+    }
   }
 })
 

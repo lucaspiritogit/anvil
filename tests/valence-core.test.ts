@@ -104,7 +104,7 @@ test('batch keys support forward dependencies; missing dependencies and cycles r
   // Fail after the first insert to prove SQLite rollback, not just prevalidation.
   db.exec(`CREATE TRIGGER reject_issue BEFORE INSERT ON issues WHEN NEW.title = 'Reject'
     BEGIN SELECT RAISE(ABORT, 'injected failure'); END`)
-  expect(() => a.createMany([{ ...input(), key: 'x' }, { ...input({ title: 'Reject' }), key: 'y' }])).toThrow('injected failure')
+  expect(() => a.createMany([{ ...input(), key: 'x' }, { ...input({ title: 'Reject' }), key: 'y' }])).toThrow(expect.objectContaining({ cause: expect.objectContaining({ message: 'injected failure' }) }))
   expect(a.list()).toEqual([])
   const [first, second] = a.createMany([
     { ...input(), key: 'first', dependencies: ['second'] }, { ...input(), key: 'second' }
@@ -123,11 +123,11 @@ test('dependency write failures roll back batch rows and field replacements', ()
   const issue = a.create(input({ labels: ['original'] }))
   db.exec(`CREATE TRIGGER reject_dependency BEFORE INSERT ON issue_dependencies
     BEGIN SELECT RAISE(ABORT, 'dependency failure'); END`)
-  expect(() => a.update(issue.id, { title: 'Changed', labels: [], dependencies: [dependency.id] })).toThrow('dependency failure')
+  expect(() => a.update(issue.id, { title: 'Changed', labels: [], dependencies: [dependency.id] })).toThrow(expect.objectContaining({ cause: expect.objectContaining({ message: 'dependency failure' }) }))
   expect(a.get(issue.id)).toEqual(issue)
   expect(() => a.createMany([
     { ...input(), key: 'first' }, { ...input(), key: 'second', dependencies: ['first'] }
-  ])).toThrow('dependency failure')
+  ])).toThrow(expect.objectContaining({ cause: expect.objectContaining({ message: 'dependency failure' }) }))
   expect(a.list()).toEqual([dependency, issue])
   expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
 })

@@ -419,12 +419,17 @@ test('the working agent names its temporary branch and delivers sequential chang
     }
   }
   writeFileSync(join(projectPath, 'local.txt'), 'uncommitted user work\n')
-  const dirty = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Do not commit user work' })
+  const acceptedDirty = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Do not commit user work' })
+  expect(acceptedDirty.deliveryStatus).toBe('preparing')
+  await waitFor(() => agentProcesses.starts.some((start) => start.taskId === acceptedDirty.id))
+  const dirty = seed.getTask(acceptedDirty.id)!
   expect(dirty.status, dirty.error).toBe('running')
   expect(dirty.cwd).not.toBe(projectPath)
   expect(existsSync(join(dirty.cwd, 'local.txt'))).toBe(false)
   expect(git(projectPath, 'branch', '--show-current')).toBe('main')
-  const task = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Two independent files' })
+  const accepted = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Two independent files' })
+  await waitFor(() => agentProcesses.starts.some((start) => start.taskId === accepted.id))
+  const task = seed.getTask(accepted.id)!
   expect(task.status, task.error).toBe('running')
   expect(task.cwd).not.toBe(projectPath)
   expect(task.cwd).not.toBe(dirty.cwd)
@@ -550,9 +555,10 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   }
   const delivery = new GitDeliveryManager(join(store.getWorkspaceDirectory('default'), 'worktrees'))
 
-  const task = await call('tasks:start', { projectId: 'issue-ranges', agentId: 'codex', prompt: 'Two reviewed files' })
-  expect(task.status, task.error).toBe('running')
+  const accepted = await call('tasks:start', { projectId: 'issue-ranges', agentId: 'codex', prompt: 'Two reviewed files' })
+  expect(accepted.status, accepted.error).toBe('running')
   await waitFor(() => agentProcesses.starts.length === 1)
+  const task = store.getTask(accepted.id)!
   const item = { key: 'first', labels: [], priority: 'medium' as const, dependencies: [], title: 'Add one file', description: 'One file per review', checklist: ['File exists'], validation: 'Read the file' }
   agentProcesses.plan(task.id, [item, { ...item, key: 'second', dependencies: ['first'] }])
   await waitFor(() => agentProcesses.starts.length === 2)

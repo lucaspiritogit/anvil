@@ -55,7 +55,7 @@ test('scopes auth commands, model catalogues and image probes to Work and Person
     expect(await auth(workspace, ['auth', 'list'])).toBe('openai\n')
     await expect(requireOpenCodeImageModel(fixture.command, ['models', '--verbose'], fixture.project, `openai/${key}`, undefined, openCodeWorkspaceEnvironment(workspace))).resolves.toBeUndefined()
     const spawns = (await fixture.entries(workspace)).filter((entry) => entry.event === 'spawn')
-    expect(spawns.some((entry) => entry.args?.[0] === 'models' && entry.cwd?.endsWith('/project'))).toBe(true)
+    expect(spawns.some((entry) => entry.args?.[0] === 'models' && entry.cwd === fixture.project)).toBe(true)
     for (const spawn of spawns) {
       expect(spawn.environment).toMatchObject({ HOME: workspace.home, XDG_DATA_HOME: join(workspace.directory, 'data'),
         XDG_CONFIG_HOME: join(workspace.directory, 'config'), XDG_CACHE_HOME: join(workspace.directory, 'cache'),

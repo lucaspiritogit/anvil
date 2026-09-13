@@ -210,7 +210,7 @@ test('renaming preserves committed and dirty work, nested checkout location, and
   expect(snapshot(repo)).toEqual(projectBefore)
   expect(git(task.cwd, 'branch', '--show-current')).toBe(renamed)
   expect(git(repo, 'branch', '--show-current')).toBe('main')
-  expect(git(repo, 'worktree', 'list', '--porcelain')).toContain(`worktree ${worktree}\nHEAD ${taskBefore.head}\nbranch refs/heads/${renamed}`)
+  expect(git(repo, 'worktree', 'list', '--porcelain')).toContain(`worktree ${worktree.replaceAll('\\', '/')}\nHEAD ${taskBefore.head}\nbranch refs/heads/${renamed}`)
   expect(await readFile(join(task.cwd, 'untracked.txt'), 'utf8')).toBe('keep task file\n')
   expect(await readFile(join(repo, 'local.txt'), 'utf8')).toBe('keep project file\n')
   expect(() => git(repo, 'show-ref', '--verify', `refs/heads/${task.branchName}`)).toThrow()

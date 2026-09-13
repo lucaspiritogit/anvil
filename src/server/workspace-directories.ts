@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, renameSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 
 export { validateWorkspaceFolderName } from '../shared/app-data'
@@ -37,6 +37,8 @@ export function moveWorkspaceDirectory(source: string, destination: string): voi
 
 export function relocateTaskPaths(sqlite: DatabaseSync, previous: string, directory: string): void {
   if (previous === directory) return
-  sqlite.prepare(`UPDATE tasks SET cwd = ? || substr(cwd, ?) WHERE substr(cwd, 1, ?) = ?`)
-    .run(directory, previous.length + 1, previous.length + 1, previous + '/')
+  const prefix = previous + sep
+  sqlite.prepare(`UPDATE tasks SET cwd = ? || substr(cwd, length(?) + 1)
+    WHERE cwd = ? OR substr(cwd, 1, length(?)) = ?`)
+    .run(directory, previous, previous, prefix, prefix)
 }

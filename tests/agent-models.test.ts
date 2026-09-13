@@ -25,6 +25,13 @@ const expected = {
   }
 }
 
+async function fixtureCommand(fixture: string): Promise<string> {
+  if (process.platform !== 'win32') return fixture
+  const command = fixture + '.cmd'
+  await writeFile(command, `@echo off\n"${process.execPath}" "${fixture}" %*\n`)
+  return command
+}
+
 test('parses verbose model metadata and rejects malformed records', async () => {
   expect(parseOpenCodeModels(verboseOutput)).toStrictEqual(expected)
   expect(parseOpenCodeModels(verboseOutput.replaceAll('\n', '\r\n'))).toStrictEqual(expected)
@@ -45,13 +52,14 @@ const output = ['openai/large', JSON.stringify({ description: 'x'.repeat(2 * 102
 process.stdout.write(output)
 process.exit(0)
 `, { mode: 0o755 })
-  const agent: AgentDefinition = { id: 'large-catalogue', label: 'Fixture', description: '', command: fixture, args: [] }
+  const command = await fixtureCommand(fixture)
+  const agent: AgentDefinition = { id: 'large-catalogue', label: 'Fixture', description: '', command, args: [] }
   const catalogue = await openCodeAdapter.listModels(agent, testWorkspace())
   expect(catalogue.models).toEqual(['openai/large', 'openai/reasoner'])
   expect(catalogue.reasoningByModel?.['openai/reasoner'].options).toEqual([
     { id: 'high', label: 'high' }, { id: 'max', label: 'max' }
   ])
-  await expect(requireOpenCodeImageModel(fixture, ['models', '--verbose'], directory, 'openai/reasoner')).resolves.toBeUndefined()
+  await expect(requireOpenCodeImageModel(command, ['models', '--verbose'], directory, 'openai/reasoner')).resolves.toBeUndefined()
 })
 
 test('discovers adapter models, preserves cached effort metadata and reports failures', async () => {
@@ -64,7 +72,7 @@ test('discovers adapter models, preserves cached effort metadata and reports fai
     const fixture = join(directory, 'models.cjs')
     await writeFile(fixture, `#!${process.execPath}\nif (process.argv.includes('--version')) { console.log('1.18.25'); process.exit(0) }\nprocess.stdout.write(${JSON.stringify(verboseOutput)})`, { mode: 0o755 })
     const agent: AgentDefinition = {
-      id: 'verbose-fixture', label: 'Fixture', description: '', command: fixture, args: [],
+      id: 'verbose-fixture', label: 'Fixture', description: '', command: await fixtureCommand(fixture), args: [],
       models: { kind: 'adapter', adapterId: 'opencode' }
     }
     const futureCatalogue = { models: ['future'], reasoningByModel: { future: { options: [{ id: 'budget:8192', label: 'Thorough' }], default: 'budget:8192' } } }

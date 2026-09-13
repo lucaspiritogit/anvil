@@ -240,7 +240,7 @@ test('enforces foreign keys, immutable task ownership and independent project se
   expect(() => db.prepare('DELETE FROM workspaces WHERE id = ?').run(work.id)).toThrow(/FOREIGN KEY/)
   expect(() => db.prepare("INSERT INTO workspace_settings VALUES ('missing', 'key', 'value')").run()).toThrow(/FOREIGN KEY/)
   expect(() => db.prepare("INSERT INTO workspace_preferences VALUES ('missing', '{}', NULL)").run()).toThrow(/FOREIGN KEY/)
-  expect(() => store.setWorkspacePreferences({ lastProjectId: 'missing' })).toThrow(/FOREIGN KEY/)
+  expect(() => store.setWorkspacePreferences({ lastProjectId: 'missing' })).toThrow(expect.objectContaining({ cause: expect.objectContaining({ message: expect.stringMatching(/FOREIGN KEY/) }) }))
   store.setWorkspacePreferences({ lastProjectId: 'project' })
   store.setWorkspacePreferences({ lastProjectId: 'project' }, DEFAULT_WORKSPACE_ID)
   store.removeProject('project')

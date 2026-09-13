@@ -57,6 +57,7 @@ test('drafts isolated read-only PR fields with validation, cleanup and real ACP 
     onTestCleanup(() => rm(directory, { recursive: true, force: true }))
     const transcript = join(directory, 'requests.jsonl')
     const acp = new OpenCodeAcpClient({
+      serverCwd: directory,
       command: process.execPath, args: [resolve('tests/fixtures/opencode-acp.cjs'), 'read-only-config-draft', transcript], startupTimeoutMs: 5_000
     })
     onTestCleanup(() => acp.close())

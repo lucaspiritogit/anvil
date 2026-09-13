@@ -56,7 +56,7 @@ test('named workspace folders preserve config, issues and Git worktrees through 
   expect(existsSync(oldDirectory)).toBe(false)
   expect(readFileSync(join(newDirectory, 'config', 'marker'), 'utf8')).toBe('private config')
   expect(store.getTask('task')?.cwd).toBe(join(newDirectory, 'worktrees', 'task'))
-  expect(git(repository, ['worktree', 'list', '--porcelain'])).toContain(`worktree ${join(newDirectory, 'worktrees', 'task')}`)
+  expect(git(repository, ['worktree', 'list', '--porcelain'])).toContain(`worktree ${join(newDirectory, 'worktrees', 'task').replaceAll('\\', '/')}`)
   store.close()
   store = new Store(registryPath, { migrationsFolder })
   expect(store.issueTracker('project', workspace.id).listParents()[0].title).toBe('Saved plan')

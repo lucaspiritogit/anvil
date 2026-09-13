@@ -1,5 +1,6 @@
-import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFile, execFileSync, spawn } from 'node:child_process'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { promisify } from 'node:util'
 import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -11,6 +12,30 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof fs>()
   return { ...actual, opendir: vi.fn(actual.opendir) }
 })
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  const { promisify } = await import('node:util')
+  const execute = vi.fn(actual.execFile)
+  Object.defineProperty(execute, promisify.custom, { value: vi.fn(promisify(actual.execFile)) })
+  return { ...actual, execFile: execute, spawn: vi.fn(actual.spawn) }
+})
+
+async function useGitFixture(root: string, script: string): Promise<() => void> {
+  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process')
+  const execute = promisify(actual.execFile)
+  const path = join(root, 'git-fixture.cjs')
+  writeFileSync(path, script)
+  // Run real child processes on every OS, without depending on shell scripts or PATH shims.
+  vi.mocked(promisify(execFile)).mockImplementation((_file, args, options) => execute(process.execPath, [path, ...args as string[]], options))
+  vi.mocked(spawn).mockImplementation((_file, args, options) => actual.spawn(process.execPath, [path, ...args as string[]], options!))
+  const restore = (): void => {
+    vi.mocked(promisify(execFile)).mockImplementation(execute)
+    vi.mocked(spawn).mockImplementation(actual.spawn)
+  }
+  onTestCleanup(restore)
+  return restore
+}
 
 function fixture(git = false) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'anvil-project-files-')))
@@ -33,7 +58,8 @@ test('lists tracked and untracked paths with Git ignore rules and exact unusual 
   command('add', '.')
   rmSync(join(root, 'deleted.txt'))
   const unusual = ['space name.txt', 'quote"file.txt', 'tab\tfile.txt', 'line\nfile.txt', 'unicodé-文件.txt', '-option.txt', 'back\\slash.txt']
-  for (const path of unusual) write(path)
+  const filenames = process.platform === 'win32' ? unusual.filter((path) => !/["\\\t\n]/.test(path)) : unusual
+  for (const path of filenames) write(path)
   write('src/new.ts')
   write('hidden.log')
   write('kept.log')
@@ -47,7 +73,7 @@ test('lists tracked and untracked paths with Git ignore rules and exact unusual 
   const result = await listProjectFiles(project)
   expect(result).toEqual({
     projectId: project.id, source: 'git', truncated: false, warnings: [], error: null,
-    paths: ['.gitignore', 'tracked.txt', 'src/new.ts', 'kept.log', 'nested/.gitignore', ...unusual].sort()
+    paths: ['.gitignore', 'tracked.txt', 'src/new.ts', 'kept.log', 'nested/.gitignore', ...filenames].sort()
   })
   expect(JSON.stringify(result)).not.toContain('Contents must never be returned')
   expect(JSON.stringify(result)).not.toContain(root)
@@ -192,8 +218,11 @@ test('reports unreadable subdirectories while retaining accessible paths', async
   const { root, project, write } = fixture()
   write('accessible.txt')
   write('locked/secret.txt')
-  chmodSync(join(root, 'locked'), 0)
-  onTestCleanup(() => chmodSync(join(root, 'locked'), 0o700))
+  const original = (await vi.importActual<typeof fs>('node:fs/promises')).opendir
+  vi.mocked(fs.opendir).mockImplementation(async (path, ...args) => {
+    if (path === join(root, 'locked')) throw Object.assign(new Error('Permission denied'), { code: 'EACCES' })
+    return original(path, ...args)
+  })
   const result = await listProjectFiles(project)
   expect(result.paths).toEqual(['accessible.txt'])
   expect(result.warnings).toEqual(['unreadable'])
@@ -212,33 +241,25 @@ test('caps concurrent scans and releases slots after completion', async () => {
 })
 
 test('deadline terminates a slow Git process and permits a subsequent refresh', async () => {
-  const { root, project, write } = fixture()
-  const executable = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
-  write('bin/git', '#!/bin/sh\nexec sleep 10\n')
-  chmodSync(join(root, 'bin/git'), 0o755)
-  vi.stubEnv('PATH', `${join(root, 'bin')}:${process.env.PATH}`)
-  onTestCleanup(() => { vi.unstubAllEnvs() })
+  const { root, project } = fixture()
+  const restore = await useGitFixture(root, 'setInterval(() => {}, 1000)')
   const started = performance.now()
   const result = await listProjectFiles(project, { milliseconds: 100 })
   expect(result.error?.code).toBe('timeout')
   expect(result.truncated).toBe(true)
   expect(performance.now() - started).toBeLessThan(2_000)
-  rmSync(join(root, 'bin/git'))
-  symlinkSync(executable, join(root, 'bin/git'))
+  restore()
   expect((await listProjectFiles(project)).error).toBeNull()
 })
 
 test('terminates stalled Git listing and reports listing failures without a directory fallback', async () => {
-  const { root, project, write } = fixture()
-  vi.stubEnv('PATH', `${join(root, 'bin')}:${process.env.PATH}`)
-  onTestCleanup(() => { vi.unstubAllEnvs() })
-  for (const listing of ['exec sleep 10', 'exit 1']) {
-    write('bin/git', `#!/bin/sh\nif [ "$3" = "rev-parse" ]; then\n  echo true\nelse\n  ${listing}\nfi\n`)
-    chmodSync(join(root, 'bin/git'), 0o755)
+  const { root, project } = fixture()
+  for (const listing of ['setInterval(() => {}, 1000)', 'process.exit(1)']) {
+    await useGitFixture(root, `if (process.argv.includes('rev-parse')) { console.log('true') } else { ${listing} }`)
     const started = performance.now()
-    const result = await listProjectFiles(project, { milliseconds: listing === 'exit 1' ? 5_000 : 750 })
-    expect(result.error?.code).toBe(listing === 'exit 1' ? 'git-failed' : 'timeout')
-    if (listing !== 'exit 1') expect(result.source).toBe('git')
+    const result = await listProjectFiles(project, { milliseconds: listing === 'process.exit(1)' ? 5_000 : 750 })
+    expect(result.error?.code).toBe(listing === 'process.exit(1)' ? 'git-failed' : 'timeout')
+    if (listing !== 'process.exit(1)') expect(result.source).toBe('git')
     expect(result.paths).toEqual([])
     expect(performance.now() - started).toBeLessThan(2_000)
   }

@@ -15,6 +15,7 @@ test('merges into the current branch while guarding stale previews, local change
   try {
     await mkdir(repo)
     git('init', '-b', 'main')
+    git('config', 'core.autocrlf', 'false')
     git('config', 'user.name', 'Anvil test')
     git('config', 'user.email', 'anvil-test@example.invalid')
     await writeFile(join(repo, 'shared.txt'), 'base\n')
