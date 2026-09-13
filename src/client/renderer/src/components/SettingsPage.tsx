@@ -7,6 +7,8 @@ import { ProviderPicker } from './ProviderPicker'
 import { ProviderModelSelect } from './ProviderModelSelect'
 import { OverviewBackgroundPicker, type OverviewAppearance } from './OverviewBackgroundPicker'
 import { GitHubSettings } from './GitHubSettings'
+import { Select } from './Select'
+import { OptionCards, ToggleRow } from './settings-controls'
 import { acceleratorFromEvent, IS_MAC } from '../keys'
 import { autosave, retryAutosave, useSettingsAutosave } from '../state/settings-autosave'
 import { useStore } from '../state/store'
@@ -139,49 +141,41 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
   const showPasswordForm = status !== null && !status.headlessAccess && (!status.passwordConfigured || passwordPurpose !== null)
   return (
     <div>
-      <label className={modal.toggle}>
-        <input
-          type="checkbox"
-          checked={status?.allowOtherDevices ?? false}
-          disabled={!status || Boolean(status.headlessAccess) || pending}
-          onChange={(event) => {
-            if (event.target.checked && !status?.passwordConfigured) {
-              setPasswordPurpose('lan')
-              setRequestError('')
-            } else {
-              void configure(event.target.checked)
-            }
-          }}
-        />
-        <span>
-          <strong className="block">Allow other devices</strong>
-          <small className={field.hint}>Make Anvil available over HTTP on port 4780 to devices on this local network. Remote requests require the username <code>anvil</code> and your password.</small>
-          <small className="mt-2 block text-xs text-warn">Trusted LAN only. Credentials and activity are not encrypted. Use Tailscale HTTPS on shared or remote networks.</small>
-        </span>
-      </label>
+      <ToggleRow
+        title="Allow other devices"
+        description={<>Make Anvil available over HTTP on port 4780 to devices on this local network. Remote requests require the username <code>anvil</code> and your password.</>}
+        checked={status?.allowOtherDevices ?? false}
+        disabled={!status || Boolean(status.headlessAccess) || pending}
+        onChange={(checked) => {
+          if (checked && !status?.passwordConfigured) {
+            setPasswordPurpose('lan')
+            setRequestError('')
+          } else {
+            void configure(checked)
+          }
+        }}
+      >
+        <small className="mt-2 block text-xs text-warn">Trusted LAN only. Credentials and activity are not encrypted. Use Tailscale HTTPS on shared or remote networks.</small>
+      </ToggleRow>
 
-      <label className={modal.toggle}>
-        <input
-          type="checkbox"
-          checked={status?.tailscaleHttps ?? false}
-          disabled={!status || Boolean(status.headlessAccess) || pending}
-          onChange={(event) => {
-            if (event.target.checked && !status?.passwordConfigured) {
-              setPasswordPurpose('tailscale')
-              setRequestError('')
-            } else {
-              void configure(status?.allowOtherDevices ?? false, undefined, event.target.checked)
-            }
-          }}
-        />
-        <span>
-          <strong className="block">Tailscale HTTPS</strong>
-          <small className={field.hint}>{tailscaleOnly
-            ? 'Access is managed by Tailscale. No Anvil username or password is required.'
-            : 'Access Anvil from another network using Tailscale. Install and connect Tailscale on this computer and your phone. Your Anvil password is still required.'}</small>
-          {status?.headlessAccess && <small className="block text-xs text-dim">Connection access is managed by the server startup command.</small>}
-        </span>
-      </label>
+      <ToggleRow
+        title="Tailscale HTTPS"
+        description={tailscaleOnly
+          ? 'Access is managed by Tailscale. No Anvil username or password is required.'
+          : 'Access Anvil from another network using Tailscale. Install and connect Tailscale on this computer and your phone. Your Anvil password is still required.'}
+        checked={status?.tailscaleHttps ?? false}
+        disabled={!status || Boolean(status.headlessAccess) || pending}
+        onChange={(checked) => {
+          if (checked && !status?.passwordConfigured) {
+            setPasswordPurpose('tailscale')
+            setRequestError('')
+          } else {
+            void configure(status?.allowOtherDevices ?? false, undefined, checked)
+          }
+        }}
+      >
+        {status?.headlessAccess && <small className="mt-2 block text-xs text-dim">Connection access is managed by the server startup command.</small>}
+      </ToggleRow>
       {status?.tailscaleUrl && (
         <label className={field.wrap}>
           <span className={field.label}>Tailscale HTTPS address</span>
@@ -191,10 +185,10 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
       )}
 
       {!status && !requestError && <p role="status" className="text-xs text-dim">Loading connection settings…</p>}
-      {status && !status.headlessAccess && <div className="mb-4 text-xs text-dim">
+      {status && !status.headlessAccess && <div className="mb-4 flex items-center justify-between gap-3 text-xs text-dim">
         <p>{status.passwordConfigured ? 'A server password is configured.' : 'Set a server password before enabling LAN or Tailscale access.'}</p>
         {status.passwordConfigured && passwordPurpose === null && (
-          <button className={cn(btn.ghost, 'mt-3')} disabled={pending} onClick={() => {
+          <button className={cn(btn.ghost, 'flex-none')} disabled={pending} onClick={() => {
             setPassword('')
             setPasswordPurpose('replace')
             setRequestError('')
@@ -384,23 +378,24 @@ export function SettingsPage(): JSX.Element {
           {(section === 'general' || section === 'source-control') && projects.length > 0 && (
             <label className={cn(field.wrap, 'mb-6')}>
               <span className={field.label}>Project</span>
-              <select aria-label="Project" className={field.sized} value={activeProject?.id ?? ''} onChange={(event) => selectProject(event.target.value)}>
+              <Select aria-label="Project" value={activeProject?.id ?? ''} onChange={(event) => selectProject(event.target.value)}>
                 {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-              </select>
+              </Select>
             </label>
           )}
           <fieldset className="min-w-0" disabled={!settings}>
             {section === 'providers' && <>
               <WorkspaceAgentAccounts />
-              <label className="mb-3 flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={autoCompactContext} onChange={(event) => {
-                  setAutoCompactContext(event.target.checked)
-                  persist({ autoCompactContext: event.target.checked })
-                }} />
-                Auto-compact task context
-              </label>
-              <p className="mb-3 text-xs text-dim">Compacts the task's model session before resuming, without changing other tasks or the output log.</p>
-              <label className={field.wrap}>
+              <ToggleRow
+                title="Auto-compact task context"
+                description="Compacts the task's model session before resuming, without changing other tasks or the output log."
+                checked={autoCompactContext}
+                onChange={(checked) => {
+                  setAutoCompactContext(checked)
+                  persist({ autoCompactContext: checked })
+                }}
+              />
+              <label className={cn(field.wrap, 'ml-7')}>
                 <span className={field.label}>Context threshold (%)</span>
                 <input className={field.control} type="number" min={1} max={100} step={1} disabled={!autoCompactContext}
                   value={contextCompactionThreshold} onChange={(event) => {
@@ -455,35 +450,39 @@ export function SettingsPage(): JSX.Element {
 
             </>}
             <div hidden={section !== 'source-control'}>
-              <label className={field.wrap}>
+              <div className={field.wrap}>
                 <span className={field.label}>Rebase mode</span>
-                <select
-                  className={field.sized}
+                <OptionCards
+                  ariaLabel="Rebase mode"
                   value={rebaseMode}
-                  onChange={(e) => {
-                    const value = e.target.value as RebaseMode
-                    setRebaseMode(value)
-                    persist({ rebaseMode: value })
+                  onChange={(value) => {
+                    const mode = value as RebaseMode
+                    setRebaseMode(mode)
+                    persist({ rebaseMode: mode })
                   }}
-                >
-                  <option value="manual">Manual — choose what happens to each commit</option>
-                  <option value="agent">Agent — let the agent rewrite the history</option>
-                </select>
-                <small className={field.hint}>
-                  {rebaseMode === 'manual'
-                    ? 'Rebase opens a small interactive editor and Anvil performs the rebase.'
-                    : 'Rebase hands the branch to the agent that wrote the code and accepts its result.'}
-                </small>
-              </label>
+                  options={[
+                    {
+                      value: 'manual',
+                      label: 'Manual',
+                      description: 'Choose what happens to each commit. Rebase opens a small interactive editor and Anvil performs the rebase.'
+                    },
+                    {
+                      value: 'agent',
+                      label: 'Agent',
+                      description: 'Let the agent rewrite the history. Rebase hands the branch to the agent that wrote the code and accepts its result.'
+                    }
+                  ]}
+                />
+              </div>
 
-              <label className={modal.toggle}>
-                <input type="checkbox" checked={confirmRebase} onChange={(event) => {
-                  const value = event.target.checked
+              <ToggleRow
+                title="Ask before handing a rebase to an agent"
+                checked={confirmRebase}
+                onChange={(value) => {
                   setConfirmRebase(value)
                   persist({ confirmRebase: value })
-                }} />
-                <span>Ask before handing a rebase to an agent</span>
-              </label>
+                }}
+              />
               <GitHubSettings />
             </div>
             {section === 'shortcuts' && <>
@@ -509,17 +508,16 @@ export function SettingsPage(): JSX.Element {
               </div>
             </>}
             {section === 'memory' && <>
-              <label className={modal.toggle}>
-                <input type="checkbox" checked={memoryEnabled} disabled={!settings} onChange={(event) => {
-                  const value = event.target.checked
+              <ToggleRow
+                title="Enable project memory"
+                description="Save completed task context and include relevant memories in future tasks. Off by default."
+                checked={memoryEnabled}
+                disabled={!settings}
+                onChange={(value) => {
                   setMemoryEnabled(value)
                   persist({ memoryEnabled: value })
-                }} />
-                <span>
-                  <strong className="block">Enable project memory</strong>
-                  <small className={field.hint}>Save completed task context and include relevant memories in future tasks. Off by default.</small>
-                </span>
-              </label>
+                }}
+              />
               {memoryEnabled && <div className="mt-6 space-y-5">
                 <label className={field.wrap}>
                   <span className={field.label}>Embedding model</span>
@@ -548,7 +546,7 @@ export function SettingsPage(): JSX.Element {
             {section === 'display' && <>
               <label className={field.wrap}>
                 <span className={field.label}>Font size</span>
-                <select aria-label="Font size" className={field.sized} value={fontSize} onChange={(event) => {
+                <Select aria-label="Font size" value={fontSize} onChange={(event) => {
                   const value = Number(event.target.value)
                   setFontSize(value)
                   persist({ fontSize: value })
@@ -556,7 +554,7 @@ export function SettingsPage(): JSX.Element {
                   {Array.from({ length: MAX_FONT_SIZE - MIN_FONT_SIZE + 1 }, (_, index) => MIN_FONT_SIZE + index).map((size) => (
                     <option key={size} value={size}>{size} px{size === DEFAULT_FONT_SIZE ? ' (Default)' : ''}</option>
                   ))}
-                </select>
+                </Select>
                 <small className={field.hint}>Scales text and controls across Anvil automatically.</small>
               </label>
               <div className="mb-7 rounded-lg border border-line bg-raised p-5" style={{ fontSize: fontSize * DEFAULT_FONT_SIZE / normalizeFontSize(settings?.fontSize) }} aria-label="Font size preview">
