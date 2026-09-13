@@ -4,6 +4,7 @@ import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION, type Client } fro
 import { resolveCommand } from './resolve'
 import { closeAgentServer } from './agent-server-process'
 import { AgentTransportError, agentTransportFailure } from './agent-failure'
+import type { ProviderModelList } from '../../shared/types'
 import type { WorkspaceExecutionContext } from './workspace-execution'
 import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceEnvironment } from './opencode-workspace'
 
@@ -15,8 +16,8 @@ export interface OpenCodeAcpOptions {
   args?: string[]
   startupTimeoutMs?: number
   cancelTimeoutMs?: number
-  /** CLI arguments for querying model capabilities; defaults to models --verbose. */
-  modelArgs?: string[]
+  /** Cached SDK catalogue used for capabilities ACP does not expose per model. */
+  catalogue?: () => Promise<ProviderModelList>
 }
 
 /** Owns the persistent ACP transport, handshake, and process cleanup. */

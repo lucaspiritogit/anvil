@@ -2,21 +2,38 @@ import { testWorkspace } from './workspace-fixture'
 import { taskImages } from './task-image-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test, vi } from 'vitest'
+import { execFile } from 'node:child_process'
 import { createServer } from 'node:net'
 import { existsSync } from 'node:fs'
 import { openCodeWorkspaceFixture } from './opencode-workspace-fixture'
 import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceCommand, requireOpenCodeProjectIsolation } from '../src/server/agents/opencode-workspace'
-import { readOpenCodeModelOutput } from '../src/server/agents/opencode-model-output'
+import { resolveCommand } from '../src/server/agents/resolve'
 import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../src/server/agents/workspace-execution'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { once } from 'node:events'
 import { setTimeout as delay } from 'node:timers/promises'
+import { promisify } from 'node:util'
 import { OpenCodeAcpClient } from '../src/server/agents/opencode-acp'
 import { AgentProcessManager, type ExitInfo } from '../src/server/agents/process-manager'
 import { getAgent } from '../src/server/agents/registry'
 import type { TaskEvent, TaskInput } from '../src/server/agents/agent-client-protocol'
+
+const execFileAsync = promisify(execFile)
+
+async function runFixtureCommand(command: string, workspace: WorkspaceExecutionContext, args: string[]): Promise<string> {
+  const launch = openCodeWorkspaceCommand(workspace, args)
+  const resolved = resolveCommand(command)
+  if (!resolved) throw new Error('Fixture command unavailable')
+  const { stdout } = await execFileAsync(resolved.command, [...resolved.prefixArgs, ...launch.args], {
+    cwd: launch.cwd,
+    env: launch.environment,
+    shell: resolved.viaShell,
+    encoding: 'utf8'
+  })
+  return stdout
+}
 
 test('handles ACP sessions, output, permissions, recovery and cancellation', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'anvil-acp-'))
@@ -250,7 +267,11 @@ test('sends exact inline image data to ACP with server and model capability chec
     const transcript = join(directory, `${scenario}.jsonl`)
     const client = new OpenCodeAcpClient({
       command: process.execPath, args: [fixture, scenario === 'image-cancel' ? 'cancel' : scenario === 'image-models-text' ? 'image-success' : scenario, transcript],
-      modelArgs: [fixture, scenario === 'image-models-text' ? scenario : 'image-models'],
+      catalogue: async () => ({
+        agentId: 'opencode',
+        models: ['provider/model'],
+        capabilitiesByModel: { 'provider/model': { imageInput: scenario !== 'image-models-text' } }
+      }),
       startupTimeoutMs: 5000, cancelTimeoutMs: 100
     })
     onTestCleanup(() => client.close())
@@ -294,15 +315,24 @@ test('keeps workspace credentials and sessions across concurrent ACP ports and r
     occupied.listen(4096, '127.0.0.1', resolve)
   })
   const client = (workspace: WorkspaceExecutionContext, args?: string[]): OpenCodeAcpClient => {
-    const executor = new OpenCodeAcpClient({ workspace, command: fixture.command, args, startupTimeoutMs: 3_000 })
+    const executor = new OpenCodeAcpClient({
+      workspace,
+      command: fixture.command,
+      args,
+      startupTimeoutMs: 3_000,
+      catalogue: async () => ({
+        agentId: 'opencode',
+        models: [`openai/${workspace.workspaceId}-key`],
+        capabilitiesByModel: { [`openai/${workspace.workspaceId}-key`]: { imageInput: true } }
+      })
+    })
     onTestCleanup(() => executor.close())
     return executor
   }
   const input = (workspace: WorkspaceExecutionContext, prompt: string): TaskInput => ({ workspace,
     taskId: prompt, cwd: fixture.project, prompt, model: `openai/${workspace.workspaceId}-key` })
   for (const workspace of [fixture.work, fixture.personal]) {
-    const launch = openCodeWorkspaceCommand(workspace, ['auth', 'login', `${workspace.workspaceId}-key`])
-    await readOpenCodeModelOutput(fixture.command, launch.args, launch.cwd, undefined, launch.environment)
+    await runFixtureCommand(fixture.command, workspace, ['auth', 'login', `${workspace.workspaceId}-key`])
   }
   const work = client(fixture.work)
   const personal = client(fixture.personal)
@@ -403,37 +433,5 @@ test('rejects project credential sources and unsupported providers without losin
   const crossed = await client.execute({ ...input, workspace: fixture.personal }, () => {})
   expect(crossed.error).toContain('different workspace')
   expect(existsSync(join(fixture.work.home, 'opencode.jsonl'))).toBe(false)
-  await fixture.assertGlobalUnchanged()
-})
-
-test('cancels the version probe before ACP startup and permits a later retry', async () => {
-  const fixture = await openCodeWorkspaceFixture()
-  const command = join(fixture.directory, process.platform === 'win32' ? 'slow-version.cmd' : 'slow-version')
-  const script = join(fixture.directory, 'slow-version.cjs')
-  const marker = join(fixture.work.home, 'version-started')
-  await writeFile(script, `
-const fs = require('node:fs')
-if (process.argv.includes('--version') && !fs.existsSync(${JSON.stringify(marker)})) {
-  fs.writeFileSync(${JSON.stringify(marker)}, String(process.pid))
-  setInterval(() => {}, 1000)
-} else {
-  require(${JSON.stringify(resolve('tests/fixtures/opencode-workspace.cjs'))})
-}
-`)
-  await writeFile(command, process.platform === 'win32'
-    ? `@echo off\n"${process.execPath}" "${script}" %*\n`
-    : `#!${process.execPath}\nrequire(${JSON.stringify(script)})\n`, { mode: 0o755 })
-  const client = new OpenCodeAcpClient({ workspace: fixture.work, command })
-  onTestCleanup(() => client.close())
-  const controller = new AbortController()
-  const input: TaskInput = { workspace: fixture.work, taskId: 'version-cancel', prompt: 'test', cwd: fixture.project, model: 'openai/model' }
-  const result = client.execute({ ...input, signal: controller.signal }, () => {})
-  await vi.waitFor(() => expect(existsSync(marker)).toBe(true))
-  const pid = Number(await readFile(marker, 'utf8'))
-  controller.abort()
-  expect((await result).status).toBe('cancelled')
-  expect(() => process.kill(pid, 0)).toThrow()
-  expect(existsSync(join(fixture.work.home, 'opencode.jsonl'))).toBe(false)
-  expect((await client.execute(input, () => {})).status).toBe('succeeded')
   await fixture.assertGlobalUnchanged()
 })

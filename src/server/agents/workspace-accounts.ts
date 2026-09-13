@@ -9,7 +9,6 @@ import { CodexAppServerConnection, type ConnectionHandlers } from './codex-app-s
 import type { CodexAppServerProtocol, CodexObject } from './codex-app-server-protocol'
 import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from './workspace-execution'
 import { openCodeWorkspaceCommand } from './opencode-workspace'
-import { verifyWorkspaceOpenCode } from './opencode-model-output'
 import { resolveCommand } from './resolve'
 
 interface AccountConnection extends CodexAppServerProtocol {
@@ -23,7 +22,6 @@ export interface AccountDependencies {
   invalidate(workspaceId: string): Promise<void>
   openBrowser(url: string): Promise<void>
   connection?(workspace: WorkspaceExecutionContext, handlers: ConnectionHandlers): AccountConnection
-  verifyOpenCode?(workspace: WorkspaceExecutionContext): Promise<void>
   readOpenCode?(workspace: WorkspaceExecutionContext): Promise<string>
   terminals: Pick<TerminalSessionManager, 'createOpenCodeAuth' | 'createCodexAuth' | 'dispose'>
   changed?(state: WorkspaceAgentAccount): void
@@ -131,7 +129,6 @@ export class WorkspaceAccounts {
   private async read(target: AgentAccountTarget): Promise<WorkspaceAgentAccount> {
     const workspace = this.workspace(target)
     if (target.agentId === 'opencode') {
-      await this.verify(workspace)
       const accounts = parseOpenCodeAccounts(await (this.dependencies.readOpenCode ?? readNativeOpenCode)(workspace))
       return this.state(target, { status: accounts.length ? 'connected' : 'signed-out', accounts })
     }
@@ -166,12 +163,6 @@ export class WorkspaceAccounts {
     catch { state = this.state(target, { status: 'error', message: 'Could not read the native account. Check that the supported agent CLI is installed and retry.' }) }
     if (revision !== this.revisions.get(key)) return this.states.get(key)!
     return this.publish(state)
-  }
-
-  private async verify(workspace: WorkspaceExecutionContext): Promise<void> {
-    if (this.dependencies.verifyOpenCode) return this.dependencies.verifyOpenCode(workspace)
-    const launch = openCodeWorkspaceCommand(workspace, [])
-    await verifyWorkspaceOpenCode(launch.command, launch.cwd, launch.environment)
   }
 
   async connect(input: AgentAccountConnect): Promise<WorkspaceAgentAccount> {
@@ -242,8 +233,6 @@ export class WorkspaceAccounts {
           operation.earlyNotifications = []
         }
       } else {
-        await this.verify(workspace)
-        if (operation.finishing) return operation.finishing
         const before = parseOpenCodeAccounts(await (this.dependencies.readOpenCode ?? readNativeOpenCode)(workspace))
         const revision = await this.openCodeAuthRevision(workspace)
         if (operation.finishing) return operation.finishing
