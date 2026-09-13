@@ -13,6 +13,9 @@ export function TerminalDrawer({ projectId, visible, onClose }: {
   useEffect(() => {
     let cancelled = false
     let id: string | undefined
+    setSessionId(null)
+    setError(false)
+    setExitCode(null)
     void window.anvil.terminals.create({ projectId, cols: 100, rows: 12 }).then((session) => {
       id = session.sessionId
       if (cancelled) void window.anvil.terminals.dispose(id).catch(() => {})
@@ -30,7 +33,7 @@ export function TerminalDrawer({ projectId, visible, onClose }: {
     </div>
     {error ? <p role="alert">Could not open the project terminal. Close the panel and try again.</p>
       : sessionId ? <div className="flex h-[calc(100%-24px)] min-h-0 flex-col gap-1">
-        <GhosttyTerminal sessionId={sessionId} visible={visible} className="min-h-0 flex-1" onExit={setExitCode} />
+        <GhosttyTerminal key={sessionId} sessionId={sessionId} visible={visible} className="min-h-0 flex-1" onExit={setExitCode} />
         <div className="hidden shrink-0 [@media(pointer:coarse)]:block">
           <TerminalCommandInput key={sessionId} sessionId={sessionId} disabled={exitCode !== null} />
         </div>

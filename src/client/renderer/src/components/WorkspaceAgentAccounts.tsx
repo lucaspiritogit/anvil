@@ -102,7 +102,7 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
         {pending && account.sessionId && <button className={btn.ghost} onClick={() => void run(() => window.anvil.accounts.cancel({ ...target, sessionId: account.sessionId! }))}>Cancel {label} for {workspaceName}</button>}
       </div>
       {pending && agentId === 'opencode' && <p className="mt-3 text-xs text-dim">Complete sign-in or sign-out in the terminal panel. Cancelling stops the command.</p>}
-      {pending && account.terminalSessionId && <GhosttyTerminal sessionId={account.terminalSessionId} className="mt-3 h-[180px]" />}
+      {pending && account.terminalSessionId && <GhosttyTerminal key={account.terminalSessionId} sessionId={account.terminalSessionId} className="mt-3 h-[180px]" />}
     </section>
   )
 }

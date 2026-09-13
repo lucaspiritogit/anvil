@@ -312,6 +312,13 @@ export class WorkspaceAccounts {
     operation.finishing = Promise.resolve().then(async () => {
       clearTimeout(operation.timer)
       clearTimeout(operation.pollTimer)
+      const key = this.key(operation.target)
+      const current = this.states.get(key)
+      if (operation.terminalSessionId && current?.sessionId === operation.sessionId) {
+        const detached = { ...current }
+        delete detached.terminalSessionId
+        this.publish(detached)
+      }
       let cleanedUp = false
       try {
         if (operation.terminalSessionId) await this.dependencies.terminals.dispose(operation.terminalSessionId)
@@ -331,7 +338,7 @@ export class WorkspaceAccounts {
       } catch {
         return this.publish(this.state(operation.target, { status: 'error', message: 'Could not finish account cleanup. Restart Anvil before retrying.' }))
       } finally {
-        this.pending.delete(this.key(operation.target))
+        this.pending.delete(key)
         // Failed process teardown must keep dispatch blocked until application restart.
         if (cleanedUp) operation.release()
       }
