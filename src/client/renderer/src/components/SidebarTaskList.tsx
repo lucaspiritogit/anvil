@@ -16,9 +16,10 @@ interface Props {
   view: CenterView
   compact?: boolean
   emptyMessage: string
+  onNavigate?: () => void
 }
 
-export function SidebarTaskList({ id, tasks, snapshots, projectById, now, view, compact = false, emptyMessage }: Props): JSX.Element {
+export function SidebarTaskList({ id, tasks, snapshots, projectById, now, view, compact = false, emptyMessage, onNavigate }: Props): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const entries = useMemo(() => sidebarTaskStacks(tasks), [tasks])
   const layoutKey = JSON.stringify([compact, entries.map(({ task, stackStart, stackEnd }) => [
@@ -85,6 +86,7 @@ export function SidebarTaskList({ id, tasks, snapshots, projectById, now, view, 
           const { task, stackStart, stackEnd } = entries[row.index]
           return <SidebarTask key={task.id} task={task} snapshot={snapshots.get(task.id)} project={projectById.get(task.projectId)}
             now={now} compact={compact} stackStart={stackStart} stackEnd={stackEnd} active={view.kind === 'task' && view.taskId === task.id}
+            onNavigate={onNavigate}
             rowProps={{
               ref: virtualizer.measureElement,
               'data-index': row.index,

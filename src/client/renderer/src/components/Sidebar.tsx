@@ -1,4 +1,4 @@
-import type { JSX } from 'react'
+import type { JSX, RefObject } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '../icons'
 import { SETTINGS_SECTIONS } from '../settings-sections'
@@ -14,9 +14,15 @@ import { CaffeineToggle } from './CaffeineToggle'
 
 const ICON_BUTTON = 'grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent'
 
-export function Sidebar({ onOpenTerminal, terminalAvailable }: {
+export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, mobileNavigationOpen,
+  mobileNavigationCloseRef, onCloseMobileNavigation, onNavigate }: {
   onOpenTerminal: () => void
   terminalAvailable: boolean
+  mobileNavigation: boolean
+  mobileNavigationOpen: boolean
+  mobileNavigationCloseRef: RefObject<HTMLButtonElement | null>
+  onCloseMobileNavigation: () => void
+  onNavigate: () => void
 }): JSX.Element {
   const fontSize = useStore((state) => state.settings?.fontSize)
   const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
@@ -76,6 +82,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable }: {
   const listKey = JSON.stringify([workspaceId, projectFilter, search])
   const matchingCount = activeTasks.length + settledTasks.length
   const showSettled = settledOpen || Boolean(query)
+  const sidebarHidden = mobileNavigation ? !mobileNavigationOpen : sidebarCollapsed
 
   if (settingsOpen) return (
     <aside aria-label="Sidebar" className="flex min-h-0 flex-col border-r border-line bg-canvas max-[700px]:border-b max-[700px]:border-r-0">
@@ -102,25 +109,29 @@ export function Sidebar({ onOpenTerminal, terminalAvailable }: {
 
   return (
     <aside
+      id="task-sidebar"
       aria-label="Task sidebar"
       className={cn(
         'flex flex-col w-[304px] min-h-0 bg-canvas border-r border-line',
+        'max-[700px]:fixed max-[700px]:inset-y-0 max-[700px]:left-0 max-[700px]:z-30 max-[700px]:max-w-[calc(100vw-48px)] max-[700px]:shadow-2xl',
         'transition-transform duration-[180ms] ease-[ease] motion-reduce:transition-none',
-        sidebarCollapsed && '-translate-x-full'
+        sidebarHidden && '-translate-x-full'
       )}
-      inert={sidebarCollapsed}
-      aria-hidden={sidebarCollapsed || undefined}
+      inert={sidebarHidden}
+      aria-hidden={sidebarHidden || undefined}
     >
       <div style={titlebarStyle} className={cn('flex shrink-0 items-center h-11 px-4 text-[11px] font-semibold tracking-[0.12em] text-dim', IS_MAC && 'drag-region')}>
         ANVIL
         <button
+          ref={mobileNavigation ? mobileNavigationCloseRef : undefined}
           className={cn(ICON_BUTTON, 'no-drag ml-auto')}
-          aria-label="Collapse sidebar"
-          title="Collapse sidebar"
+          aria-label={mobileNavigation ? 'Close navigation' : 'Collapse sidebar'}
+          title={mobileNavigation ? 'Close navigation' : 'Collapse sidebar'}
+          aria-controls="task-sidebar"
           aria-expanded={true}
-          onClick={toggleSidebar}
+          onClick={mobileNavigation ? onCloseMobileNavigation : toggleSidebar}
         >
-          <Icon icon="arrow-left-to-line" size={18} aria-hidden="true" />
+          <Icon icon={mobileNavigation ? 'x' : 'arrow-left-to-line'} size={18} aria-hidden="true" />
         </button>
       </div>
 
@@ -130,7 +141,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable }: {
           aria-label="New task"
           title="New task"
           disabled={!activeProjectId}
-          onClick={focusTaskComposer}
+          onClick={() => { focusTaskComposer(); if (mobileNavigation) onNavigate() }}
         >
           <Icon icon="pencil" size={16} aria-hidden="true" />
           New Task
@@ -168,7 +179,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable }: {
           key={JSON.stringify([workspaceId, projects.map((project) => project.id)])}
           projects={projects}
           value={projectFilter}
-          onChange={(id) => { setProjectFilter(id); if (id) selectProject(id) }}
+          onChange={(id) => { setProjectFilter(id); if (id) selectProject(id); if (mobileNavigation) onNavigate() }}
         />
         <button className={ICON_BUTTON} aria-label="Add project" title="Add project" onClick={() => void addProject().then(() => {
           if (useStore.getState().activeWorkspaceId !== workspaceId) return
@@ -181,6 +192,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable }: {
 
       <nav aria-label="Active tasks" className="flex flex-1 min-h-0 flex-col px-2.5 pb-2">
         <SidebarTaskList key={listKey} tasks={activeTasks} snapshots={snapshots} projectById={projectById} now={now} view={view}
+          onNavigate={mobileNavigation ? onNavigate : undefined}
           emptyMessage={matchingCount ? 'No active tasks.' : query ? 'No matching tasks.' : 'No tasks yet.'} />
       </nav>
 
@@ -198,7 +210,8 @@ export function Sidebar({ onOpenTerminal, terminalAvailable }: {
         </button>
         {showSettled && (
           <SidebarTaskList key={listKey} id="settled-task-list" tasks={settledTasks} snapshots={snapshots}
-            projectById={projectById} now={now} view={view} compact emptyMessage="No settled tasks." />
+            projectById={projectById} now={now} view={view} onNavigate={mobileNavigation ? onNavigate : undefined}
+            compact emptyMessage="No settled tasks." />
         )}
       </section>
 
@@ -206,7 +219,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable }: {
 
       <button
         className="flex shrink-0 items-center gap-2.5 mx-2.5 my-2 px-2 py-2 text-left text-xs text-dim hover:bg-hover/60 hover:text-fg focus-visible:outline focus-visible:outline-accent"
-        onClick={() => setSettingsOpen(true)}
+        onClick={() => { if (mobileNavigation) onNavigate(); setSettingsOpen(true) }}
       >
         <Icon icon="settings" size={18} aria-hidden="true" />
         Settings

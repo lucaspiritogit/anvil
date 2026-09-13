@@ -66,7 +66,7 @@ function relativeAge(timestamp: number, now: number): string {
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`
 }
 
-export function SidebarTask({ task, snapshot, project, now, active, compact = false, stackStart = false, stackEnd = false, rowProps }: {
+export function SidebarTask({ task, snapshot, project, now, active, compact = false, stackStart = false, stackEnd = false, rowProps, onNavigate }: {
   task: Task
   snapshot?: TaskIssueSnapshot | null
   project?: Project
@@ -75,6 +75,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   compact?: boolean
   stackStart?: boolean
   stackEnd?: boolean
+  onNavigate?: () => void
   rowProps?: ComponentPropsWithRef<'li'> & { 'data-index'?: number; 'data-task-id'?: string; 'data-stack-moving'?: boolean; 'data-row-start'?: number }
 }): JSX.Element {
   const parent = useStore((state) => state.tasks.find((entry) => entry.id === (task.restackTarget?.parentTaskId ?? task.parentTaskId)))
@@ -165,6 +166,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
       return
     }
     void openTask(task.id)
+    onNavigate?.()
   }
 
   return (

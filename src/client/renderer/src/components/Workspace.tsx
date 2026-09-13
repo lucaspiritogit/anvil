@@ -1,4 +1,4 @@
-import type { JSX } from 'react'
+import type { JSX, RefObject } from 'react'
 import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { IS_MAC } from '../keys'
 import { Icon } from '../icons'
@@ -7,7 +7,12 @@ import { btn, cn } from '../ui'
 import { TaskView } from './TaskView'
 import { ProjectOverview } from './ProjectOverview'
 
-export function Workspace(): JSX.Element {
+export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationButtonRef, onToggleNavigation }: {
+  mobileNavigation: boolean
+  mobileNavigationOpen: boolean
+  navigationButtonRef: RefObject<HTMLButtonElement | null>
+  onToggleNavigation: () => void
+}): JSX.Element {
   const projects = useStore((s) => s.projects)
   const activeProjectId = useStore((s) => s.activeProjectId)
   const view = useStore((s) => s.view)
@@ -22,7 +27,8 @@ export function Workspace(): JSX.Element {
   if (!project) {
     return (
       <main className="flex flex-col min-w-0 h-full">
-        {sidebarCollapsed && <CollapsedSidebarHeader scale={scale} />}
+        {(mobileNavigation || sidebarCollapsed) && <NavigationHeader scale={scale} expanded={mobileNavigationOpen}
+          mobileNavigation={mobileNavigation} buttonRef={navigationButtonRef} onToggle={onToggleNavigation} />}
         <div className="grid place-content-center justify-items-center gap-2.5 h-full text-center">
           <h1 className="text-lg font-semibold">Add a project</h1>
           <p className="max-w-[360px] mb-2 text-dim">
@@ -44,11 +50,13 @@ export function Workspace(): JSX.Element {
     <main className={cn('relative flex flex-col min-w-0 min-h-0 h-full overflow-hidden',
       // Keep the overview centered in the full window, with fixed clearance for
       // traffic lights even when its content needs to scroll in a short window.
-      (IS_MAC || sidebarCollapsed) && overview && 'py-11'
+      (IS_MAC || sidebarCollapsed || mobileNavigation) && overview && 'py-11'
     )}>
-      {sidebarCollapsed && (overview
-        ? <div className="absolute inset-x-0 top-0"><CollapsedSidebarHeader scale={scale} /></div>
-        : <CollapsedSidebarHeader scale={scale} />)}
+      {(mobileNavigation || sidebarCollapsed) && (overview
+        ? <div className="absolute inset-x-0 top-0"><NavigationHeader scale={scale} expanded={mobileNavigationOpen}
+          mobileNavigation={mobileNavigation} buttonRef={navigationButtonRef} onToggle={onToggleNavigation} /></div>
+        : <NavigationHeader scale={scale} expanded={mobileNavigationOpen} mobileNavigation={mobileNavigation}
+          buttonRef={navigationButtonRef} onToggle={onToggleNavigation} />)}
       <section className="relative flex-1 min-w-0 min-h-0 overflow-hidden">
         {overview && (
           <ProjectOverview project={project} />
@@ -64,8 +72,13 @@ export function Workspace(): JSX.Element {
  * the sidebar collapsed they land here instead, so a slim strip takes over as
  * the window's drag handle and keeps the gutter clear.
  */
-function CollapsedSidebarHeader({ scale }: { scale: number }): JSX.Element {
-  const toggleSidebar = useStore((state) => state.toggleSidebar)
+function NavigationHeader({ scale, expanded, mobileNavigation, buttonRef, onToggle }: {
+  scale: number
+  expanded: boolean
+  mobileNavigation: boolean
+  buttonRef: RefObject<HTMLButtonElement | null>
+  onToggle: () => void
+}): JSX.Element {
   return (
     <div
       style={IS_MAC ? { height: 44 / scale, paddingLeft: 78 / scale } : undefined}
@@ -73,11 +86,13 @@ function CollapsedSidebarHeader({ scale }: { scale: number }): JSX.Element {
     >
       ANVIL
       <button
+        ref={buttonRef}
         className="no-drag grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent"
-        aria-label="Expand sidebar"
-        title="Expand sidebar"
-        aria-expanded={false}
-        onClick={toggleSidebar}
+        aria-label={mobileNavigation ? 'Open navigation' : 'Expand sidebar'}
+        title={mobileNavigation ? 'Open navigation' : 'Expand sidebar'}
+        aria-controls="task-sidebar"
+        aria-expanded={expanded}
+        onClick={onToggle}
       >
         <Icon icon="arrow-right-to-line" size={18} aria-hidden="true" />
       </button>

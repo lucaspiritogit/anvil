@@ -2,6 +2,64 @@ import { expect, test } from '@playwright/test'
 
 const fixture = '/tests/e2e/fixture/'
 
+test('mobile navigation overlays a full-width workspace and supports every dismissal path', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 700 })
+  await page.goto(fixture)
+  const sidebar = page.locator('aside[aria-label="Task sidebar"]')
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' })
+  const workspace = page.locator('main')
+
+  await expect(sidebar).not.toBeInViewport()
+  await expect(sidebar).toHaveAttribute('aria-hidden', 'true')
+  await expect(openNavigation).toBeVisible()
+  await expect(workspace).toHaveCSS('width', '390px')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
+
+  await openNavigation.click()
+  const closeNavigation = sidebar.getByRole('button', { name: 'Close navigation' })
+  await expect(sidebar).toBeVisible()
+  await expect(closeNavigation).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Dismiss navigation' })).toBeVisible()
+  await expect(workspace).toHaveAttribute('aria-hidden', 'true')
+
+  await page.getByRole('button', { name: 'Dismiss navigation' }).click({ position: { x: 380, y: 350 } })
+  await expect(sidebar).not.toBeInViewport()
+  await expect(openNavigation).toBeFocused()
+
+  await page.keyboard.press('Control+b')
+  await expect(sidebar).toBeVisible()
+  await expect(closeNavigation).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(sidebar).not.toBeInViewport()
+  await expect(openNavigation).toBeFocused()
+
+  await page.keyboard.press('Control+b')
+  await sidebar.getByRole('button', { name: 'Open task: Polish task cards', exact: true }).click()
+  await expect(sidebar).not.toBeInViewport()
+  await expect(workspace.getByRole('heading', { name: 'Polish task cards' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
+})
+
+test('mobile project navigation closes without changing desktop sidebar persistence', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 700 })
+  await page.goto(fixture)
+  await page.getByRole('button', { name: 'Collapse sidebar' }).click()
+  await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible()
+
+  await page.setViewportSize({ width: 390, height: 700 })
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' })
+  await openNavigation.click()
+  const sidebar = page.locator('aside[aria-label="Task sidebar"]')
+  const selector = sidebar.getByRole('combobox', { name: 'Project', exact: true })
+  await selector.click()
+  await sidebar.getByRole('option').filter({ hasText: '/tmp/workbench' }).click()
+  await expect(sidebar).not.toBeInViewport()
+  await expect(page.getByTestId('composer-project-name')).toHaveText('Workbench')
+
+  await page.setViewportSize({ width: 900, height: 700 })
+  await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible()
+})
+
 test('task status icons and highlights remain visible when selected, hovered, and settled', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1100, height: 900 })
   await page.goto(fixture)
@@ -147,7 +205,7 @@ test('Settings is a seamless icon row and stays reachable in a short window', as
 test('project selection keeps All separate from composer context and survives settings', async ({ page }) => {
   await page.goto(fixture)
   const selector = page.getByRole('combobox', { name: 'Project', exact: true })
-  const sidebar = page.getByRole('complementary', { name: 'Task sidebar' })
+  const sidebar = page.locator('aside[aria-label="Task sidebar"]')
   await selector.fill('WORKBENCH')
   await expect(page.getByRole('listbox', { name: 'Projects' }).getByRole('option')).toHaveCount(1)
   await selector.press('Enter')
@@ -218,8 +276,10 @@ test('project input supports keyboard-only selection, cancellation and no matche
 test('large project lists distinguish duplicate names by path without horizontal overflow', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 600, height: 700 })
   await page.goto(fixture + '?manyProjects')
-  const sidebar = page.getByRole('complementary', { name: 'Task sidebar' })
-  const selector = sidebar.getByRole('combobox', { name: 'Project', exact: true })
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' })
+  await openNavigation.click()
+  const sidebar = page.locator('aside[aria-label="Task sidebar"]')
+  let selector = sidebar.getByRole('combobox', { name: 'Project', exact: true })
   await selector.fill('duplicate')
   await expect(page.getByRole('listbox', { name: 'Projects' }).getByRole('option')).toHaveCount(2)
   const paths = await page.getByRole('listbox', { name: 'Projects' }).getByRole('option').allTextContents()
@@ -230,10 +290,16 @@ test('large project lists distinguish duplicate names by path without horizontal
   await expect(selector).toHaveValue('Duplicate')
   await expect(selector).toHaveAttribute('title', /repository-1$/)
   await expect(page.getByTestId('composer-project-name')).toHaveText('Duplicate')
+  await expect(sidebar).not.toBeInViewport()
+  await openNavigation.click()
+  selector = sidebar.getByRole('combobox', { name: 'Project', exact: true })
   await selector.fill('repository-149')
   await expect(page.getByRole('listbox', { name: 'Projects' }).getByRole('option')).toHaveCount(1)
   await selector.press('Enter')
   await expect(selector).toHaveValue('Project 149')
+  await expect(sidebar).not.toBeInViewport()
+  await openNavigation.click()
+  selector = sidebar.getByRole('combobox', { name: 'Project', exact: true })
   await selector.click()
   const list = page.getByRole('listbox', { name: 'Projects' })
   await expect(page.getByRole('listbox', { name: 'Projects' }).getByRole('option')).toHaveCount(153)

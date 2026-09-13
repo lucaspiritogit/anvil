@@ -1,6 +1,6 @@
 import { TerminalDrawer } from './components/TerminalDrawer'
 import type { JSX } from 'react'
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AppSkeleton } from './components/AppSkeleton'
 import { OverviewBackground } from './components/OverviewBackground'
 import { Sidebar } from './components/Sidebar'
@@ -21,8 +21,12 @@ const SettingsPage = lazy(async () => {
 export function App(): JSX.Element {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalCreated, setTerminalCreated] = useState(false)
+  const [mobileNavigation, setMobileNavigation] = useState(() => window.matchMedia('(max-width: 700px)').matches)
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
   const projectId = useStore((s) => s.activeProjectId ?? s.projects[0]?.id)
   const workspaceRef = useRef<HTMLDivElement>(null)
+  const mobileNavigationButtonRef = useRef<HTMLButtonElement>(null)
+  const mobileNavigationCloseRef = useRef<HTMLButtonElement>(null)
   const suspendedDialogs = useRef<HTMLDialogElement[]>([])
   const fontSize = useStore((s) => s.settings?.fontSize)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
@@ -40,6 +44,37 @@ export function App(): JSX.Element {
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const focusTaskComposer = useStore((s) => s.focusTaskComposer)
   const keybindings = useStore((s) => s.settings?.keybindings) ?? DEFAULT_KEYBINDINGS
+
+  const closeMobileNavigation = useCallback((returnFocus: boolean): void => {
+    setMobileNavigationOpen(false)
+    window.requestAnimationFrame(() => {
+      if (returnFocus) mobileNavigationButtonRef.current?.focus()
+      else workspaceRef.current?.focus()
+    })
+  }, [])
+
+  const toggleNavigation = useCallback((): void => {
+    if (!mobileNavigation) {
+      toggleSidebar()
+      return
+    }
+    if (mobileNavigationOpen) closeMobileNavigation(true)
+    else setMobileNavigationOpen(true)
+  }, [closeMobileNavigation, mobileNavigation, mobileNavigationOpen, toggleSidebar])
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 700px)')
+    const onChange = (event: MediaQueryListEvent): void => {
+      setMobileNavigation(event.matches)
+      if (!event.matches) setMobileNavigationOpen(false)
+    }
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (mobileNavigation && mobileNavigationOpen) mobileNavigationCloseRef.current?.focus()
+  }, [mobileNavigation, mobileNavigationOpen])
 
   // Wait for the HTTP client and event stream before loading domain state.
   useEffect(() => {
@@ -108,7 +143,7 @@ export function App(): JSX.Element {
 
   // Capture fields stop propagation so recording a shortcut never invokes it.
   useEffect(() => {
-    const actions: Record<ShortcutId, () => void> = { toggleSidebar, focusTaskComposer }
+    const actions: Record<ShortcutId, () => void> = { toggleSidebar: toggleNavigation, focusTaskComposer }
     const onKey = (event: KeyboardEvent): void => {
       // Auto-repeat fires while a chord is held down; a shortcut is an action
       // per press, so only the first event of a hold counts.
@@ -123,6 +158,11 @@ export function App(): JSX.Element {
         return
       }
       if ((event.target as HTMLElement)?.closest('[data-terminal]')) return
+      if (event.key === 'Escape' && mobileNavigation && mobileNavigationOpen) {
+        event.preventDefault()
+        closeMobileNavigation(true)
+        return
+      }
       if (event.key === 'Escape' && useStore.getState().settingsOpen) {
         event.preventDefault()
         setSettingsOpen(false)
@@ -143,7 +183,8 @@ export function App(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keybindings, toggleSidebar, focusTaskComposer, settingsOpen, setSettingsOpen, projectId])
+  }, [keybindings, toggleNavigation, focusTaskComposer, settingsOpen, setSettingsOpen, projectId,
+    mobileNavigation, mobileNavigationOpen, closeMobileNavigation])
 
   useEffect(() => {
     const offEvent = window.anvil.tasks.onEvent(applyEvent)
@@ -168,19 +209,39 @@ export function App(): JSX.Element {
           'relative isolate grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden transition-[grid-template-columns] duration-[180ms] ease-[ease] motion-reduce:transition-none',
           settingsOpen
             ? 'grid-cols-[304px_1fr] max-[700px]:grid-cols-1 max-[700px]:grid-rows-[auto_minmax(0,1fr)]'
-            : sidebarCollapsed ? 'grid-cols-[0_1fr]' : 'grid-cols-[304px_1fr]'
+            : sidebarCollapsed
+              ? 'grid-cols-[0_1fr] max-[700px]:grid-cols-1'
+              : 'grid-cols-[304px_1fr] max-[700px]:grid-cols-1'
         )}
       >
         <OverviewBackground />
+        {!settingsOpen && mobileNavigation && mobileNavigationOpen && (
+          <button
+            type="button"
+            aria-label="Dismiss navigation"
+            className="fixed inset-0 z-20 bg-black/45"
+            onClick={() => closeMobileNavigation(true)}
+          />
+        )}
         <div className="contents" inert={switching}>
-          <Sidebar terminalAvailable={Boolean(projectId)} onOpenTerminal={() => {
+          <Sidebar
+            mobileNavigation={mobileNavigation}
+            mobileNavigationOpen={mobileNavigationOpen}
+            mobileNavigationCloseRef={mobileNavigationCloseRef}
+            onCloseMobileNavigation={() => closeMobileNavigation(true)}
+            onNavigate={() => closeMobileNavigation(false)}
+            terminalAvailable={Boolean(projectId)} onOpenTerminal={() => {
             if (!projectId) return
             setTerminalCreated(true)
             setTerminalOpen(true)
+            if (mobileNavigation) closeMobileNavigation(false)
           }} />
         </div>
-        <div ref={workspaceRef} tabIndex={-1} className={cn('flex flex-col min-w-0 min-h-0 outline-none', settingsOpen && 'hidden')} inert={settingsOpen || switching}>
-          <div className="min-h-0 flex-1"><Workspace key={workspaceId} /></div>
+        <div ref={workspaceRef} tabIndex={-1} aria-hidden={mobileNavigation && mobileNavigationOpen || undefined}
+          className={cn('flex flex-col min-w-0 min-h-0 outline-none', settingsOpen && 'hidden')}
+          inert={settingsOpen || switching || (mobileNavigation && mobileNavigationOpen)}>
+          <div className="min-h-0 flex-1"><Workspace key={workspaceId} mobileNavigation={mobileNavigation}
+            mobileNavigationOpen={mobileNavigationOpen} navigationButtonRef={mobileNavigationButtonRef} onToggleNavigation={toggleNavigation} /></div>
           {terminalCreated && projectId && <TerminalDrawer key={`${workspaceId}:${projectId}`} projectId={projectId} visible={terminalOpen} onClose={() => { setTerminalCreated(false); setTerminalOpen(false) }} />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
