@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { TaskEvent, TaskIssueSnapshot } from '../../src/shared/types'
+import type { Task, TaskEvent, TaskIssueSnapshot } from '../../src/shared/types'
 import { restoreComposerSelection } from './composer-setup'
 
 test('a newly created task discovers planning children and keeps execution and review on its owner', async ({ page }) => {
@@ -134,4 +134,85 @@ test('a newly created task discovers planning children and keeps execution and r
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled()
+})
+
+test('merge waits for final issue approval to settle after an early reviewable update', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=review')
+  const merge = page.getByRole('button', { name: 'Merge', exact: true })
+  // Load the task diff before entering issue review so only the pending approval gates Merge.
+  await expect(merge).toBeEnabled()
+
+  await page.evaluate(async () => {
+    let task = (await window.anvil.tasks.list()).find((item) => item.id === 'review')!
+    const snapshot: TaskIssueSnapshot = {
+      parent: { id: 'plan', title: task.title, description: '' },
+      execution: { phase: 'reviewing', currentIssueId: 'final-review', error: null },
+      reviewReady: true,
+      children: [{
+        id: 'final-review', parentId: 'plan', title: 'Verify final changes', description: '', status: 'review',
+        baseCommit: 'base', headCommit: 'review-head', checklist: [], validation: '', labels: [],
+        priority: 'medium', dependencies: []
+      }]
+    }
+    let resolveApproval: ((task: Task) => void) | undefined
+    const approval = new Promise<Task>((resolve) => { resolveApproval = resolve })
+    const originalMergePreview = window.anvil.tasks.mergePreview
+    let approvalCalls = 0
+    let mergePreviewCalls = 0
+    window.anvil.tasks.approveIssue = async () => {
+      approvalCalls += 1
+      return approval
+    }
+    window.anvil.tasks.mergePreview = async (taskId) => {
+      mergePreviewCalls += 1
+      return originalMergePreview(taskId)
+    }
+    const publish = (): void => {
+      window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: task.id, snapshot: structuredClone(snapshot) } }))
+      window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: task }))
+    }
+    const controls = {
+      publishFinal() {
+        snapshot.children[0].status = 'complete'
+        snapshot.children[0].completedAt = Date.now()
+        snapshot.execution = { phase: 'complete', currentIssueId: null, error: null }
+        snapshot.reviewReady = false
+        task = { ...task, status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), headCommit: 'review-head' }
+        publish()
+      },
+      settleApproval() { resolveApproval?.(task) },
+      calls() { return { approval: approvalCalls, mergePreview: mergePreviewCalls } }
+    }
+    Object.assign(window, { reviewTransition: controls })
+    task = { ...task, status: 'running', deliveryStatus: 'working', endedAt: undefined, headCommit: 'review-head' }
+    publish()
+  })
+
+  await expect(page.getByLabel('Task status', { exact: true })).toHaveText('Review: Verify final changes')
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { reviewTransition: { calls: () => { approval: number } } }).reviewTransition.calls().approval
+  )).toBe(1)
+
+  await page.evaluate(() =>
+    (window as unknown as { reviewTransition: { publishFinal: () => void } }).reviewTransition.publishFinal()
+  )
+  await expect(merge).toBeVisible()
+  await expect(merge).toBeDisabled()
+  await merge.evaluate((button) => button.click())
+  await expect(page.getByRole('alertdialog', { name: 'Merge task?' })).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { reviewTransition: { calls: () => { mergePreview: number } } }).reviewTransition.calls().mergePreview
+  )).toBe(0)
+  await expect(page.getByText('This task is already busy with review', { exact: true })).toHaveCount(0)
+
+  await page.evaluate(() =>
+    (window as unknown as { reviewTransition: { settleApproval: () => void } }).reviewTransition.settleApproval()
+  )
+  await expect(merge).toBeEnabled()
+  await merge.click()
+  await expect(page.getByRole('alertdialog', { name: 'Merge task?' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { reviewTransition: { calls: () => { mergePreview: number } } }).reviewTransition.calls().mergePreview
+  )).toBe(1)
 })
