@@ -134,7 +134,9 @@ export class GitDeliveryManager {
   async getDiff(_path: string, base: string, head: string): Promise<any> { return { patch: `${base}..${head}`, commits: [] } }
   static worktreeHeadValue: string | null = null
   static currentHeadCommit(): string {
-    return GitDeliveryManager.worktreeHeadValue ?? GitDeliveryManager.head.toString(16).padStart(40, '0')
+    if (GitDeliveryManager.worktreeHeadValue) return GitDeliveryManager.worktreeHeadValue
+    if (GitDeliveryManager.head === 0) return 'a'.repeat(40)
+    return GitDeliveryManager.head.toString(16).padStart(40, '0')
   }
   worktreeHead(): string | null { return GitDeliveryManager.worktreeHeadValue }
   async getIssueDiff(_path: string, source: any): Promise<any> {
