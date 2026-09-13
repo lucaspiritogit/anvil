@@ -38,6 +38,7 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
   const projects = useStore((state) => state.projects)
   const activeProjectId = useStore((state) => state.activeProjectId)
   const selectProject = useStore((state) => state.selectProject)
+  const focusTaskComposer = useStore((state) => state.focusTaskComposer)
   const settings = useStore((state) => state.settings)
   const caffeineSave = useStore((state) => state.caffeineSave)
   const setCaffeineMode = useStore((state) => state.setCaffeineMode)
@@ -130,22 +131,24 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
           <p className="mt-0.5 text-[11px] text-dim">Use arrow keys to navigate · Esc to close</p>
         </header>
         <div role="menu" aria-label="Commands" className="p-2" onKeyDown={moveCommandFocus}>
-          <CommandButton ref={modelRef} commandIndex={0} active={activeCommand === 0} onFocus={setActiveCommand}
+          <CommandButton commandIndex={0} active={activeCommand === 0} onFocus={setActiveCommand}
+            icon="pencil" label="New task" onClick={() => { close(); focusTaskComposer() }} />
+          <CommandButton ref={modelRef} commandIndex={1} active={activeCommand === 1} onFocus={setActiveCommand}
             icon="brain-circuit" label="Change model"
             description={preferences.saveError ?? undefined} disabled={!agents.length}
             onClick={() => setNestedPicker('model')} />
-          <CommandButton ref={thinkingRef} commandIndex={1} active={activeCommand === 1} onFocus={setActiveCommand}
+          <CommandButton ref={thinkingRef} commandIndex={2} active={activeCommand === 2} onFocus={setActiveCommand}
             icon="sparkles" label="Change thinking"
             description={reasoningEffort ? reasoningOptions.find((option) => option.id === reasoningEffort)?.label : undefined}
             onClick={() => setNestedPicker('thinking')} />
-          <CommandButton ref={projectRef} commandIndex={2} active={activeCommand === 2} onFocus={setActiveCommand}
+          <CommandButton ref={projectRef} commandIndex={3} active={activeCommand === 3} onFocus={setActiveCommand}
             icon="folder" label="Change project"
             description={activeProject?.name} onClick={() => setNestedPicker('project')} />
-          <CommandButton commandIndex={3} active={activeCommand === 3} onFocus={setActiveCommand}
+          <CommandButton commandIndex={4} active={activeCommand === 4} onFocus={setActiveCommand}
             icon="terminal" label="Open terminal" disabled={!activeProject}
             description={activeProject ? activeProject.name : 'No active project'}
             onClick={() => { close(); onOpenTerminal() }} />
-          <CommandButton commandIndex={4} active={activeCommand === 4} onFocus={setActiveCommand}
+          <CommandButton commandIndex={5} active={activeCommand === 5} onFocus={setActiveCommand}
             icon="coffee" label="Toggle caffeine mode" disabled={!settings}
             unavailable={caffeinePending}
             pressed={caffeineMode}
