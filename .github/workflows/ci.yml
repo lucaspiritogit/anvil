@@ -75,7 +75,8 @@ jobs:
             artifact: release/*.exe
             server_artifact: release/Anvil-server-*-windows-x64.zip
           - name: linux-x64
-            os: ubuntu-22.04
+            # Match the check job's compiler support for Electron 44's V8 headers.
+            os: ubuntu-24.04
             arguments: --linux AppImage --x64
             artifact: release/*.AppImage
             server_artifact: release/Anvil-server-*-linux-x64.tar.gz
