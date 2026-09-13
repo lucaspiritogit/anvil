@@ -54,7 +54,10 @@ function prepareNodeSqlite() {
 
 module.exports = { prepareNodeSqlite }
 
-if (require.main === module) {
+if (module.isPreloading) {
+  delete process.env.ELECTRON_RUN_AS_NODE
+  process.env.ANVIL_SQLITE_BINDING = prepareNodeSqlite()
+} else if (require.main === module) {
   try {
     prepareNodeSqlite()
   } catch (error) {

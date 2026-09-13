@@ -33,11 +33,11 @@
     "test": "vitest run",
     "build:server": "vite build --config vite.server.config.ts",
     "package:server": "npm run build:app && node scripts/package-server.mjs",
-    "serve": "npm run build:app && node scripts/serve.cjs",
+    "serve": "npm run serve:headless",
     "rebuild:headless": "node scripts/prepare-node-native.cjs",
-    "serve:headless": "npm run build:app && node scripts/serve.cjs --headless",
-    "serve:headless:lan": "npm run build:app && node scripts/serve.cjs --headless --lan",
-    "serve:headless:tailscale": "npm run build:app && node scripts/serve.cjs --headless --tailscale"
+    "serve:headless": "npm run build:app && node --require ./scripts/prepare-node-native.cjs out/server/index.js --headless",
+    "serve:headless:lan": "npm run build:app && node --require ./scripts/prepare-node-native.cjs out/server/index.js --headless --lan",
+    "serve:headless:tailscale": "npm run build:app && node --require ./scripts/prepare-node-native.cjs out/server/index.js --headless --tailscale"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",

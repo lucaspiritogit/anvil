@@ -12,12 +12,18 @@ import { configureHeadlessPassword } from './headless-password'
 import type { HeadlessAccessMode } from '../shared/types'
 
 async function main(): Promise<void> {
-  const lan = process.argv.includes('--lan')
-  const tailscaleOnly = process.argv.includes('--tailscale')
+  const serverArguments = process.argv.slice(2)
+  for (const argument of serverArguments) {
+    if (argument !== '--headless' && argument !== '--lan' && argument !== '--tailscale') {
+      throw new Error(`Unknown server argument: ${argument}`)
+    }
+  }
+  const lan = serverArguments.includes('--lan')
+  const tailscaleOnly = serverArguments.includes('--tailscale')
   if (lan && tailscaleOnly) throw new Error('Choose either --lan or --tailscale')
   const headlessAccess: HeadlessAccessMode | undefined = tailscaleOnly
     ? 'tailscale'
-    : lan ? 'lan' : process.argv.includes('--headless') ? 'local' : undefined
+    : lan ? 'lan' : serverArguments.includes('--headless') ? 'local' : undefined
   const port = Number(process.env.ANVIL_SERVER_PORT ?? 4780)
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('ANVIL_SERVER_PORT must be between 1 and 65535')
   await restoreShellPath()
