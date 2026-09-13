@@ -5,7 +5,7 @@ import { once } from 'node:events'
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { _electron as electron, expect } from '@playwright/test'
+import { electron, expect } from './electron-fixture.mjs'
 import electronPath from 'electron'
 
 if (process.platform !== 'darwin') throw new Error('This check requires macOS home isolation')
@@ -56,7 +56,7 @@ try {
   seedLiveTask(developmentDirectory)
 
   // A second dev launch cannot bypass its profile lock with --user-data-dir.
-  const duplicate = spawn(electronPath, ['.', `--user-data-dir=${join(home, 'other-profile')}`], { env, stdio: 'ignore' })
+  const duplicate = spawn(electronPath, ['.', `--user-data-dir=${join(home, 'other-profile')}`], { env: { ...env, ANVIL_SERVER_PORT: await development.app.evaluate(() => process.env.ANVIL_SERVER_PORT) }, stdio: 'ignore' })
   const timeout = setTimeout(() => duplicate.kill(), 15_000)
   try {
     const [code] = await once(duplicate, 'exit')

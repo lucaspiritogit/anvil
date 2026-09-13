@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { build } from 'esbuild'
 import { Store } from '../src/server/store'
@@ -330,7 +330,7 @@ test('independent SQLite connections contend and claim each issue exactly once',
   await build({
     entryPoints: [resolve('src/server/valence/tracker.ts')], outfile: bundle, bundle: true, platform: 'node', format: 'cjs',
     plugins: [{ name: 'host-sqlite', setup(build) {
-      build.onResolve({ filter: /^better-sqlite3$/ }, () => ({ path: resolve('node_modules/.anvil-vitest-native/better-sqlite3/lib/index.js'), external: true }))
+      build.onResolve({ filter: /^better-sqlite3$/ }, () => ({ path: join(dirname(dirname(dirname(process.env.ANVIL_TEST_SQLITE_BINDING!))), 'lib/index.js'), external: true }))
     } }]
   })
   const barrier = new SharedArrayBuffer(4)
@@ -349,7 +349,7 @@ test('independent SQLite connections contend and claim each issue exactly once',
     parentPort.postMessage(ids)
   `
   const workers = Array.from({ length: 4 }, () => new Worker(code, { eval: true, workerData: {
-    sqlite: resolve('node_modules/.anvil-vitest-native/better-sqlite3'), bundle, path, barrier
+    sqlite: dirname(dirname(dirname(process.env.ANVIL_TEST_SQLITE_BINDING!))), bundle, path, barrier
   } }))
   onTestCleanup(async () => { await Promise.all(workers.map((worker) => worker.terminate())) })
   const results: Promise<string[]>[] = []

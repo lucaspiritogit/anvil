@@ -1,6 +1,7 @@
 import { IssueTracker } from './valence/tracker'
 import { WorkspaceStorage, type WorkspaceConnection } from './workspace-storage'
 import { moveWorkspaceDirectory, relocateTaskPaths } from './workspace-directories'
+import { resolveWorkspaceDirectory } from '../shared/app-data'
 import { normalizeWorkspaceName, readRootConfig, writeRootConfig, type RootConfig } from './root-config'
 import { TaskImageStorage } from './task-image-storage'
 import type { PullRequestMerged } from '../shared/github-pull-request-state'
@@ -384,7 +385,7 @@ export class Store {
   getWorkspaceDirectory(workspaceId: string): string {
     const workspace = this.requireWorkspace(workspaceId)
     const normalized = normalizeWorkspaceName(workspace.name)
-    return join(this.dataDirectory, 'workspaces', normalized.name)
+    return resolveWorkspaceDirectory(this.dataDirectory, normalized.name)
   }
 
   getWorkspacePreferences(workspaceId = this.getActiveWorkspace().id): WorkspacePreferences {

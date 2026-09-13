@@ -1,7 +1,7 @@
 import { afterAll, afterEach, expect, vi } from 'vitest'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, join } from 'node:path'
 import { createRequire } from 'node:module'
 import type Database from 'better-sqlite3'
 import { cleanupTestResources } from './test-cleanup'
@@ -25,16 +25,18 @@ const sqliteId = require.resolve('better-sqlite3')
 require(sqliteId)
 const sqliteModule = require.cache[sqliteId]!
 const originalSqlite = sqliteModule.exports
-const HostDatabase = require(resolve('node_modules/.anvil-vitest-native/better-sqlite3')) as typeof Database
+const binding = process.env.ANVIL_TEST_SQLITE_BINDING
+if (!binding) throw new Error('Integration SQLite was not prepared')
+const HostDatabase = originalSqlite as typeof Database
 const databases = new Set<Database.Database>()
 const TestDatabase = new Proxy(HostDatabase, {
   construct(target, args) {
-    const database = Reflect.construct(target, args) as Database.Database
+    const database = Reflect.construct(target, [args[0], { ...args[1], nativeBinding: binding }]) as Database.Database
     databases.add(database)
     return database
   },
   apply(target, _thisArg, args) {
-    const database = Reflect.construct(target, args) as Database.Database
+    const database = Reflect.construct(target, [args[0], { ...args[1], nativeBinding: binding }]) as Database.Database
     databases.add(database)
     return database
   }

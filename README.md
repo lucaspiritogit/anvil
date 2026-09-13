@@ -198,8 +198,8 @@ backend and embedding settings.
 
 ### Storage and migrations
 
-App state lives in `~/.anvil-composer-dev/anvil.db` during development and
-`~/.anvil-composer/anvil.db` in packaged apps, via Drizzle on
+App state lives in `~/.anvil-composer-dev/workspaces/<name>/anvil.db` during development and
+`~/.anvil-composer/workspaces/<name>/anvil.db` in packaged apps, via Drizzle on
 better-sqlite3: projects, tasks, events, comments, settings, and execution metadata.
 Valence is Anvil's internal issue tracker. Its parents, issues, dependencies and
 validation evidence share this SQLite database. Each parent references the real
@@ -207,15 +207,16 @@ Anvil task through `parent_issues.anvil_task_id`. Project memory has its own dat
 
 | Database | Schema | Generate migrations |
 | --- | --- | --- |
-| App state | `src/main/db/schema.ts` | `npm run db:generate` |
-| Project memory | `src/main/memory/schema.ts` | `npm run memory:generate` |
+| App state | `src/server/db/schema.ts` | `npm run db:generate` |
+| Project memory | `src/server/memory/schema.ts` | `npm run memory:generate` |
 
 Commit schema changes and generated migrations together. Anvil applies pending
 SQLite migrations on startup. To apply them without opening Anvil, quit the app
 and run `npm run db:migrate`. The launcher runs Drizzle Kit under Electron's Node
 with `ELECTRON_RUN_AS_NODE=1` because `better-sqlite3` is compiled for Electron.
-Repository database commands and `npm run memory:inspect` default to development
-storage. Set `ANVIL_DATA_DIR="$HOME/.anvil-composer"` explicitly to maintain the
+Repository database commands and `npm run memory:inspect` follow the selected
+workspace in development storage. They share `scripts/maintenance.cjs`; PGlite
+inspection reads that workspace's `memory/pglite` directory. Set `ANVIL_DATA_DIR="$HOME/.anvil-composer"` explicitly to maintain the
 packaged app's data after quitting that app.
 
 ### Reset app data
@@ -223,7 +224,7 @@ packaged app's data after quitting that app.
 Quit the development app before running either command. Both delete its SQLite
 app data and leave project memory untouched.
 
-- `npm run db:drop` deletes `~/.anvil-composer-dev/anvil.db` and its sidecar files,
+- `npm run db:drop` deletes `~/.anvil-composer-dev/workspaces/<name>/anvil.db` and its sidecar files,
   or the database under `ANVIL_DATA_DIR` when set.
 - `npm run db:reset` drops the database and reapplies migrations. It creates the
   schema only; Anvil seeds default settings on its next startup.
@@ -234,3 +235,32 @@ If you feel like Anvil's idea is great, please, check both of them out and their
 
 - [stop treating your ai like a human](https://youtu.be/wWd3AZ9vJmI?si=4_auq5vhYpBoGSQU)
 - [I'm done coding with AI](https://www.youtube.com/watch?v=2ZU3j4GQ4K8)
+
+### Headless Docker deployment
+
+`Dockerfile.dev` builds the HTTP server and renderer. Its final image contains
+Node and production dependencies, without Electron, Xvfb, or desktop libraries.
+Create a password file outside the repository and set `ANVIL_SERVER_PASSWORD_FILE`
+to its absolute path before running `docker compose up --build app`. Compose mounts
+it as a secret and publishes Anvil at `http://127.0.0.1:4780`. Sign in as `anvil`.
+The password is required because the container listens on its network interface.
+Project repositories and installed agent CLIs must be available inside the container.
+
+### Repository utilities
+
+- `scripts/maintenance.cjs`: SQLite migration/drop and project-memory inspection.
+  Existing `db:migrate`, `db:drop`, `db:reset`, and `memory:inspect` npm commands remain.
+- `scripts/prepare-node-native.cjs`: one Node-compatible SQLite cache shared by
+  headless source runs and Vitest. Electron's installed native addon is unchanged.
+- `scripts/tests/`: standalone verification scripts and their shared Electron
+  fixture. Run them from the repository root after building, for example
+  `node scripts/tests/test-caffeine-persistence.mjs`.
+  They use disposable profiles and separate server ports. Some require macOS,
+  a packaged application, sqlite3, or an installed OpenCode CLI as documented
+  in the script. They are not part of the ordinary browser fixture test suite.
+- `node scripts/tests/verify-package.mjs`: checks desktop packages under `release/`.
+  CI runs it after packaging. An explicit `.asar` or macOS `.app` path is also accepted.
+
+Use `npm test` for all Vitest suites, `npm run test:unit` or
+`npm run test:integration` for a subset, and `npm run test:e2e` for browser tests.
+The duplicate `test:vitest` and `test:issue-tracker` aliases have been removed.

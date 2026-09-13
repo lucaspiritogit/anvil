@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { _electron as electron, expect } from '@playwright/test'
+import { electron, expect } from './electron-fixture.mjs'
 
 // Run after npm run build. Uses a temporary repository and application profile.
 // --manual keeps the verified window open for native UI inspection until Enter.

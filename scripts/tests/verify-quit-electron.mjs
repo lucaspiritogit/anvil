@@ -1,5 +1,5 @@
 // Run after npm run build. Uses a disposable macOS profile and only kills test-owned PIDs.
-import { _electron as electron, expect } from '@playwright/test'
+import { electron, expect } from './electron-fixture.mjs'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'

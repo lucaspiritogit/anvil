@@ -4,7 +4,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
-import { _electron as electron, expect } from '@playwright/test'
+import { electron, expect } from './electron-fixture.mjs'
 
 // Run after npm run build. Uses a temporary repo/profile and fake agent by default.
 // --manual leaves the tested app open. --live-codex /absolute/path observes only

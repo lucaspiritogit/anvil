@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { _electron as electron, expect } from '@playwright/test'
+import { electron, expect } from './electron-fixture.mjs'
 
 // Run after npm run build. All mutations use an isolated application profile.
 // --manual leaves the tested window open until Enter for native UI inspection.

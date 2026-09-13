@@ -1,117 +1,54 @@
 import { test, expect } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { runInNewContext } from 'node:vm'
+import { dirname, join } from 'node:path'
+import { workspaceDatabase, selectedWorkspaceDirectory } from '../src/shared/app-data'
 
-test.each([0, 7, null])('forwards Electron arguments and environment with child status %s', (status) => {
-  const launcherPath = resolve('scripts/drizzle.cjs')
-  const launcherSource = readFileSync(launcherPath, 'utf8')
-  const projectRequire = createRequire(launcherPath)
-  const exitSignal = new Error('process.exit')
+const require = createRequire(import.meta.url)
+const { dropDatabase } = require('../scripts/maintenance.cjs') as { dropDatabase(): void }
 
-  let exitCode: number | undefined
-  let thrown: unknown
-  try {
-    runInNewContext(launcherSource, {
-      __filename: launcherPath,
-      process: {
-        versions: {}, argv: ['node', launcherPath, 'migrate', '--help'],
-        env: { TEST_ENV: 'preserved' },
-        exit(code: number) { exitCode = code; throw exitSignal }
-      },
-      require(id: string) {
-        if (id === 'electron') return '/test/electron'
-        if (id === 'node:child_process') return {
-          spawnSync(executable: string, args: string[], options: { env: Record<string, string> }) {
-            expect(executable).toBe('/test/electron')
-            expect(Array.from(args)).toStrictEqual([launcherPath, 'migrate', '--help'])
-            expect(options.env.ELECTRON_RUN_AS_NODE).toBe('1')
-            expect(options.env.TEST_ENV).toBe('preserved')
-            return { status }
-          }
-        }
-        return projectRequire(id)
-      }
-    })
-  } catch (error) {
-    thrown = error
-  }
-  expect(thrown).toBe(exitSignal)
-  expect(exitCode).toBe(status ?? 1)
-})
-
-test('delegates migrations to Kit and deletes only the selected development workspace database', () => {
-  const launcherPath = resolve('scripts/drizzle.cjs')
-  const launcherSource = readFileSync(launcherPath, 'utf8')
-  const projectRequire = createRequire(launcherPath)
-  const temporaryHome = mkdtempSync(join(tmpdir(), 'anvil-db-cli-'))
-  try {
-    const dataSource = readFileSync(resolve('scripts/app-data.cjs'), 'utf8')
-    const dataModule = { exports: '' }
-    runInNewContext(dataSource, {
-      module: dataModule, process: { env: {} },
-      require: (id: string) => id === 'node:os' ? { homedir: () => temporaryHome } : projectRequire(id)
-    })
-    const dataDirectory = dataModule.exports
-    expect(dataDirectory).toBe(join(temporaryHome, '.anvil-composer-dev'))
-    const productionFile = join(temporaryHome, '.anvil-composer', 'anvil.db')
-    mkdirSync(dirname(productionFile), { recursive: true })
-    writeFileSync(productionFile, 'production data')
-    const databaseFile = join(dataDirectory, 'workspaces', 'Work', 'anvil.db')
-    const kitPath = join(dirname(projectRequire.resolve('drizzle-kit')), 'bin.cjs')
-    let kitLoaded = false
-    const launcherRequire = Object.assign((id: string) => {
-      if (id === './workspace-database.cjs') return () => databaseFile
-      if (id === kitPath) { kitLoaded = true; return {} }
-      if (id === 'node:os') return { homedir: () => temporaryHome }
-      expect(id.startsWith('node:'), 'Launcher must not patch database drivers').toBeTruthy()
-      return projectRequire(id)
-    }, { resolve: projectRequire.resolve })
-    runInNewContext(launcherSource, {
-      require: launcherRequire,
-      process: { versions: { electron: 'test' }, argv: ['electron', launcherPath, 'migrate'] }
-    })
-    expect(kitLoaded, 'Launcher delegates to the installed Drizzle Kit CLI').toBeTruthy()
-    expect(existsSync(dirname(databaseFile)), 'Launcher creates the parent directory on first use').toBeTruthy()
-    expect(existsSync(databaseFile), 'Only Kit should create the database').toBe(false)
-
-    for (const suffix of ['', '-wal', '-shm']) writeFileSync(databaseFile + suffix, '')
-    const unrelatedFile = join(dataDirectory, 'keep.txt')
-    writeFileSync(unrelatedFile, 'keep')
-    const dropSource = readFileSync(resolve('scripts/db-drop.cjs'), 'utf8')
-    for (let attempt = 0; attempt < 2; attempt++) {
-      runInNewContext(dropSource, {
-        require: (id: string) => id === './workspace-database.cjs' ? () => databaseFile : projectRequire(id),
-        console: { log() {} }
-      })
-    }
-    for (const suffix of ['', '-wal', '-shm']) expect(existsSync(databaseFile + suffix)).toBe(false)
-    expect(readFileSync(unrelatedFile, 'utf8')).toBe('keep')
-    expect(readFileSync(productionFile, 'utf8')).toBe('production data')
-  } finally {
-    rmSync(temporaryHome, { recursive: true, force: true })
-  }
-})
-
-test('maintenance paths follow JSON selection and reject paths outside workspace folders', () => {
+test('maintenance follows workspace selection and rejects unsafe folder names', () => {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-db-selection-'))
+  const previous = process.env.ANVIL_DATABASE_PATH
+  delete process.env.ANVIL_DATABASE_PATH
   try {
-    const filename = resolve('scripts/workspace-database.cjs')
-    const projectRequire = createRequire(filename)
-    const scriptModule = { exports: undefined as unknown as (directory: string) => string }
-    runInNewContext(readFileSync(filename, 'utf8'), { module: scriptModule, require: projectRequire, process: { env: {} } })
-    const databasePath = scriptModule.exports
-    expect(databasePath(directory)).toBe(join(directory, 'workspaces', 'Default', 'anvil.db'))
-    const configFile = join(directory, 'config.json')
+    expect(workspaceDatabase(directory)).toBe(join(directory, 'workspaces', 'Default', 'anvil.db'))
     const config = { version: 1, activeWorkspaceId: 'work', workspaces: [{ id: 'work', name: 'Work' }] }
-    writeFileSync(configFile, JSON.stringify(config))
-    expect(databasePath(directory)).toBe(join(directory, 'workspaces', 'Work', 'anvil.db'))
-    config.workspaces[0].name = '../outside'
-    writeFileSync(configFile, JSON.stringify(config))
-    expect(() => databasePath(directory)).toThrow(/Invalid workspace folder/)
+    writeFileSync(join(directory, 'config.json'), JSON.stringify(config))
+    expect(selectedWorkspaceDirectory(directory)).toBe(join(directory, 'workspaces', 'Work'))
+    expect(workspaceDatabase(directory)).toBe(join(directory, 'workspaces', 'Work', 'anvil.db'))
+    for (const name of ['../escape', '.', 'CON', 'Work.']) {
+      config.workspaces[0].name = name
+      writeFileSync(join(directory, 'config.json'), JSON.stringify(config))
+      expect(() => workspaceDatabase(directory)).toThrow()
+    }
+    process.env.ANVIL_DATABASE_PATH = 'relative.db'
+    expect(() => workspaceDatabase(directory)).toThrow()
   } finally {
+    if (previous === undefined) delete process.env.ANVIL_DATABASE_PATH
+    else process.env.ANVIL_DATABASE_PATH = previous
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('drop removes only the selected database and SQLite sidecars', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'anvil-db-drop-'))
+  const previous = process.env.ANVIL_DATABASE_PATH
+  const database = join(directory, 'workspaces', 'Work', 'anvil.db')
+  try {
+    mkdirSync(dirname(database), { recursive: true })
+    process.env.ANVIL_DATABASE_PATH = database
+    for (const suffix of ['', '-wal', '-shm']) writeFileSync(database + suffix, '')
+    const keep = join(directory, 'keep.db')
+    writeFileSync(keep, 'unrelated data')
+    dropDatabase()
+    dropDatabase()
+    for (const suffix of ['', '-wal', '-shm']) expect(existsSync(database + suffix)).toBe(false)
+    expect(existsSync(keep)).toBe(true)
+  } finally {
+    if (previous === undefined) delete process.env.ANVIL_DATABASE_PATH
+    else process.env.ANVIL_DATABASE_PATH = previous
     rmSync(directory, { recursive: true, force: true })
   }
 })

@@ -3,11 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-export function validateWorkspaceFolderName(name: string): void {
-  if (name === '.' || name === '..' || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)) {
-    throw new Error('Workspace name must be a valid folder name')
-  }
-}
+export { validateWorkspaceFolderName } from '../shared/app-data'
 
 /** Moving a parent directory also requires repairing Git's linked-worktree pointers. */
 export function moveWorkspaceDirectory(source: string, destination: string): void {

@@ -43,6 +43,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+      target: tooling
     command: npm run memory:migrate
     depends_on:
       postgres:
@@ -64,11 +65,18 @@ services:
       ANVIL_MEMORY_DATABASE_URL: postgresql://anvil:anvil@postgres:5432/anvil_memory
       ANVIL_OLLAMA_BASE_URL: http://ollama:11434/v1
       ANVIL_MEMORY_EMBEDDING_MODEL: mxbai-embed-large
+      ANVIL_SERVER_PASSWORD_FILE: /run/secrets/anvil_server_password
+    secrets:
+      - anvil_server_password
     ports:
-      - "127.0.0.1:5173:5173"
+      - "127.0.0.1:4780:4780"
     volumes:
       - sqlite_data:/home/node/.anvil-composer
-      - ./:/workspace
+
+
+secrets:
+  anvil_server_password:
+    file: ${ANVIL_SERVER_PASSWORD_FILE:-./.anvil-server-password}
 
 volumes:
   postgres_data:

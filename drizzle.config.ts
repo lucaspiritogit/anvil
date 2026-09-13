@@ -10,7 +10,7 @@ import { createRequire } from 'node:module'
 import type { Config } from 'drizzle-kit'
 
 const require = createRequire(import.meta.url)
-const workspaceDatabase = require('./scripts/workspace-database.cjs') as () => string
+const { workspaceDatabase } = require('./src/shared/app-data.ts') as { workspaceDatabase(): string }
 
 export default {
   schema: './src/server/db/schema.ts',

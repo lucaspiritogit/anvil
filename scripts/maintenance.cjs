@@ -1,11 +1,29 @@
-import appDataDirectory from './app-data.cjs'
-import { join } from 'node:path'
-import process from 'node:process'
-import { PGlite } from '@electric-sql/pglite'
-import { vector } from '@electric-sql/pglite-pgvector'
-import pg from 'pg'
+const { spawnSync } = require('node:child_process')
+const { existsSync, mkdirSync, rmSync } = require('node:fs')
+const { dirname, join } = require('node:path')
+const { workspaceDatabase, selectedWorkspaceDirectory } = require('../src/shared/app-data.ts')
 
-const { Pool } = pg
+function dropDatabase() {
+  const database = workspaceDatabase()
+  for (const suffix of ['', '-wal', '-shm']) {
+    const filename = database + suffix
+    if (existsSync(filename)) {
+      rmSync(filename)
+      console.log(`Removed ${filename}`)
+    }
+  }
+}
+
+function migrate(arguments_) {
+  // The installed SQLite addon belongs to Electron; run Kit with the same ABI.
+  mkdirSync(dirname(workspaceDatabase()), { recursive: true })
+  const kit = join(dirname(require.resolve('drizzle-kit')), 'bin.cjs')
+  const result = spawnSync(require('electron'), [kit, 'migrate', ...arguments_], {
+    stdio: 'inherit', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+  })
+  if (result.error) throw result.error
+  return result.status ?? 1
+}
 
 function parseArguments(arguments_) {
   const options = { projectId: undefined, limit: 20, json: false }
@@ -80,7 +98,9 @@ function inspectionQuery(options) {
 async function inspectPglite(options) {
   const dataDirectory =
     process.env.ANVIL_MEMORY_PGLITE_DIR ??
-    join(appDataDirectory, 'memory', 'pglite')
+    join(selectedWorkspaceDirectory(), 'memory', 'pglite')
+  const { PGlite } = await import('@electric-sql/pglite')
+  const { vector } = await import('@electric-sql/pglite-pgvector')
   const database = await PGlite.create(dataDirectory, { extensions: { vector } })
   try {
     const query = inspectionQuery(options)
@@ -96,7 +116,8 @@ async function inspectPostgres(options) {
   if (!databaseUrl) {
     throw new Error('ANVIL_MEMORY_DATABASE_URL is required for the postgres backend')
   }
-  const pool = new Pool({ connectionString: databaseUrl, max: 1 })
+  const { default: pg } = await import('pg')
+  const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 })
   try {
     const query = inspectionQuery(options)
     const result = await pool.query(query.text, query.parameters)
@@ -121,8 +142,8 @@ function printRows(rows, source, asJson) {
   }
 }
 
-async function main() {
-  const options = parseArguments(process.argv.slice(2))
+async function inspectMemory(arguments_) {
+  const options = parseArguments(arguments_)
   const backend = process.env.ANVIL_MEMORY_BACKEND ?? 'pglite'
   if (backend === 'disabled') throw new Error('Project memory is disabled')
   if (backend !== 'pglite' && backend !== 'postgres') {
@@ -134,7 +155,15 @@ async function main() {
   printRows(result.rows, result.source, options.json)
 }
 
-main().catch((error) => {
-  console.error(`Could not inspect project memory: ${error.message}`)
+async function main([command, ...arguments_]) {
+  if (command === 'memory') return inspectMemory(arguments_)
+  if (command === 'migrate') { process.exitCode = migrate(arguments_); return }
+  if (command === 'drop' && arguments_.length === 0) return dropDatabase()
+  throw new Error('Usage: node scripts/maintenance.cjs <migrate|drop|memory> [options]')
+}
+
+module.exports = { dropDatabase, migrate }
+if (require.main === module) main(process.argv.slice(2)).catch((error) => {
+  console.error(error.message)
   process.exitCode = 1
 })

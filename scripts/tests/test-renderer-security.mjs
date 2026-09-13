@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { once } from 'node:events'
-import { _electron as electron } from 'playwright'
+import { electron } from './electron-fixture.mjs'
 import { loadConfigFromFile } from 'electron-vite'
 import { createServer } from 'vite'
 
@@ -37,16 +37,15 @@ try {
   assert.equal(state.preferences.sandbox, true)
   assert.equal(state.preferences.contextIsolation, true)
   assert.equal(state.preferences.nodeIntegration, false)
-  assert.ok(page.url().startsWith(executablePath ? 'file://' : server.resolvedUrls.local[0]))
+  assert.ok(page.url().startsWith(executablePath ? 'http://127.0.0.1:' : server.resolvedUrls.local[0]))
   assert.ok(await page.evaluate(() => window.anvil.settings.get()))
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined')
-  console.log('Sandbox, preload and settings IPC passed:', page.url())
+  console.log('Sandbox, preload and settings HTTP passed:', page.url())
 
   await application.evaluate(({ dialog }, path) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
   }, directory)
-  const project = await page.evaluate(() => window.anvil.projects.add())
-  const projectId = project.id
+  await page.evaluate(() => window.anvil.projects.add())
   await page.reload()
   assert.match(await page.evaluate(() => window.anvil.terminals.create({ projectId: 'missing', cols: 80, rows: 24 }).then(() => 'unexpected success', (error) => error.message)), /Project not found/)
   const originalUrl = page.url()
@@ -56,15 +55,15 @@ try {
   const foreignPromise = application.waitForEvent('window')
   await application.evaluate(async ({ app, BrowserWindow }) => {
     const main = BrowserWindow.getAllWindows()[0]
-    const foreign = new BrowserWindow({ show: false, webPreferences: { preload: `${app.getAppPath()}/out/preload/index.js`, sandbox: true, contextIsolation: true, nodeIntegration: false } })
+    const foreign = new BrowserWindow({ show: false, webPreferences: { preload: `${app.getAppPath()}/out/preload/index.js`, additionalArguments: [`--anvil-server-url=http://127.0.0.1:${process.env.ANVIL_SERVER_PORT}`], additionalArguments: [`--anvil-server-url=http://127.0.0.1:${process.env.ANVIL_SERVER_PORT}`], sandbox: true, contextIsolation: true, nodeIntegration: false } })
     await foreign.loadURL(main.webContents.getURL())
   })
   const foreign = await foreignPromise
   await foreign.waitForFunction(() => Boolean(window.anvil))
-  assert.match(await foreign.evaluate(() => window.anvil.settings.get().then(() => 'unexpected success', (error) => error.message)), /Unauthorized IPC sender/)
-  assert.match(await foreign.evaluate((projectId) => window.anvil.terminals.create({ projectId, cols: 80, rows: 24 }).then(() => 'unexpected success', (error) => error.message), projectId), /Unauthorized IPC sender/)
+  assert.match(await foreign.evaluate(() => window.anvil.projects.add().then(() => 'unexpected success', (error) => error.message)), /Unauthorized IPC sender/)
+
   await foreign.close()
-  console.log('Navigation and real foreign-window IPC rejection passed')
+  console.log('Navigation and foreign-window desktop IPC rejection passed')
 
   // Observe the OS opener boundary without opening a browser during automated runs.
   await application.evaluate(({ shell }) => {

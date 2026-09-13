@@ -33,7 +33,7 @@ await copyFile(nodeExecutable, join(runtimeDirectory, nodeName))
 if (process.platform !== 'win32') await chmod(join(runtimeDirectory, nodeName), 0o755)
 run(join(runtimeDirectory, nodeName), [
   '-e',
-  "require('argon2'); require('better-sqlite3'); require('node-pty')"
+  "require('argon2'); const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.prepare('SELECT 1').get(); db.close(); require('node-pty')"
 ], appDirectory)
 
 const nodeRoot = process.platform === 'win32' ? dirname(nodeExecutable) : resolve(dirname(nodeExecutable), '..')

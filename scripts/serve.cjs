@@ -13,8 +13,8 @@ const executable = headless ? process.execPath : require('electron')
 const environment = { ...process.env }
 if (headless) {
   delete environment.ELECTRON_RUN_AS_NODE
-  const { prepareHeadlessSqlite } = require('./prepare-headless-native.cjs')
-  environment.ANVIL_SQLITE_BINDING = prepareHeadlessSqlite()
+  const { prepareNodeSqlite } = require('./prepare-node-native.cjs')
+  environment.ANVIL_SQLITE_BINDING = prepareNodeSqlite()
 } else {
   delete environment.ANVIL_SQLITE_BINDING
   environment.ELECTRON_RUN_AS_NODE = '1'

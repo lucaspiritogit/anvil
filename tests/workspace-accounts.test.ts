@@ -321,7 +321,7 @@ test('Codex device auth is gated per agent', async () => {
   expect(pending.status).toBe('pending')
   const target = { ...work, agentId: 'opencode' as const }
   await expect(f.accounts.connect({ ...target, method: 'deviceAuth' })).rejects.toThrow('Use native OpenCode login')
-  await expect(f.accounts.connect({ ...work, method: 'unsupported' } as AgentAccountConnect)).rejects.toThrow('Unsupported Codex login method')
+  await expect(f.accounts.connect({ ...work, method: 'unsupported' } as unknown as AgentAccountConnect)).rejects.toThrow('Unsupported Codex login method')
   expect((await f.accounts.cancel(work, pending.sessionId!)).status).toBe('cancelled')
   expect(f.locked.size).toBe(0)
 })
