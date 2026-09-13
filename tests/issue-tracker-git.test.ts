@@ -524,7 +524,8 @@ test('the working agent names its temporary branch and delivers sequential chang
   expect(existsSync(task.cwd), 'Settling another task leaves this worktree intact').toBe(true)
   await call('tasks:delete', task.id)
   await waitFor(() => !existsSync(task.cwd))
-  expect(git(projectPath, 'rev-parse', acceptedName), 'Deleting a task preserves its accepted committed branch').toBeTruthy()
+  await waitFor(() => git(projectPath, 'branch', '--list', acceptedName) === '')
+  expect(git(projectPath, 'branch', '--list', acceptedName), 'Deleting a task removes its accepted committed branch').toBe('')
   seed.close()
 })
 

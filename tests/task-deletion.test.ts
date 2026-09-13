@@ -15,9 +15,9 @@ test('deletes finished, active and queued tasks without resurrecting persisted s
     id: 'project', name: 'Test', path: testHome, createdAt: Date.now(),
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
   })
-  const { agentProcesses: registeredAgentProcesses, gitDelivery } = registerTestIpc()
+  const releaseWorktree = vi.spyOn(GitDeliveryManager.prototype, 'releaseWorktree')
+  const { agentProcesses: registeredAgentProcesses } = registerTestIpc()
   const agentProcesses = registeredAgentProcesses as unknown as AgentProcessManager
-  const releaseWorktree = vi.spyOn(gitDelivery, 'releaseWorktree')
   const call = (name: string, input: unknown): any => handlers.get(name)!(rendererEvent, input)
   const tick = async (): Promise<void> => {
     for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve))

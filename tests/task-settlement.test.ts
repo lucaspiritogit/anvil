@@ -11,8 +11,8 @@ test('settles eligible tasks at the review TTL and persists manual settlement', 
   const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
   const database = join(testHome, '.anvil-composer/config.json')
   const store = new Store(database, options)
-  const { gitDelivery } = registerTestIpc()
-  const releaseWorktree = vi.spyOn(gitDelivery, 'releaseWorktree')
+  const releaseWorktree = vi.spyOn(GitDeliveryManager.prototype, 'releaseWorktree')
+  registerTestIpc()
   store.addProject({
     id: 'project', name: 'Test', path: testHome, createdAt: 0,
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
