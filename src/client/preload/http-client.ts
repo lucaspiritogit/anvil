@@ -15,14 +15,20 @@ export function createHttpClient(url: string, onReady: () => void, onFailure: (m
   const listeners = new Map<string, Set<(payload: unknown) => void>>()
   const events = new EventSource(`${url}/events`)
   let disposed = false
+  let hasBeenReady = false
   events.onopen = () => {
     void fetch(`${url}/health`).then(async (response) => {
       const health = await response.json() as { ok?: boolean }
       if (!response.ok || health.ok !== true) throw new Error('Anvil server is unavailable')
-      if (!disposed && events.readyState === EventSource.OPEN) onReady()
+      if (!disposed && events.readyState === EventSource.OPEN) {
+        hasBeenReady = true
+        onReady()
+      }
     }).catch((error: Error) => onFailure(error.message))
   }
-  events.onerror = () => onFailure('Disconnected from Anvil server. Reconnecting…')
+  events.onerror = () => {
+    if (hasBeenReady) onFailure('Disconnected from Anvil server. Reconnecting…')
+  }
   events.onmessage = (event) => {
     const { channel, payload } = JSON.parse(event.data) as { channel: string; payload: unknown }
     for (const listener of listeners.get(channel) ?? []) listener(payload)

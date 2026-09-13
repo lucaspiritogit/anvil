@@ -22,6 +22,8 @@ test('client gates readiness on health and SSE, reconnects and unsubscribes', as
   const events = FakeEventSource.current
   expect(events.url).toBe('http://127.0.0.1:4780/events')
   expect(ready).not.toHaveBeenCalled()
+  events.onerror!()
+  expect(failed).not.toHaveBeenCalled()
   events.onopen!()
   await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce())
   const listener = vi.fn()
