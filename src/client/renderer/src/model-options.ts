@@ -19,7 +19,7 @@ const providerLabels: Record<string, string> = {
 export function humanizeModelName(id: string): string {
   const slug = id.split('/').at(-1) ?? id
   return slug
-    .replace(/[^a-z0-9]+/gi, ' ')
+    .replace(/[^a-z0-9.]+/gi, ' ')
     .split(' ')
     .filter(Boolean)
     .map((word) => word.toLowerCase() === 'gpt' ? 'GPT' : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())

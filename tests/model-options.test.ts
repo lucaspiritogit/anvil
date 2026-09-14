@@ -11,12 +11,12 @@ test('humanizes model slugs from every catalogue without changing their IDs', ()
   const cases = [
     ['kimi-k3', 'Kimi K3'],
     ['deepseek-v4', 'Deepseek V4'],
-    ['gpt-5.4-codex', 'GPT 5 4 Codex'],
-    ['opencode/kimi-k2.6', 'Kimi K2 6'],
+    ['gpt-5.4-codex', 'GPT 5.4 Codex'],
+    ['opencode/kimi-k2.6', 'Kimi K2.6'],
     ['openrouter/anthropic/claude-sonnet-4-6', 'Claude Sonnet 4 6'],
-    ['custom-provider/unknown_model+v2.beta', 'Unknown Model V2 Beta'],
+    ['custom-provider/unknown_model+v2.beta', 'Unknown Model V2.beta'],
     ['openrouter/openai/gpt-oss-120b:free', 'GPT Oss 120b Free'],
-    ['qwen2.5-coder-32b-instruct', 'Qwen2 5 Coder 32b Instruct']
+    ['qwen2.5-coder-32b-instruct', 'Qwen2.5 Coder 32b Instruct']
   ]
   for (const [id, name] of cases) {
     expect(humanizeModelName(id)).toBe(name)
