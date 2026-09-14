@@ -2,7 +2,7 @@ import type { HandlerRegistry } from '../handler-registry'
 import { withTaskOperation } from '../tasks/operations'
 import { resumeTaskTurn } from '../tasks/resume'
 import { getAgent } from '../agents/registry'
-import { taskFollowupPrompt } from '../agents/task-prompts'
+import { issueReworkPrompt, taskFollowupPrompt } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
 import type { Task } from '../../shared/types'
@@ -13,11 +13,12 @@ interface SteeringHandlerDependencies extends TaskContext {
   resumeTask: TaskExecution['resumeTask']
   acceptTaskResume: TaskExecution['acceptTaskResume']
   rollbackTaskResume: TaskExecution['rollbackTaskResume']
+  rejectIssue: TaskExecution['rejectIssue']
 }
 
 /** Live input stays in the active turn; stopped tasks resume their latest saved session. */
 export function registerSteeringHandlers(ipc: HandlerRegistry, {
-  store, agentProcesses, gitDelivery, send, recordSystemEvent, resumeTask, acceptTaskResume, rollbackTaskResume
+  store, agentProcesses, gitDelivery, send, recordSystemEvent, resumeTask, acceptTaskResume, rollbackTaskResume, rejectIssue
 }: SteeringHandlerDependencies): void {
   const requireStoppedTask = (task: Task): void => {
     if (task.status === 'running' || agentProcesses.isRunning(task.id) ||
@@ -34,6 +35,23 @@ export function registerSteeringHandlers(ipc: HandlerRegistry, {
       const agent = getAgent(task.agentId)
       if (!agent) throw new Error('Agent not found')
       if (isTaskSettled(task)) throw new Error('This task is settled and cannot receive new instructions')
+      if (store.getTaskExecution(taskId)?.phase === 'reviewing') {
+        const state = rejectIssue(taskId)
+        const rejected = store.getTask(taskId)
+        if (!rejected) throw new Error('Task was deleted')
+        await resumeTaskTurn({ store, agentProcesses, gitDelivery, send }, {
+          check: (expected = rejected) => check(expected),
+          validate: (current) => {
+            if (isTaskSettled(current)) throw new Error('This task is settled and cannot be reworked')
+            if (!state.currentIssueId) throw new Error('This task has no issue to rework')
+          },
+          prompt: () => issueReworkPrompt(state.projectPath, state.currentIssueId!, [{
+            id: '', taskId, file: '', side: 'additions', lineNumber: 0, body: message, createdAt: 0, sentAt: null
+          }])
+        })
+        recordSystemEvent(taskId, `You:\n${message}`)
+        return
+      }
       if (task.status === 'running') {
         if (!agent.supportsSteering) throw new Error('This agent cannot accept input while running. Stop it before sending a follow-up.')
         if (!task.sessionId) throw new Error('This task does not have an agent session yet')
