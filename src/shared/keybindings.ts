@@ -5,7 +5,7 @@
  * what makes one stored binding correct for both.
  */
 
-export type ShortcutId = 'toggleSidebar' | 'focusTaskComposer' | 'cycleTaskStyle'
+export type ShortcutId = 'toggleSidebar' | 'focusTaskComposer' | 'cycleTaskStyle' | 'cycleReviewPolicy' | 'cycleThinking'
 
 export interface ShortcutDefinition {
   id: ShortcutId
@@ -32,6 +32,18 @@ export const SHORTCUTS: ShortcutDefinition[] = [
     label: 'Cycle task style',
     hint: 'Switches the composer between Work and Quick.',
     defaultAccelerator: 'Mod+Shift+M'
+  },
+  {
+    id: 'cycleReviewPolicy',
+    label: 'Cycle review policy',
+    hint: 'Switches the composer between Review each step and Run unattended.',
+    defaultAccelerator: 'Mod+Shift+I'
+  },
+  {
+    id: 'cycleThinking',
+    label: 'Cycle thinking',
+    hint: 'Advances the composer thinking level, wrapping back to the first at the maximum.',
+    defaultAccelerator: 'Mod+Shift+T'
   }
 ]
 

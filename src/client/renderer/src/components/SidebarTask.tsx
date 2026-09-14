@@ -224,6 +224,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
               </span>
               <span className="mt-1 flex min-w-0 items-center gap-2">
                 <TaskStyleBadge style={taskStyle(task)} />
+                {task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 items-center gap-1 text-[10px] text-warn" title="Runs through issue reviews automatically"><Icon icon="moon-star" size={12} aria-hidden="true" />Unattended</span>}
                 <span className="min-w-0 truncate font-mono text-[10px] text-dim/65">{task.branchName ?? task.agentLabel}</span>
               </span>
             </>

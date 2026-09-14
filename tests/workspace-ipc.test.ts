@@ -15,7 +15,8 @@ import { useComposerPreferences } from '../src/client/renderer/src/state/compose
 const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
 const composer: ComposerPreferences = {
   agentId: 'codex', modelsByAgent: { codex: 'work-model', opencode: 'provider/model' },
-  reasoningByAgentModel: { '["codex","work-model"]': 'high', '["opencode","provider/model"]': 'low' }
+  reasoningByAgentModel: { '["codex","work-model"]': 'high', '["opencode","provider/model"]': 'low' },
+  reviewPolicy: 'review_at_task_end'
 }
 let store: Store
 let database: string
@@ -59,7 +60,7 @@ test('independent settings and composer choices survive selection, rename and SQ
     memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://localhost:1234/v1',
     overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'work.png',
     rebaseMode: 'agent', confirmRebase: false, caffeineMode: true,
-    keybindings: { toggleSidebar: 'Mod+Shift+B', focusTaskComposer: 'Mod+Shift+N', cycleTaskStyle: 'Mod+Shift+M' }
+    keybindings: { toggleSidebar: 'Mod+Shift+B', focusTaskComposer: 'Mod+Shift+N', cycleTaskStyle: 'Mod+Shift+M', cycleReviewPolicy: 'Mod+Shift+I', cycleThinking: 'Mod+Shift+T' }
   }
   call('settings:set', { workspaceId: work.id, patch })
   call('workspaces:preferences:set', { workspaceId: work.id, patch: { composer } })

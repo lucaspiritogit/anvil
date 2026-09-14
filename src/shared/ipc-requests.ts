@@ -1,4 +1,4 @@
-import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle } from './types'
+import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskReviewPolicy } from './types'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
 export interface IpcRequests {
@@ -45,7 +45,7 @@ export interface IpcRequests {
   'tasks:events-page': TaskEventsRequest
   'tasks:diff': string
   'tasks:issue-diff': { taskId: string; issueId: string }
-  'tasks:start': { style?: TaskStyle; parentTaskId?: string; workspaceId?: string; projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
+  'tasks:start': { style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; parentTaskId?: string; workspaceId?: string; projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
   'tasks:steer': { taskId: string; message: string }
   'tasks:compact': string
   'tasks:stack': { taskId: string; parentTaskId: string }

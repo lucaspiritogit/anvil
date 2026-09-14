@@ -30,6 +30,7 @@ import { registerTaskEvents } from '../src/server/tasks/events'
 import { registerTaskExecution } from '../src/server/tasks/task-execution'
 import { titleFor } from '../src/server/tasks/task-title'
 import { withTaskOperation } from '../src/server/tasks/operations'
+import { callIssueTool } from '../src/server/issue-tools/server'
 import { Store } from '../src/server/store'
 import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent } from '../src/shared/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome, shell, dialog } from './issue-tracker-doubles'
@@ -126,6 +127,89 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
     get credentialRefreshes() { return credentialRefreshes }
   }
 }
+
+test('runs unattended issue reviews and stops at final task review', async () => {
+  const { store, trackers, events, project, agentProcesses, call, tick } = setupIpc()
+  const task: Task = await call('tasks:start', {
+    projectId: project.id,
+    agentId: 'codex',
+    prompt: 'Complete this task unattended',
+    reviewPolicy: 'review_at_task_end'
+  })
+  await tick()
+  const issue = {
+    key: 'first', title: 'First change', description: 'Make the first change', labels: [],
+    priority: 'medium' as const, dependencies: [], checklist: ['Verify change'], validation: 'Run focused test'
+  }
+  agentProcesses.plan(task.id, [issue, { ...issue, key: 'second', title: 'Second change', dependencies: ['first'] }])
+  await tick()
+
+  const firstIssueId = store.getTaskExecution(task.id)!.currentIssueId!
+  callIssueTool(store, task.id, task.workspaceId, 'anvil_submit_review', {
+    id: firstIssueId,
+    checklist: [true],
+    evidence: 'Focused test passed'
+  })
+  agentProcesses.finishTurn(task.id, 'First change ready for review')
+  await tick()
+
+  expect(trackers.get(task.id)!.items.find((item) => item.id === firstIssueId)?.status).toBe('complete')
+  expect(store.getTaskExecution(task.id)).toMatchObject({ phase: 'working' })
+  const secondIssueId = store.getTaskExecution(task.id)!.currentIssueId!
+  expect(secondIssueId).not.toBe(firstIssueId)
+  expect(agentProcesses.isRunning(task.id)).toBe(true)
+
+  callIssueTool(store, task.id, task.workspaceId, 'anvil_submit_review', {
+    id: secondIssueId,
+    checklist: [true],
+    evidence: 'Focused test passed'
+  })
+  agentProcesses.finishTurn(task.id, 'Second change ready for review')
+  await tick()
+
+  expect(trackers.get(task.id)!.items.find((item) => item.id === secondIssueId)?.status).toBe('complete')
+  expect(store.getTaskExecution(task.id)?.phase).toBe('complete')
+  expect(store.getTask(task.id)).toMatchObject({
+    reviewPolicy: 'review_at_task_end',
+    status: 'succeeded',
+    deliveryStatus: 'reviewable'
+  })
+  expect(events.filter((event) => event.text.includes('Unattended review policy accepted issue'))).toHaveLength(2)
+
+  const commentedTask: Task = await call('tasks:start', {
+    projectId: project.id,
+    agentId: 'codex',
+    prompt: 'Pause unattended work when comments exist',
+    reviewPolicy: 'review_at_task_end'
+  })
+  await tick()
+  agentProcesses.plan(commentedTask.id, [issue])
+  await tick()
+  const commentedIssueId = store.getTaskExecution(commentedTask.id)!.currentIssueId!
+  callIssueTool(store, commentedTask.id, commentedTask.workspaceId, 'anvil_submit_review', {
+    id: commentedIssueId,
+    checklist: [true],
+    evidence: 'Focused test passed'
+  })
+  store.addComment({
+    id: randomUUID(),
+    taskId: commentedTask.id,
+    file: 'src/change.ts',
+    side: 'additions',
+    lineNumber: 1,
+    body: 'Review this before continuing',
+    createdAt: Date.now(),
+    sentAt: null
+  })
+  agentProcesses.finishTurn(commentedTask.id, 'Commented change ready for review')
+  await tick()
+
+  expect(store.getTaskExecution(commentedTask.id)).toMatchObject({
+    phase: 'reviewing',
+    currentIssueId: commentedIssueId
+  })
+  expect(trackers.get(commentedTask.id)!.items.find((item) => item.id === commentedIssueId)?.status).toBe('review')
+})
 
 test('persists task ownership before preparation and retains it when selection changes', async () => {
   let release!: () => void
@@ -224,7 +308,7 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
       await invalidRequest('comments:add', { ...comment, ...patch })
     }
     for (const patch of [{ defaultAgentId: null }, { rebaseMode: 'shell' }, { confirmRebase: 1 }, { keybindings: [] }, { keybindings: { toggleSidebar: 'x' } }, { unexpected: true }]) await invalidRequest('settings:set', patch)
-    for (const patch of [{ prompt: ' ' }, { prompt: 'x'.repeat(100_001) }, { style: 'chat' }, { model: [] }, { reasoningEffort: 42 }]) await invalidRequest('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Task', ...patch })
+    for (const patch of [{ prompt: ' ' }, { prompt: 'x'.repeat(100_001) }, { style: 'chat' }, { reviewPolicy: 'always' }, { model: [] }, { reasoningEffort: 42 }]) await invalidRequest('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Task', ...patch })
     await invalidRequest('tasks:issues', { taskId: 'task', projectPath: '/outside', parentIssueId: 'other' })
     await invalidRequest('tasks:steer', { taskId: 'task', message: ' ' })
     for (const steps of [null, [], [null], [{ sha: 'a'.repeat(40), action: 'exec', message: 'rm' }], [{ sha: '--exec', action: 'pick', message: 'message' }]]) await invalidRequest('tasks:rebase', { taskId: 'task', steps })

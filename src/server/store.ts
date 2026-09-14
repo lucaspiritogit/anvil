@@ -108,6 +108,7 @@ function toTask(row: TaskRow): Task {
   return {
     id: row.id,
     style: row.style,
+    reviewPolicy: row.reviewPolicy,
     projectId: row.projectId,
     workspaceId: row.workspaceId,
     agentId: row.agentId,
@@ -198,6 +199,7 @@ function toTaskEvent(row: TaskEventRow): TaskEvent {
 function toTaskRow(task: Task): typeof tasks.$inferInsert {
   return {
     ...withoutPullRequest(task),
+    reviewPolicy: task.reviewPolicy ?? 'review_each_issue',
     parentTaskId: task.parentTaskId ?? null,
     expectedFiles: task.expectedFiles ?? null,
     restackState: task.restackState ?? null,
@@ -414,7 +416,8 @@ export class Store {
     const stringRecord = (value: unknown): boolean => Boolean(value && typeof value === 'object' &&
       !Array.isArray(value) && Object.values(value).every((entry) => typeof entry === 'string'))
     if (!composer || typeof composer.agentId !== 'string' || !stringRecord(composer.modelsByAgent) ||
-        !stringRecord(composer.reasoningByAgentModel)) {
+        !stringRecord(composer.reasoningByAgentModel) || composer.reviewPolicy !== undefined &&
+        !['review_each_issue', 'review_at_task_end'].includes(composer.reviewPolicy)) {
       throw new Error('Invalid composer preferences')
     }
   }
@@ -581,7 +584,10 @@ export class Store {
 
   addTask(task: Omit<Task, 'workspaceId'> & { workspaceId?: string }): Task {
     const ownedTask: Task = {
-      ...task, style: task.style ?? 'work', workspaceId: task.workspaceId ?? this.getActiveWorkspace().id,
+      ...task,
+      style: task.style ?? 'work',
+      reviewPolicy: task.reviewPolicy ?? 'review_each_issue',
+      workspaceId: task.workspaceId ?? this.getActiveWorkspace().id,
       ...advanceTaskWorkingTime({ workingTimeMs: task.workingTimeMs }, isTaskWorking(task), Date.now())
     }
     if (ownedTask.workingStartedAt === undefined) delete ownedTask.workingStartedAt

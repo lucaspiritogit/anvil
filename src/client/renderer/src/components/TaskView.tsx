@@ -641,6 +641,7 @@ export function TaskView({ task }: Props): JSX.Element {
           <div className="flex min-w-0 flex-1 items-center gap-2 @max-[760px]:w-full @max-[760px]:flex-none">
             <h1 className="min-w-0 truncate text-base font-medium leading-snug" title={task.title}>{task.title}</h1>
             <TaskStyleBadge style={style} />
+            {work && task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warn/30 bg-warn/10 px-2.5 py-0.5 text-[11px] font-medium leading-relaxed tracking-wide text-warn"><Icon icon="moon-star" size={12} aria-hidden="true" />Unattended</span>}
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
             {issue ? <>

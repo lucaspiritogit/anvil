@@ -182,6 +182,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       const model = input.model || agent.defaultModel
       const style = input.style ?? 'work'
       if (style !== 'work' && input.parentTaskId) throw new Error('Only Work tasks can be stacked')
+      if (style !== 'work' && input.reviewPolicy === 'review_at_task_end') throw new Error('Only Work tasks can run unattended')
       if (style === 'quick' && store.getTasks(workspaceId).some((task) => task.projectId === project.id && taskStyle(task) === 'quick' && task.status === 'running')) {
         throw new Error('Wait for the active Quick task in this project to finish')
       }
@@ -189,6 +190,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       const task: Task = {
         id: randomUUID(),
         style,
+        reviewPolicy: style === 'work' ? input.reviewPolicy ?? 'review_each_issue' : 'review_each_issue',
         workspaceId,
         projectId: project.id,
         agentId: agent.id,

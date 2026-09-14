@@ -18,6 +18,7 @@ import { TaskStyleBadge } from './TaskStyleBadge'
 import { DEFAULT_KEYBINDINGS, acceleratorKeycaps, formatAccelerator } from '@shared/keybindings'
 import { IS_MAC } from '../keys'
 import { TASK_STYLES, TASK_STYLE_LABELS } from '@shared/task-style'
+import type { TaskReviewPolicy } from '@shared/types'
 
 const compactSelect = 'min-w-0 field-sizing-content appearance-none bg-transparent py-1.5 pl-2 pr-6 text-sm text-dim outline-none hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45'
 const styleSelect = compactSelect.replace('pl-2 pr-6', 'pl-1 pr-1')
@@ -40,10 +41,12 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const style = useStore((state) => state.taskComposerStyle)
   const setStyle = useStore((state) => state.setTaskComposerStyle)
   const styleShortcut = useStore((state) => state.settings?.keybindings.cycleTaskStyle) ?? DEFAULT_KEYBINDINGS.cycleTaskStyle
+  const reviewPolicyShortcut = useStore((state) => state.settings?.keybindings.cycleReviewPolicy) ?? DEFAULT_KEYBINDINGS.cycleReviewPolicy
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const composerRef = useRef<HTMLFormElement>(null)
   const keyboardHelpId = useId()
   const preferences = useComposerPreferences()
+  const reviewPolicy = preferences.reviewPolicy ?? 'review_each_issue'
   const agent = agents.find((candidate) => candidate.id === preferences.agentId)
   const agentId = agent?.id ?? ''
   const model = preferences.modelsByAgent[agentId] ?? ''
@@ -91,6 +94,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     try {
       await startTask({
         style,
+        reviewPolicy: style === 'work' ? reviewPolicy : 'review_each_issue',
         agentId,
         parentTaskId: style === 'work' ? parentTaskId || undefined : undefined,
         prompt: prompt.trim(),
@@ -115,9 +119,10 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
 
   return (
     <div>
-      {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Choose the model again to retry saving.</p>}
+      {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
       {projectId && <ProjectBranchSelector key={projectId} projectId={projectId} disabled={busy} onSwitching={setSwitchingBranch} />}
       {style === 'quick' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><TaskStyleBadge style="quick" /> Runs without a plan or worktree in the current checkout.</p>}
+      {style === 'work' && reviewPolicy === 'review_at_task_end' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><Icon icon="moon-star" size={14} /> Runs through issue reviews automatically. Final merge and push still wait for you.</p>}
       {style === 'work' && parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
         <Icon icon="layers" size={14} />
         Stack on task
@@ -208,6 +213,19 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
               onChange={preferences.setSelection}
             />
             <ComposerOverflowOptions containerRef={composerRef}>
+              {style === 'work' && <label className="relative flex items-center" title={`${reviewPolicy === 'review_at_task_end' ? 'Run through issue reviews and stop at the final task review' : 'Pause after every issue for review'} · ${formatAccelerator(reviewPolicyShortcut, IS_MAC)}`}>
+                <Icon icon={reviewPolicy === 'review_at_task_end' ? 'moon-star' : 'table-of-contents'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
+                <select
+                  aria-label="Review policy"
+                  className={cn(compactSelect, 'pl-8')}
+                  value={reviewPolicy}
+                  onChange={(event) => preferences.setReviewPolicy(event.target.value as TaskReviewPolicy)}
+                >
+                  <option className="bg-raised text-fg" value="review_each_issue">Review each step</option>
+                  <option className="bg-raised text-fg" value="review_at_task_end">Run unattended</option>
+                </select>
+                <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
+              </label>}
               <label className="relative flex items-center" title="Reasoning effort">
                 <Icon icon="brain" size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
                 <select

@@ -62,7 +62,7 @@ test('creates one Default workspace and starts new profiles with independent app
     fontSize: 18, overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'test.png',
     defaultAgentId: 'codex', defaultModel: 'custom-model', rebaseMode: 'agent', confirmRebase: false,
     caffeineMode: true, allowOtherDevices: true, tailscaleHttps: true,
-    keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K', cycleTaskStyle: 'Mod+Shift+M' }
+    keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K', cycleTaskStyle: 'Mod+Shift+M', cycleReviewPolicy: 'Mod+Shift+I', cycleThinking: 'Mod+Shift+T' }
   }
   expect(Object.keys(custom).sort()).toEqual(Object.keys(defaults).sort())
   store.setSettings(custom)

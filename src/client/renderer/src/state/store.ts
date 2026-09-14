@@ -19,7 +19,7 @@ import type {
   TaskMergeAndPushPreview,
   TaskMergePreview,
   TaskPushPreview,
-  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle
+  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskReviewPolicy
 } from '@shared/types'
 import { nextTaskStyle } from '../../../../shared/task-style'
 
@@ -166,7 +166,7 @@ interface AnvilState {
   sendComments: (taskId: string) => Promise<void>
 
   loadAgentModels: (agentId: string) => Promise<void>
-  startTask: (input: { style?: TaskStyle; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
+  startTask: (input: { style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
   steerTask: (taskId: string, message: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string) => Promise<void>
@@ -431,7 +431,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  startTask: async ({ style, parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
+  startTask: async ({ style, reviewPolicy, parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
     if (get().workspaceSwitching || !get().ready) throw new Error('Workspace is still loading')
     const generation = workspaceGeneration
     const projectId = get().activeProjectId
@@ -439,7 +439,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     const view = get().view
     const task = await window.anvil.tasks.start({
       workspaceId: get().activeWorkspaceId ?? undefined,
-      projectId, style, parentTaskId, agentId, prompt, model,
+      projectId, style, reviewPolicy, parentTaskId, agentId, prompt, model,
       ...(images?.length ? { images } : {}),
       ...(fileReferences?.length ? { fileReferences } : {}),
       ...(reasoningEffort !== undefined ? { reasoningEffort } : {})

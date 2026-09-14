@@ -260,6 +260,30 @@ export function registerTaskExecution(
 
   const finishing = new Set<string>()
   const cancelledFinishes = new Set<string>()
+  const acceptIssueReview = async (taskId: string, reviewer: 'developer' | 'unattended', startFollowingIssue: 'now' | 'defer'): Promise<TaskExecutionState> => {
+    const issueId = store.getTaskExecution(taskId)?.currentIssueId
+    const state = issues.approveIssue(taskId)
+    notify(taskId)
+    recordSystemEvent(taskId, reviewer === 'developer'
+      ? `Developer approved issue ${issueId}.`
+      : `Unattended review policy accepted issue ${issueId}.`)
+    if (state.phase === 'complete') {
+      const task = store.getTask(taskId)
+      const completedDeliveryStatus = task?.baseCommit && task.branchName
+        ? task.filesChanged > 0 ? 'reviewable' as const : 'no_changes' as const
+        : undefined
+      await finishTask({ taskId, code: 0, cancelled: false }, {
+        finalize: false,
+        waitForMemory: false,
+        ...(completedDeliveryStatus ? { completedDeliveryStatus } : {})
+      })
+    } else if (startFollowingIssue === 'now') {
+      await startNextTurn(taskId)
+    } else {
+      setImmediate(() => { void startNextTurn(taskId) })
+    }
+    return store.getTaskExecution(taskId) ?? state
+  }
   const finishTaskTurn = async (info: ExitInfo): Promise<void> => {
     const state = store.getTaskExecution(info.taskId)
     const initialTask = store.getTask(info.taskId)
@@ -360,7 +384,11 @@ export function registerTaskExecution(
       }
       const next = store.getTaskExecution(info.taskId)
       if (next?.phase === 'reviewing') {
-        // The gate: never hop to the next queued issue before developer review.
+        const task = store.getTask(info.taskId)
+        const pendingComments = store.getComments(info.taskId).some((comment) => comment.sentAt === null)
+        if (task?.reviewPolicy === 'review_at_task_end' && !pendingComments) {
+          await acceptIssueReview(info.taskId, 'unattended', 'defer')
+        }
         return
       }
       if (next?.phase === 'complete') {
@@ -419,24 +447,7 @@ export function registerTaskExecution(
     requireStoppedTurn(taskId)
     if (store.getTask(taskId)?.restackState) throw new Error('Finish restacking this task before reviewing an issue')
     if (!issueReviewReady(taskId)) throw new Error('This task is not ready for issue review')
-    const issueId = store.getTaskExecution(taskId)?.currentIssueId
-    const state = issues.approveIssue(taskId)
-    notify(taskId)
-    recordSystemEvent(taskId, `Developer approved issue ${issueId}.`)
-    if (state.phase === 'complete') {
-      const task = store.getTask(taskId)
-      const completedDeliveryStatus = task?.baseCommit && task.branchName
-        ? task.filesChanged > 0 ? 'reviewable' as const : 'no_changes' as const
-        : undefined
-      await finishTask({ taskId, code: 0, cancelled: false }, {
-        finalize: false,
-        waitForMemory: false,
-        ...(completedDeliveryStatus ? { completedDeliveryStatus } : {})
-      })
-    } else {
-      await startNextTurn(taskId)
-    }
-    return store.getTaskExecution(taskId) ?? state
+    return acceptIssueReview(taskId, 'developer', 'now')
   }
 
   const rejectIssue: TaskExecution['rejectIssue'] = (taskId) => {

@@ -375,6 +375,7 @@ test('cycles the composer between Work and Quick with its configured shortcut', 
   await state().openTask('a')
   const focusRequest = state().taskComposerFocusRequest
   expect(DEFAULT_KEYBINDINGS.cycleTaskStyle).toBe('Mod+Shift+M')
+  expect(DEFAULT_KEYBINDINGS.cycleReviewPolicy).toBe('Mod+Shift+I')
   state().cycleTaskComposerStyle()
   expect(state()).toMatchObject({ taskComposerStyle: 'quick', view: { kind: 'home' }, taskComposerFocusRequest: focusRequest + 1 })
   state().cycleTaskComposerStyle()

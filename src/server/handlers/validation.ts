@@ -100,7 +100,7 @@ const settingsPatch = object<IpcRequests['settings:set']['patch']>({
   rebaseMode: optional(oneOf('manual', 'agent')), confirmRebase: optional(boolean), caffeineMode: optional(boolean),
   allowOtherDevices: optional(boolean),
   tailscaleHttps: optional(boolean),
-  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false), cycleTaskStyle: text(128, false) }))
+  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false), cycleTaskStyle: text(128, false), cycleReviewPolicy: text(128, false), cycleThinking: text(128, false) }))
 })
 
 const workspaceId = text(36, true, /^(default|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/)
@@ -109,7 +109,12 @@ const stringRecord: Check<Record<string, string>> = (value, field) => {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length > 2000) invalid(field, 'must be a string record')
   return Object.fromEntries(Object.entries(value).map(([key, entry]) => [text(1024, false)(key, field), text(1024, false)(entry, field)]))
 }
-const composer = object({ agentId: text(128, false), modelsByAgent: stringRecord, reasoningByAgentModel: stringRecord })
+const composer = object({
+  agentId: text(128, false),
+  modelsByAgent: stringRecord,
+  reasoningByAgentModel: stringRecord,
+  reviewPolicy: optional(oneOf('review_each_issue', 'review_at_task_end'))
+})
 
 const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'app:caffeine': none,
@@ -176,7 +181,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:diff': id,
   'tasks:issue-diff': object({ taskId: id, issueId: id }),
   'tasks:start': (value, field) => {
-    const input = object<IpcRequests['tasks:start']>({ style: optional(oneOf('work', 'quick')), parentTaskId: optional(id), workspaceId: optional(id), projectId: id, agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
+    const input = object<IpcRequests['tasks:start']>({ style: optional(oneOf('work', 'quick')), reviewPolicy: optional(oneOf('review_each_issue', 'review_at_task_end')), parentTaskId: optional(id), workspaceId: optional(id), projectId: id, agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
     if (!hasTaskContent(input.prompt, input.images)) invalid(field, 'requires a prompt or an image')
     return input
   },

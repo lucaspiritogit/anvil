@@ -43,6 +43,7 @@ export const TASK_IMAGE_LIMITS = {
 
 export type TaskStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type TaskStyle = 'work' | 'quick'
+export type TaskReviewPolicy = 'review_each_issue' | 'review_at_task_end'
 
 export type DeliveryStatus =
   | 'preparing'
@@ -293,6 +294,7 @@ export interface ComposerPreferences {
   agentId: string
   modelsByAgent: Record<string, string>
   reasoningByAgentModel: Record<string, string>
+  reviewPolicy?: TaskReviewPolicy
 }
 
 export interface WorkspaceSnapshot {
@@ -348,6 +350,7 @@ export interface TaskStackTarget {
 
 export interface Task {
   style?: TaskStyle
+  reviewPolicy?: TaskReviewPolicy
   parentTaskId?: string
   expectedFiles?: string[]
   restackState?: 'pending' | 'conflict'

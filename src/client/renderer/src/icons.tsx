@@ -23,12 +23,14 @@ import layers from './icons/layers.svg?raw'
 import loader from './icons/loader.svg?raw'
 import merge from './icons/merge.svg?raw'
 import monitor from './icons/monitor.svg?raw'
+import moonStar from './icons/moon-star.svg?raw'
 import pencil from './icons/pencil.svg?raw'
 import rabbit from './icons/rabbit.svg?raw'
 import search from './icons/search.svg?raw'
 import settings from './icons/settings.svg?raw'
 import sparkles from './icons/sparkles.svg?raw'
 import terminal from './icons/terminal.svg?raw'
+import tableOfContents from './icons/table-of-contents.svg?raw'
 import waypoints from './icons/waypoints.svg?raw'
 import x from './icons/x.svg?raw'
 
@@ -69,12 +71,14 @@ const artwork = {
   loader: body(loader),
   merge: body(merge),
   monitor: body(monitor),
+  'moon-star': body(moonStar),
   pencil: body(pencil),
   rabbit: body(rabbit),
   search: body(search),
   settings: body(settings),
   sparkles: body(sparkles),
   terminal: body(terminal),
+  'table-of-contents': body(tableOfContents),
   waypoints: body(waypoints),
   x: body(x)
 }

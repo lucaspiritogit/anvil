@@ -11,6 +11,7 @@ import { CommandPalette } from './components/CommandPalette'
 import { matchesAccelerator, isTerminalShortcut } from './keys'
 import { cn } from './ui'
 import { useStore } from './state/store'
+import { useComposerPreferences } from './state/composer-preferences'
 import { DEFAULT_KEYBINDINGS, SHORTCUTS } from '@shared/keybindings'
 import type { ShortcutId } from '@shared/keybindings'
 
@@ -82,6 +83,30 @@ export function App(): JSX.Element {
     setTerminalCreated(true)
     setTerminalOpen(true)
   }, [projectId])
+
+  const cycleThinking = useCallback((): void => {
+    const preferences = useComposerPreferences.getState()
+    const agents = useStore.getState().agents
+    const agentId = preferences.agentId || agents.find((agent) => agent.id === 'codex')?.id || agents[0]?.id || ''
+    const model = preferences.modelsByAgent[agentId]?.trim() ?? ''
+    const capabilities = useStore.getState().modelsByAgent[agentId]?.reasoningByModel?.[model]
+    const options = capabilities?.options ?? []
+    if (!options.length) return
+    const saved = preferences.reasoningByAgentModel[JSON.stringify([agentId, model])]
+    const current = options.find((option) => option.id === saved)?.id
+      ?? options.find((option) => option.id === capabilities?.default)?.id
+      ?? options[0].id
+    const index = options.findIndex((option) => option.id === current)
+    const next = options[(index + 1) % options.length]
+    if (next) preferences.setReasoningEffort(agentId, model, next.id)
+  }, [])
+
+  const cycleReviewPolicy = useCallback((): void => {
+    const preferences = useComposerPreferences.getState()
+    preferences.setReviewPolicy(preferences.reviewPolicy === 'review_at_task_end'
+      ? 'review_each_issue'
+      : 'review_at_task_end')
+  }, [])
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 700px)')
@@ -180,7 +205,13 @@ export function App(): JSX.Element {
 
   // Capture fields stop propagation so recording a shortcut never invokes it.
   useEffect(() => {
-    const actions: Record<ShortcutId, () => void> = { toggleSidebar: toggleNavigation, focusTaskComposer, cycleTaskStyle: cycleTaskComposerStyle }
+    const actions: Record<ShortcutId, () => void> = {
+      toggleSidebar: toggleNavigation,
+      focusTaskComposer,
+      cycleTaskStyle: cycleTaskComposerStyle,
+      cycleReviewPolicy,
+      cycleThinking
+    }
     const onKey = (event: KeyboardEvent): void => {
       // Auto-repeat fires while a chord is held down; a shortcut is an action
       // per press, so only the first event of a hold counts.
@@ -221,7 +252,7 @@ export function App(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keybindings, toggleNavigation, focusTaskComposer, cycleTaskComposerStyle, settingsOpen, setSettingsOpen, projectId,
+  }, [keybindings, toggleNavigation, focusTaskComposer, cycleTaskComposerStyle, cycleReviewPolicy, cycleThinking, settingsOpen, setSettingsOpen, projectId,
     mobileNavigation, mobileNavigationOpen, closeMobileNavigation, commandPaletteOpen, terminalOpen, openTerminal])
 
   useEffect(() => {

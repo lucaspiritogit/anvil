@@ -1,6 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm'
 import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH } from '../../shared/types'
-import type { ComposerPreferences } from '../../shared/types'
+import type { ComposerPreferences, TaskReviewPolicy } from '../../shared/types'
 import type { Issue } from '../../shared/valence'
 import { type AnySQLiteColumn, check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
@@ -27,6 +27,7 @@ function oneOf(column: SQLiteColumn, values: readonly string[]): SQL {
 
 const TASK_STATUSES: TaskStatus[] = ['pending', 'running', 'succeeded', 'failed', 'cancelled']
 const TASK_STYLES: TaskStyle[] = ['work', 'quick']
+const TASK_REVIEW_POLICIES: TaskReviewPolicy[] = ['review_each_issue', 'review_at_task_end']
 const DELIVERY_STATUSES: DeliveryStatus[] = [
   'preparing',
   'working',
@@ -92,6 +93,7 @@ export const tasks = sqliteTable(
   {
     id: text('id').primaryKey(),
     style: text('style').$type<TaskStyle>().notNull().default('work'),
+    reviewPolicy: text('review_policy').$type<TaskReviewPolicy>().notNull().default('review_each_issue'),
     workspaceId: text('workspace_id').notNull().default(DEFAULT_WORKSPACE_ID)
       .references(() => workspaces.id, { onDelete: 'restrict' }),
     projectId: text('project_id')
@@ -149,6 +151,7 @@ export const tasks = sqliteTable(
     index('tasks_parent_idx').on(table.parentTaskId),
     check('tasks_restack_state_valid', oneOf(table.restackState, ['pending', 'conflict'])),
     check('tasks_style_valid', oneOf(table.style, TASK_STYLES)),
+    check('tasks_review_policy_valid', oneOf(table.reviewPolicy, TASK_REVIEW_POLICIES)),
     check('tasks_status_valid', oneOf(table.status, TASK_STATUSES)),
     check('tasks_delivery_status_valid', oneOf(table.deliveryStatus, DELIVERY_STATUSES))
   ]
