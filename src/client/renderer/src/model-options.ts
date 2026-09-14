@@ -16,6 +16,27 @@ const providerLabels: Record<string, string> = {
   'opencode-go': 'OpenCode Go', codex: 'Codex'
 }
 
+export function humanizeModelName(id: string): string {
+  const slug = id.split('/').at(-1) ?? id
+  return slug
+    .replace(/[^a-z0-9.]+/gi, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.toLowerCase() === 'gpt' ? 'GPT' : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
+export function normalizeModelSearch(value: string): string {
+  return value.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+export function modelMatchesQuery(option: ModelOption, query: string): boolean {
+  const normalizedQuery = normalizeModelSearch(query)
+  if (!normalizedQuery) return true
+  const searchable = [option.name, option.id, option.company, option.providerId, option.providerName].join(' ')
+  return normalizeModelSearch(searchable).includes(normalizedQuery)
+}
+
 function modelCompany(name: string, segments: string[]): string {
   if (/^(gpt-|chatgpt-|codex-|o[134](?:-|$))/.test(name)) return 'OpenAI'
   if (name.startsWith('claude-')) return 'Anthropic'
@@ -39,14 +60,8 @@ export function describeModel(id: string, agentId: string): ModelOption {
   const name = segments.at(-1) ?? id
   const normalized = name.toLowerCase()
   const providerId = id ? segments.length > 1 ? segments[0] : agentId : ''
-  const versionedName = normalized.startsWith('claude-') ? name.replace(/-(\d+)-(\d+)(?=-|$)/, '-$1.$2') : name
-  const displayName = /^(gpt-|chatgpt-|claude-|gemini-)/.test(normalized)
-    ? versionedName.split('-').map((part) => part.toLowerCase() === 'gpt' ? 'GPT'
-      : part.toLowerCase() === 'chatgpt' ? 'ChatGPT'
-        : part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
-    : name
   return {
-    id, name: displayName, company: modelCompany(normalized, segments),
+    id, name: humanizeModelName(id), company: modelCompany(normalized, segments),
     providerId, providerName: providerLabels[providerId] ?? providerId
   }
 }
