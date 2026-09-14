@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { expect } from 'vitest'
@@ -26,7 +26,7 @@ export async function openCodeWorkspaceFixture(): Promise<{
   entries(workspace: WorkspaceExecutionContext): Promise<OpenCodeWorkspaceEntry[]>
   assertGlobalUnchanged(): Promise<void>
 }> {
-  const directory = await mkdtemp(join(tmpdir(), 'anvil-opencode-workspaces-'))
+  const directory = await realpath(await mkdtemp(join(tmpdir(), 'anvil-opencode-workspaces-')))
   onTestCleanup(() => rm(directory, { recursive: true, force: true }))
   const project = join(directory, 'project')
   await mkdir(join(project, '.git'), { recursive: true })

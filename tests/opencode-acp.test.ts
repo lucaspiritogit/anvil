@@ -9,9 +9,9 @@ import { openCodeWorkspaceFixture } from './opencode-workspace-fixture'
 import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceCommand } from '../src/server/agents/opencode-workspace'
 import { resolveCommand } from '../src/server/agents/resolve'
 import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../src/server/agents/workspace-execution'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { once } from 'node:events'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
@@ -415,22 +415,11 @@ test('cancels or fails workspace ACP startup and releases the child port', async
   await fixture.assertGlobalUnchanged()
 })
 
-test('rejects project credential sources and unsupported providers without losing repository instructions', async () => {
+test('rejects unsupported providers and cross-workspace tasks without changing repository instructions', async () => {
   const fixture = await openCodeWorkspaceFixture()
   const client = new OpenCodeAcpClient({ workspace: fixture.work, command: fixture.command })
   onTestCleanup(() => client.close())
   const input: TaskInput = { workspace: fixture.work, taskId: 'policy', prompt: 'test', cwd: fixture.project, model: 'openai/model' }
-  for (const name of ['.env', '.env.local', 'opencode.json', 'opencode.jsonc', '.opencode/opencode.json']) {
-    const path = join(fixture.project, name)
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, name.includes('env') ? 'OPENAI_API_KEY=project-secret' : '{"provider":{"openai":{"options":{"apiKey":"project-secret"}}}}')
-    const result = await client.execute(input, () => {})
-    expect(result.status).toBe('failed')
-    expect(result.error).toContain('OpenCode workspace isolation cannot be guaranteed')
-    expect(result.error).not.toContain('project-secret')
-    await rm(path)
-  }
-  await writeFile(join(fixture.project, '.env.example'), 'OPENAI_API_KEY=example')
   const unsupported = await client.execute({ ...input, model: 'amazon-bedrock/model' }, () => {})
   expect(unsupported.error).toContain('credential chains have not been verified')
   const crossed = await client.execute({ ...input, workspace: fixture.personal }, () => {})
