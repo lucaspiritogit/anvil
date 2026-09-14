@@ -1,5 +1,6 @@
 import type { JSX, KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import fuzzysort from 'fuzzysort'
 import { Icon, type IconName } from '../icons'
 import { useAgentModels } from '../state/agent-models'
 import { useComposerPreferences } from '../state/composer-preferences'
@@ -23,16 +24,30 @@ interface Choice {
   description?: string
 }
 
+interface Command {
+  id: string
+  icon: IconName
+  label: string
+  description?: string
+  disabled?: boolean
+  unavailable?: boolean
+  pressed?: boolean
+  ref?: RefObject<HTMLButtonElement | null>
+  onClick: () => void
+}
+
 const commandClass = 'flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45'
 
 export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPaletteProps): JSX.Element {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
   const modelRef = useRef<HTMLButtonElement>(null)
   const thinkingRef = useRef<HTMLButtonElement>(null)
   const projectRef = useRef<HTMLButtonElement>(null)
   const [nestedPicker, setNestedPicker] = useState<NestedPicker>(null)
-  const [activeCommand, setActiveCommand] = useState(0)
+  const [query, setQuery] = useState('')
+  const [activeCommand, setActiveCommand] = useState<string | null>('new-task')
 
   const agents = useStore((state) => state.agents)
   const projects = useStore((state) => state.projects)
@@ -56,15 +71,40 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
   const caffeineMode = caffeineSave?.status === 'pending' ? caffeineSave.value : settings?.caffeineMode ?? false
   const caffeinePending = caffeineSave?.status === 'pending'
 
+  const commands: Command[] = [
+    { id: 'new-task', icon: 'pencil', label: 'New task', onClick: () => { close(); focusTaskComposer() } },
+    { id: 'change-model', ref: modelRef, icon: 'brain-circuit', label: 'Change model',
+      description: preferences.saveError ?? undefined, disabled: !agents.length,
+      onClick: () => setNestedPicker('model') },
+    { id: 'change-thinking', ref: thinkingRef, icon: 'sparkles', label: 'Change thinking',
+      description: reasoningEffort ? reasoningOptions.find((option) => option.id === reasoningEffort)?.label : undefined,
+      onClick: () => setNestedPicker('thinking') },
+    { id: 'change-project', ref: projectRef, icon: 'folder', label: 'Change project',
+      description: activeProject?.name, onClick: () => setNestedPicker('project') },
+    { id: 'open-terminal', icon: 'terminal', label: 'Open terminal', disabled: !activeProject,
+      description: activeProject ? activeProject.name : 'No active project',
+      onClick: () => { close(); onOpenTerminal() } },
+    { id: 'toggle-caffeine', icon: 'coffee', label: 'Toggle caffeine mode', disabled: !settings,
+      unavailable: caffeinePending, pressed: caffeineMode,
+      description: caffeinePending ? `Saving ${caffeineMode ? 'on' : 'off'}…`
+        : caffeineSave?.status === 'error' ? 'Could not save · Press Enter to retry'
+          : caffeineMode ? 'On' : 'Off',
+      onClick: toggleCaffeine }
+  ]
+  const visibleCommands = rankCommands(commands, query)
+  const firstEnabledCommand = visibleCommands.find((command) => !command.disabled)
+  const selectedCommand = visibleCommands.find((command) => command.id === activeCommand && !command.disabled)
+    ?? firstEnabledCommand
+
   useLayoutEffect(() => {
     const dialog = dialogRef.current
     if (!dialog) return
     if (open) {
       restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
       dialog.showModal()
-      const firstCommand = dialog.querySelector<HTMLButtonElement>('button[data-command]:not(:disabled)')
-      setActiveCommand(Number(firstCommand?.dataset.commandIndex ?? 0))
-      firstCommand?.focus()
+      setQuery('')
+      setActiveCommand('new-task')
+      searchRef.current?.focus()
     } else if (dialog.open) {
       dialog.close()
     }
@@ -76,12 +116,13 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
   useEffect(() => {
     if (open) return
     setNestedPicker(null)
+    setQuery('')
     const previous = restoreFocusRef.current
     restoreFocusRef.current = null
     if (previous?.isConnected) previous.focus()
   }, [open])
 
-  const close = (): void => {
+  function close(): void {
     setNestedPicker(null)
     onClose()
   }
@@ -94,10 +135,10 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
     const index = event.key === 'Home' ? 0 : event.key === 'End' ? commands.length - 1
       : current < 0 ? 0 : (current + (event.key === 'ArrowDown' ? 1 : -1) + commands.length) % commands.length
     const next = commands[index]
-    if (next) setActiveCommand(Number(next.dataset.commandIndex))
+    if (next) setActiveCommand(next.dataset.commandId ?? null)
     next?.focus()
   }
-  const toggleCaffeine = (): void => {
+  function toggleCaffeine(): void {
     if (!settings || caffeinePending) return
     const value = caffeineSave?.status === 'error' ? caffeineSave.value : !caffeineMode
     void setCaffeineMode(value)
@@ -129,33 +170,34 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
         <header className="border-b border-line px-4 py-3">
           <h2 className="text-sm font-semibold">Command palette</h2>
           <p className="mt-0.5 text-[11px] text-dim">Use arrow keys to navigate · Esc to close</p>
+          <input ref={searchRef} type="search" autoFocus aria-label="Search commands" aria-controls="command-palette-commands"
+            value={query} placeholder="Search commands…"
+            onChange={(event) => {
+              const nextQuery = event.currentTarget.value
+              setQuery(nextQuery)
+              setActiveCommand(rankCommands(commands, nextQuery).find((command) => !command.disabled)?.id ?? null)
+            }}
+            onKeyDown={(event) => {
+              if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return
+              const enabled = [...dialogRef.current?.querySelectorAll<HTMLButtonElement>('button[data-command]:not(:disabled)') ?? []]
+              const next = event.key === 'ArrowDown' ? enabled[0] : enabled.at(-1)
+              if (!next) return
+              event.preventDefault()
+              setActiveCommand(next.dataset.commandId ?? null)
+              next.focus()
+            }}
+            className="mt-3 w-full border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none placeholder:text-dim focus:border-accent" />
         </header>
-        <div role="menu" aria-label="Commands" className="p-2" onKeyDown={moveCommandFocus}>
-          <CommandButton commandIndex={0} active={activeCommand === 0} onFocus={setActiveCommand}
-            icon="pencil" label="New task" onClick={() => { close(); focusTaskComposer() }} />
-          <CommandButton ref={modelRef} commandIndex={1} active={activeCommand === 1} onFocus={setActiveCommand}
-            icon="brain-circuit" label="Change model"
-            description={preferences.saveError ?? undefined} disabled={!agents.length}
-            onClick={() => setNestedPicker('model')} />
-          <CommandButton ref={thinkingRef} commandIndex={2} active={activeCommand === 2} onFocus={setActiveCommand}
-            icon="sparkles" label="Change thinking"
-            description={reasoningEffort ? reasoningOptions.find((option) => option.id === reasoningEffort)?.label : undefined}
-            onClick={() => setNestedPicker('thinking')} />
-          <CommandButton ref={projectRef} commandIndex={3} active={activeCommand === 3} onFocus={setActiveCommand}
-            icon="folder" label="Change project"
-            description={activeProject?.name} onClick={() => setNestedPicker('project')} />
-          <CommandButton commandIndex={4} active={activeCommand === 4} onFocus={setActiveCommand}
-            icon="terminal" label="Open terminal" disabled={!activeProject}
-            description={activeProject ? activeProject.name : 'No active project'}
-            onClick={() => { close(); onOpenTerminal() }} />
-          <CommandButton commandIndex={5} active={activeCommand === 5} onFocus={setActiveCommand}
-            icon="coffee" label="Toggle caffeine mode" disabled={!settings}
-            unavailable={caffeinePending}
-            pressed={caffeineMode}
-            description={caffeinePending ? `Saving ${caffeineMode ? 'on' : 'off'}…`
-              : caffeineSave?.status === 'error' ? 'Could not save · Press Enter to retry'
-                : caffeineMode ? 'On' : 'Off'}
-            onClick={toggleCaffeine} />
+        <div id="command-palette-commands">
+          {visibleCommands.length ? (
+            <div role="menu" aria-label="Commands" className="p-2" onKeyDown={moveCommandFocus}>
+              {visibleCommands.map((command) => (
+                <CommandButton key={command.id} {...command} active={selectedCommand?.id === command.id} onFocus={setActiveCommand} />
+              ))}
+            </div>
+          ) : (
+            <p role="status" className="px-3 py-6 text-center text-sm text-dim">No commands found.</p>
+          )}
         </div>
       </dialog>
 
@@ -204,22 +246,22 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
   )
 }
 
-function CommandButton({ ref, commandIndex, active, icon, label, description, disabled, unavailable, pressed, onFocus, onClick }: {
+function rankCommands(commands: Command[], query: string): Command[] {
+  if (!query.trim()) return commands
+  return fuzzysort.go(query, commands, {
+    keys: ['label', 'description'],
+    scoreFn: (result) => Math.max(result[0]?.score ?? 0, (result[1]?.score ?? 0) * 0.8)
+  }).map((result) => result.obj)
+}
+
+function CommandButton({ ref, id, active, icon, label, description, disabled, unavailable, pressed, onFocus, onClick }: Command & {
   ref?: RefObject<HTMLButtonElement | null>
-  commandIndex: number
   active: boolean
-  icon: IconName
-  label: string
-  description?: string
-  disabled?: boolean
-  unavailable?: boolean
-  pressed?: boolean
-  onFocus: (index: number) => void
-  onClick: () => void
+  onFocus: (id: string) => void
 }): JSX.Element {
   return (
-    <button ref={ref} data-command data-command-index={commandIndex} type="button" role="menuitem" disabled={disabled}
-      tabIndex={active && !disabled ? 0 : -1} onFocus={() => onFocus(commandIndex)}
+    <button ref={ref} id={`command-palette-${id}`} data-command data-command-id={id} type="button" role="menuitem" disabled={disabled}
+      tabIndex={active && !disabled ? 0 : -1} onFocus={() => onFocus(id)}
       aria-disabled={disabled || unavailable || undefined}
       aria-pressed={pressed} onClick={onClick} className={commandClass}>
       <Icon icon={icon} size={17} className="shrink-0 text-dim" aria-hidden="true" />
