@@ -46,11 +46,9 @@ export async function releaseWorktree(
         const commonDir = (await git(worktree, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).stdout.trim()
         await git(commonDir, ['worktree', 'remove', '--force', worktree])
       }
-      const branch = await git(repoRoot, ['show-ref', '--verify', `refs/heads/${expectedBranch}`], [0, 1])
-      if (branch.exitCode === 0) await git(repoRoot, ['branch', '-D', '--', expectedBranch])
     })
   } catch (error) {
-    console.warn(`Could not clean up task worktree and branch for ${taskId}:`, error)
+    console.warn(`Could not clean up task worktree for ${taskId}:`, error)
   }
 }
 

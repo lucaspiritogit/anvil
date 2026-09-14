@@ -179,7 +179,7 @@ test('failed delivery preserves files until task deletion', async () => {
   expect(existsSync(task.cwd)).toBe(false)
 })
 
-test('release removes the managed task worktree and its exact local branch', async () => {
+test('release removes the managed task worktree and preserves its local branch', async () => {
   const { repo, manager } = await fixture()
   const task = await manager.prepareBranch(repo, 'release')
   git(repo, 'branch', 'unrelated')
@@ -187,12 +187,12 @@ test('release removes the managed task worktree and its exact local branch', asy
   await manager.releaseWorktree(repo, 'release', task.branchName)
 
   expect(existsSync(task.cwd)).toBe(false)
-  expect(git(repo, 'branch', '--list', task.branchName)).toBe('')
+  expect(git(repo, 'branch', '--list', task.branchName)).toBe(task.branchName)
   expect(git(repo, 'branch', '--list', 'unrelated')).toBe('unrelated')
   expect(git(repo, 'branch', '--show-current')).toBe('main')
 })
 
-test('release retries branch cleanup after the task worktree is already gone', async () => {
+test('release is idempotent after the task worktree is gone and preserves the branch', async () => {
   const { repo, manager } = await fixture()
   const task = await manager.prepareBranch(repo, 'partial-release')
   git(repo, 'worktree', 'remove', '--force', task.cwd)
@@ -201,7 +201,7 @@ test('release retries branch cleanup after the task worktree is already gone', a
   await manager.releaseWorktree(repo, 'partial-release', task.branchName)
 
   expect(existsSync(task.cwd)).toBe(false)
-  expect(git(repo, 'branch', '--list', task.branchName)).toBe('')
+  expect(git(repo, 'branch', '--list', task.branchName)).toBe(task.branchName)
   expect(git(repo, 'branch', '--show-current')).toBe('main')
 })
 

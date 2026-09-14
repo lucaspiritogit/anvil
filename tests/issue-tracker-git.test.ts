@@ -519,13 +519,14 @@ test('the working agent names its temporary branch and delivers sequential chang
   expect(existsSync(greetingWorktree), 'No-work tasks retain their worktree until settlement').toBe(true)
   expect(git(projectPath, 'branch', '--show-current')).toBe('user-current')
   expect(seed.getTask(greeting.id)?.headCommit).toBe(seed.getTask(greeting.id)?.baseCommit)
+  const greetingBranch = seed.getTask(greeting.id)!.branchName!
   await call('tasks:settle', greeting.id)
   await waitFor(() => !existsSync(greetingWorktree))
+  expect(git(projectPath, 'branch', '--list', greetingBranch), 'Settling preserves the task branch').toBe(greetingBranch)
   expect(existsSync(task.cwd), 'Settling another task leaves this worktree intact').toBe(true)
   await call('tasks:delete', task.id)
   await waitFor(() => !existsSync(task.cwd))
-  await waitFor(() => git(projectPath, 'branch', '--list', acceptedName) === '')
-  expect(git(projectPath, 'branch', '--list', acceptedName), 'Deleting a task removes its accepted committed branch').toBe('')
+  expect(git(projectPath, 'branch', '--list', acceptedName), 'Deleting a task preserves its accepted committed branch').toBe(acceptedName)
   seed.close()
 })
 
