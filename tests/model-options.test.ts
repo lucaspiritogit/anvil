@@ -1,5 +1,41 @@
 import { test, expect } from 'vitest'
-import { describeModel, groupModelsByProvider } from '../src/client/renderer/src/model-options'
+import {
+  describeModel,
+  groupModelsByProvider,
+  humanizeModelName,
+  modelMatchesQuery,
+  normalizeModelSearch
+} from '../src/client/renderer/src/model-options'
+
+test('humanizes model slugs from every catalogue without changing their IDs', () => {
+  const cases = [
+    ['kimi-k3', 'Kimi K3'],
+    ['gpt-5.4-codex', 'GPT 5.4 Codex'],
+    ['opencode/kimi-k2.6', 'Kimi K2.6'],
+    ['openrouter/anthropic/claude-sonnet-4-6', 'Claude Sonnet 4.6'],
+    ['custom-provider/unknown_model+v2.beta', 'Unknown Model V2 Beta'],
+    ['openrouter/openai/gpt-oss-120b:free', 'GPT OSS 120B Free'],
+    ['qwen2.5-coder-32b-instruct', 'Qwen 2.5 Coder 32B Instruct']
+  ]
+  for (const [id, name] of cases) {
+    expect(humanizeModelName(id)).toBe(name)
+    expect(describeModel(id, 'opencode').id).toBe(id)
+  }
+})
+
+test('matches normalized partial terms across model and provider metadata', () => {
+  const kimi = describeModel('openrouter/moonshotai/kimi-k3', 'opencode')
+  for (const query of ['kimi', 'K3', 'kimi k3', 'moonshot', 'moonshotai', 'router', 'open-router', 'kimi moonshot']) {
+    expect(modelMatchesQuery(kimi, query), query).toBeTruthy()
+  }
+  const codex = describeModel('gpt-5.4-codex', 'codex')
+  for (const query of ['GPT', '5.4', '54', 'gpt54', 'codex']) {
+    expect(modelMatchesQuery(codex, query), query).toBeTruthy()
+  }
+  expect(modelMatchesQuery(kimi, 'claude')).toBeFalsy()
+  expect(modelMatchesQuery(kimi, '  ')).toBeTruthy()
+  expect(normalizeModelSearch('Kimi-K3 / Preview')).toBe('kimik3preview')
+})
 
 test('groups routed models by credential provider and retains submitted IDs', () => {
   const claudeModels = [
