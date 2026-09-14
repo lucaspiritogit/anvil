@@ -1,6 +1,5 @@
 import { CONTEXT_COMPACTED } from '../../shared/task-context'
 import type { TaskInput, TaskEvent as ExecutorEvent } from './agent-executor'
-import type { IssueToolConnection } from '../issue-tools/server'
 import type { WorkspaceExecutionContext } from './workspace-execution'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -22,6 +21,11 @@ import type {
 } from '../../shared/types'
 
 const ANSI = /\u001b\[[0-9;?]*[ -\/]*[@-~]/g
+
+export interface TaskToolConnection {
+  mcpServers: NonNullable<TaskInput['mcpServers']>
+  close(): void | Promise<void>
+}
 
 export interface StartOptions {
   taskId: string
@@ -176,7 +180,7 @@ export class AgentProcessManager extends EventEmitter {
     private readonly codexClient?: AgentExecutor,
     private readonly createExecutor = (agentId: string, workspace: WorkspaceExecutionContext, catalogue?: () => Promise<ProviderModelList>): AgentExecutor => getAgentAdapter(agentId).createExecutor(workspace, catalogue),
     private readonly taskWorkspace?: (taskId: string) => WorkspaceExecutionContext,
-    private readonly openIssueTools?: (taskId: string) => Promise<IssueToolConnection>
+    private readonly openTaskTools?: (taskId: string) => Promise<TaskToolConnection>
   ) {
     super()
   }
@@ -299,11 +303,11 @@ export class AgentProcessManager extends EventEmitter {
     this.serverExecutions.set(opts.taskId, controller)
     this.executionWorkspaces.set(opts.taskId, opts.workspace.workspaceId)
     const completion = (async () => {
-      const issueTools = await this.openIssueTools?.(opts.taskId)
+      const taskTools = await this.openTaskTools?.(opts.taskId)
       try {
         controller.signal.throwIfAborted()
-        await this.compactSession(this.executor(opts.agent, opts.workspace), { ...opts, issueTools, signal: controller.signal })
-      } finally { issueTools?.close() }
+        await this.compactSession(this.executor(opts.agent, opts.workspace), { ...opts, mcpServers: taskTools?.mcpServers, signal: controller.signal })
+      } finally { await taskTools?.close() }
     })()
     const settled = completion.then(() => {}, () => {})
     this.completions.add(settled)
@@ -331,12 +335,12 @@ export class AgentProcessManager extends EventEmitter {
     }
     const { agent: _agent, onStartFailed: _onStartFailed, ...input } = opts
     const completion = (async () => {
-      const issueTools = await this.openIssueTools?.(opts.taskId)
+      const taskTools = await this.openTaskTools?.(opts.taskId)
       try {
         controller.signal.throwIfAborted()
         if (opts.autoCompact && opts.resumeSessionId && opts.agent.supportsCompaction && client.compact) {
           try {
-            await this.compactSession(client, { ...input, issueTools, signal: controller.signal })
+            await this.compactSession(client, { ...input, mcpServers: taskTools?.mcpServers, signal: controller.signal })
           } catch (failure) {
             // Keep Codex's explicit missing-session recovery available. execute()
             // alone owns creating a replacement session from the saved plan.
@@ -346,9 +350,9 @@ export class AgentProcessManager extends EventEmitter {
           controller.signal.throwIfAborted()
         }
         if (opts.agent.supportsSteering && client.steer) this.steeringExecutors.set(opts.taskId, client)
-        return await client.execute({ ...input, issueTools, onStarted, signal: controller.signal }, (event) => this.emitExecutorEvent(event, issueId))
+        return await client.execute({ ...input, mcpServers: taskTools?.mcpServers, onStarted, signal: controller.signal }, (event) => this.emitExecutorEvent(event, issueId))
       } finally {
-        issueTools?.close()
+        await taskTools?.close()
       }
     })().then((result) => {
       this.steeringExecutors.delete(opts.taskId)

@@ -85,15 +85,19 @@ test('handles ACP sessions, output, permissions, recovery and cancellation', asy
     expect(initialRequests[1].params.mcpServers).toStrictEqual([])
     expect(initialRequests.find((request) => request.id === 'permission').result.outcome.optionId).toBe('once')
 
-    const issueTools = { url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: 'Bearer turn-token' } }
+    const issueTools = { name: 'anvil_issue_tracker', url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: 'Bearer turn-token' }, required: true }
+    const browserTools = { name: 'anvil_browser', url: 'http://127.0.0.1:2345/mcp', headers: { Authorization: 'Bearer browser-token' }, required: false }
     for (const resumeSessionId of [undefined, 'session-test']) {
       const before = (await requests()).length
-      const result = await client('success').execute({ ...input, issueTools, resumeSessionId }, () => {})
+      const result = await client('success').execute({ ...input, mcpServers: [issueTools, browserTools], resumeSessionId }, () => {})
       expect(result.status, result.error).toBe('succeeded')
       const session = (await requests()).slice(before).find((request) => request.method === (resumeSessionId ? 'session/load' : 'session/new'))
-      expect(session.params.mcpServers).toEqual([{ type: 'http', name: 'anvil_issue_tracker', url: issueTools.url, headers: [{ name: 'Authorization', value: 'Bearer turn-token' }] }])
+      expect(session.params.mcpServers).toEqual([
+        { type: 'http', name: 'anvil_issue_tracker', url: issueTools.url, headers: [{ name: 'Authorization', value: 'Bearer turn-token' }] },
+        { type: 'http', name: 'anvil_browser', url: browserTools.url, headers: [{ name: 'Authorization', value: 'Bearer browser-token' }] }
+      ])
     }
-    const unsupportedMcp = await client('no-http-mcp').execute({ ...input, issueTools }, () => {})
+    const unsupportedMcp = await client('no-http-mcp').execute({ ...input, mcpServers: [issueTools] }, () => {})
     expect(unsupportedMcp.status).toBe('failed')
     expect(unsupportedMcp.error).toMatch(/HTTP MCP/)
 

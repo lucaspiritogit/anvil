@@ -147,7 +147,7 @@ interface AnvilState {
   mergeAndPushTask: (taskId: string, preview: TaskMergeAndPushPreview) => Promise<void>
   pushTask: (taskId: string, preview: TaskPushPreview) => Promise<void>
   approveIssue: (taskId: string, issueId: string, headCommit: string | null) => Promise<void>
-  rejectIssue: (taskId: string, issueId: string, comment?: string, headCommit?: string | null) => Promise<void>
+  rejectIssue: (taskId: string, issueId: string, headCommit: string | null) => Promise<void>
   openRebase: (taskId: string | null) => void
   rebaseTask: (taskId: string, steps: RebaseStep[]) => Promise<void>
   rebaseWithAgent: (taskId: string) => Promise<void>
@@ -625,18 +625,18 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   approveIssue: async (taskId, issueId, headCommit) => {
     const task = await window.anvil.tasks.approveIssue({ taskId, issueId, headCommit })
-    await get().loadComments(taskId)
     if (!get().tasks.some((item) => item.id === taskId)) return
     set((s) => ({
       tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
       diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== taskId))
     }))
+    void get().loadComments(taskId).catch((error: unknown) => {
+      set({ commentError: error instanceof Error ? error.message : String(error) })
+    })
   },
 
-  /** A rework request carries an optional general note plus any pending line comments. */
-  rejectIssue: async (taskId, issueId, comment, headCommit) => {
-    const body = comment?.trim()
-    const task = await window.anvil.tasks.rejectIssue({ taskId, issueId, headCommit: headCommit ?? null, ...(body ? { comment: body } : {}) })
+  rejectIssue: async (taskId, issueId, headCommit) => {
+    const task = await window.anvil.tasks.rejectIssue({ taskId, issueId, headCommit })
     if (!get().tasks.some((item) => item.id === taskId)) return
     set((s) => ({
       tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),

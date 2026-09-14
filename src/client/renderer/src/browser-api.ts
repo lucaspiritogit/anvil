@@ -1,4 +1,5 @@
 import { createAnvilApi } from '../../preload/api'
+import type { BrowserObservationState } from '../../../shared/browser-observation'
 
 async function openUrl(value: string): Promise<void> {
   const url = new URL(value)
@@ -21,6 +22,10 @@ if (!window.anvil) {
       return ''
     },
     openPullRequest: openUrl,
-    openLoginUrl: openUrl
+    openLoginUrl: openUrl,
+    browserState: async (taskId): Promise<BrowserObservationState> => ({ taskId, open: false, viewport: 'desktop' }),
+    browserLayout: async () => {},
+    browserViewport: async ({ taskId, viewport }): Promise<BrowserObservationState> => ({ taskId, open: false, viewport }),
+    onBrowserChanged: () => () => {}
   })
 }

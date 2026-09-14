@@ -181,12 +181,13 @@ test('passes images intact to both server adapters and rejects text-only executo
   expect(events).toHaveLength(0)
 })
 
-test('enables issue tools for server turns and releases them after success, failure or cancellation', async () => {
+test('enables task tools for server turns and releases them after success, failure or cancellation', async () => {
   const active = new Set<string>()
   const executor: import('../src/server/agents/agent-executor').AgentExecutor = {
     async execute(input) {
       expect(active.has(input.taskId)).toBe(true)
-      expect(input.issueTools?.headers.Authorization).toBe(input.taskId)
+      expect(input.mcpServers?.[0].headers.Authorization).toBe(input.taskId)
+      expect(input.mcpServers?.[1]).toMatchObject({ name: 'anvil_browser', required: false })
       input.onStarted?.()
       if (input.prompt === 'fail') throw new Error('Transport failed')
       if (input.prompt === 'cancel') {
@@ -197,7 +198,10 @@ test('enables issue tools for server turns and releases them after success, fail
   }
   const manager = new AgentProcessManager(executor, executor, undefined, undefined, async (taskId) => {
     active.add(taskId)
-    return { url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: taskId }, close: () => { active.delete(taskId) } }
+    return { mcpServers: [
+      { name: 'anvil_issue_tracker', url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: taskId }, required: true },
+      { name: 'anvil_browser', url: 'http://127.0.0.1:2345/mcp', headers: { Authorization: taskId }, required: false }
+    ], close: () => { active.delete(taskId) } }
   })
   onTestCleanup(() => manager.close())
   for (const executionProtocol of ['acp', 'codex-app-server'] as const) {

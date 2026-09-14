@@ -165,7 +165,9 @@ test('schedules dependencies and priorities sequentially and retains final task 
   await assertReadOnlySnapshot(['review', 'complete', 'complete'])
   expect(store.getTask(taskId)).toMatchObject({ status: 'running', deliveryStatus: 'working' })
   expect(store.getTaskExecution(taskId)).toMatchObject({ phase: 'reviewing', currentIssueId: finalIssueId })
+  const finalizationsBeforeApproval = GitDeliveryManager.head
   await approve(taskId)
+  expect(GitDeliveryManager.head, 'Final approval reuses the reviewed branch snapshot').toBe(finalizationsBeforeApproval)
   await assertReadOnlySnapshot(['complete', 'complete', 'complete'])
   expect(store.getTaskExecution(taskId)?.phase).toBe('complete')
   expect(store.getTask(taskId)?.deliveryStatus).toBe('reviewable')
@@ -288,14 +290,22 @@ test('schedules dependencies and priorities sequentially and retains final task 
   expect(store.getTaskExecution(cancelReviewId)?.phase).toBe('blocked')
   expect(tracker.get(store.getTaskExecution(cancelReviewId)!.currentIssueId!).status, 'Cancelling a review settles the issue deterministically').toBe('blocked')
 
-  const deliveryId = await start('Delivery failure')
+  const deliveryId = await start('Reviewed delivery')
   agentProcesses.plan(deliveryId, [issue])
   await tick()
   await submit(deliveryId)
+  const reviewedHead = store.getTask(deliveryId)?.headCommit
+  const finalizationsBeforeDeliveryApproval = GitDeliveryManager.head
   GitDeliveryManager.failFinalize = true
-  await approve(deliveryId)
-  expect(store.getTask(deliveryId)?.deliveryStatus).toBe('failed')
-  await expect(call('tasks:approve', { taskId: deliveryId, preview: await new GitDeliveryManager().getMergePreview(testHome, 'task') })).rejects.toThrow(/not awaiting review/)
+  await call('tasks:approve-issue', {
+    taskId: deliveryId,
+    issueId: store.getTaskExecution(deliveryId)!.currentIssueId!,
+    headCommit: trackerHead(deliveryId)
+  })
+  expect(store.getTask(deliveryId)).toMatchObject({ deliveryStatus: 'reviewable', headCommit: reviewedHead })
+  expect(GitDeliveryManager.head, 'Approval does not repeat the completed review finalization').toBe(finalizationsBeforeDeliveryApproval)
+  await call('tasks:approve', { taskId: deliveryId, preview: await call('tasks:merge-preview', deliveryId) })
+  expect(store.getTask(deliveryId)?.deliveryStatus).toBe('approved')
   GitDeliveryManager.failFinalize = false
   GitDeliveryManager.repository = false
   for (const agentId of ['opencode', 'codex']) {

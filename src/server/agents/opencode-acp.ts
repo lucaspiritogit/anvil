@@ -143,11 +143,11 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       }
       output.line(`cwd: ${input.cwd}`, 'system', 'system')
       startupTimer = setTimeout(() => connection?.fail(new Error('OpenCode ACP session startup timed out.')), this.options.startupTimeoutMs ?? 60_000)
-      const mcpServers = input.issueTools ? [{
-        type: 'http' as const, name: 'anvil_issue_tracker', url: input.issueTools.url,
-        headers: Object.entries(input.issueTools.headers).map(([name, value]) => ({ name, value }))
-      }] : []
-      if (input.issueTools && !connection.supportsHttpMcp) throw new Error('OpenCode must support HTTP MCP servers to use Anvil issue tools. Update OpenCode.')
+      const mcpServers = (input.mcpServers ?? []).map((server) => ({
+        type: 'http' as const, name: server.name, url: server.url,
+        headers: Object.entries(server.headers).map(([name, value]) => ({ name, value }))
+      }))
+      if (mcpServers.length && !connection.supportsHttpMcp) throw new Error('OpenCode must support HTTP MCP servers to use Anvil task tools. Update OpenCode.')
       let configOptions: SessionConfigOption[] = []
       if (input.resumeSessionId) {
         if (!connection.supportsLoadSession) throw new Error('OpenCode does not support loading sessions')

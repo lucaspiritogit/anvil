@@ -1,12 +1,19 @@
 import type { WorkspaceExecutionContext } from './workspace-execution'
 import type { TaskEvent as OutputTaskEvent, TaskStatus, TaskUsage, TaskImageAttachment } from '../../shared/types'
 
+export interface AgentMcpServer {
+  name: string
+  url: string
+  headers: Record<string, string>
+  required: boolean
+}
+
 /** One Anvil agent turn. Issue persistence and validation belong to Valence. */
 export interface TaskInput {
   taskId: string
   workspace: WorkspaceExecutionContext
   issueId?: string
-  issueTools?: { url: string; headers: Record<string, string> }
+  mcpServers?: AgentMcpServer[]
   prompt: string
   images?: TaskImageAttachment[]
   /** Absolute task working directory. */

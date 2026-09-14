@@ -4,6 +4,7 @@ import type { WorkspaceAgentAccount } from '../../shared/types'
 import { type AppReadiness } from '../../shared/app-lifecycle'
 import { createEventLatch } from '../../shared/event-latch'
 import type { IpcRequests } from '../../shared/ipc-requests'
+import type { BrowserObservationLayout, BrowserObservationState, BrowserViewportRequest } from '../../shared/browser-observation'
 import type {
   Workspace,
   WorkspaceSnapshot,
@@ -42,6 +43,10 @@ export interface ClientHost {
   openPath(path: string): Promise<string>
   openPullRequest(url: string): Promise<void>
   openLoginUrl(url: string): Promise<void>
+  browserState(taskId: string): Promise<BrowserObservationState>
+  browserLayout(layout: BrowserObservationLayout): Promise<void>
+  browserViewport(input: BrowserViewportRequest): Promise<BrowserObservationState>
+  onBrowserChanged(handler: (state: BrowserObservationState) => void): () => void
 }
 
 export function createAnvilApi(url: string, host: ClientHost) {
@@ -63,6 +68,12 @@ export function createAnvilApi(url: string, host: ClientHost) {
         appReadiness.subscribe((readiness) => { if (readiness.ok) handler() }),
       onInitFailed: (handler: (message: string) => void): (() => void) =>
         appReadiness.subscribe((readiness) => { if (!readiness.ok) handler(readiness.message) })
+    },
+    browser: {
+      state: host.browserState,
+      layout: host.browserLayout,
+      viewport: host.browserViewport,
+      onChanged: host.onBrowserChanged
     },
     terminals: {
       create: (input: IpcRequests['terminals:create']): Promise<{ sessionId: string }> => invoke('terminals:create', input),

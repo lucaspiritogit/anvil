@@ -328,11 +328,15 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
       { resumeSessionId: 'thread-test', reasoningEffort: undefined }
     ]) {
       await writeFile(transcript, '')
-      const configured = await client('success').execute({ ...input, model: 'reasoner', reasoningEffort, resumeSessionId, issueTools: { url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: 'Bearer turn-token' } } }, () => {})
+      const configured = await client('success').execute({ ...input, model: 'reasoner', reasoningEffort, resumeSessionId, mcpServers: [
+        { name: 'anvil_issue_tracker', url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: 'Bearer turn-token' }, required: true },
+        { name: 'anvil_browser', url: 'http://127.0.0.1:2345/mcp', headers: { Authorization: 'Bearer browser-token' }, required: false }
+      ] }, () => {})
       expect(configured.status, configured.error).toBe('succeeded')
       const calls = await requests()
       const thread = calls.find((entry) => entry.method === (resumeSessionId ? 'thread/resume' : 'thread/start'))
       expect(thread.params.config['mcp_servers.anvil_issue_tracker']).toEqual({ url: 'http://127.0.0.1:1234/mcp', http_headers: { Authorization: 'Bearer turn-token' }, required: true })
+      expect(thread.params.config['mcp_servers.anvil_browser']).toEqual({ url: 'http://127.0.0.1:2345/mcp', http_headers: { Authorization: 'Bearer browser-token' }, required: false })
       expect(thread.params.config.model_reasoning_effort).toBe(reasoningEffort)
       expect('model_reasoning_effort' in thread.params.config).toBe(reasoningEffort !== undefined)
       expect(thread.params.threadId).toBe(resumeSessionId)

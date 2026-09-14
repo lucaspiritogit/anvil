@@ -311,8 +311,8 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 const DELIVERY_LABEL: Record<DeliveryStatus, string> = {
   preparing: 'Preparing branch',
   working: 'Branch active',
-  finalizing: 'Saving branch',
-  did_not_commit: 'Finisher committing',
+  finalizing: 'Branch active',
+  did_not_commit: 'Branch active',
   reviewable: 'Ready to review',
   approved: 'Merged',
   no_changes: 'No code changes',
@@ -496,7 +496,6 @@ export function TaskView({ task }: Props): JSX.Element {
   const rejectIssue = useStore((s) => s.rejectIssue)
   const [reviewBusy, setReviewBusy] = useState<'approve' | 'reject' | null>(null)
   const [reviewError, setReviewError] = useState<string | null>(null)
-  const [reworkComment, setReworkComment] = useState('')
 
   const comments = useStore((s) => s.commentsByTask[task.id])
   const loadComments = useStore((s) => s.loadComments)
@@ -528,9 +527,10 @@ export function TaskView({ task }: Props): JSX.Element {
   const openPullRequest = task.deliveryStatus === 'reviewable' ? task.pullRequest : undefined
 
   const [now, setNow] = useState(Date.now())
-  const saving = task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit' || Boolean(issue && !issueIsReviewReady(snapshot))
   const done = task.status === 'succeeded' && task.deliveryStatus === 'no_changes'
-  const reviewable = !issue && !saving && (task.deliveryStatus === 'reviewable' || approved)
+  const reviewable = !issue && (task.deliveryStatus === 'reviewable' || approved)
+  const issueReviewPending = Boolean(issue && !issueIsReviewReady(snapshot))
+  const finalDiffPending = task.status === 'running' || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit'
   const [activePanel, setActivePanel] = useState<TaskPanel>('output')
 
   useEffect(() => {
@@ -555,13 +555,12 @@ export function TaskView({ task }: Props): JSX.Element {
   const issueDiffError = issueDiffState.key === issueDiffKey ? issueDiffState.error : undefined
   useEffect(() => {
     setDraft(null)
-    setReworkComment('')
     setReviewError(null)
   }, [issueDiffKey])
   useEffect(() => {
     let active = true
     setIssueDiffState({ key: issueDiffKey })
-    if (issue && issueDiffKey && !saving && issueIsReviewReady(snapshot)) {
+    if (issue && issueDiffKey && issueIsReviewReady(snapshot)) {
       void window.anvil.tasks.issueDiff({ taskId: task.id, issueId: issue.id }).then((diff) => {
         if (active) setIssueDiffState({ key: issueDiffKey, diff })
       }).catch((error: unknown) => {
@@ -572,7 +571,7 @@ export function TaskView({ task }: Props): JSX.Element {
   }, [issueDiffKey, diffAttempt, task.id])
 
   const retryIssueDiff = (): void => setDiffAttempt((value) => value + 1)
-  const reviewDisabled = compactBusy || saving || !!reviewBusy || !!issueError || !issueIsReviewReady(snapshot) || !issueDiff
+  const reviewDisabled = compactBusy || !!reviewBusy || !!issueError || !issueIsReviewReady(snapshot) || !issueDiff
 
   const reviewIssue = async (action: 'approve' | 'reject'): Promise<void> => {
     if (!issue || issue.status !== 'review' || reviewDisabled) return
@@ -582,12 +581,11 @@ export function TaskView({ task }: Props): JSX.Element {
     try {
       if (action === 'approve') await approveIssue(task.id, issue.id, issue.headCommit ?? null)
       else {
-        await rejectIssue(task.id, issue.id, reworkComment, issue.headCommit ?? null)
+        await rejectIssue(task.id, issue.id, issue.headCommit ?? null)
       }
       if (reviewRevision.current.version === submittedVersion) {
         setIssueDiffState({ key: '' })
         setDraft(null)
-        setReworkComment('')
       }
       refresh()
     } catch (error) {
@@ -639,7 +637,7 @@ export function TaskView({ task }: Props): JSX.Element {
           <h1 className="min-w-0 flex-1 truncate text-base font-medium leading-snug @max-[760px]:w-full @max-[760px]:flex-none" title={task.title}>{task.title}</h1>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
             {issue ? <>
-              <span aria-label="Task status" className={cn('min-w-0 font-medium [overflow-wrap:anywhere]', ISSUE_STATUS[issuePresentation(issue, snapshot, task).status].tone)}>{saving ? 'Saving changes…' : issuePresentation(issue, snapshot, task).label}{`: ${issue.title}`}</span>
+              <span aria-label="Task status" className={cn('min-w-0 font-medium [overflow-wrap:anywhere]', ISSUE_STATUS[issuePresentation(issue).status].tone)}>{issuePresentation(issue).label}{`: ${issue.title}`}</span>
               {issue.status === 'review' && <>
                 <button className={cn(btn.ghost, 'ml-2')} disabled={reviewDisabled} onClick={() => void reviewIssue('reject')}>
                   {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
@@ -652,7 +650,7 @@ export function TaskView({ task }: Props): JSX.Element {
               <span aria-label="Task status" className="flex min-w-0 flex-wrap items-center gap-2">
                 {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
                 <span className={dot(task.status)} />
-                <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : saving ? 'Saving changes…' : STATUS_LABEL[task.status]}</span>
+                <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : STATUS_LABEL[task.status]}</span>
                 <span className="text-dim">·</span>
                 <span className={cn('flex items-center gap-1.5', openPullRequest ? 'text-ok' : deliveryTone(task.deliveryStatus))}>
                   {openPullRequest && <Icon icon="git-branch" size={14} aria-hidden="true" />}
@@ -724,8 +722,8 @@ export function TaskView({ task }: Props): JSX.Element {
               {panel === 'issues' && 'Issues'}
               {panel === 'changes' && <>
                 Changes{' '}
-                <span className="font-mono font-normal tabular-nums text-dim">{saving ? 'Saving…' : reviewable && !diff ? 'Loading…' : task.filesChanged}</span>
-                {!saving && (!reviewable || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono font-normal tabular-nums">
+                <span className="font-mono font-normal tabular-nums text-dim">{issueReviewPending || reviewable && !diff ? 'Loading…' : task.filesChanged}</span>
+                {!issueReviewPending && (!reviewable || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono font-normal tabular-nums">
                   <span className="text-ok">+{task.additions}</span> <span className="text-danger">−{task.deletions}</span>
                 </span></>}
               </>}
@@ -739,23 +737,12 @@ export function TaskView({ task }: Props): JSX.Element {
 
         {issue && <section id="task-panel-changes" aria-label="Subtask code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
           {issue.status === 'review' && <div className="shrink-0 px-4 py-2 border-b border-line bg-warn/5">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <p role="status" className="shrink-0 text-xs text-warn">{saving ? 'Saving changes…' : !issueDiff ? 'Loading code changes…' : 'Waiting for your review. The agent pauses until you approve or request changes.'}</p>
-              <textarea
-                aria-label="Rework feedback"
-                disabled={reviewDisabled}
-                className={cn(field.control, 'min-w-56 flex-1 resize-none px-2.5 py-1.5 text-xs')}
-                rows={1}
-                placeholder="Optional note sent to the agent with a rework request…"
-                value={reworkComment}
-                onChange={(event) => setReworkComment(event.target.value)}
-              />
-            </div>
+            <p role="status" className="text-xs text-warn">{!issueDiff ? 'Loading code changes…' : 'Waiting for your review. The agent pauses until you approve or request changes.'}</p>
             {pending.length > 0 && <p className="mt-1.5 text-[11px] text-dim">{pending.length} line comment{pending.length === 1 ? '' : 's'} will be sent with the rework request.</p>}
           </div>}
           <>
             {issueDiff && (!issue.baseCommit || !issue.headCommit) && <p className="px-4 py-2 text-xs text-dim">Legacy submission: showing the available recorded range, with task commit fallback.</p>}
-            {!saving && !issueDiff && !issueDiffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
+            {!issueDiff && !issueDiffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {issueDiffError && <div role="alert" className="p-5 text-sm text-danger">
               <p>{issueDiffError}</p>
               <button className={cn(btn.ghost, 'mt-3')} onClick={retryIssueDiff}>Retry</button>
@@ -805,8 +792,8 @@ export function TaskView({ task }: Props): JSX.Element {
               />
             </Suspense>}
           </> : <div className={EMPTY_PANEL}>
-            <p>{saving ? 'Saving changes…' : done ? 'Done' : task.status === 'running' ? 'The agent is working on this task.' : DELIVERY_LABEL[task.deliveryStatus]}</p>
-            <p className="text-xs">{done ? 'No code changes to review.' : saving || task.status === 'running' ? 'The final task diff will appear here when it is ready for review.' : 'There is no final diff available for review.'}</p>
+            <p>{done ? 'Done' : finalDiffPending ? 'The agent is working on this task.' : DELIVERY_LABEL[task.deliveryStatus]}</p>
+            <p className="text-xs">{done ? 'No code changes to review.' : finalDiffPending ? 'The final task diff will appear here when it is ready for review.' : 'There is no final diff available for review.'}</p>
           </div>}
         </section>}
 

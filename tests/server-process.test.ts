@@ -13,6 +13,7 @@ const options = {
 
 function childProcess() {
   const child = Object.assign(new EventEmitter(), { pid: 123, exitCode: null as number | null, signalCode: null,
+    send: vi.fn(() => true),
     kill: vi.fn((_signal: string) => {
       child.exitCode = 0
       queueMicrotask(() => child.emit('exit', 0))
@@ -33,6 +34,35 @@ test('attaches to an explicit server without spawning or stopping it', async () 
   expect(health).toHaveBeenCalledWith('http://127.0.0.1:4781/health', expect.anything())
 })
 
+test('routes scoped browser requests between the server child and Electron host', async () => {
+  const child = childProcess()
+  const browserHost = {
+    open: vi.fn(async () => ({ url: 'http://127.0.0.1:6123/mcp', headers: { Authorization: 'Bearer browser' } })),
+    release: vi.fn()
+  }
+  const health = vi.fn(async () => Response.json({ ok: true, service: 'anvil', version: 'test', ready: true }))
+    .mockRejectedValueOnce(Object.assign(new Error('Connection refused'), { code: 'ECONNREFUSED' }))
+  vi.stubGlobal('fetch', health)
+  const pending = connectToServer({ ...options, browserHost })
+  await vi.waitFor(() => expect(child.listenerCount('message')).toBe(2))
+  child.emit('message', { type: 'anvil-server-ready', url: 'http://127.0.0.1:4780' })
+  const connection = await pending
+
+  child.emit('message', { type: 'anvil-browser-host-request', requestId: 'open-1', operation: 'open', taskId: 'task-a', title: 'Task A' })
+  await vi.waitFor(() => expect(child.send).toHaveBeenCalledWith({ type: 'anvil-browser-host-response', requestId: 'open-1', ok: true,
+    connection: { url: 'http://127.0.0.1:6123/mcp', headers: { Authorization: 'Bearer browser' } } }, expect.any(Function)))
+  expect(browserHost.open).toHaveBeenCalledWith('task-a', 'Task A')
+
+  child.emit('message', { type: 'anvil-browser-host-request', requestId: 'release-1', operation: 'release', taskId: 'task-a' })
+  expect(browserHost.release).toHaveBeenCalledWith('task-a')
+  expect(child.send).toHaveBeenCalledWith({ type: 'anvil-browser-host-response', requestId: 'release-1', ok: true }, expect.any(Function))
+
+  child.emit('message', { type: 'anvil-browser-host-request', requestId: 'open-2', operation: 'open', taskId: 'task-b', title: 'Task B' })
+  await vi.waitFor(() => expect(child.send).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'open-2', ok: true }), expect.any(Function)))
+  await connection.close()
+  expect(browserHost.release).toHaveBeenCalledWith('task-b')
+})
+
 test('spawns Electron as Node, waits for its own ready signal and closes only its child', async () => {
   const child = childProcess()
   const health = vi.fn(async () => Response.json({ ok: true, service: 'anvil', version: 'test', ready: true }))
@@ -45,7 +75,7 @@ test('spawns Electron as Node, waits for its own ready signal and closes only it
   const connection = await pending
   expect(health).toHaveBeenCalledTimes(2)
   expect(spawn).toHaveBeenCalledWith('/electron', ['/app/out/server/index.js'], expect.objectContaining({
-    env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1', ANVIL_SERVER_PORT: '4790', ANVIL_DATA_DIR: '/data', ANVIL_RENDERER_ORIGIN: 'http://localhost:5173' })
+    env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1', ANVIL_SERVER_PORT: '4790', ANVIL_DATA_DIR: '/data', ANVIL_RENDERER_ORIGIN: 'http://localhost:5173', ANVIL_BROWSER_HOST: '0' })
   }))
   await Promise.all([connection.close(), connection.close()])
   expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM')

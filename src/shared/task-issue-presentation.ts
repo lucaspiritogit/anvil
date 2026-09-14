@@ -5,13 +5,12 @@ export function issueIsReviewReady(snapshot?: TaskIssueSnapshot | null): boolean
   return snapshot?.reviewReady === true || Boolean(snapshot && !snapshot.execution && snapshot.reviewReady !== false)
 }
 
-export function issuePresentation(issue: TaskIssueSnapshot['children'][number], snapshot?: TaskIssueSnapshot | null, task?: Task) {
-  const saving = issue.status === 'review' && (!issueIsReviewReady(snapshot) || task?.deliveryStatus === 'finalizing' || task?.deliveryStatus === 'did_not_commit')
-  const status = saving ? 'working' : issue.status
-  const label = saving ? 'Saving changes…' : status === 'complete'
+export function issuePresentation(issue: TaskIssueSnapshot['children'][number]) {
+  const status = issue.status
+  const label = status === 'complete'
     ? issue.reviewedAt != null ? 'Approved' : 'Done'
     : { queued: 'Queued', working: 'Working', review: 'Review', blocked: 'Blocked' }[status]
-  return { status, label, saving }
+  return { status, label }
 }
 
 /** Presentation only: intermediate issue review never changes task delivery eligibility. */
@@ -24,7 +23,7 @@ export function taskIssuePresentation(task: Task, snapshot?: TaskIssueSnapshot |
     ?? snapshot.children.find((issue) => issue.status === 'blocked')
     ?? snapshot.children.find((issue) => issue.status === 'queued')
     ?? snapshot.children.at(-1)!
-  const display = issuePresentation(issue, snapshot, task)
+  const display = issuePresentation(issue)
   const status = snapshot.execution?.phase === 'blocked' && issue.status !== 'review' ? 'blocked' : display.status
   const label = status === 'blocked' ? 'Blocked' : display.label
   const detail = status === 'review'

@@ -297,11 +297,9 @@ export class CodexAppServerClient implements AgentExecutor {
           'memories.generate_memories': false,
           'features.recommended_plugins': false,
           tool_output_token_limit: 3000,
-          ...(input.issueTools ? {
-            'mcp_servers.anvil_issue_tracker': {
-              url: input.issueTools.url, http_headers: input.issueTools.headers, required: true
-            }
-          } : {})
+          ...Object.fromEntries((input.mcpServers ?? []).map((server) => [`mcp_servers.${server.name}`, {
+            url: server.url, http_headers: server.headers, required: server.required
+          }]))
         }
       }
       let prompt = input.prompt

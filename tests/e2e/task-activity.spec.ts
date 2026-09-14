@@ -49,20 +49,14 @@ test('activity breathes while waiting and follows thinking, tool calls, results,
   await expect(output.getByText('The changes are ready for review.', { exact: true })).toBeVisible()
 })
 
-test('delivery phases override old activity, and failed or cancelled tasks stop animating', async ({ page }) => {
+test('branch preparation overrides old activity, and failed or cancelled tasks stop animating', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&steering=1&running=1&emptyOutput=1')
   const activity = page.getByRole('status', { name: 'Agent activity' })
   await expect(activity).toHaveText('Working…')
   await emitOutput(page, { id: 'tool', category: 'tool_use', text: '\n' })
   await expect(activity).toHaveText('Running a tool…')
-  for (const [deliveryStatus, label] of [
-    ['preparing', 'Preparing branch…'],
-    ['finalizing', 'Saving changes…'],
-    ['did_not_commit', 'Committing changes…']
-  ] as const) {
-    await updateTask(page, { deliveryStatus })
-    await expect(activity).toHaveText(label)
-  }
+  await updateTask(page, { deliveryStatus: 'preparing' })
+  await expect(activity).toHaveText('Preparing branch…')
   for (const status of ['failed', 'cancelled'] as const) {
     await updateTask(page, { status: 'running', deliveryStatus: 'working' })
     await expect(activity).toBeVisible()

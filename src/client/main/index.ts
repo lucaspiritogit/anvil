@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, shell, powerSaveBlocker } from 'electron'
+import { app, BrowserWindow, dialog, Menu, shell, powerSaveBlocker, WebContentsView } from 'electron'
 import { showNotificationSettings } from './mac-notifications'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
@@ -8,6 +8,8 @@ import { registerCaffeineMode } from './caffeine-mode'
 import { createServerCaffeineActivity } from './server-activity'
 import { connectToServer } from './server-process'
 import { resolveAppDataDirectory } from '../../shared/app-data'
+import { BrowserSessionManager } from './browser-sessions'
+import { BrowserToolServer } from './browser-tools'
 
 const dataDirectory = resolveAppDataDirectory(app.getPath('home'), app.isPackaged, process.env.ANVIL_DATA_DIR)
 if (!app.isPackaged || process.env.ANVIL_DATA_DIR) {
@@ -27,6 +29,22 @@ let rendererUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL
 let mainWindow: BrowserWindow | null = null
 let serverUrl = ''
 let isClosing = (): boolean => false
+const browserViews = new Set<WebContentsView>()
+const browserSessions = new BrowserSessionManager({
+  create(webPreferences) {
+    const view = new WebContentsView({ webPreferences })
+    browserViews.add(view)
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.addChildView(view)
+    return view
+  },
+  remove(view) {
+    browserViews.delete(view as WebContentsView)
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(view as WebContentsView)
+  }
+}, (state) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:browser-changed', state)
+})
+const browserTools = new BrowserToolServer(browserSessions)
 function openSettings(): void {
   if (isClosing()) return
   if (!mainWindow) {
@@ -91,7 +109,15 @@ function createWindow(openSettingsOnLoad = false): void {
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.on('close', (event) => { if (isClosing()) event.preventDefault() })
-  mainWindow.on('closed', () => { mainWindow = null })
+  mainWindow.on('closed', () => {
+    for (const view of browserViews) view.setVisible(false)
+    mainWindow = null
+  })
+
+  for (const view of browserViews) {
+    mainWindow.contentView.addChildView(view)
+    view.setVisible(false)
+  }
 
   protectRendererWindow(mainWindow, rendererUrl)
   const window = mainWindow
@@ -118,14 +144,15 @@ if (ownsInstance) app.whenReady().then(async () => {
       entry: join(__dirname, '../server/index.js'),
       dataDirectory,
       rendererOrigin: rendererUrl ? new URL(rendererUrl).origin : undefined,
-      packaged: app.isPackaged
+      packaged: app.isPackaged,
+      browserHost: browserTools
     })
     serverUrl = connection.url
     if (!rendererUrl) rendererUrl = `${serverUrl}/`
     const stopCaffeineMode = registerCaffeineMode(createServerCaffeineActivity(serverUrl), powerSaveBlocker)
     isClosing = registerAppShutdown(app, {
       showClosing: showClosingProcesses,
-      cleanup: [stopCaffeineMode, () => connection.close()],
+      cleanup: [stopCaffeineMode, () => browserTools.close(), () => connection.close()],
       finalize: () => {},
       reportError: (error) => console.error('Could not stop Anvil server:', error)
     })
@@ -144,6 +171,9 @@ if (ownsInstance) app.whenReady().then(async () => {
     desktop.handle('desktop:open-path', (path) => shell.openPath(path))
     desktop.handle('desktop:open-pr-url', openExternalPullRequest)
     desktop.handle('desktop:open-login-url', openExternalCodexLogin)
+    desktop.handle('desktop:browser-state', (taskId) => browserSessions.state(taskId))
+    desktop.handle('desktop:browser-layout', (layout) => browserSessions.layout(layout))
+    desktop.handle('desktop:browser-viewport', (input) => browserSessions.viewport(input.taskId, input.viewport))
     createWindow()
     const settingsMenu = {
       label: 'Settings…', accelerator: 'CommandOrControl+,',

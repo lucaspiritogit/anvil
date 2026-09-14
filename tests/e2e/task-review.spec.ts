@@ -37,7 +37,7 @@ test('owner reviews two isolated ranges and rework before the combined final dif
       return (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
     }
     window.anvil.tasks.rejectIssue = async ({ issueId, comment }) => {
-      if (issueId !== 'second' || comment !== 'Rework second only') throw new Error('Wrong review feedback')
+      if (issueId !== 'second' || comment !== undefined) throw new Error('Wrong review feedback')
       snapshot.children[1].status = 'working'
       snapshot.execution!.phase = 'working'
       publish()
@@ -59,15 +59,11 @@ test('owner reviews two isolated ranges and rework before the combined final dif
   await page.getByRole('tab', { name: /^Changes/ }).click()
   const file = page.getByRole('combobox', { name: 'Changed file' })
   await expect(file).toHaveValue('first.txt')
-  await page.getByLabel('Rework feedback').fill('Do not carry this draft')
+  await expect(page.getByLabel('Rework feedback')).toHaveCount(0)
   await page.getByRole('button', { name: 'Approve', exact: true }).click()
   await expect(file).toHaveValue('second.txt')
   await expect(file.locator('option')).toHaveCount(1)
-  await expect(page.getByLabel('Rework feedback')).toHaveValue('')
-  await page.getByLabel('Rework feedback').fill('Rework second only')
   await page.getByRole('button', { name: 'Request changes', exact: true }).click()
-  await expect(page.getByLabel('Rework feedback')).toBeHidden()
-  await expect(page.getByLabel('Rework feedback')).toHaveValue('')
   await expect(file).toHaveValue('second.txt')
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
@@ -81,7 +77,6 @@ test('owner reviews two isolated ranges and rework before the combined final dif
   await page.setViewportSize({ width: 900, height: 650 })
   await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeInViewport({ ratio: 1 })
   await expect(page.getByRole('button', { name: 'Request changes', exact: true })).toBeInViewport({ ratio: 1 })
-  await expect(page.getByLabel('Rework feedback')).toBeInViewport({ ratio: 1 })
   await page.screenshot({ path: testInfo.outputPath('second-review-narrow.png') })
   await page.getByRole('tab', { name: 'Output', exact: true }).click()
   for (const text of ['Planning history', 'First issue output', 'Second issue output']) await expect(page.getByRole('log')).toContainText(text)
@@ -197,9 +192,8 @@ test('sub-task review pauses on the per-issue diff with approve and request-chan
   await review.getByPlaceholder('Leave a note on this line…').fill('Rename this flag')
   await review.getByRole('button', { name: 'Add comment', exact: true }).click()
   await expect(review.getByText('1 line comment will be sent with the rework request.')).toBeVisible()
-  await review.getByLabel('Rework feedback').fill('Also cover the empty case')
   await page.getByRole('button', { name: 'Request changes', exact: true }).click()
-  await expect.poll(calls).toContainEqual({ kind: 'fixture:issue-rejection', detail: { taskId: 'review', comment: 'Also cover the empty case' } })
+  await expect.poll(calls).toContainEqual({ kind: 'fixture:issue-rejection', detail: { taskId: 'review' } })
   // Rework restarts the issue; the next review submission refetches the diff.
   const rework = structuredClone(snapshot)
   rework.children[1].status = 'working'
@@ -208,7 +202,6 @@ test('sub-task review pauses on the per-issue diff with approve and request-chan
   rework.children[1].status = 'review'
   await publish(rework)
   await expect(review.getByRole('combobox', { name: 'Changed file' })).toHaveValue('src/sidebar.ts')
-  await expect(review.getByLabel('Rework feedback')).toHaveValue('')
   await page.screenshot({ path: testInfo.outputPath('subtask-review-wide.png') })
   await page.setViewportSize({ width: 900, height: 650 })
   await page.screenshot({ path: testInfo.outputPath('subtask-review-narrow.png') })
@@ -467,24 +460,24 @@ async function deferredReview(page: import('@playwright/test').Page) {
 }
 
 for (const width of [900, 1440]) {
-  test(`finalization shows saving, loaded review and verified no-change Done at ${width}px`, async ({ page }, testInfo) => {
+  test(`review preparation, loaded review and verified no-change Done at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 })
     await deferredReview(page)
     const owner = page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
     const approve = page.getByRole('button', { name: 'Approve', exact: true })
     const changesTab = page.getByRole('tab', { name: /^Changes/ })
-    await expect(owner.getByRole('img', { name: 'Saving changes…', exact: true })).toBeVisible()
+    await expect(owner.getByRole('img', { name: 'Review', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
     const children = page.getByRole('list', { name: 'Subtasks of Review sidebar changes' })
     await expect(children).toContainText('Verify configurationDone')
-    await expect(children).toContainText('Save sidebar changesSaving changes…')
-    await expect(changesTab).toContainText('Saving…')
+    await expect(children).toContainText('Save sidebar changesReview')
+    await expect(changesTab).toContainText('Loading…')
     await expect(changesTab).not.toContainText('+3')
     await changesTab.click()
     await expect(approve).toBeDisabled()
-    await expect(page.getByRole('region', { name: 'Subtask code changes' })).toContainText('Saving changes…')
+    await expect(page.getByRole('region', { name: 'Subtask code changes' })).toContainText('Loading code changes…')
     expect(await page.evaluate(() => window.finalizedReview.issueReads)).toBe(0)
-    await page.screenshot({ path: testInfo.outputPath(`saving-${width}.png`) })
+    await page.screenshot({ path: testInfo.outputPath(`loading-${width}.png`) })
     // Navigate immediately after readiness, while the requested committed diff is deferred.
     await page.getByRole('button', { name: 'Open task: Build streaming support', exact: true }).click()
     await page.evaluate(() => window.finalizedReview.ready('saved-head'))
@@ -503,7 +496,7 @@ for (const width of [900, 1440]) {
     await expect(approve).toBeInViewport({ ratio: 1 })
     await page.screenshot({ path: testInfo.outputPath(`populated-${width}.png`) })
     await page.evaluate(() => window.finalizedReview.rework())
-    await expect(changesTab).toContainText('Saving…')
+    await expect(changesTab).toContainText('Loading…')
     await expect(changesTab).not.toContainText('+1')
     await expect(approve).toBeDisabled()
     await page.evaluate(() => window.finalizedReview.ready('obsolete-head'))
@@ -523,7 +516,7 @@ for (const width of [900, 1440]) {
     await expect(page.getByRole('combobox', { name: 'Changed file' })).toHaveCount(0)
     expect(await page.evaluate(() => window.finalizedReview.taskReads)).toBe(0)
     await page.screenshot({ path: testInfo.outputPath(`done-${width}.png`) })
-    for (const stage of ['saving', 'populated', 'done']) {
+    for (const stage of ['loading', 'populated', 'done']) {
       await testInfo.attach(`${stage}-${width}`, { path: testInfo.outputPath(`${stage}-${width}.png`), contentType: 'image/png' })
     }
   })

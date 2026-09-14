@@ -1,6 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { serverAddress } from '../../shared/server-address'
+import { isBrowserHostRequest, type BrowserHostResponse } from '../../shared/browser-host'
+
+export interface BrowserHost {
+  open(taskId: string, title: string): Promise<{ url: string; headers: Record<string, string> }>
+  release(taskId: string): void
+}
 
 export interface ServerConnection {
   url: string
@@ -44,6 +50,7 @@ export async function connectToServer(options: {
   rendererOrigin?: string
   packaged: boolean
   environment?: NodeJS.ProcessEnv
+  browserHost?: BrowserHost
 }): Promise<ServerConnection> {
   const environment = options.environment ?? process.env
   if (environment.ANVIL_SERVER_URL) {
@@ -58,10 +65,49 @@ export async function connectToServer(options: {
   const child = spawn(options.executable, [options.entry], {
     env: { ...environment, ELECTRON_RUN_AS_NODE: '1', ANVIL_DATA_DIR: options.dataDirectory,
       ANVIL_PACKAGED: options.packaged ? '1' : '0',
+      ANVIL_BROWSER_HOST: options.browserHost ? '1' : '0',
       // Packaged windows load the server's own origin; only the dev server needs an allowance.
       ...(options.rendererOrigin ? { ANVIL_RENDERER_ORIGIN: options.rendererOrigin } : {}) },
     stdio: ['ignore', 'inherit', 'inherit', 'ipc']
   })
+  const browserTasks = new Set<string>()
+  let browserChildExited = false
+  const onBrowserRequest = (message: unknown): void => {
+    if (!isBrowserHostRequest(message)) return
+    const respond = (response: BrowserHostResponse): void => {
+      if (!browserChildExited) child.send?.(response, () => {})
+    }
+    if (!options.browserHost) {
+      respond({ type: 'anvil-browser-host-response', requestId: message.requestId, ok: false, error: 'The desktop browser host is unavailable' })
+      return
+    }
+    if (message.operation === 'release') {
+      browserTasks.delete(message.taskId)
+      options.browserHost.release(message.taskId)
+      respond({ type: 'anvil-browser-host-response', requestId: message.requestId, ok: true })
+      return
+    }
+    void options.browserHost.open(message.taskId, message.title).then(
+      (connection) => {
+        if (browserChildExited) {
+          options.browserHost?.release(message.taskId)
+          return
+        }
+        browserTasks.add(message.taskId)
+        respond({ type: 'anvil-browser-host-response', requestId: message.requestId, ok: true, connection })
+      },
+      (error) => respond({ type: 'anvil-browser-host-response', requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) })
+    )
+  }
+  if (options.browserHost) {
+    child.on('message', onBrowserRequest)
+    child.once('exit', () => {
+      browserChildExited = true
+      child.off('message', onBrowserRequest)
+      for (const taskId of browserTasks) options.browserHost?.release(taskId)
+      browserTasks.clear()
+    })
+  }
   let stopped: Promise<void> | undefined
   const close = (): Promise<void> => { stopped ??= stopChild(child); return stopped }
   try {

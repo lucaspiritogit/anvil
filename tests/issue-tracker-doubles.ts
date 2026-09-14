@@ -7,7 +7,7 @@ import type { BatchIssue, Completion, Issue } from '../src/shared/valence'
 import { openTaskTracker as openIssueTracker } from './task-state'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import type { IssueToolConnection } from '../src/server/issue-tools/server'
+import type { TaskToolConnection } from '../src/server/agents/process-manager'
 
 export const testHome = process.env.ANVIL_TEST_HOME ?? realpathSync(mkdtempSync(join(tmpdir(), 'anvil-issue-tracker-test-')))
 export const handlers = new Map<string, (...args: any[]) => any>()
@@ -35,7 +35,7 @@ export const closeModelDiscovery = async () => {}
 const agentInstances = new Set<AgentProcessManager>()
 export class AgentProcessManager extends EventEmitter {
   constructor(private readonly databasePath?: string, _parse?: unknown, _executor?: unknown, _workspace?: unknown,
-    private readonly openIssueTools?: (taskId: string) => Promise<IssueToolConnection>) {
+    private readonly openTaskTools?: (taskId: string) => Promise<TaskToolConnection>) {
     super()
     if (process.env.ANVIL_TEST_HOME) agentInstances.add(this)
   }
@@ -46,14 +46,16 @@ export class AgentProcessManager extends EventEmitter {
   starts: any[] = []
   /** Simulate a tool call from the dispatched agent using its real IPC wiring. */
   async callTool(taskId: string, name: string, args: Record<string, unknown> = {}) {
-    if (!this.active.has(taskId) || !this.openIssueTools) throw new Error('No active task tool connection')
-    const connection = await this.openIssueTools(taskId)
+    if (!this.active.has(taskId) || !this.openTaskTools) throw new Error('No active task tool connection')
+    const connection = await this.openTaskTools(taskId)
+    const server = connection.mcpServers.find((candidate) => candidate.name === 'anvil_issue_tracker')
+    if (!server) throw new Error('No issue tool connection')
     const client = new Client({ name: 'task-agent-test', version: '1' })
     try {
-      await client.connect(new StreamableHTTPClientTransport(new URL(connection.url), { requestInit: { headers: connection.headers } }))
+      await client.connect(new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: server.headers } }))
       return await client.callTool({ name, arguments: args })
     } finally {
-      connection.close()
+      await connection.close()
       await client.close()
     }
   }

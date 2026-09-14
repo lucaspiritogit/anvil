@@ -135,6 +135,46 @@ test('duplicate exit notifications leave review and completed measurements uncha
   expect(store.getTask('task')?.workingTimeMs).toBe(3_000)
 })
 
+test('reviewed completion returns before project memory and does not finalize Git again', async () => {
+  const { store, add, execution } = fixture()
+  add({
+    baseCommit: 'a'.repeat(40),
+    branchName: 'agent/task',
+    headCommit: 'b'.repeat(40),
+    filesChanged: 1,
+    additions: 1
+  })
+  execution({ phase: 'complete', currentIssueId: null })
+  const agentProcesses = new AgentProcessManager()
+  onTestCleanup(() => agentProcesses.close())
+  const gitDelivery = new GitDeliveryManager()
+  const finalizeBranch = vi.spyOn(gitDelivery, 'finalizeBranch')
+  let finishMemory!: () => void
+  const memoryPending = new Promise<void>((resolve) => { finishMemory = resolve })
+  const rememberCompletedTask = vi.fn(() => memoryPending)
+  const context: TaskContext = {
+    store,
+    agentProcesses: agentProcesses as unknown as TaskContext['agentProcesses'],
+    gitDelivery: gitDelivery as unknown as TaskContext['gitDelivery'],
+    send: () => {}
+  }
+  const completion = createTaskCompletion(context, () => {}, { rememberCompletedTask })
+
+  await completion({ taskId: 'task', code: 0, cancelled: false }, {
+    finalize: false,
+    completedDeliveryStatus: 'reviewable',
+    waitForMemory: false
+  })
+
+  expect(store.getTask('task')).toMatchObject({ status: 'succeeded', deliveryStatus: 'reviewable' })
+  expect(finalizeBranch).not.toHaveBeenCalled()
+  expect(rememberCompletedTask).not.toHaveBeenCalled()
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(rememberCompletedTask).toHaveBeenCalledOnce()
+  finishMemory()
+  await memoryPending
+})
+
 const pausedStates: Partial<Task>[] = [
   ...(['pending', 'succeeded', 'failed', 'cancelled'] as TaskStatus[]).map((status) => ({ status })),
   ...(['preparing', 'finalizing', 'did_not_commit', 'reviewable', 'approved', 'no_changes', 'agent_failed', 'failed'] as DeliveryStatus[])

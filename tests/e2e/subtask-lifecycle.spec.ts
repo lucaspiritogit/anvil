@@ -80,8 +80,7 @@ test('a newly created task discovers planning children and keeps execution and r
     await publish()
     await expect(page.getByLabel('Task status', { exact: true })).toHaveText(`Review: ${child.title}`)
     await expect((index ? second : first)).toContainText('Review')
-    // The run indicator becomes a review gate while the agent waits.
-    await expect(page.getByRole('status', { name: 'Review gate' })).toBeVisible()
+    await expect(page.getByRole('status', { name: 'Agent activity' })).toHaveCount(0)
     await page.getByRole('tab', { name: /^Changes/ }).click()
     const review = page.getByRole('region', { name: 'Subtask code changes' })
     await expect(review.getByRole('status')).toContainText('Waiting for your review')
@@ -91,12 +90,10 @@ test('a newly created task discovers planning children and keeps execution and r
       await page.getByRole('button', { name: 'Approve', exact: true }).click()
       await expect.poll(reviewCalls).toEqual([{ kind: 'fixture:issue-approval', detail: { taskId: task.id } }])
     } else {
-      // Requesting changes sends the optional note and restarts the same issue.
-      await review.getByLabel('Rework feedback').fill('Tighten the row spacing')
       await page.getByRole('button', { name: 'Request changes', exact: true }).click()
       await expect.poll(reviewCalls).toEqual([
         { kind: 'fixture:issue-approval', detail: { taskId: task.id } },
-        { kind: 'fixture:issue-rejection', detail: { taskId: task.id, comment: 'Tighten the row spacing' } }
+        { kind: 'fixture:issue-rejection', detail: { taskId: task.id } }
       ])
       child.status = 'working'
       await publish()

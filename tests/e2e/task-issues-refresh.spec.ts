@@ -17,21 +17,21 @@ test('collapsed owner surfaces every issue transition without becoming final-del
         reviewReady: false
       }
     } })), status)
-    const label = { queued: 'Queued', working: 'Working', review: 'Saving changes…', blocked: 'Blocked', complete: 'Done' }[status]
+    const label = { queued: 'Queued', working: 'Working', review: 'Review', blocked: 'Blocked', complete: 'Done' }[status]
     await expect(parent).toContainText(`${label}: Implement navigation`)
     await expect(page.getByLabel('Task status', { exact: true })).toHaveText(`${label}: Implement navigation`)
     await expect(page.getByRole('list', { name: 'Subtasks of Layout test task' })).toHaveCount(0)
     if (status === 'review') await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled()
     else await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
     if (status === 'review') {
-      await expect(page.getByLabel('Agent activity')).toContainText('Saving changes…')
-      await expect(parent.getByRole('img', { name: 'Working', exact: true })).toHaveCount(0)
+      await expect(page.getByLabel('Agent activity')).toHaveCount(0)
+      await expect(parent.getByRole('img', { name: 'Review', exact: true })).toBeVisible()
       await page.screenshot({ path: testInfo.outputPath('parent-stopping.png') })
       await page.evaluate(async () => {
         const snapshot = await window.anvil.tasks.issues('output')
         window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'output', snapshot: { ...snapshot, reviewReady: true } } }))
       })
-      await expect(page.getByLabel('Review gate')).toContainText('Waiting for your review')
+      await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeEnabled()
     }
     await page.screenshot({ path: testInfo.outputPath(`parent-${status}.png`) })
   }

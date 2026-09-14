@@ -10,6 +10,7 @@ import { createTailscaleConnection } from './tailscale'
 import type { HttpRuntime } from './http'
 import { configureHeadlessPassword } from './headless-password'
 import type { HeadlessAccessMode } from '../shared/types'
+import { BrowserHostClient } from './browser-host-client'
 
 async function main(): Promise<void> {
   const serverArguments = process.argv.slice(2)
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
   await restoreShellPath()
   const dataDirectory = resolveAppDataDirectory(homedir(), process.env.ANVIL_PACKAGED === '1', process.env.ANVIL_DATA_DIR)
   const serverAuth = new ServerAuth(dataDirectory)
+  const browserTools = process.env.ANVIL_BROWSER_HOST === '1' && process.send ? new BrowserHostClient(process) : undefined
   let runtime: ReturnType<typeof createAnvilRuntime> | undefined
   const listeners = new Set<(channel: string, payload: unknown) => void>()
   const httpRuntime: HttpRuntime = {
@@ -110,7 +112,8 @@ async function main(): Promise<void> {
       serverAuth,
       rebindHttp: http.rebind,
       tailscale,
-      headlessAccess
+      headlessAccess,
+      browserTools
     })
     runtime.subscribeAll((channel, payload) => {
       for (const listener of listeners) listener(channel, payload)

@@ -5,8 +5,6 @@ import type { Task, TaskEvent } from '@shared/types'
 function activityLabel(task: Task, event?: TaskEvent): string {
   switch (task.deliveryStatus) {
     case 'preparing': return 'Preparing branch…'
-    case 'finalizing': return 'Saving changes…'
-    case 'did_not_commit': return 'Committing changes…'
   }
 
   switch (event?.category) {
@@ -23,13 +21,7 @@ function activityLabel(task: Task, event?: TaskEvent): string {
 }
 
 export function TaskActivity({ task, event, presentation }: { presentation?: ReturnType<typeof taskIssuePresentation>; task: Task; event?: TaskEvent }): JSX.Element | null {
-  if (presentation) {
-    return <div role="status" aria-label={presentation.status === 'review' ? 'Review gate' : 'Agent activity'} aria-live="polite" aria-atomic="true" className="py-3 text-xs text-dim">
-      {presentation.detail}: {presentation.issue.title}
-      {presentation.status === 'working' && <span className="block">{activityLabel(task, event)}</span>}
-    </div>
-  }
-  if (task.status !== 'running') return null
+  if (task.status !== 'running' || (presentation && presentation.status !== 'working')) return null
   const label = activityLabel(task, event)
 
   return (

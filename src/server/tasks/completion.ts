@@ -2,7 +2,13 @@ import type { ExitInfo } from '../agents/process-manager'
 import type { TaskMemory } from '../memory/task-memory'
 import type { RecordSystemEvent, TaskContext } from './context'
 
-export type TaskCompletion = (info: ExitInfo, options?: { finalize: boolean }) => Promise<void>
+interface TaskCompletionOptions {
+  finalize: boolean
+  completedDeliveryStatus?: 'reviewable' | 'no_changes'
+  waitForMemory?: boolean
+}
+
+export type TaskCompletion = (info: ExitInfo, options?: TaskCompletionOptions) => Promise<void>
 
 export function createTaskCompletion(
   { store, gitDelivery, send }: Pick<TaskContext, 'store' | 'gitDelivery' | 'send'>,
@@ -14,12 +20,17 @@ export function createTaskCompletion(
     // Git tasks deliver a final diff from their branch.
     const existing = store.getTask(info.taskId)
     const managed = Boolean(existing?.baseCommit && existing.branchName)
+    const completedDeliveryStatus = status === 'succeeded' ? options?.completedDeliveryStatus : undefined
     let task = store.updateTask(info.taskId, {
       status,
       endedAt: Date.now(),
       exitCode: info.code,
       error: info.error,
-      ...(managed && options?.finalize !== false ? { deliveryStatus: 'finalizing' as const } : {})
+      ...(completedDeliveryStatus
+        ? { deliveryStatus: completedDeliveryStatus }
+        : managed && options?.finalize !== false
+          ? { deliveryStatus: 'finalizing' as const }
+          : {})
     })
     if (task) send('task:updated', task)
     if (task && status === 'pending') {
@@ -28,6 +39,11 @@ export function createTaskCompletion(
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task?.projectId)
     if (!project || !task) return
     if (!managed || !task.baseCommit || options?.finalize === false) {
+      if (options?.waitForMemory === false) {
+        const completedTask = task
+        setImmediate(() => { void rememberCompletedTask(completedTask, project.path) })
+        return
+      }
       await rememberCompletedTask(task, project.path)
       return
     }

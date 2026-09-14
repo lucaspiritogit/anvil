@@ -37,6 +37,12 @@ import type { TailscaleConnection } from './tailscale'
 import { TaskBranches } from './tasks/task-branch'
 import type { HeadlessAccessMode } from '../shared/types'
 import { IssueToolServer } from './issue-tools/server'
+import type { BrowserCapabilityConnection } from './browser-host-client'
+
+export interface BrowserCapabilityProvider {
+  open(taskId: string, title: string): Promise<BrowserCapabilityConnection>
+  close(): void
+}
 
 export interface RuntimeOptions {
   dataDirectory: string
@@ -48,6 +54,7 @@ export interface RuntimeOptions {
   serverAuth?: ServerAuth
   tailscale?: TailscaleConnection
   headlessAccess?: HeadlessAccessMode
+  browserTools?: BrowserCapabilityProvider
 }
 
 /** Owns the domain services independently of Electron and HTTP. */
@@ -76,8 +83,30 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     const task = store.getTask(taskId)
     if (task) broadcast('task:updated', task)
   }, { set: (...args) => taskBranches.set(...args) })
+  const openTaskTools = async (taskId: string) => {
+    const issueConnection = await issueTools.open(taskId)
+    let browserConnection: BrowserCapabilityConnection | undefined
+    if (options.browserTools) {
+      const task = store.getTask(taskId)
+      try {
+        browserConnection = await options.browserTools.open(taskId, task?.title ?? 'Agent task')
+      } catch (error) {
+        console.warn('Could not open browser tools for the agent turn:', error)
+      }
+    }
+    return {
+      mcpServers: [
+        { name: 'anvil_issue_tracker', url: issueConnection.url, headers: issueConnection.headers, required: true },
+        ...(browserConnection ? [{ name: 'anvil_browser', url: browserConnection.url, headers: browserConnection.headers, required: false }] : [])
+      ],
+      close: async () => {
+        issueConnection.close()
+        await browserConnection?.close()
+      }
+    }
+  }
   const agentProcesses = new AgentProcessManager(undefined, undefined, undefined,
-    (taskId) => resolveTaskWorkspace(store, taskId), (taskId) => issueTools.open(taskId))
+    (taskId) => resolveTaskWorkspace(store, taskId), openTaskTools)
   const worktreeOwners = new Map<string, string>()
   const rememberWorktreeOwners = (): void => {
     for (const task of store.getTasks()) worktreeOwners.set(task.id, task.workspaceId)
@@ -237,6 +266,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
         Promise.resolve().then(() => accounts.close()),
         Promise.resolve().then(() => closeModelDiscovery()),
         Promise.resolve().then(() => issueTools.close()),
+        Promise.resolve().then(() => options.browserTools?.close()),
         Promise.resolve().then(() => githubPolling.close()),
         Promise.resolve().then(() => projectMemory.close())
       ])

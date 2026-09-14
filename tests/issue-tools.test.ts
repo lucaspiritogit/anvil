@@ -138,7 +138,7 @@ for (const protocol of ['codex', 'acp'] as const) {
           args: [resolve('tests/fixtures/opencode-acp.cjs'), 'mcp-branch', join(f.root, 'acp.jsonl')], startupTimeoutMs: 5000 })
       onTestCleanup(() => executor.close())
       const result = await executor.execute({ workspace: testWorkspace(), taskId: f.task.id, cwd: f.task.cwd,
-        prompt: 'Implement the issue', model: protocol === 'codex' ? 'test-model' : 'provider/model', issueTools: connection,
+        prompt: 'Implement the issue', model: protocol === 'codex' ? 'test-model' : 'provider/model', mcpServers: [{ name: 'anvil_issue_tracker', url: connection.url, headers: connection.headers, required: true }],
         resumeSessionId: resumed ? protocol === 'codex' ? 'thread-test' : 'session-test' : undefined
       }, () => {})
       expect(result.status, result.error).toBe('succeeded')
@@ -303,7 +303,7 @@ for (const mode of ['fresh', 'resumed', 'planning-reuse', 'blocked-recovery', 'p
       try {
         return await executor.execute({ workspace: testWorkspace(), taskId: task.id,
           cwd: task.cwd, prompt: 'Implement the issue', model: 'test-model',
-          resumeSessionId, issueTools: connection }, () => {})
+          resumeSessionId, mcpServers: [{ name: 'anvil_issue_tracker', url: connection.url, headers: connection.headers, required: true }] }, () => {})
       } finally {
         connection.close()
         expect((await fetch(connection.url, { method: 'POST', headers: connection.headers })).status).toBe(403)
@@ -370,7 +370,7 @@ test.skipIf(!process.env.ANVIL_LIVE_CODEX_HOME)('live Codex app-server commits a
   const account = await executor.readAccount()
   expect(account.account, 'Authenticated file-backed Codex profile required').toBeTruthy()
   const result = await executor.execute({ workspace, taskId: task.id, cwd: repo,
-    issueTools: connection,
+    mcpServers: [{ name: 'anvil_issue_tracker', url: connection.url, headers: connection.headers, required: true }],
     prompt: 'Use the supplied anvil_issue_tracker MCP tools. Read anvil_get_plan for the current issue. Implement it in this disposable repository: write smoke.txt containing ok, run a node assertion to validate it, git add and git commit with a chore: subject. Then call anvil_submit_review with the current issue ID, ordered checklist confirmations and actual command/results evidence. Do not block or approve the issue. Stop after successful submission.'
   }, (event) => { if (event.type === 'output') process.stdout.write(event.event.text) })
   expect(result.status, result.error).toBe('succeeded')

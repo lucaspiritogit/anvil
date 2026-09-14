@@ -47,14 +47,14 @@ test('parent presentation follows transitions and preserves final delivery seman
   }
   state.children[0].status = 'review'
   state.reviewReady = false
-  expect(taskIssuePresentation(task, state)?.label).toBe('Saving changes…')
-  expect(taskIssuePresentation({ ...task, status: 'failed' }, state)?.status).toBe('working')
+  expect(taskIssuePresentation(task, state)?.label).toBe('Review')
+  expect(taskIssuePresentation({ ...task, status: 'failed' }, state)?.status).toBe('review')
   expect(taskIssuePresentation({ ...task, status: 'succeeded', deliveryStatus: 'reviewable' }, state)).toBeNull()
   state.children[0].status = 'complete'
-  expect(issuePresentation(state.children[0], state).label).toBe('Done')
+  expect(issuePresentation(state.children[0]).label).toBe('Done')
   expect(taskIssuePresentation(task, state)?.detail).toBe('Subtask complete')
   state.children[0].reviewedAt = 1
-  expect(issuePresentation(state.children[0], state).label).toBe('Approved')
+  expect(issuePresentation(state.children[0]).label).toBe('Approved')
   expect(taskIssuePresentation(task, state)?.detail).toBe('Subtask approved')
   state.children[0].status = 'working'
   state.execution = { phase: 'blocked', currentIssueId: 'child', error: 'Interrupted' }

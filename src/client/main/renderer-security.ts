@@ -1,5 +1,5 @@
 import { ipcMain, shell, type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import type { DesktopRequests } from '../../shared/desktop-requests'
+import { isDesktopRequest, type DesktopRequests } from '../../shared/desktop-requests'
 import { isGitHubPullRequestUrl } from '../../shared/github-repository'
 
 /** Only the configured document may use the desktop bridge. Hash routes are local. */
@@ -34,11 +34,8 @@ export function createDesktopIpc(getWindow: () => BrowserWindow | null, renderer
       ipcMain.handle(channel, (event, ...args) => {
         if (!isRendererSender(event, getWindow(), rendererUrl)) throw new Error('Unauthorized IPC sender')
         const input = args[0]
-        const picker = channel === 'desktop:pick-project' || channel === 'desktop:pick-wallpaper'
-        if (args.length > 1 || (picker ? input !== undefined : typeof input !== 'string' || !input || input.length > 4096 || /[\x00-\x1f]/.test(input))) {
-          throw new Error('Invalid desktop request')
-        }
-        return listener(input)
+        if (args.length > 1 || !isDesktopRequest(channel, input)) throw new Error('Invalid desktop request')
+        return listener(input as DesktopRequests[C])
       })
     }
   }

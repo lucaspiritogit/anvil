@@ -393,7 +393,15 @@ export function registerTaskExecution(
     notify(taskId)
     recordSystemEvent(taskId, `Developer approved issue ${issueId}.`)
     if (state.phase === 'complete') {
-      await finishTask({ taskId, code: 0, cancelled: false })
+      const task = store.getTask(taskId)
+      const completedDeliveryStatus = task?.baseCommit && task.branchName
+        ? task.filesChanged > 0 ? 'reviewable' as const : 'no_changes' as const
+        : undefined
+      await finishTask({ taskId, code: 0, cancelled: false }, {
+        finalize: false,
+        waitForMemory: false,
+        ...(completedDeliveryStatus ? { completedDeliveryStatus } : {})
+      })
     } else {
       await startNextTurn(taskId)
     }

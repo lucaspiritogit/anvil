@@ -2,13 +2,16 @@ import type { JSX } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Task, TaskEvent, TaskEventCategory } from '@shared/types'
 import type { taskIssuePresentation } from '@shared/task-issue-presentation'
+import { BROWSER_VIEWPORTS, type BrowserViewport } from '@shared/browser-observation'
 import { useStore } from '../state/store'
 import { btn, cn } from '../ui'
 import { TaskActivity } from './TaskActivity'
 
 const PLACEHOLDER = 'py-8 text-center text-dim'
+const BROWSER_HEADER_HEIGHT = 32
+const BROWSER_MAX_WIDTH_RATIO = 0.48
 
-type Direction = 'initial' | 'older' | 'newer' | 'latest'
+type Direction = 'initial' | 'latest'
 type Anchor = { id: string; offset: number }
 
 export function TaskOutput({ task, visible, presentation }: {
@@ -48,7 +51,6 @@ export function TaskOutput({ task, visible, presentation }: {
     captureAnchor()
     attempt.current = direction
     pending.current = direction
-    if (direction === 'older' || direction === 'newer') setFollow(false)
     void loadTaskEvents(task.id, direction)
   }
 
@@ -65,7 +67,7 @@ export function TaskOutput({ task, visible, presentation }: {
       // Disable native anchoring below so it does not compete with this adjustment.
       const row = output.querySelector<HTMLElement>(`[data-event-id="${CSS.escape(anchor.current.id)}"]`)
       if (row) output.scrollTop += row.getBoundingClientRect().top - output.getBoundingClientRect().top - anchor.current.offset
-      else if (completed && !history?.error) output.scrollTop = pending.current === 'older' ? 0 : output.scrollHeight
+      else if (completed && !history?.error) output.scrollTop = output.scrollHeight
     }
     if (completed) pending.current = null
     if (jump || (follow && history?.followingLatest)) anchor.current = null
@@ -73,33 +75,148 @@ export function TaskOutput({ task, visible, presentation }: {
   }, [events, history, follow, visible, task.status, task.deliveryStatus, presentation])
 
   return (
-    <section id="task-panel-output" aria-label="Output" className={cn('flex flex-col flex-1 min-h-0 min-w-0', !visible && 'hidden')}>
-      <nav aria-label="Output history" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-5 py-1.5 text-xs">
-        <button className={cn(btn.ghost, 'py-1 text-xs')} disabled={!history?.hasOlder || !!history.loading} onClick={() => load('older')}>Older output</button>
-        <button className={cn(btn.ghost, 'py-1 text-xs')} disabled={!history?.hasNewer || !!history.loading} onClick={() => load('newer')}>Newer output</button>
-        <span role="status" className="text-dim">{history?.loading ? 'Loading output…' : history?.loaded ? `${events?.length ?? 0} events · ${history.followingLatest ? 'Latest' : 'History'}` : ''}</span>
-        {(!follow || history?.hasNewer || history?.followingLatest === false) && <button className={cn(btn.ghost, 'ml-auto py-1 text-xs')} disabled={!!history?.loading} onClick={() => load('latest')}>Jump to latest</button>}
-      </nav>
-      {history?.error && <div role="alert" className="shrink-0 px-5 py-2 text-xs text-danger">
-        {history.error}
-        <button className={cn(btn.ghost, 'ml-3')} onClick={() => load(attempt.current)}>Retry output</button>
-      </div>}
-      <div ref={outputRef} role="log" aria-label="Task output" aria-busy={!!history?.loading}
-        className="flex-1 min-h-0 min-w-0 px-5 pb-3 overflow-y-auto overscroll-contain [overflow-anchor:none] font-mono text-[12.5px] leading-[1.55]"
-        onScroll={(event) => {
-          if (!visible) return
-          const output = event.currentTarget
-          const atTail = history?.followingLatest === true && output.scrollHeight - output.scrollTop - output.clientHeight < 40
-          setFollow(atTail)
-          if (atTail) anchor.current = null
-          else captureAnchor()
-        }}>
-        <PromptBlock label="Prompt" text={task.prompt} />
-        {!history?.loaded && !history?.error && <p className={PLACEHOLDER}>Loading output…</p>}
-        {history?.loaded && events?.length === 0 && task.status !== 'running' && <p className={PLACEHOLDER}>No output recorded.</p>}
-        {events?.map((event) => <LogRow key={event.id} event={event} />)}
-        <TaskActivity task={task} presentation={presentation} event={history?.followingLatest ? events?.at(-1) : undefined} />
+    <section id="task-panel-output" aria-label="Output" className={cn('flex flex-1 min-h-0 min-w-0', !visible && 'hidden')}>
+      <div className="flex flex-1 min-h-0 min-w-0 flex-col">
+        <nav aria-label="Output history" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-5 py-1.5 text-xs">
+          <span role="status" className="text-dim">{history?.loading ? 'Loading output…' : history?.loaded ? `${events?.length ?? 0} events · ${history.followingLatest ? 'Latest' : 'History'}` : ''}</span>
+          {(!follow || history?.hasNewer || history?.followingLatest === false) && <button className={cn(btn.ghost, 'ml-auto py-1 text-xs')} disabled={!!history?.loading} onClick={() => load('latest')}>Jump to latest</button>}
+        </nav>
+        {history?.error && <div role="alert" className="shrink-0 px-5 py-2 text-xs text-danger">
+          {history.error}
+          <button className={cn(btn.ghost, 'ml-3')} onClick={() => load(attempt.current)}>Retry output</button>
+        </div>}
+        <div ref={outputRef} role="log" aria-label="Task output" aria-busy={!!history?.loading}
+          className="flex-1 min-h-0 min-w-0 px-5 pb-3 overflow-y-auto overscroll-contain [overflow-anchor:none] font-mono text-[12.5px] leading-[1.55]"
+          onScroll={(event) => {
+            if (!visible) return
+            const output = event.currentTarget
+            const atTail = history?.followingLatest === true && output.scrollHeight - output.scrollTop - output.clientHeight < 40
+            setFollow(atTail)
+            if (atTail) anchor.current = null
+            else captureAnchor()
+          }}>
+          <PromptBlock label="Prompt" text={task.prompt} />
+          {!history?.loaded && !history?.error && <p className={PLACEHOLDER}>Loading output…</p>}
+          {history?.loaded && events?.length === 0 && task.status !== 'running' && <p className={PLACEHOLDER}>No output recorded.</p>}
+          {events?.map((event) => <LogRow key={event.id} event={event} />)}
+          <TaskActivity task={task} presentation={presentation} event={history?.followingLatest ? events?.at(-1) : undefined} />
+        </div>
       </div>
+      <BrowserObservationPane taskId={task.id} visible={visible} />
+    </section>
+  )
+}
+
+function BrowserObservationPane({ taskId, visible }: { taskId: string; visible: boolean }): JSX.Element | null {
+  const [open, setOpen] = useState(false)
+  const [viewport, setViewport] = useState<BrowserViewport>('desktop')
+  const [paneSize, setPaneSize] = useState<{ width: number; height: number } | null>(null)
+  const paneRef = useRef<HTMLElement>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let active = true
+    let changed = false
+    const stop = window.anvil.browser.onChanged((state) => {
+      if (state.taskId !== taskId) return
+      changed = true
+      if (active) {
+        setOpen(state.open)
+        setViewport(state.viewport)
+      }
+    })
+    void window.anvil.browser.state(taskId).then((state) => {
+      if (active && !changed) {
+        setOpen(state.open)
+        setViewport(state.viewport)
+      }
+    }).catch(() => {})
+    return () => {
+      active = false
+      stop()
+    }
+  }, [taskId])
+
+  useLayoutEffect(() => {
+    const pane = paneRef.current
+    const container = pane?.parentElement
+    if (!open || !visible || !pane || !container) {
+      setPaneSize(null)
+      return
+    }
+    const dimensions = BROWSER_VIEWPORTS[viewport]
+    const measure = (): void => {
+      const maximumWidth = Math.floor(container.clientWidth * BROWSER_MAX_WIDTH_RATIO)
+      const maximumHeight = container.clientHeight - BROWSER_HEADER_HEIGHT
+      if (maximumWidth < 1 || maximumHeight < 1) return
+      const scale = Math.min(1, maximumWidth / dimensions.width, maximumHeight / dimensions.height)
+      const next = {
+        width: Math.max(1, Math.floor(dimensions.width * scale)),
+        height: Math.max(1, Math.floor(dimensions.height * scale))
+      }
+      setPaneSize((current) => current?.width === next.width && current.height === next.height ? current : next)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [open, viewport, visible])
+
+  useLayoutEffect(() => {
+    const frame = frameRef.current
+    const hidden = { taskId, visible: false, bounds: { x: 0, y: 0, width: 0, height: 0 } }
+    const place = (layout: Parameters<typeof window.anvil.browser.layout>[0]): void => {
+      void window.anvil.browser.layout(layout).catch(() => {})
+    }
+    if (!open || !visible || !frame) {
+      place(hidden)
+      return
+    }
+    let animationFrame = 0
+    const measure = (): void => {
+      animationFrame = 0
+      const bounds = frame.getBoundingClientRect()
+      place({
+        taskId,
+        visible: bounds.width >= 1 && bounds.height >= 1,
+        bounds: {
+          x: Math.max(0, Math.round(bounds.x)),
+          y: Math.max(0, Math.round(bounds.y)),
+          width: Math.max(0, Math.round(Math.min(bounds.width, window.innerWidth - bounds.x))),
+          height: Math.max(0, Math.round(Math.min(bounds.height, window.innerHeight - bounds.y)))
+        }
+      })
+    }
+    const schedule = (): void => {
+      if (!animationFrame) animationFrame = window.requestAnimationFrame(measure)
+    }
+    measure()
+    const observer = new ResizeObserver(schedule)
+    observer.observe(frame)
+    window.addEventListener('resize', schedule)
+    return () => {
+      if (animationFrame) window.cancelAnimationFrame(animationFrame)
+      observer.disconnect()
+      window.removeEventListener('resize', schedule)
+      place(hidden)
+    }
+  }, [open, taskId, viewport, visible])
+
+  if (!open) return null
+  const dimensions = BROWSER_VIEWPORTS[viewport]
+  const nextViewport = viewport === 'desktop' ? 'mobile' : 'desktop'
+  return (
+    <section ref={paneRef} aria-label="Agent browser" style={paneSize ? { width: paneSize.width, height: paneSize.height + BROWSER_HEADER_HEIGHT } : undefined}
+      className={cn('flex min-h-0 shrink-0 self-start flex-col overflow-hidden border-l border-line', !paneSize && 'h-full w-[48%]')}>
+      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-3 text-[11px] font-medium text-dim">
+        <span>Browser</span>
+        <span>{dimensions.width} × {dimensions.height}</span>
+        <button className={cn(btn.ghost, 'ml-auto px-2 py-0.5 text-[11px]')} aria-label={`Switch browser to ${nextViewport} view`}
+          onClick={() => { void window.anvil.browser.viewport({ taskId, viewport: nextViewport }).catch(() => {}) }}>
+          {nextViewport === 'mobile' ? 'Mobile' : 'Desktop'}
+        </button>
+      </div>
+      <div ref={frameRef} className="min-h-0 flex-1 bg-canvas" />
     </section>
   )
 }

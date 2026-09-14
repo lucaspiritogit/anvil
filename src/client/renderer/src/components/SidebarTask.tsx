@@ -13,7 +13,6 @@ import { openTaskContextMenu } from './TaskContextMenu'
 const TASK_INDICATORS = {
   queued: { icon: 'loader', label: 'Queued', tone: 'text-accent', highlight: '' },
   running: { icon: 'loader', label: 'Working', tone: 'text-accent', highlight: '' },
-  saving: { icon: 'loader', label: 'Saving changes…', tone: 'text-accent', highlight: '' },
   done: { icon: 'check', label: 'Done', tone: 'text-ok', highlight: '' },
   reviewedIssue: { icon: 'check', label: 'Approved', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
   merged: { icon: 'git-branch', label: 'Merged', tone: 'text-violet', highlight: 'bg-violet/8 hover:bg-violet/12 ring-violet/30' },
@@ -23,7 +22,7 @@ const TASK_INDICATORS = {
 } as const
 
 function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
-  if (task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit') return TASK_INDICATORS.saving
+  if (task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit') return TASK_INDICATORS.running
   if (task.status === 'pending') return TASK_INDICATORS.queued
   if (task.status === 'running') return TASK_INDICATORS.running
   if (task.status === 'failed' || task.deliveryStatus === 'failed' || task.deliveryStatus === 'agent_failed') {

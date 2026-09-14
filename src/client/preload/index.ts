@@ -1,6 +1,7 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { createAnvilApi } from './api'
 import { serverAddress } from '../../shared/server-address'
+import type { BrowserObservationState } from '../../shared/browser-observation'
 
 // Keep native-menu requests made while React is still loading.
 let settingsOpenPending = false
@@ -26,7 +27,15 @@ const api = createAnvilApi(url, {
   pickWallpaper: () => ipcRenderer.invoke('desktop:pick-wallpaper'),
   openPath: (path) => ipcRenderer.invoke('desktop:open-path', path),
   openPullRequest: (value) => ipcRenderer.invoke('desktop:open-pr-url', value),
-  openLoginUrl: (value) => ipcRenderer.invoke('desktop:open-login-url', value)
+  openLoginUrl: (value) => ipcRenderer.invoke('desktop:open-login-url', value),
+  browserState: (taskId) => ipcRenderer.invoke('desktop:browser-state', taskId),
+  browserLayout: (layout) => ipcRenderer.invoke('desktop:browser-layout', layout),
+  browserViewport: (input) => ipcRenderer.invoke('desktop:browser-viewport', input),
+  onBrowserChanged(handler) {
+    const listener = (_event: IpcRendererEvent, state: BrowserObservationState): void => handler(state)
+    ipcRenderer.on('desktop:browser-changed', listener)
+    return () => { ipcRenderer.off('desktop:browser-changed', listener) }
+  }
 })
 
 contextBridge.exposeInMainWorld('anvil', api)

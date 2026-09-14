@@ -313,6 +313,12 @@ window.anvil = {
     onReady: (handler: () => void) => subscribeReadiness((value) => { if (value.ok) handler() }),
     onInitFailed: (handler: (message: string) => void) => subscribeReadiness((value) => { if (!value.ok) handler(value.message) })
   },
+  browser: {
+    state: async (taskId) => ({ taskId, open: false, viewport: 'desktop' }),
+    layout: async () => {},
+    viewport: async ({ taskId, viewport }) => ({ taskId, open: false, viewport }),
+    onChanged: () => noop
+  },
   projects: {
     files: async ({ projectId }: { projectId: string }) => {
       const fixture = window.fileMentionTest
