@@ -5,6 +5,57 @@ test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
 const fixture = '/tests/e2e/fixture/'
 
+test('friendly model labels support partial lookup and preserve the exact routed model', async ({ page }) => {
+  await page.goto(fixture)
+  await page.evaluate(() => {
+    const originalModels = window.anvil.agents.models
+    window.anvil.agents.models = async (agentId) => agentId === 'opencode' ? {
+      agentId,
+      models: [
+        'openrouter/moonshotai/kimi-k3',
+        'opencode-go/kimi-k2.6',
+        'opencode/kimi-k3-turbo',
+        'openai/gpt-5.4-codex'
+      ]
+    } : originalModels(agentId)
+  })
+
+  const composer = page.getByRole('form', { name: 'Start a task' })
+  const trigger = composer.getByRole('button', { name: 'Model: GPT 5', exact: true })
+  await trigger.click()
+  let dialog = page.getByRole('dialog', { name: 'Choose model' })
+  await expect(dialog.getByRole('button', { name: 'GPT 5', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  dialog = await browseProvider(trigger, 'opencode')
+  const search = dialog.getByRole('searchbox', { name: 'Search models' })
+  const models = dialog.getByRole('group', { name: 'Models', exact: true })
+  await expect(models.getByRole('button', { name: 'GPT 5.4 Codex', exact: true })).toBeVisible()
+  await expect(models.getByRole('button', { name: 'Kimi K2.6', exact: true })).toBeVisible()
+
+  await search.fill('kimi')
+  await expect(models.getByRole('button')).toHaveCount(3)
+  await expect(dialog.getByRole('group', { name: 'OpenRouter models', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('group', { name: 'OpenCode Go models', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('group', { name: 'OpenCode Zen models', exact: true })).toBeVisible()
+
+  await search.fill('k3')
+  await expect(models.getByRole('button')).toHaveCount(2)
+  await search.press('ArrowDown')
+  const routedKimi = models.getByRole('button', { name: 'Kimi K3', exact: true })
+  await expect(routedKimi).toBeFocused()
+  await expect(routedKimi).toHaveAttribute('title', 'openrouter/moonshotai/kimi-k3')
+  await page.keyboard.press('Enter')
+
+  const selected = composer.getByRole('button', { name: 'Model: Kimi K3', exact: true })
+  await expect(selected).toHaveAttribute('title', 'OpenCode · Kimi K3 · OpenRouter credentials')
+  await composer.getByRole('textbox').fill('Use the friendly model result')
+  await composer.getByRole('button', { name: 'Send', exact: true }).click()
+  const startedTasks = await page.evaluate(async () => (await window.anvil.tasks.list()).filter((task) => task.id.startsWith('started-')))
+  expect(startedTasks).toHaveLength(1)
+  expect(startedTasks[0]).toMatchObject({ agentId: 'opencode', model: 'openrouter/moonshotai/kimi-k3' })
+})
+
 test('model picker searches by company and model name, and omits reasoning when metadata is unavailable', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 900, height: 600 })
   await page.goto(fixture)

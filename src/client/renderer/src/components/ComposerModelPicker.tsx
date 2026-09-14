@@ -8,7 +8,7 @@ import type { AgentDefinition } from '@shared/types'
 import { AgentIcon } from './AgentIcon'
 import { ProviderIcon } from './ProviderIcon'
 
-import { describeModel, groupModelsBySubscription, type ModelOption } from '../model-options'
+import { describeModel, groupModelsBySubscription, modelMatchesQuery, type ModelOption } from '../model-options'
 
 export function ComposerModelPicker({ agents, agentId, selectedModels, value, onChange }: {
   agents: AgentDefinition[]
@@ -91,9 +91,8 @@ export function ModelPickerDialog({ anchorRef, agentId, agents, selectedModels, 
     setCustomModel(selectedModels[id] ?? '')
     if (listRef.current) listRef.current.scrollTop = 0
   }
-  const search = query.trim().toLowerCase()
-  const filtered = options.filter((option) =>
-    `${option.name} ${option.id} ${option.company} ${option.providerName}`.toLowerCase().includes(search))
+  const search = query.trim()
+  const filtered = options.filter((option) => modelMatchesQuery(option, search))
   const subscriptionGroups = groupModelsBySubscription(filtered)
   const focusProvider = (): void => {
     const providers = providerListRef.current
