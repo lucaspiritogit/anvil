@@ -107,6 +107,7 @@ function toProject(row: ProjectRow): Project {
 function toTask(row: TaskRow): Task {
   return {
     id: row.id,
+    style: row.style,
     projectId: row.projectId,
     workspaceId: row.workspaceId,
     agentId: row.agentId,
@@ -580,9 +581,10 @@ export class Store {
 
   addTask(task: Omit<Task, 'workspaceId'> & { workspaceId?: string }): Task {
     const ownedTask: Task = {
-      ...task, workspaceId: task.workspaceId ?? this.getActiveWorkspace().id,
+      ...task, style: task.style ?? 'work', workspaceId: task.workspaceId ?? this.getActiveWorkspace().id,
       ...advanceTaskWorkingTime({ workingTimeMs: task.workingTimeMs }, isTaskWorking(task), Date.now())
     }
+    if (ownedTask.workingStartedAt === undefined) delete ownedTask.workingStartedAt
     const connection = this.workspaceConnection(ownedTask.workspaceId)
     if (this.getTask(ownedTask.id)) throw new Error('Task already exists')
     connection.db.insert(tasks).values(toTaskRow(ownedTask)).run()
@@ -811,7 +813,12 @@ export class Store {
         const task = this.getTask(row.state.taskId)
         if (task && isQueuedStackTask(task)) continue
         if (row.state.phase === 'planning' || row.state.phase === 'working' || row.state.phase === 'recovering') {
-          this.saveTaskExecution({ ...row.state, phase: 'blocked', error: 'Interrupted by app restart. Inspect Valence work before requeueing.' })
+          const quick = row.state.style === 'quick'
+          this.saveTaskExecution({
+            ...row.state,
+            phase: 'blocked',
+            error: quick ? 'Interrupted by app restart. Send a follow-up to continue.' : 'Interrupted by app restart. Inspect Valence work before requeueing.'
+          })
         }
       }
       return connection

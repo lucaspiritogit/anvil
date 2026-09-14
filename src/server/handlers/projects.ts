@@ -7,6 +7,7 @@ import type { TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
 import type { Project } from '../../shared/types'
 import { listProjectFiles, projectFileError } from '../project-files'
+import { taskStyle } from '../../shared/task-style'
 
 interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDelivery' | 'agentProcesses'> {
   stopTask: TaskExecution['stopTask']
@@ -18,6 +19,11 @@ interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDel
 export function registerProjectHandlers(ipc: HandlerRegistry, {
   store, gitDelivery, agentProcesses, stopTask, deferTaskCleanup, projectMemory, projectsChanged
 }: ProjectHandlerDependencies): void {
+  const requireCheckoutAvailable = (projectId: string): void => {
+    if (store.getTasks().some((task) => task.projectId === projectId && taskStyle(task) === 'quick' && task.status === 'running')) {
+      throw new Error('Wait for the active Quick task in this project to finish')
+    }
+  }
   ipc.handle('projects:list', () => store.getProjects())
   ipc.handle('projects:files', async ({ projectId }) => {
     const project = store.getProjects().find((item) => item.id === projectId)
@@ -103,6 +109,7 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
   ipc.handle('projects:git-init', async (id: string) => {
     const project = store.getProjects().find((item) => item.id === id)
     if (!project) throw new Error('Project not found')
+    requireCheckoutAvailable(id)
     return gitDelivery.init(project.path)
   })
 
@@ -116,6 +123,7 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     const workspaceId = store.getActiveWorkspace().id
     const project = store.getProjects().find((item) => item.id === projectId)
     if (!project) throw new Error('Project not found')
+    requireCheckoutAvailable(projectId)
     const result = await gitDelivery.switchProjectBranch(project.path, branchName)
     projectsChanged?.(workspaceId)
     return result

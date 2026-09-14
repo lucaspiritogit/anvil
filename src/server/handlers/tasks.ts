@@ -14,6 +14,7 @@ import { withTaskOperation, cancelTaskOperation } from '../tasks/operations'
 import { TaskIssues } from '../tasks/task-issues'
 import { titleFor } from '../tasks/task-title'
 import type { Task, TaskDiff, TaskIssueSnapshot, TaskEvent, TaskEventsPage } from '../../shared/types'
+import { taskStyle } from '../../shared/task-style'
 
 interface TaskHandlerDependencies extends TaskContext, TaskEvents, TaskExecution {
   promptWithProjectMemory: TaskMemory['promptWithProjectMemory']
@@ -84,6 +85,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       taskId, agent, workspace: resolveWorkspaceExecution(store, task.workspaceId),
       cwd: task.cwd, model: task.model, reasoningEffort: state?.reasoningEffort,
       issueId: state?.currentIssueId ?? undefined, resumeSessionId: task.sessionId, prompt: '',
+      issueTracker: taskStyle(task) === 'work',
       beforeDispatch: () => { check() }
     })
   }))
@@ -178,9 +180,15 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
         throw new Error(`${agent.label} does not support image attachments. Choose Codex or OpenCode with an image-capable model.`)
       }
       const model = input.model || agent.defaultModel
+      const style = input.style ?? 'work'
+      if (style !== 'work' && input.parentTaskId) throw new Error('Only Work tasks can be stacked')
+      if (style === 'quick' && store.getTasks(workspaceId).some((task) => task.projectId === project.id && taskStyle(task) === 'quick' && task.status === 'running')) {
+        throw new Error('Wait for the active Quick task in this project to finish')
+      }
 
       const task: Task = {
         id: randomUUID(),
+        style,
         workspaceId,
         projectId: project.id,
         agentId: agent.id,

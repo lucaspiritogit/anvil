@@ -5,7 +5,7 @@
  * what makes one stored binding correct for both.
  */
 
-export type ShortcutId = 'toggleSidebar' | 'focusTaskComposer'
+export type ShortcutId = 'toggleSidebar' | 'focusTaskComposer' | 'cycleTaskStyle'
 
 export interface ShortcutDefinition {
   id: ShortcutId
@@ -26,6 +26,12 @@ export const SHORTCUTS: ShortcutDefinition[] = [
     label: 'Focus task composer',
     hint: 'Opens the project overview and focuses the new task prompt.',
     defaultAccelerator: 'Mod+N'
+  },
+  {
+    id: 'cycleTaskStyle',
+    label: 'Cycle task style',
+    hint: 'Switches the composer between Work and Quick.',
+    defaultAccelerator: 'Mod+Shift+M'
   }
 ]
 
@@ -71,15 +77,21 @@ export function parseAccelerator(accelerator: string): Chord | null {
   return chord.key ? chord : null
 }
 
-/** Display form: the mac symbols developers expect, spelled out elsewhere. */
-export function formatAccelerator(accelerator: string, isMac: boolean): string {
+/** Individual keycap labels for rendering each key as its own <kbd>. */
+export function acceleratorKeycaps(accelerator: string, isMac: boolean): string[] {
   const chord = parseAccelerator(accelerator)
-  if (!chord) return accelerator
+  if (!chord) return [accelerator]
   const parts: string[] = []
   if (chord.mod) parts.push(isMac ? '⌘' : 'Ctrl')
   if (chord.ctrl) parts.push(isMac ? '⌃' : 'Ctrl')
   if (chord.alt) parts.push(isMac ? '⌥' : 'Alt')
   if (chord.shift) parts.push(isMac ? '⇧' : 'Shift')
   parts.push(chord.key)
+  return parts
+}
+
+/** Display form: the mac symbols developers expect, spelled out elsewhere. */
+export function formatAccelerator(accelerator: string, isMac: boolean): string {
+  const parts = acceleratorKeycaps(accelerator, isMac)
   return isMac ? parts.join('') : parts.join('+')
 }

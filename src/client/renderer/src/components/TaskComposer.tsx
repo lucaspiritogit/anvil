@@ -1,7 +1,7 @@
 import type { JSX } from 'react'
 import { canStackOnTask } from '@shared/task-stacks'
 import { useEffect, useId, useRef, useState } from 'react'
-import { Icon } from '../icons'
+import { Icon, type IconName } from '../icons'
 import { hasTaskContent } from '@shared/task-images'
 import { useStore } from '../state/store'
 import { useAgentModels } from '../state/agent-models'
@@ -14,8 +14,14 @@ import { cn } from '../ui'
 import { ComposerModelPicker } from './ComposerModelPicker'
 import { ComposerOverflowOptions } from './ComposerOverflowOptions'
 import { ProjectBranchSelector } from './ProjectBranchSelector'
+import { TaskStyleBadge } from './TaskStyleBadge'
+import { DEFAULT_KEYBINDINGS, acceleratorKeycaps, formatAccelerator } from '@shared/keybindings'
+import { IS_MAC } from '../keys'
+import { TASK_STYLES, TASK_STYLE_LABELS } from '@shared/task-style'
 
-const compactSelect = 'min-w-0 field-sizing-content appearance-none bg-transparent py-1.5 pl-2 pr-6 text-xs text-dim outline-none hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45'
+const compactSelect = 'min-w-0 field-sizing-content appearance-none bg-transparent py-1.5 pl-2 pr-6 text-sm text-dim outline-none hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45'
+const styleSelect = compactSelect.replace('pl-2 pr-6', 'pl-1 pr-1')
+const KEYCAP_ICONS: Record<string, IconName> = { '⌘': 'command', '⇧': 'arrow-big-up', Shift: 'arrow-big-up' }
 
 export function TaskComposer(): JSX.Element {
   const projectId = useStore((state) => state.activeProjectId)
@@ -31,6 +37,9 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const agents = useStore((state) => state.agents)
   const startTask = useStore((state) => state.startTask)
   const taskComposerFocusRequest = useStore((state) => state.taskComposerFocusRequest)
+  const style = useStore((state) => state.taskComposerStyle)
+  const setStyle = useStore((state) => state.setTaskComposerStyle)
+  const styleShortcut = useStore((state) => state.settings?.keybindings.cycleTaskStyle) ?? DEFAULT_KEYBINDINGS.cycleTaskStyle
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const composerRef = useRef<HTMLFormElement>(null)
   const keyboardHelpId = useId()
@@ -81,8 +90,9 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     setError(null)
     try {
       await startTask({
+        style,
         agentId,
-        parentTaskId: parentTaskId || undefined,
+        parentTaskId: style === 'work' ? parentTaskId || undefined : undefined,
         prompt: prompt.trim(),
         ...(mentions.references.length ? { fileReferences: mentions.references } : {}),
         model: model.trim() || undefined,
@@ -93,6 +103,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       if (mounted.current) {
         attachments.reset()
         setParentTaskId('')
+        setStyle('work')
       }
     } catch (error) {
       if (mounted.current) setError(error instanceof Error ? error.message : String(error))
@@ -106,7 +117,8 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     <div>
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Choose the model again to retry saving.</p>}
       {projectId && <ProjectBranchSelector key={projectId} projectId={projectId} disabled={busy} onSwitching={setSwitchingBranch} />}
-      {parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
+      {style === 'quick' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><TaskStyleBadge style="quick" /> Runs without a plan or worktree in the current checkout.</p>}
+      {style === 'work' && parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
         <Icon icon="layers" size={14} />
         Stack on task
         <select aria-label="Stack on task" className={compactSelect} disabled={busy} value={parentTaskId} onChange={(event) => setParentTaskId(event.target.value)}>
@@ -130,7 +142,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
             ref={promptRef}
             rows={5}
             className="block w-full resize-none bg-transparent px-5 pb-3 pt-4 text-sm leading-relaxed outline-none placeholder:text-dim/60 max-[700px]:min-h-[clamp(10rem,28dvh,12rem)] max-[700px]:px-4"
-            placeholder="Describe the work you want done"
+            placeholder={style === 'work' ? 'Describe the work you want done' : 'Ask a question or describe a focused change'}
             value={prompt}
             onChange={(event) => { setPrompt(event.target.value); mentions.syncSelection() }}
             onSelect={mentions.syncSelection}
@@ -169,6 +181,25 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
           )}
           {attachments.pasteError && <p role="alert" className="px-5 pb-3 text-xs text-danger max-[700px]:px-4">{attachments.pasteError}</p>}
           <div className="flex min-w-0 items-center gap-1 px-3 pb-3 pt-1 max-[700px]:px-2">
+            <label className="flex shrink-0 items-center gap-1.5" title={`Task style · ${formatAccelerator(styleShortcut, IS_MAC)}`}>
+              <span className="sr-only">Task style</span>
+              <Icon icon={style === 'quick' ? 'rabbit' : 'anvil'} size={16} className="shrink-0 text-dim" aria-hidden="true" />
+              <select
+                aria-label="Task style"
+                className={styleSelect}
+                value={style}
+                onChange={(event) => setStyle(event.target.value as typeof style)}
+              >
+                {TASK_STYLES.map((option) => <option className="bg-raised text-fg" key={option} value={option}>{TASK_STYLE_LABELS[option]}</option>)}
+              </select>
+              <span aria-hidden="true" className="hidden items-center gap-1 pl-1 @min-[620px]/composer:inline-flex">
+                {acceleratorKeycaps(styleShortcut, IS_MAC).map((cap, index) => (
+                  <kbd key={index} className="inline-flex min-w-[1.4rem] items-center justify-center rounded border border-line bg-fg/[0.04] px-1.5 py-1 font-mono text-[11px] leading-none text-dim">
+                    {KEYCAP_ICONS[cap] ? <Icon icon={KEYCAP_ICONS[cap]} size={11} className="shrink-0" aria-hidden="true" /> : cap}
+                  </kbd>
+                ))}
+              </span>
+            </label>
             <ComposerModelPicker
               agentId={agentId}
               agents={agents}

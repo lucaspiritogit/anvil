@@ -1,4 +1,5 @@
 import type { Task } from './types'
+import { taskStyle } from './task-style'
 
 export const TASK_SETTLE_TTL_MS = 2 * 24 * 60 * 60 * 1000
 
@@ -9,6 +10,9 @@ export function isTaskSettled(task: Task): boolean {
 
 /** No-change tasks need no code review. Everything else must be approved first. */
 export function canSettleTask(task: Task): boolean {
+  if (taskStyle(task) !== 'work') {
+    return task.status === 'succeeded' && task.settledAt === undefined
+  }
   return !task.restackState && !task.parentTaskId && task.status === 'succeeded' &&
     (task.deliveryStatus === 'approved' || task.deliveryStatus === 'no_changes') &&
     task.settledAt === undefined

@@ -83,8 +83,8 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     const task = store.getTask(taskId)
     if (task) broadcast('task:updated', task)
   }, { set: (...args) => taskBranches.set(...args) })
-  const openTaskTools = async (taskId: string) => {
-    const issueConnection = await issueTools.open(taskId)
+  const openTaskTools = async (taskId: string, selection: { issueTracker: boolean } = { issueTracker: true }) => {
+    const issueConnection = selection.issueTracker ? await issueTools.open(taskId) : undefined
     let browserConnection: BrowserCapabilityConnection | undefined
     if (options.browserTools) {
       const task = store.getTask(taskId)
@@ -96,11 +96,11 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     }
     return {
       mcpServers: [
-        { name: 'anvil_issue_tracker', url: issueConnection.url, headers: issueConnection.headers, required: true },
+        ...(issueConnection ? [{ name: 'anvil_issue_tracker', url: issueConnection.url, headers: issueConnection.headers, required: true }] : []),
         ...(browserConnection ? [{ name: 'anvil_browser', url: browserConnection.url, headers: browserConnection.headers, required: false }] : [])
       ],
       close: async () => {
-        issueConnection.close()
+        issueConnection?.close()
         await browserConnection?.close()
       }
     }

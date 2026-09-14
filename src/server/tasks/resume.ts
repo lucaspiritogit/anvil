@@ -2,6 +2,7 @@ import { requireStackParent, stackParentIsReady } from './task-stacks'
 import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
+import { taskStyle } from '../../shared/task-style'
 import type { Task, TaskExecutionState } from '../../shared/types'
 import type { TaskContext } from './context'
 
@@ -23,14 +24,15 @@ export async function resumeTaskTurn(
     gitInstructions = true, allowRestack = false }: ResumeOptions
 ): Promise<Task> {
   const task = check()
+  const style = taskStyle(task)
   validate(task)
   const requireParentFinished = (current: Task): void => {
     if (!stackParentIsReady({ store, agentProcesses, gitDelivery, send }, current)) {
       throw new Error('Wait for the parent task to finish before resuming')
     }
   }
-  requireParentFinished(task)
-  if (task.restackState && !allowRestack) throw new Error('Finish restacking this task before resuming')
+  if (style === 'work') requireParentFinished(task)
+  if (style === 'work' && task.restackState && !allowRestack) throw new Error('Finish restacking this task before resuming')
   const workspace = resolveTaskWorkspace(store, task.id)
   if (task.settledAt !== undefined) throw new Error('This task is settled and cannot be resumed')
   const agent = getAgent(task.agentId)
@@ -41,7 +43,7 @@ export async function resumeTaskTurn(
   const guard = (): Task => {
     const current = check()
     validate(current)
-    requireParentFinished(current)
+    if (style === 'work') requireParentFinished(current)
     if (agentProcesses.isRunning(task.id)) throw new Error('This task is already running')
     return current
   }
@@ -52,10 +54,10 @@ export async function resumeTaskTurn(
   }
   try {
     let location: Partial<Task> = { cwd: project.path }
-    if (task.branchName) {
+    if (style === 'work' && task.branchName) {
       const checkout = await gitDelivery.checkoutBranch(project.path, task.id, task.branchName, task.baseBranch, guard)
       location = { cwd: checkout.cwd }
-    } else if (task.deliveryStatus !== 'unavailable' && (await gitDelivery.status(project.path)).isRepository) {
+    } else if (style === 'work' && task.deliveryStatus !== 'unavailable' && (await gitDelivery.status(project.path)).isRepository) {
       guard()
       const parent = task.parentTaskId ? requireStackParent(store, task, task.parentTaskId) : undefined
       const base = parent ? await gitDelivery.stackBase(project.path, parent.branchName) : undefined
@@ -86,9 +88,10 @@ export async function resumeTaskTurn(
       // No scheduled callback: startup errors return to the invoking handler.
       await agentProcesses.startResumed({
         workspace,
-        beforeDispatch: () => { requireParentFinished(check(running)) },
+        beforeDispatch: () => { if (style === 'work') requireParentFinished(check(running)) },
         taskId: task.id, issueId: state?.currentIssueId ?? undefined, agent, cwd: running.cwd,
         projectPath: project.path, model: current.model, reasoningEffort: state?.reasoningEffort,
+        issueTracker: style === 'work',
         resumeSessionId: current.sessionId,
         autoCompact: shouldCompactContext(current, store.getSettings(current.workspaceId)),
         prompt: executionPrompt,

@@ -1,5 +1,7 @@
 import type { JSX, SVGProps } from 'react'
+import anvil from './icons/anvil.svg?raw'
 import archive from './icons/archive.svg?raw'
+import arrowBigUp from './icons/arrow-big-up.svg?raw'
 import arrowLeftToLine from './icons/arrow-left-to-line.svg?raw'
 import arrowRightToLine from './icons/arrow-right-to-line.svg?raw'
 import ban from './icons/ban.svg?raw'
@@ -11,6 +13,7 @@ import check from './icons/check.svg?raw'
 import chevronDown from './icons/chevron-down.svg?raw'
 import chevronUp from './icons/chevron-up.svg?raw'
 import coffee from './icons/coffee.svg?raw'
+import command from './icons/command.svg?raw'
 import copy from './icons/copy.svg?raw'
 import folderPlus from './icons/folder-plus.svg?raw'
 import folder from './icons/folder.svg?raw'
@@ -21,6 +24,7 @@ import loader from './icons/loader.svg?raw'
 import merge from './icons/merge.svg?raw'
 import monitor from './icons/monitor.svg?raw'
 import pencil from './icons/pencil.svg?raw'
+import rabbit from './icons/rabbit.svg?raw'
 import search from './icons/search.svg?raw'
 import settings from './icons/settings.svg?raw'
 import sparkles from './icons/sparkles.svg?raw'
@@ -39,7 +43,9 @@ function body(svg: string): string {
 }
 
 const artwork = {
+  anvil: body(anvil),
   archive: body(archive),
+  'arrow-big-up': body(arrowBigUp),
   'arrow-left-to-line': body(arrowLeftToLine),
   'arrow-right-to-line': body(arrowRightToLine),
   ban: body(ban),
@@ -53,6 +59,7 @@ const artwork = {
   'chevron-left': `<g transform="rotate(90 12 12)">${body(chevronDown)}</g>`,
   'chevron-right': `<g transform="rotate(-90 12 12)">${body(chevronDown)}</g>`,
   coffee: body(coffee),
+  command: body(command),
   copy: body(copy),
   'folder-plus': body(folderPlus),
   folder: body(folder),
@@ -63,6 +70,7 @@ const artwork = {
   merge: body(merge),
   monitor: body(monitor),
   pencil: body(pencil),
+  rabbit: body(rabbit),
   search: body(search),
   settings: body(settings),
   sparkles: body(sparkles),

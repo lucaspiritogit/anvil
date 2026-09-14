@@ -9,6 +9,8 @@ import { useStore } from '../state/store'
 import { IS_MAC } from '../keys'
 import { cn } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
+import { taskStyle } from '@shared/task-style'
+import { TaskStyleBadge } from './TaskStyleBadge'
 
 const TASK_INDICATORS = {
   queued: { icon: 'loader', label: 'Queued', tone: 'text-accent', highlight: '' },
@@ -29,6 +31,7 @@ function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_IND
     return TASK_INDICATORS.failed
   }
   if (task.status === 'succeeded') {
+    if (taskStyle(task) !== 'work') return TASK_INDICATORS.done
     if (task.deliveryStatus === 'no_changes') return TASK_INDICATORS.done
     if (task.deliveryStatus === 'approved') return TASK_INDICATORS.merged
     if (task.deliveryStatus === 'reviewable' && task.pullRequest) return TASK_INDICATORS.openPullRequest
@@ -219,8 +222,9 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
               <span className={cn('block truncate text-[13px] font-medium', active || task.status === 'running' ? 'text-fg' : 'text-fg/80')}>
                 {task.title}
               </span>
-              <span className="block truncate mt-1 font-mono text-[10px] text-dim/65">
-                {task.branchName ?? task.agentLabel}
+              <span className="mt-1 flex min-w-0 items-center gap-2">
+                <TaskStyleBadge style={taskStyle(task)} />
+                <span className="min-w-0 truncate font-mono text-[10px] text-dim/65">{task.branchName ?? task.agentLabel}</span>
               </span>
             </>
           )}

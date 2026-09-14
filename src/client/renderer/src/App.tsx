@@ -49,6 +49,7 @@ export function App(): JSX.Element {
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const focusTaskComposer = useStore((s) => s.focusTaskComposer)
+  const cycleTaskComposerStyle = useStore((s) => s.cycleTaskComposerStyle)
   const keybindings = useStore((s) => s.settings?.keybindings) ?? DEFAULT_KEYBINDINGS
 
   useEffect(() => {
@@ -179,7 +180,7 @@ export function App(): JSX.Element {
 
   // Capture fields stop propagation so recording a shortcut never invokes it.
   useEffect(() => {
-    const actions: Record<ShortcutId, () => void> = { toggleSidebar: toggleNavigation, focusTaskComposer }
+    const actions: Record<ShortcutId, () => void> = { toggleSidebar: toggleNavigation, focusTaskComposer, cycleTaskStyle: cycleTaskComposerStyle }
     const onKey = (event: KeyboardEvent): void => {
       // Auto-repeat fires while a chord is held down; a shortcut is an action
       // per press, so only the first event of a hold counts.
@@ -220,7 +221,7 @@ export function App(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keybindings, toggleNavigation, focusTaskComposer, settingsOpen, setSettingsOpen, projectId,
+  }, [keybindings, toggleNavigation, focusTaskComposer, cycleTaskComposerStyle, settingsOpen, setSettingsOpen, projectId,
     mobileNavigation, mobileNavigationOpen, closeMobileNavigation, commandPaletteOpen, terminalOpen, openTerminal])
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 import type { ExitInfo } from '../agents/process-manager'
 import type { TaskMemory } from '../memory/task-memory'
 import type { RecordSystemEvent, TaskContext } from './context'
+import { taskStyle } from '../../shared/task-style'
 
 interface TaskCompletionOptions {
   finalize: boolean
@@ -38,6 +39,7 @@ export function createTaskCompletion(
     }
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task?.projectId)
     if (!project || !task) return
+    if (taskStyle(task) !== 'work') return
     if (!managed || !task.baseCommit || options?.finalize === false) {
       if (options?.waitForMemory === false) {
         const completedTask = task

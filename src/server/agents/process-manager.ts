@@ -27,6 +27,10 @@ export interface TaskToolConnection {
   close(): void | Promise<void>
 }
 
+export interface TaskToolSelection {
+  issueTracker: boolean
+}
+
 export interface StartOptions {
   taskId: string
   workspace: WorkspaceExecutionContext
@@ -44,6 +48,7 @@ export interface StartOptions {
   /** Explicit recovery context for an interrupted task whose saved session is missing. */
   resumeFallbackPrompt?: string
   beforeDispatch?: () => void
+  issueTracker?: boolean
   onStarted?: () => void
   onStartFailed?: (error: Error) => void
 }
@@ -180,7 +185,7 @@ export class AgentProcessManager extends EventEmitter {
     private readonly codexClient?: AgentExecutor,
     private readonly createExecutor = (agentId: string, workspace: WorkspaceExecutionContext, catalogue?: () => Promise<ProviderModelList>): AgentExecutor => getAgentAdapter(agentId).createExecutor(workspace, catalogue),
     private readonly taskWorkspace?: (taskId: string) => WorkspaceExecutionContext,
-    private readonly openTaskTools?: (taskId: string) => Promise<TaskToolConnection>
+    private readonly openTaskTools?: (taskId: string, selection: TaskToolSelection) => Promise<TaskToolConnection>
   ) {
     super()
   }
@@ -303,10 +308,11 @@ export class AgentProcessManager extends EventEmitter {
     this.serverExecutions.set(opts.taskId, controller)
     this.executionWorkspaces.set(opts.taskId, opts.workspace.workspaceId)
     const completion = (async () => {
-      const taskTools = await this.openTaskTools?.(opts.taskId)
+      const taskTools = await this.openTaskTools?.(opts.taskId, { issueTracker: opts.issueTracker !== false })
       try {
         controller.signal.throwIfAborted()
-        await this.compactSession(this.executor(opts.agent, opts.workspace), { ...opts, mcpServers: taskTools?.mcpServers, signal: controller.signal })
+        const { issueTracker: _issueTracker, ...input } = opts
+        await this.compactSession(this.executor(opts.agent, opts.workspace), { ...input, mcpServers: taskTools?.mcpServers, signal: controller.signal })
       } finally { await taskTools?.close() }
     })()
     const settled = completion.then(() => {}, () => {})
@@ -333,9 +339,9 @@ export class AgentProcessManager extends EventEmitter {
       started = true
       opts.onStarted?.()
     }
-    const { agent: _agent, onStartFailed: _onStartFailed, ...input } = opts
+    const { agent: _agent, onStartFailed: _onStartFailed, issueTracker: _issueTracker, ...input } = opts
     const completion = (async () => {
-      const taskTools = await this.openTaskTools?.(opts.taskId)
+      const taskTools = await this.openTaskTools?.(opts.taskId, { issueTracker: opts.issueTracker !== false })
       try {
         controller.signal.throwIfAborted()
         if (opts.autoCompact && opts.resumeSessionId && opts.agent.supportsCompaction && client.compact) {

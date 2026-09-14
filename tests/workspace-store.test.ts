@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from '../src/server/store'
@@ -62,7 +62,7 @@ test('creates one Default workspace and starts new profiles with independent app
     fontSize: 18, overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'test.png',
     defaultAgentId: 'codex', defaultModel: 'custom-model', rebaseMode: 'agent', confirmRebase: false,
     caffeineMode: true, allowOtherDevices: true, tailscaleHttps: true,
-    keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K' }
+    keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K', cycleTaskStyle: 'Mod+Shift+M' }
   }
   expect(Object.keys(custom).sort()).toEqual(Object.keys(defaults).sort())
   store.setSettings(custom)
@@ -334,4 +334,35 @@ test('keeps the active workspace when opening another workspace fails', () => {
   expect(() => reopened.selectWorkspace(other.id)).toThrow()
   expect(reopened.getActiveWorkspace().id).toBe('default')
   expect(JSON.parse(readFileSync(join(directory, 'config.json'), 'utf8')).activeWorkspaceId).toBe('default')
+})
+
+test('migrates the applied Ask and Do task style schema to Quick', () => {
+  const { open, directory, database } = fixture()
+  const migrationNames = readdirSync(migrationsFolder, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+  expect(migrationNames).toContain('20260914182105_light_kabuki')
+  const quickMigrationIndex = migrationNames.indexOf('20260914190557_classy_goblin_queen')
+  expect(quickMigrationIndex).toBeGreaterThan(0)
+
+  const workspaceDirectory = join(directory, 'workspaces', 'Default')
+  mkdirSync(workspaceDirectory, { recursive: true })
+  const workspaceDatabase = join(workspaceDirectory, 'anvil.db')
+  migrateBefore(workspaceDatabase, quickMigrationIndex)
+  writeFileSync(database, JSON.stringify({
+    version: 1,
+    workspaces: [{ id: 'default', name: 'Default', createdAt: 1 }],
+    activeWorkspaceId: 'default'
+  }))
+
+  const store = open()
+  addProject(store)
+  expect(store.addTask({ ...taskInput('quick'), style: 'quick' }).style).toBe('quick')
+  store.close()
+
+  const migrated = rawDatabase(workspaceDatabase)
+  const taskSchema = migrated.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'tasks'").get() as { sql: string }
+  expect(taskSchema.sql).toContain("CHECK(\"style\" IN ('work', 'quick'))")
+  expect(migrated.prepare('SELECT style FROM tasks WHERE id = ?').get('quick')).toEqual({ style: 'quick' })
 })

@@ -3,6 +3,7 @@ import { useStore } from '../src/client/renderer/src/state/store'
 import { enqueueWorkspaceRequest } from '../src/client/renderer/src/state/workspace-requests'
 import type { Project, Task, TaskEvent, TaskEventsPage, TaskEventsRequest, WorkspaceSnapshot } from '../src/shared/types'
 import { pageTaskEvents } from './e2e/fixture/task-events'
+import { DEFAULT_KEYBINDINGS } from '../src/shared/keybindings'
 
 const task = (id: string, projectId = 'project'): Task => ({
   id, workspaceId: 'default', projectId, title: id, prompt: id, cwd: '/tmp', agentId: 'codex', agentLabel: 'Codex',
@@ -368,4 +369,14 @@ test('unrelated project/task deletion and blocked composer focus preserve the ac
   await state().deleteTask('b')
   await state().removeProject('other')
   expect(cached()).toBe(retained)
+})
+
+test('cycles the composer between Work and Quick with its configured shortcut', async () => {
+  await state().openTask('a')
+  const focusRequest = state().taskComposerFocusRequest
+  expect(DEFAULT_KEYBINDINGS.cycleTaskStyle).toBe('Mod+Shift+M')
+  state().cycleTaskComposerStyle()
+  expect(state()).toMatchObject({ taskComposerStyle: 'quick', view: { kind: 'home' }, taskComposerFocusRequest: focusRequest + 1 })
+  state().cycleTaskComposerStyle()
+  expect(state().taskComposerStyle).toBe('work')
 })

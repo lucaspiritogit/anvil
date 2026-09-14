@@ -85,6 +85,7 @@ export class TaskIssues {
     if (!this.store.getTask(taskId)) throw new Error('Task not found')
     const state = this.store.getTaskExecution(taskId)
     if (!state) return null
+    if (state.style === 'quick') return null
     // Resolve ownership from the persisted task, never renderer-supplied identities.
     return this.withTracker(state, (tracker) => ({
       parent: tracker.getParent(state.parentIssueId),
@@ -247,6 +248,7 @@ export class TaskIssues {
   private requireState(taskId: string): TaskExecutionState {
     const state = this.store.getTaskExecution(taskId)
     if (!state) throw new Error('Task execution not found')
+    if (state.style === 'quick') throw new Error('This task does not use an issue plan')
     return state
   }
 

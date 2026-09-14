@@ -100,7 +100,7 @@ const settingsPatch = object<IpcRequests['settings:set']['patch']>({
   rebaseMode: optional(oneOf('manual', 'agent')), confirmRebase: optional(boolean), caffeineMode: optional(boolean),
   allowOtherDevices: optional(boolean),
   tailscaleHttps: optional(boolean),
-  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false) }))
+  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false), cycleTaskStyle: text(128, false) }))
 })
 
 const workspaceId = text(36, true, /^(default|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/)
@@ -176,7 +176,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:diff': id,
   'tasks:issue-diff': object({ taskId: id, issueId: id }),
   'tasks:start': (value, field) => {
-    const input = object<IpcRequests['tasks:start']>({ parentTaskId: optional(id), workspaceId: optional(id), projectId: id, agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
+    const input = object<IpcRequests['tasks:start']>({ style: optional(oneOf('work', 'quick')), parentTaskId: optional(id), workspaceId: optional(id), projectId: id, agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
     if (!hasTaskContent(input.prompt, input.images)) invalid(field, 'requires a prompt or an image')
     return input
   },

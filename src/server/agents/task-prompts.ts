@@ -1,4 +1,4 @@
-import type { Issue, Task, TaskComment, TaskExecutionState } from '../../shared/types'
+import type { Issue, Task, TaskComment, TaskExecutionState, TaskStyle } from '../../shared/types'
 
 const TOOLS = 'Use anvil_issue_tracker tools. Use anvil_browser if the task requires a design decision or a component/interfaces needs to be tested.'
 const FINISH_ISSUE = 'Commit finished work and call anvil_submit_review. Call anvil_block_issue if unfinished.'
@@ -22,13 +22,28 @@ export function implementationPrompt(task: string, issue: Issue, _projectPath: s
   ].join('\n')
 }
 
+export function quickTaskPrompt(_style: Exclude<TaskStyle, 'work'>, task: string): string {
+  return [
+    'Answer or complete the request directly in the current project checkout in one turn.',
+    'Do not create an issue plan or another worktree. Do not commit or push unless the request explicitly asks for it.',
+    `Request: ${task}`
+  ].join('\n')
+}
+
 export function taskFollowupPrompt(state: TaskExecutionState, message: string): string {
+  if (state.style === 'quick') return quickTaskPrompt(state.style, message)
   if (state.phase === 'complete') return message
   const instruction = state.currentIssueId ? `Resume issue ${state.currentIssueId}` : 'Resume task with anvil_get_plan'
   return `${instruction}\n\n${message}`
 }
 
 export function taskRecoveryPrompt(task: Task, state: TaskExecutionState): string {
+  if (state.style === 'quick') {
+    return [
+      'Continue after the connection failure. Preserve completed work and follow the latest request.',
+      quickTaskPrompt(state.style, task.prompt)
+    ].join('\n')
+  }
   const work = state.phase === 'planning'
     ? 'Continue planning. Do not implement.'
     : state.currentIssueId

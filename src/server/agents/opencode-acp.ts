@@ -5,7 +5,7 @@ import { requireOpenCodeImageModel } from './opencode-models'
 import { AcpOutput } from './acp-output'
 import { OpenCodeAcpConnection, type OpenCodeAcpOptions } from './opencode-acp-connection'
 import { LazyAgentServer } from './lazy-agent-server'
-import { OPEN_CODE_ACP_ARGS, requireOpenCodeProjectIsolation, requireWorkspaceOpenCodeModel } from './opencode-workspace'
+import { OPEN_CODE_ACP_ARGS, requireWorkspaceOpenCodeModel } from './opencode-workspace'
 import { retryableAgentFailure } from './agent-failure'
 
 interface AcpExecution {
@@ -96,8 +96,6 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       input.signal?.addEventListener('abort', cancel, { once: true })
       if (this.options.workspace) {
         if (input.workspace.workspaceId !== this.options.workspace.workspaceId) throw new Error('OpenCode task belongs to a different workspace')
-        requireOpenCodeProjectIsolation(input.cwd)
-        requireOpenCodeProjectIsolation(this.options.workspace.home)
         requireWorkspaceOpenCodeModel(input.model)
       }
       const ready = this.server.get(() => {

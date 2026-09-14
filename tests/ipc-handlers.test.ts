@@ -224,7 +224,7 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
       await invalidRequest('comments:add', { ...comment, ...patch })
     }
     for (const patch of [{ defaultAgentId: null }, { rebaseMode: 'shell' }, { confirmRebase: 1 }, { keybindings: [] }, { keybindings: { toggleSidebar: 'x' } }, { unexpected: true }]) await invalidRequest('settings:set', patch)
-    for (const patch of [{ prompt: ' ' }, { prompt: 'x'.repeat(100_001) }, { model: [] }, { reasoningEffort: 42 }]) await invalidRequest('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Task', ...patch })
+    for (const patch of [{ prompt: ' ' }, { prompt: 'x'.repeat(100_001) }, { style: 'chat' }, { model: [] }, { reasoningEffort: 42 }]) await invalidRequest('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Task', ...patch })
     await invalidRequest('tasks:issues', { taskId: 'task', projectPath: '/outside', parentIssueId: 'other' })
     await invalidRequest('tasks:steer', { taskId: 'task', message: ' ' })
     for (const steps of [null, [], [null], [{ sha: 'a'.repeat(40), action: 'exec', message: 'rm' }], [{ sha: '--exec', action: 'pick', message: 'message' }]]) await invalidRequest('tasks:rebase', { taskId: 'task', steps })
@@ -276,6 +276,49 @@ test('updates projects, validates task references and selects supported agents a
   const codexSettings = call('settings:set', { defaultAgentId: 'codex', defaultModel: 'selected-model' })
   expect(codexSettings.defaultAgentId).toBe('codex')
   expect(codexSettings.defaultModel).toBe('selected-model')
+})
+
+test('runs Quick tasks directly without issue plans or task worktrees', async () => {
+  const { store, project, agentProcesses, delivery, call, tick } = setupIpc()
+  const prepareBranch = vi.spyOn(delivery, 'prepareBranch')
+
+  const quick: Task = await call('tasks:start', {
+    style: 'quick', projectId: project.id, agentId: 'codex', prompt: 'Explain the current architecture or make a focused change'
+  })
+  await tick()
+  expect(quick.style).toBe('quick')
+  expect(store.getTask(quick.id)).toMatchObject({ cwd: project.path, deliveryStatus: 'unavailable' })
+  expect(call('tasks:issues', quick.id)).toBeNull()
+  expect(agentProcesses.starts.at(-1)).toMatchObject({
+    taskId: quick.id, cwd: project.path, issueTracker: false
+  })
+  expect(agentProcesses.starts.at(-1)).not.toHaveProperty('readOnly')
+  expect(agentProcesses.starts.at(-1).prompt).toContain('Answer or complete the request directly')
+  expect(prepareBranch).not.toHaveBeenCalled()
+  agentProcesses.emit('session', { taskId: quick.id, sessionId: 'quick-session' })
+  agentProcesses.finishTurn(quick.id, 'Architecture answer')
+  await tick()
+  expect(store.getTask(quick.id)?.status).toBe('succeeded')
+  expect(store.getTaskExecution(quick.id)?.phase).toBe('complete')
+
+  await call('tasks:steer', { taskId: quick.id, message: 'Make the focused change' })
+  expect(agentProcesses.starts.at(-1)).toMatchObject({
+    taskId: quick.id, cwd: project.path, issueTracker: false, resumeSessionId: 'quick-session'
+  })
+  expect(store.getTask(quick.id)?.branchName).toBeUndefined()
+  await expect(call('tasks:start', {
+    style: 'quick', projectId: project.id, agentId: 'codex', prompt: 'Run another quick task'
+  })).rejects.toThrow('active Quick task')
+  await expect(call('projects:checkout', { projectId: project.id, branchName: 'main' })).rejects.toThrow('active Quick task')
+  await expect(call('tasks:start', {
+    style: 'quick', parentTaskId: quick.id, projectId: project.id, agentId: 'codex', prompt: 'Stack this'
+  })).rejects.toThrow('Only Work tasks can be stacked')
+  agentProcesses.finishTurn(quick.id, 'Focused change complete')
+  await tick()
+  expect(store.getTask(quick.id)?.status).toBe('succeeded')
+  expect(prepareBranch).not.toHaveBeenCalled()
+  call('tasks:settle', quick.id)
+  expect(store.getTask(quick.id)?.settledAt).toBeTypeOf('number')
 })
 
 test('executes issues, reviews, handles credentials and PRs, approves, rebases and guards deletion', async () => {

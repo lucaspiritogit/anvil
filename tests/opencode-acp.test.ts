@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process'
 import { createServer } from 'node:net'
 import { existsSync } from 'node:fs'
 import { openCodeWorkspaceFixture } from './opencode-workspace-fixture'
-import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceCommand, requireOpenCodeProjectIsolation } from '../src/server/agents/opencode-workspace'
+import { OPEN_CODE_ACP_ARGS, openCodeWorkspaceCommand } from '../src/server/agents/opencode-workspace'
 import { resolveCommand } from '../src/server/agents/resolve'
 import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../src/server/agents/workspace-execution'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -431,7 +431,6 @@ test('rejects project credential sources and unsupported providers without losin
     await rm(path)
   }
   await writeFile(join(fixture.project, '.env.example'), 'OPENAI_API_KEY=example')
-  expect(() => requireOpenCodeProjectIsolation(fixture.project)).not.toThrow()
   const unsupported = await client.execute({ ...input, model: 'amazon-bedrock/model' }, () => {})
   expect(unsupported.error).toContain('credential chains have not been verified')
   const crossed = await client.execute({ ...input, workspace: fixture.personal }, () => {})

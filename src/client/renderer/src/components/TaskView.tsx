@@ -25,6 +25,8 @@ import type {
   TaskDiff,
   TaskStatus
 } from '@shared/types'
+import { taskStyle } from '@shared/task-style'
+import { TaskStyleBadge } from './TaskStyleBadge'
 
 interface Props {
   task: Task
@@ -482,7 +484,9 @@ function MergeActions({ disabled, title, onSelect }: {
 }
 
 export function TaskView({ task }: Props): JSX.Element {
-  const { snapshot, error: issueError, refresh } = useTaskIssues(task.id, true)
+  const style = taskStyle(task)
+  const work = style === 'work'
+  const { snapshot, error: issueError, refresh } = useTaskIssues(task.id, work)
   const issue = task.status !== 'succeeded' && task.status !== 'cancelled' ? snapshot?.children.find((child) => child.status === 'review' &&
     (!snapshot.execution?.currentIssueId || child.id === snapshot.execution.currentIssueId)) : undefined
   const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? task.workspaceId)
@@ -527,7 +531,7 @@ export function TaskView({ task }: Props): JSX.Element {
   const openPullRequest = task.deliveryStatus === 'reviewable' ? task.pullRequest : undefined
 
   const [now, setNow] = useState(Date.now())
-  const done = task.status === 'succeeded' && task.deliveryStatus === 'no_changes'
+  const done = task.status === 'succeeded' && (task.deliveryStatus === 'no_changes' || !work)
   const reviewable = !issue && (task.deliveryStatus === 'reviewable' || approved)
   const issueReviewPending = Boolean(issue && !issueIsReviewReady(snapshot))
   const finalDiffPending = task.status === 'running' || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit'
@@ -602,14 +606,14 @@ export function TaskView({ task }: Props): JSX.Element {
   }
 
   useEffect(() => {
-    if (!comments) void loadComments(task.id)
-  }, [comments, loadComments, task.id])
+    if (work && !comments) void loadComments(task.id)
+  }, [comments, loadComments, task.id, work])
 
   const pending = (comments ?? []).filter((comment) => comment.sentAt === null)
   // Submission is visible immediately, even while the turn is still stopping.
   const presentation = taskIssuePresentation(task, snapshot)
 
-  const panels: readonly TaskPanel[] = ['output', 'changes', 'issues']
+  const panels: readonly TaskPanel[] = work ? ['output', 'changes', 'issues'] : ['output']
 
   return (
     <div className="@container relative flex flex-col h-full min-w-0 min-h-0 overflow-hidden">
@@ -634,7 +638,10 @@ export function TaskView({ task }: Props): JSX.Element {
       <TaskStackStatus key={`stack-${task.id}`} task={task} />
       <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4 @max-[760px]:pt-2">
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 @max-[760px]:flex-col">
-          <h1 className="min-w-0 flex-1 truncate text-base font-medium leading-snug @max-[760px]:w-full @max-[760px]:flex-none" title={task.title}>{task.title}</h1>
+          <div className="flex min-w-0 flex-1 items-center gap-2 @max-[760px]:w-full @max-[760px]:flex-none">
+            <h1 className="min-w-0 truncate text-base font-medium leading-snug" title={task.title}>{task.title}</h1>
+            <TaskStyleBadge style={style} />
+          </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
             {issue ? <>
               <span aria-label="Task status" className={cn('min-w-0 font-medium [overflow-wrap:anywhere]', ISSUE_STATUS[issuePresentation(issue).status].tone)}>{issuePresentation(issue).label}{`: ${issue.title}`}</span>
@@ -651,11 +658,11 @@ export function TaskView({ task }: Props): JSX.Element {
                 {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
                 <span className={dot(task.status)} />
                 <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : STATUS_LABEL[task.status]}</span>
-                <span className="text-dim">·</span>
+                {work && <><span className="text-dim">·</span>
                 <span className={cn('flex items-center gap-1.5', openPullRequest ? 'text-ok' : deliveryTone(task.deliveryStatus))}>
                   {openPullRequest && <Icon icon="git-branch" size={14} aria-hidden="true" />}
                   {openPullRequest ? 'Open PR' : DELIVERY_LABEL[task.deliveryStatus]}
-                </span>
+                </span></>}
                 </>}
               </span>
               {reviewable && <span className="ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
@@ -733,7 +740,7 @@ export function TaskView({ task }: Props): JSX.Element {
       </div>
 
       <div className="flex flex-1 min-h-0 min-w-0">
-        <TaskIssues taskId={task.id} active={activePanel === 'issues'} />
+        {work && <TaskIssues taskId={task.id} active={activePanel === 'issues'} />}
 
         {issue && <section id="task-panel-changes" aria-label="Subtask code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
           {issue.status === 'review' && <div className="shrink-0 px-4 py-2 border-b border-line bg-warn/5">
@@ -766,7 +773,7 @@ export function TaskView({ task }: Props): JSX.Element {
           </>
         </section>}
 
-        {!issue && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
+        {work && !issue && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
           {reviewable ? <>
             {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {diffError && <div role="alert" className="p-5 text-sm text-danger">

@@ -2,6 +2,8 @@ import type { Task } from '../../shared/types'
 import { getAgent } from '../agents/registry'
 import { resolveWorkspaceExecution } from '../agents/workspace-execution'
 import { planningPrompt } from '../agents/task-prompts'
+import { quickTaskPrompt } from '../agents/task-prompts'
+import { taskStyle } from '../../shared/task-style'
 import type { TaskMemory } from '../memory/task-memory'
 import type { RecordSystemEvent, TaskContext } from './context'
 import type { TaskExecution } from './task-execution'
@@ -44,6 +46,30 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         const images = state.hasImages ? store.taskImages.read(task.id) : undefined
         if (state.hasImages && !images) throw new Error('The original task images were cleared')
         const workspace = resolveWorkspaceExecution(store, task.workspaceId)
+        const style = taskStyle(task)
+        if (style !== 'work') {
+          const quickTask = store.updateTask(task.id, {
+            cwd: project.path,
+            deliveryStatus: 'unavailable'
+          })!
+          send('task:updated', quickTask)
+          const prompt = quickTaskPrompt(style, await promptWithProjectMemory(project.id, task.prompt, task.workspaceId))
+          requireRunningTask()
+          agentProcesses.start({
+            workspace,
+            taskId: task.id,
+            agent,
+            prompt,
+            images,
+            model: task.model,
+            reasoningEffort: state.reasoningEffort,
+            cwd: project.path,
+            projectPath: project.path,
+            issueTracker: false,
+            beforeDispatch: requireRunningTask
+          })
+          return quickTask
+        }
         // Without Git there is no task branch or diff. Run directly in the project folder.
         const git = await gitDelivery.status(project.path)
         requireRunningTask()

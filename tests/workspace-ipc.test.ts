@@ -59,7 +59,7 @@ test('independent settings and composer choices survive selection, rename and SQ
     memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://localhost:1234/v1',
     overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'work.png',
     rebaseMode: 'agent', confirmRebase: false, caffeineMode: true,
-    keybindings: { toggleSidebar: 'Mod+Shift+B', focusTaskComposer: 'Mod+Shift+N' }
+    keybindings: { toggleSidebar: 'Mod+Shift+B', focusTaskComposer: 'Mod+Shift+N', cycleTaskStyle: 'Mod+Shift+M' }
   }
   call('settings:set', { workspaceId: work.id, patch })
   call('workspaces:preferences:set', { workspaceId: work.id, patch: { composer } })

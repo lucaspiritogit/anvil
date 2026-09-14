@@ -10,6 +10,7 @@ import type {
   TaskEventCategory,
   TaskEventKind,
   TaskStatus,
+  TaskStyle,
   StreamName,
   TaskExecutionState
 } from '../../shared/types'
@@ -25,6 +26,7 @@ function oneOf(column: SQLiteColumn, values: readonly string[]): SQL {
 }
 
 const TASK_STATUSES: TaskStatus[] = ['pending', 'running', 'succeeded', 'failed', 'cancelled']
+const TASK_STYLES: TaskStyle[] = ['work', 'quick']
 const DELIVERY_STATUSES: DeliveryStatus[] = [
   'preparing',
   'working',
@@ -89,6 +91,7 @@ export const tasks = sqliteTable(
   'tasks',
   {
     id: text('id').primaryKey(),
+    style: text('style').$type<TaskStyle>().notNull().default('work'),
     workspaceId: text('workspace_id').notNull().default(DEFAULT_WORKSPACE_ID)
       .references(() => workspaces.id, { onDelete: 'restrict' }),
     projectId: text('project_id')
@@ -145,6 +148,7 @@ export const tasks = sqliteTable(
     index('tasks_project_started_idx').on(table.projectId, table.startedAt),
     index('tasks_parent_idx').on(table.parentTaskId),
     check('tasks_restack_state_valid', oneOf(table.restackState, ['pending', 'conflict'])),
+    check('tasks_style_valid', oneOf(table.style, TASK_STYLES)),
     check('tasks_status_valid', oneOf(table.status, TASK_STATUSES)),
     check('tasks_delivery_status_valid', oneOf(table.deliveryStatus, DELIVERY_STATUSES))
   ]

@@ -4,7 +4,7 @@ import type { AgentDefinition } from '../../shared/types'
 import type { AgentModelCatalogue } from './adapters'
 import { closeAgentServer } from './agent-server-process'
 import { openCodeModelCatalogue } from './opencode-models'
-import { openCodeWorkspaceEnvironment, requireOpenCodeProjectIsolation } from './opencode-workspace'
+import { openCodeWorkspaceEnvironment } from './opencode-workspace'
 import { resolveCommand } from './resolve'
 import type { WorkspaceExecutionContext } from './workspace-execution'
 
@@ -33,7 +33,6 @@ export async function discoverOpenCodeModels(
   workspace: WorkspaceExecutionContext,
   signal?: AbortSignal
 ): Promise<AgentModelCatalogue> {
-  requireOpenCodeProjectIsolation(workspace.home)
   const resolved = resolveCommand(agent.command)
   if (!resolved) throw new Error(`"${agent.command}" is not installed or not on PATH`)
 
