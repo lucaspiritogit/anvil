@@ -18,6 +18,7 @@ async function seedComposer(page: Page, agentId = 'codex', model = 'gpt-5'): Pro
 }
 
 async function openPalette(page: Page): Promise<ReturnType<Page['getByRole']>> {
+  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
   await page.keyboard.press('F1')
   const palette = page.getByRole('dialog', { name: 'Command palette', exact: true })
   await expect(palette).toBeVisible()
@@ -45,7 +46,7 @@ test('F1 opens once, restores focus, and yields to settings, terminals, dialogs,
 
   await prompt.press('F1')
   const palette = page.getByRole('dialog', { name: 'Command palette', exact: true })
-  await expect(palette.getByRole('menuitem', { name: /Change model/ })).toBeFocused()
+  await expect(palette.getByRole('searchbox', { name: 'Search commands' })).toBeFocused()
   await page.keyboard.press('F1')
   await expect(page.getByRole('dialog', { name: 'Command palette' })).toHaveCount(1)
   await page.keyboard.press('Control+,')
@@ -101,6 +102,10 @@ test('keyboard traversal changes provider, model, thinking, and project with per
   const prompt = page.getByRole('textbox', { name: 'Task prompt' })
   await prompt.press('F1')
   const palette = page.getByRole('dialog', { name: 'Command palette', exact: true })
+  await expect(palette.getByRole('searchbox', { name: 'Search commands' })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(palette.getByRole('menuitem', { name: /New task/ })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
 
   const modelDialog = page.getByRole('dialog', { name: 'Choose model', exact: true })
@@ -142,18 +147,20 @@ test('keyboard traversal changes provider, model, thinking, and project with per
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
   const projects = page.getByRole('dialog', { name: 'Choose project' })
-  await expect(projects.getByRole('button', { name: 'Anvil', exact: true })).toBeFocused()
+  await expect(projects.getByRole('button', { name: /^Anvil\b/ })).toBeFocused()
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
   await expect(palette.getByRole('menuitem', { name: /Change project/ })).toBeFocused()
   await expect(page.getByTestId('composer-project-name')).toHaveText('Workbench')
   await page.keyboard.press('Escape')
-  await expect(prompt).toBeFocused()
+  await expect(palette).toHaveCount(0)
 })
 
 test('terminal and caffeine commands use app lifecycles and pending caffeine cannot be repeated', async ({ page }) => {
   await page.goto(`${fixture}?settingsControlled`)
   const palette = await openPalette(page)
+  await expect(palette.getByRole('searchbox', { name: 'Search commands' })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
   await page.keyboard.press('End')
   const caffeine = palette.getByRole('menuitem', { name: /Toggle caffeine mode/ })
   await expect(caffeine).toBeFocused()
@@ -184,6 +191,8 @@ test('unavailable thinking and project choices stay keyboard reachable while ter
   await expect(terminal).toBeDisabled()
 
   await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
   await expect(page.getByRole('dialog', { name: 'Choose thinking' }).getByRole('status'))
     .toHaveText('This model has no thinking options.')
@@ -198,4 +207,46 @@ test('unavailable thinking and project choices stay keyboard reachable while ter
   await page.keyboard.press('ArrowDown')
   await expect(palette.getByRole('menuitem', { name: /Toggle caffeine mode/ })).toBeFocused()
   await page.keyboard.press('Escape')
+})
+
+test('search ranks a partial match first and activates it with ArrowDown and Enter', async ({ page }) => {
+  await page.goto(fixture)
+  const palette = await openPalette(page)
+  const search = palette.getByRole('searchbox', { name: 'Search commands' })
+
+  await expect(search).toBeFocused()
+  await search.pressSequentially('term')
+  const results = palette.getByRole('menuitem')
+  await expect(results).toHaveCount(1)
+  await expect(results.first()).toHaveAccessibleName(/Open terminal/)
+
+  await page.keyboard.press('ArrowDown')
+  await expect(results.first()).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(palette).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Project terminal', exact: true }).locator('canvas')).toBeVisible()
+})
+
+test('search guards disabled matches, exposes its empty state, and resets when reopened', async ({ page }) => {
+  await page.goto(`${fixture}?noProjects`)
+  const palette = await openPalette(page)
+  const search = palette.getByRole('searchbox', { name: 'Search commands' })
+
+  await search.pressSequentially('terminal')
+  const terminal = palette.getByRole('menuitem', { name: /Open terminal/ })
+  await expect(terminal).toBeDisabled()
+  await page.keyboard.press('ArrowDown')
+  await expect(search).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(palette).toBeVisible()
+
+  await search.fill('unmatched-query')
+  await expect(palette.getByRole('status')).toHaveText('No commands found.')
+  await expect(palette.getByRole('menuitem')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(palette).toHaveCount(0)
+
+  const reopened = await openPalette(page)
+  await expect(reopened.getByRole('searchbox', { name: 'Search commands' })).toHaveValue('')
+  await expect(reopened.getByRole('menuitem')).toHaveCount(6)
 })
