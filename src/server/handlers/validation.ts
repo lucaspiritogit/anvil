@@ -148,6 +148,14 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   },
   'agents:list': none,
   'agents:models': object({ agentId: id, workspaceId: optional(id) }),
+  'analytics:get': (value, field) => {
+    const range = object<IpcRequests['analytics:get']>({
+      startAt: number(Number.MIN_SAFE_INTEGER),
+      endAt: number(Number.MIN_SAFE_INTEGER)
+    })(value, field)
+    if (range.endAt <= range.startAt) invalid(field, 'must have an endAt after startAt')
+    return range
+  },
   'projects:list': none,
   'projects:add': object({ path: text(4096) }),
   'projects:update': object({ id, workspaceId: optional(workspaceId), monthlyTokenLimit: optional(nullable(number(0))), monthlyCostLimitUsd: optional(nullable(number(0, Number.MAX_SAFE_INTEGER, false))), finishOnPush: optional(boolean) }),

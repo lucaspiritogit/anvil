@@ -11,6 +11,7 @@ import type {
   WorkspacePreferences,
   WorkspaceSettingsChange,
   AgentDefinition,
+  AnalyticsRange,
   GitHubCredentialStatus,
   ConnectionsStatus,
   ConnectionsStatusChange,
@@ -32,7 +33,8 @@ import type {
   TaskMergePreview,
   TaskPushPreview,
   Settings,
-  Wallpaper
+  Wallpaper,
+  WorkspaceAnalytics
 } from '../../shared/types'
 
 export interface ClientHost {
@@ -142,6 +144,9 @@ export function createAnvilApi(url: string, host: ClientHost) {
       models: (agentId: string, workspaceId?: string): Promise<ProviderModelList> =>
         invoke('agents:models', { agentId, workspaceId }),
       onModelsChanged: (handler: (workspaceId: string) => void): (() => void) => subscribe('agents:models:changed', handler)
+    },
+    analytics: {
+      get: (range: AnalyticsRange): Promise<WorkspaceAnalytics> => invoke('analytics:get', range)
     },
     projects: {
       onChanged: (handler: (projects: Project[]) => void): (() => void) => subscribe('projects:changed', handler),

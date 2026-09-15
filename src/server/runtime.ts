@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { AgentProcessManager } from './agents/process-manager'
 import { GitDeliveryManager } from './git'
 import { registerAgentHandlers } from './handlers/agents'
+import { registerAnalyticsHandlers } from './handlers/analytics'
 import { registerGitHubHandlers } from './handlers/github'
 import { GitHubCredentials, type CredentialEncryption } from './github-credentials'
 import { GitHubPRPolling } from './github-pr-polling'
@@ -181,6 +182,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     handlerContext.deferUntilResponse(async () => { await connections.activate(workspaceId) })
   })
   registerAgentHandlers(ipc, store)
+  registerAnalyticsHandlers(ipc, store)
   const accounts = new WorkspaceAccounts(store, {
     acquire: (workspaceId) => agentProcesses.acquireAccountChange(workspaceId),
     busy: (workspaceId) => agentProcesses.isWorkspaceBusy(workspaceId),

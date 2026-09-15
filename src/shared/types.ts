@@ -437,6 +437,74 @@ export type TaskUsage = Pick<
   'inputTokens' | 'outputTokens' | 'cachedTokens' | 'totalTokens' | 'costUsd'
 >
 
+export interface AnalyticsRange {
+  startAt: number
+  endAt: number
+}
+
+export interface AnalyticsTokenTotals {
+  input: number
+  output: number
+  cached: number
+  total: number
+}
+
+export interface AnalyticsCostTotals {
+  reportedUsd: number
+  reportedTaskCount: number
+  unreportedTaskCount: number
+}
+
+export interface AnalyticsTaskTotals {
+  total: number
+  completed: number
+  successful: number
+  successRate: number | null
+  statusCounts: Record<TaskStatus, number>
+}
+
+export interface AnalyticsFavorite {
+  key: string
+  label: string
+  taskCount: number
+}
+
+export interface AnalyticsTimingTotals {
+  workingTimeMs: number
+  averageWorkingTimeMs: number
+}
+
+export interface AnalyticsCodeChangeTotals {
+  filesChanged: number
+  additions: number
+  deletions: number
+}
+
+export interface AnalyticsBreakdown {
+  key: string
+  label: string
+  taskCount: number
+  totalTokens: number
+  reportedCostUsd: number
+}
+
+export interface WorkspaceAnalytics {
+  range: AnalyticsRange
+  tokens: AnalyticsTokenTotals
+  cost: AnalyticsCostTotals
+  tasks: AnalyticsTaskTotals
+  favoriteModel: AnalyticsFavorite | null
+  favoriteProvider: AnalyticsFavorite | null
+  timing: AnalyticsTimingTotals
+  codeChanges: AnalyticsCodeChangeTotals
+  breakdowns: {
+    providers: AnalyticsBreakdown[]
+    models: AnalyticsBreakdown[]
+    statuses: AnalyticsBreakdown[]
+    projects: AnalyticsBreakdown[]
+  }
+}
+
 /**
  * Who rewrites a task's commits. `manual` opens a small interactive-rebase
  * editor and Anvil performs the rebase itself; `agent` hands the job to the

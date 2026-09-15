@@ -319,6 +319,25 @@ window.anvil = {
     viewport: async ({ taskId, viewport }) => ({ taskId, open: false, viewport }),
     onChanged: () => noop
   },
+  analytics: {
+    get: async (range) => ({
+      range,
+      tokens: { input: 0, output: 0, cached: 0, total: 0 },
+      cost: { reportedUsd: 0, reportedTaskCount: 0, unreportedTaskCount: 0 },
+      tasks: {
+        total: 0,
+        completed: 0,
+        successful: 0,
+        successRate: null,
+        statusCounts: { pending: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 }
+      },
+      favoriteModel: null,
+      favoriteProvider: null,
+      timing: { workingTimeMs: 0, averageWorkingTimeMs: 0 },
+      codeChanges: { filesChanged: 0, additions: 0, deletions: 0 },
+      breakdowns: { providers: [], models: [], statuses: [], projects: [] }
+    })
+  },
   projects: {
     files: async ({ projectId }: { projectId: string }) => {
       const fixture = window.fileMentionTest

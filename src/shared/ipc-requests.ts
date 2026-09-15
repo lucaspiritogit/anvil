@@ -1,4 +1,4 @@
-import type { TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskReviewPolicy, TaskCheckoutMode } from './types'
+import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskReviewPolicy, TaskCheckoutMode } from './types'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
 export interface IpcRequests {
@@ -24,6 +24,7 @@ export interface IpcRequests {
   'accounts:cancel': AgentAccountTarget & { sessionId: string }
   'agents:list': undefined
   'agents:models': { agentId: string; workspaceId?: string }
+  'analytics:get': AnalyticsRange
   'projects:list': undefined
   'projects:add': { path: string }
   'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean }

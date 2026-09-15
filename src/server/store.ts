@@ -6,13 +6,13 @@ import { resolveWorkspaceDirectory } from '../shared/app-data'
 import { normalizeWorkspaceName, readRootConfig, writeRootConfig, type RootConfig } from './root-config'
 import { TaskImageStorage } from './task-image-storage'
 import type { PullRequestMerged } from '../shared/github-pull-request-state'
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DEFAULT_WORKSPACE_ID, DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '../shared/types'
-import type { TaskEventsRequest, TaskEventsPage, TaskEventCursor } from '../shared/types'
+import type { AnalyticsBreakdown, AnalyticsFavorite, AnalyticsRange, TaskEventsRequest, TaskEventsPage, TaskEventCursor, TaskStatus, WorkspaceAnalytics } from '../shared/types'
 import * as schema from './db/schema'
 import { canSettleTask, settlementDeadline } from '../shared/task-settlement'
 import { advanceTaskWorkingTime, isTaskWorking, type TaskWorkingTime } from '../shared/task-timing'
@@ -40,6 +40,19 @@ const DEFAULT_SETTINGS: Settings = {
   allowOtherDevices: false,
   tailscaleHttps: false,
   keybindings: DEFAULT_KEYBINDINGS
+}
+
+const ANALYTICS_TASK_STATUSES: TaskStatus[] = ['pending', 'running', 'succeeded', 'failed', 'cancelled']
+
+function compareAnalyticsBreakdown(left: AnalyticsBreakdown, right: AnalyticsBreakdown): number {
+  if (left.taskCount !== right.taskCount) return right.taskCount - left.taskCount
+  if (left.label !== right.label) return left.label < right.label ? -1 : 1
+  return left.key < right.key ? -1 : left.key > right.key ? 1 : 0
+}
+
+function analyticsFavorite(breakdown: AnalyticsBreakdown[]): AnalyticsFavorite | null {
+  const favorite = breakdown[0]
+  return favorite ? { key: favorite.key, label: favorite.label, taskCount: favorite.taskCount } : null
 }
 
 /** The settings table stores text, so non-string values are encoded here. */
@@ -574,6 +587,110 @@ export class Store {
     }).where(eq(projects.id, id)).run()
     const row = db.select().from(projects).where(eq(projects.id, id)).get()
     return row ? toProject(row) : undefined
+  }
+
+  getAnalytics(range: AnalyticsRange): WorkspaceAnalytics {
+    const workspaceId = this.getActiveWorkspace().id
+    const db = this.workspaceConnection(workspaceId).db
+    const scope = and(
+      eq(tasks.workspaceId, workspaceId),
+      gte(tasks.startedAt, range.startAt),
+      lt(tasks.startedAt, range.endAt)
+    )
+    const groupedTotals = () => ({
+      taskCount: sql<number>`count(*)`.mapWith(Number),
+      totalTokens: sql<number>`coalesce(sum(${tasks.totalTokens}), 0)`.mapWith(Number),
+      reportedCostUsd: sql<number>`coalesce(sum(${tasks.costUsd}), 0)`.mapWith(Number)
+    })
+    const totals = db.select({
+      taskCount: sql<number>`count(*)`.mapWith(Number),
+      inputTokens: sql<number>`coalesce(sum(${tasks.inputTokens}), 0)`.mapWith(Number),
+      outputTokens: sql<number>`coalesce(sum(${tasks.outputTokens}), 0)`.mapWith(Number),
+      cachedTokens: sql<number>`coalesce(sum(${tasks.cachedTokens}), 0)`.mapWith(Number),
+      totalTokens: sql<number>`coalesce(sum(${tasks.totalTokens}), 0)`.mapWith(Number),
+      reportedCostUsd: sql<number>`coalesce(sum(${tasks.costUsd}), 0)`.mapWith(Number),
+      reportedCostTaskCount: sql<number>`coalesce(sum(case when ${tasks.costUsd} is not null then 1 else 0 end), 0)`.mapWith(Number),
+      successfulTaskCount: sql<number>`coalesce(sum(case when ${tasks.status} = 'succeeded' then 1 else 0 end), 0)`.mapWith(Number),
+      completedTaskCount: sql<number>`coalesce(sum(case when ${tasks.status} in ('succeeded', 'failed', 'cancelled') then 1 else 0 end), 0)`.mapWith(Number),
+      workingTimeMs: sql<number>`coalesce(sum(${tasks.workingTimeMs}), 0)`.mapWith(Number),
+      filesChanged: sql<number>`coalesce(sum(${tasks.filesChanged}), 0)`.mapWith(Number),
+      additions: sql<number>`coalesce(sum(${tasks.additions}), 0)`.mapWith(Number),
+      deletions: sql<number>`coalesce(sum(${tasks.deletions}), 0)`.mapWith(Number)
+    }).from(tasks).where(scope).get()
+    const toBreakdown = (row: {
+      key: string
+      label: string
+      taskCount: number
+      totalTokens: number
+      reportedCostUsd: number
+    }): AnalyticsBreakdown => ({ ...row })
+    const providers = db.select({
+      key: tasks.agentId,
+      label: tasks.agentLabel,
+      ...groupedTotals()
+    }).from(tasks).where(scope).groupBy(tasks.agentId, tasks.agentLabel).all()
+      .map(toBreakdown).sort(compareAnalyticsBreakdown)
+    const models = db.select({
+      key: tasks.model,
+      label: tasks.model,
+      ...groupedTotals()
+    }).from(tasks).where(and(scope, isNotNull(tasks.model), sql`trim(${tasks.model}) <> ''`))
+      .groupBy(tasks.model).all()
+      .filter((row): row is typeof row & { key: string; label: string } => row.key !== null && row.label !== null)
+      .map(toBreakdown).sort(compareAnalyticsBreakdown)
+    const statuses = db.select({
+      key: tasks.status,
+      label: tasks.status,
+      ...groupedTotals()
+    }).from(tasks).where(scope).groupBy(tasks.status).all()
+      .map(toBreakdown).sort(compareAnalyticsBreakdown)
+    const projectBreakdown = db.select({
+      key: tasks.projectId,
+      label: projects.name,
+      ...groupedTotals()
+    }).from(tasks).innerJoin(projects, eq(tasks.projectId, projects.id)).where(scope)
+      .groupBy(tasks.projectId, projects.name).all()
+      .map(toBreakdown).sort(compareAnalyticsBreakdown)
+    const statusCounts = Object.fromEntries(
+      ANALYTICS_TASK_STATUSES.map((status) => [status, statuses.find((entry) => entry.key === status)?.taskCount ?? 0])
+    ) as Record<TaskStatus, number>
+    const taskCount = totals?.taskCount ?? 0
+    const completedTaskCount = totals?.completedTaskCount ?? 0
+    const successfulTaskCount = totals?.successfulTaskCount ?? 0
+    const workingTimeMs = totals?.workingTimeMs ?? 0
+    return {
+      range: { ...range },
+      tokens: {
+        input: totals?.inputTokens ?? 0,
+        output: totals?.outputTokens ?? 0,
+        cached: totals?.cachedTokens ?? 0,
+        total: totals?.totalTokens ?? 0
+      },
+      cost: {
+        reportedUsd: totals?.reportedCostUsd ?? 0,
+        reportedTaskCount: totals?.reportedCostTaskCount ?? 0,
+        unreportedTaskCount: taskCount - (totals?.reportedCostTaskCount ?? 0)
+      },
+      tasks: {
+        total: taskCount,
+        completed: completedTaskCount,
+        successful: successfulTaskCount,
+        successRate: completedTaskCount ? successfulTaskCount / completedTaskCount : null,
+        statusCounts
+      },
+      favoriteModel: analyticsFavorite(models),
+      favoriteProvider: analyticsFavorite(providers),
+      timing: {
+        workingTimeMs,
+        averageWorkingTimeMs: taskCount ? workingTimeMs / taskCount : 0
+      },
+      codeChanges: {
+        filesChanged: totals?.filesChanged ?? 0,
+        additions: totals?.additions ?? 0,
+        deletions: totals?.deletions ?? 0
+      },
+      breakdowns: { providers, models, statuses, projects: projectBreakdown }
+    }
   }
 
   getTasks(workspaceId?: string): Task[] {
