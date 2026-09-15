@@ -3,6 +3,7 @@ import { onTestCleanup } from './test-cleanup'
 import { expect, test } from 'vitest'
 import { once } from 'node:events'
 import { AgentProcessManager, type ExitInfo } from '../src/server/agents/process-manager'
+import { planningPrompt } from '../src/server/agents/task-prompts'
 import type { AgentDefinition, TaskEvent } from '../src/shared/types'
 
 test('captures process output, cancels tasks and awaits shutdown', async () => {
@@ -188,9 +189,10 @@ test('enables task tools for server turns and releases them after success, failu
       expect(active.has(input.taskId)).toBe(true)
       expect(input.mcpServers?.[0].headers.Authorization).toBe(input.taskId)
       expect(input.mcpServers?.[1]).toMatchObject({ name: 'anvil_browser', required: false })
+      expect(input.prompt).toContain('Use anvil_browser if the task requires')
       input.onStarted?.()
-      if (input.prompt === 'fail') throw new Error('Transport failed')
-      if (input.prompt === 'cancel') {
+      if (input.prompt.startsWith('fail')) throw new Error('Transport failed')
+      if (input.prompt.startsWith('cancel')) {
         await new Promise<void>((resolve) => input.signal!.addEventListener('abort', () => resolve(), { once: true }))
       }
       return { taskId: input.taskId, status: input.signal?.aborted ? 'cancelled' : 'succeeded', output: '', changedFiles: [] }
@@ -216,4 +218,32 @@ test('enables task tools for server turns and releases them after success, failu
       expect(active.size).toBe(0)
     }
   }
+})
+
+test('omits browser guidance when the browser task tool is unavailable', async () => {
+  const received: import('../src/server/agents/agent-executor').TaskInput[] = []
+  const executor: import('../src/server/agents/agent-executor').AgentExecutor = {
+    async execute(input) {
+      received.push(input)
+      return { taskId: input.taskId, status: 'succeeded', output: '', changedFiles: [] }
+    }
+  }
+  const manager = new AgentProcessManager(executor, executor, undefined, undefined, async (taskId) => ({
+    mcpServers: [
+      { name: 'anvil_issue_tracker', url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: taskId }, required: true }
+    ],
+    close: () => {}
+  }))
+  onTestCleanup(() => manager.close())
+  const exited = once(manager, 'exit')
+  const prompt = planningPrompt('Headless task', { projectPath: process.cwd(), parentIssueId: 'parent' })
+  manager.start({
+    workspace: testWorkspace(), taskId: 'headless', prompt, cwd: process.cwd(),
+    agent: { id: 'test', label: 'Test', description: '', command: 'unused', args: [], executionProtocol: 'codex-app-server' }
+  })
+  await exited
+  expect(received[0]?.prompt).toBe(prompt)
+  expect(received[0]?.prompt).toContain('Use anvil_issue_tracker tools.')
+  expect(received[0]?.prompt).not.toContain('anvil_browser')
+  expect(received[0]?.mcpServers?.map((server) => server.name)).toEqual(['anvil_issue_tracker'])
 })

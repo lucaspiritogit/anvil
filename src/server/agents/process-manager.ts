@@ -10,6 +10,7 @@ import { parseAgentLine } from './output'
 import { getAgentAdapter } from './adapters'
 import { listModels } from './models'
 import type { AgentExecutor, TaskResult, TaskSteeringInput } from './agent-executor'
+import { BROWSER_TOOL_INSTRUCTION } from './task-prompts'
 import type {
   AgentDefinition,
   ProviderModelList,
@@ -356,7 +357,10 @@ export class AgentProcessManager extends EventEmitter {
           controller.signal.throwIfAborted()
         }
         if (opts.agent.supportsSteering && client.steer) this.steeringExecutors.set(opts.taskId, client)
-        return await client.execute({ ...input, mcpServers: taskTools?.mcpServers, onStarted, signal: controller.signal }, (event) => this.emitExecutorEvent(event, issueId))
+        const prompt = taskTools?.mcpServers.some((server) => server.name === 'anvil_browser')
+          ? `${input.prompt}\n${BROWSER_TOOL_INSTRUCTION}`
+          : input.prompt
+        return await client.execute({ ...input, prompt, mcpServers: taskTools?.mcpServers, onStarted, signal: controller.signal }, (event) => this.emitExecutorEvent(event, issueId))
       } finally {
         await taskTools?.close()
       }
