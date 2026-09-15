@@ -45,7 +45,8 @@ export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationBu
           <ProjectOverview project={project} />
         )}
         {view.kind === 'analytics' && <AnalyticsPage />}
-        {activeTask && <TaskView key={activeTask.id} task={activeTask} />}
+        {activeTask && <TaskView key={`${activeTask.id}:${view.kind === 'task' ? view.panel ?? 'default' : 'default'}`} task={activeTask}
+          initialPanel={view.kind === 'task' ? view.panel : undefined} />}
       </section>
     </main>
   )

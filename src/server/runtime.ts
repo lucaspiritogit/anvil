@@ -71,6 +71,9 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   const store = new Store(join(dataDirectory, 'config.json'), {
     migrationsFolder: options.migrationsDirectory
   })
+  const stopTaskResultNotices = store.subscribeTaskResultNotices((change) => {
+    broadcast('task-result-notice:changed', change)
+  })
   const caffeineActivity = createCaffeineActivity(store)
   ipc.handle('app:caffeine', () => caffeineActivity.snapshot())
   const stopCaffeineActivity = caffeineActivity.subscribe((state) => broadcast('app:caffeine', state))
@@ -261,6 +264,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
       stopAuthWatcher()
       stopPollingUpdates()
       stopRememberingWorktreeOwners()
+      stopTaskResultNotices()
       const results = await Promise.allSettled([
         connections.close(),
         Promise.resolve().then(() => terminals.disposeAll()),

@@ -175,6 +175,9 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'projects:files': object({ projectId: id }),
   'projects:checkout': object({ projectId: id, branchName: text(1024) }),
   'tasks:list': none,
+  'task-result-notices:list': object({ workspaceId, projectId: optional(id) }),
+  'task-result-notices:seen': object({ workspaceId, noticeId: id }),
+  'task-result-notices:dismiss': object({ workspaceId, noticeId: id }),
   'tasks:issues': id,
   'tasks:events': id,
   'tasks:events-page': (value, field) => {

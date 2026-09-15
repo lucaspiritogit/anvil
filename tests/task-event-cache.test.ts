@@ -27,7 +27,7 @@ function deferred<T>() {
 const state = () => useStore.getState()
 const cached = (id = 'a') => state().eventsByTask[id]
 const snapshot = (id = 'other'): WorkspaceSnapshot => ({
-  workspace: { id, name: id, createdAt: 0 }, workspaces: [], projects: [project('project')], tasks: [task('a')],
+  workspace: { id, name: id, createdAt: 0 }, workspaces: [], projects: [project('project')], tasks: [task('a')], taskResultNotices: [],
   settings: {} as WorkspaceSnapshot['settings'],
   preferences: { lastProjectId: 'project', composer: { agentId: '', modelsByAgent: {}, reasoningByAgentModel: {} } }
 })

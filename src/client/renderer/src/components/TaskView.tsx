@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
 import { TaskStackStatus } from './TaskStackStatus'
-import { useStore } from '../state/store'
+import { useStore, type TaskPanel } from '../state/store'
 import { btn, cn, deliveryTone, dot, field, ISSUE_STATUS, statusTone } from '../ui'
 import { AgentIcon } from './AgentIcon'
 import { AgentRebaseModal } from './AgentRebaseModal'
@@ -30,6 +30,7 @@ import { TaskStyleBadge } from './TaskStyleBadge'
 
 interface Props {
   task: Task
+  initialPanel?: TaskPanel
 }
 
 /** Either a saved note or the line currently being written on. */
@@ -55,8 +56,6 @@ interface PatchFilesProps {
 const NOTE_CARD = 'px-3 py-2.5 my-1.5 bg-raised border-l-2'
 const EMPTY_PANEL = 'grid flex-1 place-content-center gap-2 p-6 text-center text-sm text-dim'
 const ICON_BTN = 'grid size-7 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-dim'
-
-type TaskPanel = 'output' | 'changes' | 'issues'
 
 const PatchFiles = lazy(async () => {
   const [{ FileDiff }, { parsePatchFiles }] = await Promise.all([
@@ -483,7 +482,7 @@ function MergeActions({ disabled, title, onSelect }: {
   )
 }
 
-export function TaskView({ task }: Props): JSX.Element {
+export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element {
   const style = taskStyle(task)
   const work = style === 'work'
   const { snapshot, error: issueError, refresh } = useTaskIssues(task.id, work)
@@ -535,7 +534,7 @@ export function TaskView({ task }: Props): JSX.Element {
   const reviewable = !issue && (task.deliveryStatus === 'reviewable' || approved)
   const issueReviewPending = Boolean(issue && !issueIsReviewReady(snapshot))
   const finalDiffPending = task.status === 'running' || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit'
-  const [activePanel, setActivePanel] = useState<TaskPanel>('output')
+  const [activePanel, setActivePanel] = useState<TaskPanel>(initialPanel)
 
   useEffect(() => {
     setNow(Date.now())

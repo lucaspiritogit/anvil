@@ -47,6 +47,28 @@ export type TaskStyle = 'work' | 'quick'
 export type TaskReviewPolicy = 'review_each_issue' | 'review_at_task_end'
 export type TaskCheckoutMode = 'worktree' | 'local'
 
+export type TaskResultNoticeKind = 'reviewable' | 'no_changes' | 'completed'
+
+export interface TaskResultNotice {
+  id: string
+  workspaceId: string
+  projectId: string
+  taskId: string
+  resultVersion: number
+  kind: TaskResultNoticeKind
+  headCommit?: string
+  createdAt: number
+  seenAt?: number
+  dismissedAt?: number
+}
+
+export interface TaskResultNoticeChange {
+  workspaceId: string
+  projectId: string
+  noticeId: string
+  notice?: TaskResultNotice
+}
+
 export type DeliveryStatus =
   | 'preparing'
   | 'working'
@@ -308,6 +330,7 @@ export interface WorkspaceSnapshot {
   preferences: WorkspacePreferences
   projects: Project[]
   tasks: Task[]
+  taskResultNotices: TaskResultNotice[]
 }
 
 export interface WorkspaceSettingsChange {

@@ -19,7 +19,8 @@ import type {
   TaskMergeAndPushPreview,
   TaskMergePreview,
   TaskPushPreview,
-  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskReviewPolicy, TaskCheckoutMode
+  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskReviewPolicy, TaskCheckoutMode,
+  TaskResultNotice, TaskResultNoticeChange
 } from '@shared/types'
 import { nextTaskStyle } from '../../../../shared/task-style'
 
@@ -75,8 +76,20 @@ const taskDiffRevision = (task?: Task): string => JSON.stringify(task ? [
   task.filesChanged, task.additions, task.deletions
 ] : null)
 type CaffeineSave = { value: boolean; status: 'pending' | 'error' }
+type TaskResultNoticeError = { workspaceId: string; projectId: string; message: string }
 
-export type CenterView = { kind: 'home' } | { kind: 'analytics' } | { kind: 'task'; taskId: string }
+export type TaskPanel = 'output' | 'changes' | 'issues'
+export type CenterView = { kind: 'home' } | { kind: 'analytics' } | { kind: 'task'; taskId: string; panel?: TaskPanel }
+
+const sortTaskResultNotices = (notices: TaskResultNotice[]): TaskResultNotice[] => [...notices].sort(
+  (a, b) => b.createdAt - a.createdAt || b.resultVersion - a.resultVersion || a.id.localeCompare(b.id)
+)
+
+const mergeTaskResultNotice = (current: TaskResultNotice | undefined, incoming: TaskResultNotice): TaskResultNotice => ({
+  ...incoming,
+  ...(current?.seenAt !== undefined && incoming.seenAt === undefined ? { seenAt: current.seenAt } : {}),
+  ...(current?.dismissedAt !== undefined && incoming.dismissedAt === undefined ? { dismissedAt: current.dismissedAt } : {})
+})
 
 interface AnvilState {
   workspaces: Workspace[]
@@ -92,6 +105,11 @@ interface AnvilState {
   ready: boolean
   projects: Project[]
   tasks: Task[]
+  taskResultNotices: TaskResultNotice[]
+  taskResultNoticeError: TaskResultNoticeError | null
+  applyTaskResultNoticeChange: (change: TaskResultNoticeChange) => void
+  markTaskResultNoticeSeen: (noticeId: string) => Promise<void>
+  dismissTaskResultNotice: (noticeId: string) => Promise<void>
   agents: AgentDefinition[]
   /** Model catalogues, one per agent, fetched the first time they are needed. */
   modelsByAgent: Record<string, ProviderModelList>
@@ -169,7 +187,7 @@ interface AnvilState {
   startTask: (input: { projectId?: string; style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
   steerTask: (taskId: string, message: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
-  openTask: (taskId: string) => Promise<void>
+  openTask: (taskId: string, panel?: TaskPanel) => Promise<void>
   loadTaskDiff: (taskId: string) => Promise<void>
   loadIssueDiff: (taskId: string, issueId: string) => Promise<void>
   showHome: () => void
@@ -202,6 +220,8 @@ export const useStore = create<AnvilState>((set, get) => ({
     set({
       workspaces: snapshot.workspaces, activeWorkspaceId: snapshot.workspace.id,
       settings: snapshot.settings, projects: snapshot.projects, tasks: snapshot.tasks,
+      taskResultNotices: sortTaskResultNotices(snapshot.taskResultNotices.filter((notice) => notice.workspaceId === snapshot.workspace.id)),
+      taskResultNoticeError: null,
       activeProjectId: snapshot.projects.find((project) => project.id === snapshot.preferences.lastProjectId)?.id ?? snapshot.projects[0]?.id ?? null,
       ready: true,
       ...(changed || removed ? { ...evictTaskEvents(), view: changed ? workspaceView : { kind: 'home' as const } } : {}),
@@ -264,6 +284,61 @@ export const useStore = create<AnvilState>((set, get) => ({
   ready: false,
   projects: [],
   tasks: [],
+  taskResultNotices: [],
+  taskResultNoticeError: null,
+  applyTaskResultNoticeChange: (change) => {
+    if (get().workspaceSwitching || get().activeWorkspaceId !== change.workspaceId) return
+    set((state) => {
+      if (!change.notice) {
+        return { taskResultNotices: state.taskResultNotices.filter((notice) => notice.id !== change.noticeId) }
+      }
+      if (change.notice.workspaceId !== change.workspaceId || change.notice.projectId !== change.projectId) return state
+      const current = state.taskResultNotices.find((notice) => notice.id === change.noticeId)
+      return {
+        taskResultNotices: sortTaskResultNotices([
+          mergeTaskResultNotice(current, change.notice),
+          ...state.taskResultNotices.filter((notice) => notice.id !== change.noticeId)
+        ]),
+        taskResultNoticeError: null
+      }
+    })
+  },
+  markTaskResultNoticeSeen: async (noticeId) => {
+    const workspaceId = get().activeWorkspaceId
+    const projectId = get().taskResultNotices.find((notice) => notice.id === noticeId)?.projectId
+    const generation = workspaceGeneration
+    if (!workspaceId || !projectId || get().workspaceSwitching) return
+    try {
+      const notice = await window.anvil.taskResultNotices.markSeen({ workspaceId, noticeId })
+      if (generation !== workspaceGeneration || get().activeWorkspaceId !== workspaceId) return
+      get().applyTaskResultNoticeChange({ workspaceId, projectId: notice.projectId, noticeId, notice })
+    } catch (error) {
+      if (generation === workspaceGeneration && get().activeWorkspaceId === workspaceId) {
+        set({ taskResultNoticeError: { workspaceId, projectId, message: error instanceof Error ? error.message : 'Could not acknowledge the task result' } })
+      }
+    }
+  },
+  dismissTaskResultNotice: async (noticeId) => {
+    const workspaceId = get().activeWorkspaceId
+    const projectId = get().taskResultNotices.find((notice) => notice.id === noticeId)?.projectId
+    const generation = workspaceGeneration
+    if (!workspaceId || !projectId || get().workspaceSwitching) return
+    try {
+      const current = get().taskResultNotices.find((notice) => notice.id === noticeId)
+      if (current && current.seenAt === undefined) {
+        const seen = await window.anvil.taskResultNotices.markSeen({ workspaceId, noticeId })
+        if (generation !== workspaceGeneration || get().activeWorkspaceId !== workspaceId) return
+        get().applyTaskResultNoticeChange({ workspaceId, projectId: seen.projectId, noticeId, notice: seen })
+      }
+      const notice = await window.anvil.taskResultNotices.dismiss({ workspaceId, noticeId })
+      if (generation !== workspaceGeneration || get().activeWorkspaceId !== workspaceId) return
+      get().applyTaskResultNoticeChange({ workspaceId, projectId: notice.projectId, noticeId, notice })
+    } catch (error) {
+      if (generation === workspaceGeneration && get().activeWorkspaceId === workspaceId) {
+        set({ taskResultNoticeError: { workspaceId, projectId, message: error instanceof Error ? error.message : 'Could not dismiss the task result' } })
+      }
+    }
+  },
   agents: [],
   modelsByAgent: {},
   modelsByWorkspace: {},
@@ -351,6 +426,7 @@ export const useStore = create<AnvilState>((set, get) => ({
         projects,
         gitStatusByProject,
         tasks,
+        taskResultNotices: s.taskResultNotices.filter((notice) => notice.projectId !== id),
         activeProjectId: s.activeProjectId === id ? (projects[0]?.id ?? null) : s.activeProjectId,
         ...(s.activeProjectId === id ? { taskComposerStyle: 'work' as const } : {}),
         view: view.kind === 'task' && !tasks.some((task) => task.id === view.taskId) ? { kind: 'home' } : view
@@ -485,6 +561,7 @@ export const useStore = create<AnvilState>((set, get) => ({
         Object.fromEntries(Object.entries(cache).filter(([id]) => id !== taskId))
       return {
         tasks: state.tasks.filter((task) => task.id !== taskId),
+        taskResultNotices: state.taskResultNotices.filter((notice) => notice.taskId !== taskId),
         ...(state.view.kind === 'task' && state.view.taskId === taskId ? evictTaskEvents() : {}),
         diffsByTask: withoutTask(state.diffsByTask),
         diffErrorsByTask: withoutTask(state.diffErrorsByTask),
@@ -499,7 +576,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     })
   },
 
-  openTask: async (taskId) => {
+  openTask: async (taskId, panel) => {
     const task = get().tasks.find((item) => item.id === taskId)
     if (!task) {
       get().showHome()
@@ -507,7 +584,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
     const currentView = get().view
     if (currentView.kind !== 'task' || currentView.taskId !== taskId) {
-      set({ ...evictTaskEvents(), activeProjectId: task.projectId, view: { kind: 'task', taskId } })
+      set({ ...evictTaskEvents(), activeProjectId: task.projectId, view: { kind: 'task', taskId, ...(panel ? { panel } : {}) } })
     }
     await get().loadTaskEvents(taskId)
   },

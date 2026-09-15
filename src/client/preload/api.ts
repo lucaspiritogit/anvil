@@ -32,6 +32,8 @@ import type {
   TaskMergeAndPushPreview,
   TaskMergePreview,
   TaskPushPreview,
+  TaskResultNotice,
+  TaskResultNoticeChange,
   Settings,
   Wallpaper,
   WorkspaceAnalytics
@@ -199,6 +201,16 @@ export function createAnvilApi(url: string, host: ClientHost) {
       onEvent: (handler: (event: TaskEvent) => void): (() => void) =>
         subscribe<TaskEvent>('task:event', handler),
       onUpdated: (handler: (task: Task) => void): (() => void) => subscribe<Task>('task:updated', handler)
+    },
+    taskResultNotices: {
+      list: (input: IpcRequests['task-result-notices:list']): Promise<TaskResultNotice[]> =>
+        invoke('task-result-notices:list', input),
+      markSeen: (input: IpcRequests['task-result-notices:seen']): Promise<TaskResultNotice> =>
+        invoke('task-result-notices:seen', input),
+      dismiss: (input: IpcRequests['task-result-notices:dismiss']): Promise<TaskResultNotice> =>
+        invoke('task-result-notices:dismiss', input),
+      onChanged: (handler: (change: TaskResultNoticeChange) => void): (() => void) =>
+        subscribe('task-result-notice:changed', handler)
     },
     comments: {
       list: (taskId: string): Promise<TaskComment[]> => invoke('comments:list', taskId),

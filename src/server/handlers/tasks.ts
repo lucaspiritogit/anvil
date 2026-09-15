@@ -21,10 +21,33 @@ interface TaskHandlerDependencies extends TaskContext, TaskEvents, TaskExecution
   promptWithProjectMemory: TaskMemory['promptWithProjectMemory']
 }
 
+export function registerTaskResultNoticeHandlers(ipc: HandlerRegistry, store: TaskContext['store']): void {
+  const requireActiveWorkspace = (workspaceId: string): void => {
+    if (workspaceId !== store.getActiveWorkspace().id) throw new Error('Workspace changed. Retry.')
+  }
+  ipc.handle('task-result-notices:list', ({ workspaceId, projectId }) => {
+    requireActiveWorkspace(workspaceId)
+    if (projectId !== undefined) {
+      if (!store.getProjects(workspaceId).some((project) => project.id === projectId)) throw new Error('Project not found')
+      return store.getProjectTaskResultNotices(projectId, workspaceId)
+    }
+    return store.getTaskResultNotices(workspaceId)
+  })
+  ipc.handle('task-result-notices:seen', ({ workspaceId, noticeId }) => {
+    requireActiveWorkspace(workspaceId)
+    return store.markTaskResultNoticeSeen(noticeId, workspaceId)
+  })
+  ipc.handle('task-result-notices:dismiss', ({ workspaceId, noticeId }) => {
+    requireActiveWorkspace(workspaceId)
+    return store.dismissTaskResultNotice(noticeId, workspaceId)
+  })
+}
+
 export function registerTaskHandlers(ipc: HandlerRegistry, {
   store, agentProcesses, gitDelivery, send, recordSystemEvent, forgetUsage,
   issueReviewReady, initializeTask, stopTask, deferTaskCleanup, skipTaskCleanup, finishTaskTurn, requireFinishedTask, promptWithProjectMemory
 }: TaskHandlerDependencies): void {
+  registerTaskResultNoticeHandlers(ipc, store)
   const stacks = new TaskStacks({ store, agentProcesses, gitDelivery, send })
   const startTask = registerTaskStarts({ store, agentProcesses, gitDelivery, send, recordSystemEvent, stopTask, promptWithProjectMemory })
   ipc.handle('tasks:stack', (input) => stacks.stack(input.taskId, input.parentTaskId))

@@ -41,6 +41,9 @@ export interface IpcRequests {
   'projects:files': { projectId: string }
   'projects:checkout': { projectId: string; branchName: string }
   'tasks:list': undefined
+  'task-result-notices:list': { workspaceId: string; projectId?: string }
+  'task-result-notices:seen': { workspaceId: string; noticeId: string }
+  'task-result-notices:dismiss': { workspaceId: string; noticeId: string }
   'tasks:issues': string
   'tasks:events': string
   'tasks:events-page': TaskEventsRequest
