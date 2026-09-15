@@ -297,8 +297,6 @@ test('validates and routes local checkout and selected-base Work tasks', async (
     .toThrow(/checkoutMode/)
   await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', checkoutMode: 'local', startBase: 'origin/main' }))
     .rejects.toThrow(/cannot choose a worktree start base/)
-  await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', style: 'quick', checkoutMode: 'local' }))
-    .rejects.toThrow(/Only Work tasks/)
   await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', checkoutMode: 'local', parentTaskId: 'parent' }))
     .rejects.toThrow(/Stacked tasks must use a new worktree/)
   await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', parentTaskId: 'parent', startBase: 'origin/main' }))
@@ -314,10 +312,15 @@ test('validates and routes local checkout and selected-base Work tasks', async (
   expect(agentProcesses.starts.at(-1).prompt).toContain("project's existing checkout")
   expect(prepare).not.toHaveBeenCalled()
 
-  await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Conflicting local task', checkoutMode: 'local' }))
-    .rejects.toThrow(/active task using this project checkout/)
-  await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Conflicting Quick task', style: 'quick' }))
-    .rejects.toThrow(/active task using this project checkout/)
+  const concurrentLocal: Task = await call('tasks:start', {
+    projectId: project.id, agentId: 'codex', prompt: 'Concurrent local task', checkoutMode: 'local'
+  })
+  const concurrentQuick: Task = await call('tasks:start', {
+    projectId: project.id, agentId: 'codex', prompt: 'Concurrent Quick task', style: 'quick', checkoutMode: 'local'
+  })
+  await tick()
+  expect(store.getTask(concurrentLocal.id)).toMatchObject({ cwd: project.path, checkoutMode: 'local' })
+  expect(store.getTask(concurrentQuick.id)).toMatchObject({ cwd: project.path, checkoutMode: 'local' })
   await expect(call('projects:checkout', { projectId: project.id, branchName: 'main' }))
     .rejects.toThrow(/active task using this project checkout/)
 
@@ -483,7 +486,7 @@ test('updates projects, validates task references and selects supported agents a
   expect(codexSettings.defaultModel).toBe('selected-model')
 })
 
-test('runs Quick tasks directly without issue plans or task worktrees', async () => {
+test('runs local Quick tasks directly without issue plans', async () => {
   const { store, project, agentProcesses, delivery, call, tick } = setupIpc()
   const prepareBranch = vi.spyOn(delivery, 'prepareBranch')
 
@@ -492,7 +495,7 @@ test('runs Quick tasks directly without issue plans or task worktrees', async ()
   })
   await tick()
   expect(quick.style).toBe('quick')
-  expect(store.getTask(quick.id)).toMatchObject({ cwd: project.path, deliveryStatus: 'unavailable' })
+  expect(store.getTask(quick.id)).toMatchObject({ checkoutMode: 'local', cwd: project.path, deliveryStatus: 'unavailable' })
   expect(call('tasks:issues', quick.id)).toBeNull()
   expect(agentProcesses.starts.at(-1)).toMatchObject({
     taskId: quick.id, cwd: project.path, issueTracker: false
@@ -511,10 +514,12 @@ test('runs Quick tasks directly without issue plans or task worktrees', async ()
     taskId: quick.id, cwd: project.path, issueTracker: false, resumeSessionId: 'quick-session'
   })
   expect(store.getTask(quick.id)?.branchName).toBeUndefined()
-  await expect(call('tasks:start', {
-    style: 'quick', projectId: project.id, agentId: 'codex', prompt: 'Run another quick task'
-  })).rejects.toThrow('active Quick task')
-  await expect(call('projects:checkout', { projectId: project.id, branchName: 'main' })).rejects.toThrow('active Quick task')
+  const parallelQuick: Task = await call('tasks:start', {
+    style: 'quick', checkoutMode: 'local', projectId: project.id, agentId: 'codex', prompt: 'Run another quick task'
+  })
+  await tick()
+  expect(store.getTask(parallelQuick.id)).toMatchObject({ cwd: project.path, checkoutMode: 'local', status: 'running' })
+  await expect(call('projects:checkout', { projectId: project.id, branchName: 'main' })).rejects.toThrow('active task using this project checkout')
   await expect(call('tasks:start', {
     style: 'quick', parentTaskId: quick.id, projectId: project.id, agentId: 'codex', prompt: 'Stack this'
   })).rejects.toThrow('Only Work tasks can be stacked')
@@ -524,6 +529,33 @@ test('runs Quick tasks directly without issue plans or task worktrees', async ()
   expect(prepareBranch).not.toHaveBeenCalled()
   call('tasks:settle', quick.id)
   expect(store.getTask(quick.id)?.settledAt).toBeTypeOf('number')
+})
+
+test('runs Quick tasks in managed worktrees when selected', async () => {
+  const { store, project, agentProcesses, delivery, call, tick } = setupIpc()
+  const prepareBranch = vi.spyOn(delivery, 'prepareBranch')
+  const finalizeBranch = vi.spyOn(delivery, 'finalizeBranch')
+
+  const quick: Task = await call('tasks:start', {
+    style: 'quick', checkoutMode: 'worktree', startBase: 'origin/main', projectId: project.id,
+    agentId: 'codex', prompt: 'Make a focused isolated change'
+  })
+  await tick()
+
+  expect(prepareBranch).toHaveBeenCalledWith(project.path, quick.id, expect.any(Function), {
+    commit: 'base-origin/main', branch: 'origin/main'
+  })
+  expect(store.getTask(quick.id)).toMatchObject({
+    checkoutMode: 'worktree', startBase: 'origin/main', branchName: 'task', baseBranch: 'origin/main',
+    deliveryStatus: 'working'
+  })
+  expect(agentProcesses.starts.at(-1)).toMatchObject({ taskId: quick.id, issueTracker: false })
+  expect(agentProcesses.starts.at(-1).prompt).toContain('Answer or complete the request directly')
+
+  agentProcesses.finishTurn(quick.id, 'Focused isolated change complete')
+  await tick()
+  expect(finalizeBranch).toHaveBeenCalled()
+  expect(store.getTask(quick.id)).toMatchObject({ status: 'succeeded', deliveryStatus: 'reviewable' })
 })
 
 test('executes issues, reviews, handles credentials and PRs, approves, rebases and guards deletion', async () => {

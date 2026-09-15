@@ -33,6 +33,10 @@ const boolean: Check<boolean> = (value, field) => {
   if (typeof value !== 'boolean') invalid(field, 'must be a boolean')
   return value
 }
+const bytes = (max: number): Check<Uint8Array> => (value, field) => {
+  if (!(value instanceof Uint8Array) || value.byteLength === 0 || value.byteLength > max) invalid(field, `must contain 1 to ${max} bytes`)
+  return value
+}
 const optional = <T>(check: Check<T>): Check<T | undefined> => (value, field) => value === undefined ? undefined : check(value, field)
 const nullable = <T>(check: Check<T>): Check<T | null> => (value, field) => value === null ? null : check(value, field)
 const oneOf = <T extends string>(...values: T[]): Check<T> => (value, field) => {
@@ -122,6 +126,12 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'wallpapers:directory': optional(workspaceId),
   'wallpapers:list': optional(workspaceId),
   'wallpapers:import': object({ path: text(4096), workspaceId: optional(workspaceId) }),
+  'wallpapers:upload': object({
+    filename: text(255, true, WALLPAPER_ID_PATTERN),
+    mimeType: oneOf('image/png', 'image/jpeg', 'image/webp'),
+    bytes: bytes(10 * 1024 * 1024),
+    workspaceId: optional(workspaceId)
+  }),
   'wallpapers:read': (value, field) => typeof value === 'string'
     ? text(255, true, WALLPAPER_ID_PATTERN)(value, field)
     : object({ workspaceId, id: text(255, true, WALLPAPER_ID_PATTERN) })(value, field),

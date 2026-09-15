@@ -4,7 +4,7 @@ import { basename, extname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { validateImageHeaders } from '../shared/image-headers'
 import { isWallpaperId } from '../shared/appearance'
-import type { Wallpaper } from '../shared/types'
+import type { Wallpaper, WallpaperUpload } from '../shared/types'
 
 export const MAX_WALLPAPER_BYTES = 10 * 1024 * 1024
 export const MAX_WALLPAPER_PIXELS = 16_777_216
@@ -92,6 +92,36 @@ export class WallpaperLibrary {
         await writeFile(join(this.directory, id), loaded.bytes, { flag: 'wx' })
       }
       return { ...loaded.wallpaper, id, name: id }
+    })
+  }
+
+  uploadImage(upload: WallpaperUpload): Promise<Wallpaper> {
+    return this.serialize(async () => {
+      if (!await this.availableDirectory()) throw new Error('Cannot write to the wallpaper folder')
+      if (!isWallpaperId(upload.filename) || upload.bytes.byteLength === 0 || upload.bytes.byteLength > MAX_WALLPAPER_BYTES) {
+        throw new Error('Choose a valid PNG, JPEG or WebP image up to 10 MB and 8192 pixels per side, with no more than 16 megapixels.')
+      }
+      let headers
+      try {
+        headers = validateImageHeaders(upload.bytes, { pixels: MAX_WALLPAPER_PIXELS, dimension: MAX_WALLPAPER_DIMENSION })
+      } catch {
+        throw new Error('Choose a valid PNG, JPEG or WebP image up to 10 MB and 8192 pixels per side, with no more than 16 megapixels.')
+      }
+      if (headers.mimeType !== upload.mimeType) throw new Error('The selected file type does not match its image contents.')
+      let id = upload.filename
+      try {
+        await writeFile(join(this.directory, id), upload.bytes, { flag: 'wx' })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw new Error('Could not save the wallpaper.')
+        const extension = extname(id)
+        id = `${basename(id, extension).slice(0, 40)}-${randomUUID()}${extension}`
+        try {
+          await writeFile(join(this.directory, id), upload.bytes, { flag: 'wx' })
+        } catch {
+          throw new Error('Could not save the wallpaper.')
+        }
+      }
+      return { id, name: id, width: headers.width, height: headers.height }
     })
   }
 

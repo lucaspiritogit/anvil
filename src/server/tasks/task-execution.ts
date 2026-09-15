@@ -103,7 +103,7 @@ export function registerTaskExecution(
     notify(taskId)
   }
 
-  // Each task runs one agent process at a time; other tasks have their own worktrees.
+  // Each task runs one agent process at a time.
   const starting = new Set<string>()
   const waitingForParent = new Set<string>()
   const parentIsReady = (taskId: string): boolean => {
@@ -367,7 +367,7 @@ export function registerTaskExecution(
       clearRetry(info.taskId)
       if (quick) {
         store.saveTaskExecution({ ...state, phase: 'complete', error: null })
-        await finishTask(info, { finalize: false })
+        await finishTask(info)
         return
       }
       if (state.phase === 'planning') {

@@ -1,4 +1,4 @@
-import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskReviewPolicy, TaskCheckoutMode } from './types'
+import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskReviewPolicy, TaskCheckoutMode } from './types'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
 export interface IpcRequests {
@@ -6,6 +6,7 @@ export interface IpcRequests {
   'wallpapers:directory': string | undefined
   'wallpapers:list': string | undefined
   'wallpapers:import': { path: string; workspaceId?: string }
+  'wallpapers:upload': WallpaperUpload & { workspaceId?: string }
   'wallpapers:read': string | { workspaceId: string; id: string }
   'settings:get': string | undefined
   'settings:set': { workspaceId: string; patch: Partial<Settings> }

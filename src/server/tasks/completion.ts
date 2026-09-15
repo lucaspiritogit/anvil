@@ -40,7 +40,7 @@ export function createTaskCompletion(
     }
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task?.projectId)
     if (!project || !task) return
-    if (taskStyle(task) !== 'work') return
+    if (taskStyle(task) !== 'work' && !managed) return
     if (!managed || !task.baseCommit || options?.finalize === false) {
       if (options?.waitForMemory === false) {
         const completedTask = task

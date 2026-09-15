@@ -69,7 +69,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     ?? reasoningOptions.find((option) => option.id === capabilities?.default)?.id
     ?? reasoningOptions[0]?.id
   const setReasoningEffort = preferences.setReasoningEffort
-  const checkoutMode = parentTaskId ? 'worktree' : style === 'quick' ? 'local' : selectedCheckoutMode
+  const checkoutMode = parentTaskId ? 'worktree' : selectedCheckoutMode
   const setCheckout = useCallback((mode: TaskCheckoutMode, base?: string): void => {
     setSelectedCheckoutMode(mode)
     setStartBase(mode === 'worktree' ? base : undefined)
@@ -100,8 +100,8 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         reviewPolicy: style === 'work' ? reviewPolicy : 'review_each_issue',
         agentId,
         parentTaskId: style === 'work' ? parentTaskId || undefined : undefined,
-        ...(style === 'work' ? { checkoutMode } : {}),
-        ...(style === 'work' && checkoutMode === 'worktree' && !parentTaskId && startBase ? { startBase } : {}),
+        checkoutMode,
+        ...(checkoutMode === 'worktree' && !parentTaskId && startBase ? { startBase } : {}),
         prompt: prompt.trim(),
         ...(mentions.references.length ? { fileReferences: mentions.references } : {}),
         model: model.trim() || undefined,
@@ -125,7 +125,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   return (
     <div>
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
-      {style === 'quick' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><TaskStyleBadge style="quick" /> Runs without a plan or worktree in the current checkout.</p>}
+      {style === 'quick' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><TaskStyleBadge style="quick" /> Runs without a plan.</p>}
       {style === 'work' && reviewPolicy === 'review_at_task_end' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><Icon icon="moon-star" size={14} /> Runs through issue reviews automatically. Final merge and push still wait for you.</p>}
       {style === 'work' && parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
         <Icon icon="layers" size={14} />
@@ -138,7 +138,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       <ProjectBranchSelector
         key={projectId ?? 'no-project'}
         projectId={projectId}
-        style={style}
         parentBranch={parentBranch}
         checkoutMode={checkoutMode}
         startBase={startBase}

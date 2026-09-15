@@ -37,6 +37,7 @@ import type {
   TaskResultNoticeChange,
   Settings,
   Wallpaper,
+  WallpaperUpload,
   WorkspaceAnalytics
 } from '../../shared/types'
 
@@ -96,6 +97,7 @@ export function createAnvilApi(url: string, host: ClientHost) {
         const path: string | null = await host.pickWallpaper()
         return path ? invoke('wallpapers:import', { path, workspaceId }) : null
       },
+      upload: (upload: WallpaperUpload, workspaceId?: string): Promise<Wallpaper> => invoke('wallpapers:upload', { ...upload, workspaceId }),
       read: (id: string, workspaceId?: string): Promise<string | null> => invoke('wallpapers:read', workspaceId ? { id, workspaceId } : id)
     },
     settings: {

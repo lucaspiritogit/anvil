@@ -20,6 +20,7 @@ export function registerSettingsHandlers(ipc: HandlerRegistry, store: Store, wal
   ipc.handle('wallpapers:directory', (workspaceId) => library(workspaceId).directory)
   ipc.handle('wallpapers:list', (workspaceId) => library(workspaceId).list())
   ipc.handle('wallpapers:import', ({ path, workspaceId }) => library(workspaceId).importImage(path))
+  ipc.handle('wallpapers:upload', ({ workspaceId, ...upload }) => library(workspaceId).uploadImage(upload))
   ipc.handle('wallpapers:read', (input) => typeof input === 'string'
     ? library().read(input) : library(input.workspaceId).read(input.id))
   ipc.handle('settings:get', (workspaceId) => availableSettings(store.getSettings(workspaceId)))

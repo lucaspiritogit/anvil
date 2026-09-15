@@ -47,6 +47,10 @@ test('wallpaper IPC reads the requested workspace even when another workspace is
   expect(await call('wallpapers:list', 'default')).toEqual([])
   expect(await call('wallpapers:read', { workspaceId: work.id, id: 'private.png' })).toMatch(/^data:image\/png;base64,/)
   expect(await call('wallpapers:read', { workspaceId: 'default', id: 'private.png' })).toBe(null)
+  const uploaded = await call('wallpapers:upload', { workspaceId: work.id, filename: 'local.png', mimeType: 'image/png', bytes: imageFixture() })
+  expect(uploaded.id).toBe('local.png')
+  expect(await call('wallpapers:read', { workspaceId: work.id, id: uploaded.id })).toMatch(/^data:image\/png;base64,/)
+  expect(await call('wallpapers:read', { workspaceId: 'default', id: uploaded.id })).toBe(null)
   expect(() => call('wallpapers:read', { workspaceId: work.id, id: '../secret.png' })).toThrow(/Invalid IPC request/)
 })
 
@@ -57,6 +61,9 @@ test('rejects invalid wallpaper and settings payloads', () => {
   expect(call('wallpapers:directory')).toBe(wallpapers.directory)
   expect(() => call('wallpapers:directory', '/tmp')).toThrow(/Invalid IPC request/)
   expect(() => call('wallpapers:list', '/tmp')).toThrow(/Invalid IPC request/)
+  expect(() => call('wallpapers:upload', { filename: '../x.png', mimeType: 'image/png', bytes: imageFixture() })).toThrow(/Invalid IPC request/)
+  expect(() => call('wallpapers:upload', { filename: 'x.png', mimeType: 'image/gif', bytes: imageFixture() })).toThrow(/Invalid IPC request/)
+  expect(() => call('wallpapers:upload', { filename: 'x.png', mimeType: 'image/png', bytes: new Uint8Array() })).toThrow(/Invalid IPC request/)
   for (const patch of [{ overviewBackgroundMode: 'video' }, { overviewBackgroundColor: 'red' }, { overviewBackgroundColor: '#123456\n' }, { overviewWallpaperId: '../x.png' }, { overviewWallpaperId: 'data:image/png;base64,abc' }]) {
     expect(() => call('settings:set', patch)).toThrow(/Invalid IPC request/)
   }

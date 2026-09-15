@@ -55,6 +55,23 @@ test('imports a selected image and lists it immediately without overwriting a ma
   expect(await readFile(outside)).toEqual(original)
 })
 
+test('uploads image bytes and avoids overwriting a matching name', async () => {
+  const { library, folder } = await setupWallpapers()
+  const bytes = imageFixture()
+  const first = await library.uploadImage({ filename: 'upload.png', mimeType: 'image/png', bytes })
+  const second = await library.uploadImage({ filename: 'upload.png', mimeType: 'image/png', bytes })
+  expect(first.id).toBe('upload.png')
+  expect(second.id).not.toBe(first.id)
+  expect(await readFile(join(folder, first.id))).toEqual(bytes)
+  expect(await readFile(join(folder, second.id))).toEqual(bytes)
+})
+
+test('rejects uploaded bytes whose contents are invalid or do not match their MIME type', async () => {
+  const { library } = await setupWallpapers()
+  await expect(library.uploadImage({ filename: 'bad.png', mimeType: 'image/png', bytes: new Uint8Array([1, 2, 3]) })).rejects.toThrow(/Choose a valid/)
+  await expect(library.uploadImage({ filename: 'wrong.jpg', mimeType: 'image/jpeg', bytes: imageFixture() })).rejects.toThrow(/does not match/)
+})
+
 test('rejects invalid selected images before adding files to the library', async () => {
   const { library, folder } = await setupWallpapers()
   const before = await library.list()

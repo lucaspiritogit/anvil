@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { resolve } from 'node:path'
 
 test('carousel bounds reads, supports keyboard selection and saves across reopening', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?wallpapers')
@@ -94,4 +95,47 @@ test('appearance initializes after delayed settings and solid color persists', a
   await expect(page.getByRole('radio', { name: 'Solid color', exact: true })).toBeChecked()
   await page.getByRole('radio', { name: 'Image', exact: true }).check()
   await expect(page.getByRole('button', { name: 'image-0.png' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('previews a chosen local image before uploading and selecting it', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?wallpapers&appearance')
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Display', exact: true }).click()
+  const picker = page.getByRole('group', { name: 'Overview background' })
+  const input = page.getByLabel('Choose background image')
+  await input.setInputFiles(resolve('tests/fixtures/images/sample.png'))
+  await expect(page.getByAltText('Preview of sample.png')).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(page.getByAltText('Preview of sample.png')).toHaveCount(0)
+  expect(await page.evaluate(() => window.wallpaperTest.uploads)).toEqual([])
+  await expect(page.getByRole('button', { name: 'image-0.png' })).toHaveAttribute('aria-pressed', 'true')
+  await input.setInputFiles(resolve('tests/fixtures/images/sample.png'))
+  await page.getByRole('button', { name: 'Use background', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'sample.png', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => ({ uploads: window.wallpaperTest.uploads, settings: window.settingsTest.calls.at(-1) }))).toMatchObject({
+    uploads: [{ filename: 'sample.png', mimeType: 'image/png', workspaceId: 'default' }],
+    settings: { overviewWallpaperId: 'sample.png' }
+  })
+  await picker.getByText('Advanced options').click()
+  await expect(page.getByRole('button', { name: 'Import from server path…' })).toBeVisible()
+})
+
+test('accepts a dropped image and preserves the selected wallpaper after an upload error', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?wallpapers&appearance')
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Display', exact: true }).click()
+  await page.getByRole('group', { name: 'Overview background' }).evaluate((element) => {
+    const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='), (character) => character.charCodeAt(0))
+    const transfer = new DataTransfer()
+    transfer.items.add(new File([bytes], 'dropped.png', { type: 'image/png' }))
+    element.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: transfer }))
+  })
+  await expect(page.getByAltText('Preview of dropped.png')).toBeVisible()
+  await page.evaluate(() => { window.wallpaperTest.failUpload = true })
+  await page.getByRole('button', { name: 'Use background', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Upload failed')
+  await expect(page.getByAltText('Preview of dropped.png')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'image-0.png' })).toHaveAttribute('aria-pressed', 'true')
+  expect(await page.evaluate(() => window.settingsTest.calls)).toEqual([])
 })

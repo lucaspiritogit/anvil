@@ -35,6 +35,12 @@ export interface TaskImageAttachment {
   bytes: Uint8Array
 }
 
+export interface WallpaperUpload {
+  filename: string
+  mimeType: TaskImageAttachment['mimeType']
+  bytes: Uint8Array
+}
+
 export const TASK_IMAGE_LIMITS = {
   count: 8,
   perImageBytes: 10 * 1024 * 1024,

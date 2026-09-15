@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { ProjectBranches, TaskCheckoutMode, TaskStyle } from '@shared/types'
+import type { ProjectBranches, TaskCheckoutMode } from '@shared/types'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import { ChoicePickerDialog } from './ChoicePickerDialog'
@@ -8,7 +8,6 @@ import { ProjectPicker } from './ProjectPicker'
 
 interface Props {
   projectId: string | null
-  style: TaskStyle
   parentBranch?: string
   checkoutMode: TaskCheckoutMode
   startBase?: string
@@ -21,7 +20,7 @@ type OpenPicker = 'project' | 'location' | 'branch' | null
 
 const triggerClass = 'inline-flex min-w-0 max-w-full items-center gap-1.5 px-2 py-1.5 text-sm text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-45 aria-disabled:cursor-wait aria-disabled:opacity-45'
 
-export function ProjectBranchSelector({ projectId, style, parentBranch, checkoutMode, startBase, disabled,
+export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, startBase, disabled,
   onCheckoutChange, onTransitioning }: Props): JSX.Element {
   const projects = useStore((state) => state.projects)
   const project = projects.find((project) => project.id === projectId)
@@ -84,10 +83,9 @@ export function ProjectBranchSelector({ projectId, style, parentBranch, checkout
   }, [projectId, isRepository])
 
   useEffect(() => {
-    if (style !== 'work' && checkoutMode !== 'local') onCheckoutChange('local')
-    else if (parentBranch && checkoutMode !== 'worktree') onCheckoutChange('worktree')
+    if (parentBranch && checkoutMode !== 'worktree') onCheckoutChange('worktree')
     else if (isRepository === false && checkoutMode !== 'local' && !parentBranch) onCheckoutChange('local')
-  }, [style, parentBranch, isRepository, checkoutMode, onCheckoutChange])
+  }, [parentBranch, isRepository, checkoutMode, onCheckoutChange])
 
   useEffect(() => {
     if (checkoutMode !== 'worktree' || parentBranch || startBase || !branches) return
@@ -224,8 +222,8 @@ export function ProjectBranchSelector({ projectId, style, parentBranch, checkout
             icon: <Icon icon="monitor" size={16} className="shrink-0 text-dim" aria-hidden="true" />, disabled: Boolean(parentBranch)
           },
           {
-            id: 'worktree', label: 'New worktree', description: style !== 'work' ? 'Only Work tasks can use a new worktree' : isRepository === false ? 'Requires a Git repository' : isRepository === undefined ? 'Checking repository…' : 'Create an isolated checkout for this task',
-            icon: <Icon icon="layers" size={16} className="shrink-0 text-dim" aria-hidden="true" />, disabled: style !== 'work' || isRepository !== true
+            id: 'worktree', label: 'New worktree', description: isRepository === false ? 'Requires a Git repository' : isRepository === undefined ? 'Checking repository…' : 'Create an isolated checkout for this task',
+            icon: <Icon icon="layers" size={16} className="shrink-0 text-dim" aria-hidden="true" />, disabled: isRepository !== true
           }
         ]}
         onClose={() => setOpen(null)}

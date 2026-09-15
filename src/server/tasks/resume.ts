@@ -57,11 +57,11 @@ export async function resumeTaskTurn(
   }
   try {
     let location: Partial<Task> = { cwd: project.path }
-    const git = style === 'work' ? await gitDelivery.status(project.path) : undefined
-    if (style === 'work' && usesManagedWorktree(task) && task.branchName) {
+    const git = await gitDelivery.status(project.path)
+    if (usesManagedWorktree(task) && task.branchName) {
       const checkout = await gitDelivery.checkoutBranch(project.path, task.id, task.branchName, task.baseBranch, guard)
       location = { cwd: checkout.cwd }
-    } else if (style === 'work' && usesManagedWorktree(task) && task.deliveryStatus !== 'unavailable' && git?.isRepository) {
+    } else if (usesManagedWorktree(task) && task.deliveryStatus !== 'unavailable' && git.isRepository) {
       guard()
       const parent = task.parentTaskId ? requireStackParent(store, task, task.parentTaskId) : undefined
       const base = parent

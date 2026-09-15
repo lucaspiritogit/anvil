@@ -218,10 +218,9 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       }
       const model = input.model || agent.defaultModel
       const style = input.style ?? 'work'
-      const checkoutMode = input.checkoutMode ?? 'worktree'
+      const checkoutMode = input.checkoutMode ?? (style === 'quick' ? 'local' : 'worktree')
       if (style !== 'work' && input.parentTaskId) throw new Error('Only Work tasks can be stacked')
       if (style !== 'work' && input.reviewPolicy === 'review_at_task_end') throw new Error('Only Work tasks can run unattended')
-      if (style !== 'work' && (input.checkoutMode !== undefined || input.startBase !== undefined)) throw new Error('Only Work tasks can choose a checkout mode or start base')
       if (checkoutMode === 'local' && input.startBase !== undefined) throw new Error('Local checkout tasks cannot choose a worktree start base')
       if (checkoutMode === 'local' && input.parentTaskId) throw new Error('Stacked tasks must use a new worktree')
       if (input.parentTaskId && input.startBase !== undefined) throw new Error('Stacked tasks start from their parent task')

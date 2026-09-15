@@ -50,29 +50,6 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         if (state.hasImages && !images) throw new Error('The original task images were cleared')
         const workspace = resolveWorkspaceExecution(store, task.workspaceId)
         const style = taskStyle(task)
-        if (style !== 'work') {
-          const quickTask = store.updateTask(task.id, {
-            cwd: project.path,
-            deliveryStatus: 'unavailable'
-          })!
-          send('task:updated', quickTask)
-          const prompt = quickTaskPrompt(style, await promptWithProjectMemory(project.id, task.prompt, task.workspaceId))
-          requireRunningTask()
-          agentProcesses.start({
-            workspace,
-            taskId: task.id,
-            agent,
-            prompt,
-            images,
-            model: task.model,
-            reasoningEffort: state.reasoningEffort,
-            cwd: project.path,
-            projectPath: project.path,
-            issueTracker: false,
-            beforeDispatch: requireRunningTask
-          })
-          return quickTask
-        }
         // Without Git there is no task branch or diff. Run directly in the project folder.
         const git = await gitDelivery.status(project.path)
         requireRunningTask()
@@ -83,8 +60,9 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
           })!
           send('task:updated', localTask)
           recordSystemEvent(task.id, `Using local checkout: ${project.path}`)
-          const planning = planningPrompt(await promptWithProjectMemory(project.id, task.prompt, task.workspaceId), state)
-          const prompt = git.isRepository ? `${LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT}\n\n${planning}` : planning
+          const enrichedPrompt = await promptWithProjectMemory(project.id, task.prompt, task.workspaceId)
+          const taskPrompt = style === 'work' ? planningPrompt(enrichedPrompt, state) : quickTaskPrompt(style, enrichedPrompt)
+          const prompt = git.isRepository && style === 'work' ? `${LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT}\n\n${taskPrompt}` : taskPrompt
           requireRunningTask()
           agentProcesses.start({
             workspace,
@@ -96,19 +74,21 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
             reasoningEffort: state.reasoningEffort,
             cwd: project.path,
             projectPath: project.path,
+            issueTracker: style === 'work',
             beforeDispatch: requireRunningTask
           })
           return localTask
         }
         if (!git.isRepository) {
           if (task.parentTaskId) throw new Error('Stacked tasks require a Git repository')
-          requireProjectCheckoutAvailable(store, task, true)
+          requireProjectCheckoutAvailable(store, task)
           const unmanagedTask = store.updateTask(task.id, {
             cwd: project.path,
             deliveryStatus: 'unavailable'
           })!
           send('task:updated', unmanagedTask)
-          const prompt = planningPrompt(await promptWithProjectMemory(project.id, task.prompt, task.workspaceId), state)
+          const enrichedPrompt = await promptWithProjectMemory(project.id, task.prompt, task.workspaceId)
+          const prompt = style === 'work' ? planningPrompt(enrichedPrompt, state) : quickTaskPrompt(style, enrichedPrompt)
           requireRunningTask()
           agentProcesses.start({
             workspace,
@@ -120,6 +100,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
             reasoningEffort: state.reasoningEffort,
             cwd: project.path,
             projectPath: project.path,
+            issueTracker: style === 'work',
             beforeDispatch: requireRunningTask
           })
           return unmanagedTask
@@ -150,7 +131,8 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
           recordSystemEvent(task.id, 'Created the repository initial commit.')
         }
         // Memory enriches agent input; it must not hold up branch creation.
-        const prompt = planningPrompt(await promptWithProjectMemory(project.id, task.prompt, task.workspaceId), state)
+        const enrichedPrompt = await promptWithProjectMemory(project.id, task.prompt, task.workspaceId)
+        const prompt = style === 'work' ? planningPrompt(enrichedPrompt, state) : quickTaskPrompt(style, enrichedPrompt)
         requireRunningTask()
         agentProcesses.start({
           workspace,
@@ -162,6 +144,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
           reasoningEffort: state.reasoningEffort,
           cwd: prepared.cwd,
           projectPath: project.path,
+          issueTracker: style === 'work',
           beforeDispatch: requireRunningTask
         })
         return preparedTask

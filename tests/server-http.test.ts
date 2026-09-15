@@ -43,6 +43,11 @@ test('HTTP exposes health, snapshots and validated domain handlers on loopback',
   const wallpaper = await (await rpc('wallpapers:import', { path: wallpaperPath, workspaceId: 'default' })).json() as { id: string }
   expect(wallpaper).toMatchObject({ width: 2, height: 3 })
   expect(await (await rpc('wallpapers:read', wallpaper.id)).json()).toEqual(expect.stringMatching(/^data:image\/png;base64,/))
+  const uploaded = await (await rpc('wallpapers:upload', encodeRpcInput('wallpapers:upload', {
+    filename: 'browser.png', mimeType: 'image/png', bytes: pngWithDimensions(3, 2), workspaceId: 'default'
+  }))).json() as { id: string }
+  expect(uploaded).toMatchObject({ id: 'browser.png', width: 3, height: 2 })
+  expect(await (await rpc('wallpapers:read', uploaded.id)).json()).toEqual(expect.stringMatching(/^data:image\/png;base64,/))
 })
 
 test('HTTP rejects foreign origins, DNS rebinding, malformed JSON and oversized bodies', async () => {

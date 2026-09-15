@@ -8,6 +8,8 @@ import { btn, cn, field, modal } from '../ui'
 
 export type OverviewAppearance = Pick<Settings, 'overviewBackgroundMode' | 'overviewBackgroundColor' | 'overviewWallpaperId'>
 const PAGE_SIZE = 3
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 
 const MODES = [
   { value: 'color', label: 'Solid color' },
@@ -41,29 +43,71 @@ export function OverviewBackgroundPicker({ value, onChange }: {
   const [page, setPage] = useState(0)
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [pending, setPending] = useState<{ file: File; url: string } | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const requestGeneration = useRef(0)
   useEffect(() => {
     setImporting(false)
     setImportError(null)
+    setPending(null)
+    setDragging(false)
     return () => { requestGeneration.current += 1 }
   }, [workspaceId])
+  useEffect(() => () => { if (pending) URL.revokeObjectURL(pending.url) }, [pending])
 
-  const addWallpaper = async (): Promise<void> => {
+  const showFilePreview = (file: File | undefined): void => {
+    if (!file) return
+    setImportError(null)
+    if (!IMAGE_TYPES.has(file.type) || !/\.(?:png|jpe?g|webp)$/i.test(file.name) || file.size === 0 || file.size > MAX_UPLOAD_BYTES) {
+      setPending(null)
+      setImportError('Choose a PNG, JPEG or WebP image up to 10 MB.')
+      return
+    }
+    setPending({ file, url: URL.createObjectURL(file) })
+  }
+  const finishImport = (added: Wallpaper): void => {
+    const items = [...library.filter((item) => item.id !== added.id), added]
+      .sort((left, right) => left.id.localeCompare(right.id))
+    setLibrary(items)
+    setError(false)
+    setPage(Math.floor(items.findIndex((item) => item.id === added.id) / PAGE_SIZE))
+    onChange({ ...value, overviewBackgroundMode: 'image', overviewWallpaperId: added.id })
+  }
+  const uploadWallpaper = async (): Promise<void> => {
+    if (!pending) return
+    const generation = requestGeneration.current
+    const file = pending.file
+    setImporting(true)
+    setImportError(null)
+    try {
+      const added = await window.anvil.wallpapers.upload({
+        filename: file.name,
+        mimeType: file.type as 'image/png' | 'image/jpeg' | 'image/webp',
+        bytes: new Uint8Array(await file.arrayBuffer())
+      }, workspaceId)
+      if (generation !== requestGeneration.current) return
+      finishImport(added)
+      setPending(null)
+    } catch (error) {
+      if (generation === requestGeneration.current) {
+        setImportError(error instanceof Error ? error.message : 'Could not upload wallpaper. Try another image.')
+      }
+    } finally {
+      if (generation === requestGeneration.current) setImporting(false)
+    }
+  }
+  const importServerWallpaper = async (): Promise<void> => {
     const generation = requestGeneration.current
     setImporting(true)
     setImportError(null)
     try {
       const added = await window.anvil.wallpapers.importImage(workspaceId)
       if (!added || generation !== requestGeneration.current) return
-      const items = await window.anvil.wallpapers.list(workspaceId)
-      if (generation !== requestGeneration.current) return
-      setLibrary(items)
-      setError(false)
-      const index = items.findIndex((item) => item.id === added.id)
-      setPage(index < 0 ? 0 : Math.floor(index / PAGE_SIZE))
+      finishImport(added)
     } catch (error) {
       if (generation === requestGeneration.current) {
-        setImportError(error instanceof Error ? error.message : 'Could not add wallpaper. Try another image.')
+        setImportError(error instanceof Error ? error.message : 'Could not import wallpaper. Check the server path and try again.')
       }
     } finally {
       if (generation === requestGeneration.current) setImporting(false)
@@ -85,7 +129,22 @@ export function OverviewBackgroundPicker({ value, onChange }: {
   const pages = Math.ceil(library.length / PAGE_SIZE)
   const imageMode = value.overviewBackgroundMode === 'image'
   return (
-    <fieldset className={cn(modal.section, 'min-w-0')}>
+    <fieldset className={cn(modal.section, 'min-w-0 transition-colors', dragging && 'outline-2 outline-accent')}
+      onDragOver={(event) => {
+        if (!imageMode || importing || !event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+        setDragging(true)
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false)
+      }}
+      onDrop={(event) => {
+        if (!imageMode || importing) return
+        event.preventDefault()
+        setDragging(false)
+        showFilePreview(event.dataTransfer.files[0])
+      }}>
       <legend className="text-[13px] font-semibold">Overview background</legend>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <p className="min-w-0 text-[11px] text-dim">
@@ -110,9 +169,16 @@ export function OverviewBackgroundPicker({ value, onChange }: {
 
       {imageMode ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button type="button" className={btn.ghost} disabled={loading || importing} onClick={() => void addWallpaper()}>
-            {importing ? 'Adding image…' : 'Add image…'}
+          <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
+            aria-label="Choose background image"
+            onChange={(event) => {
+              showFilePreview(event.target.files?.[0])
+              event.target.value = ''
+            }} />
+          <button type="button" className={btn.ghost} disabled={loading || importing} onClick={() => fileInputRef.current?.click()}>
+            Add image…
           </button>
+          <span className="text-[11px] text-dim">or drag an image here</span>
           {pages > 1 && <div className="flex items-center">
             <button type="button" aria-label="Previous images" disabled={page === 0}
               className={cn(btn.icon, 'disabled:cursor-not-allowed disabled:opacity-30')}
@@ -137,6 +203,18 @@ export function OverviewBackgroundPicker({ value, onChange }: {
       )}
 
       {imageMode && <>
+        {pending && (
+          <div className="mt-3 overflow-hidden rounded border border-line bg-canvas/40 p-2">
+            <img src={pending.url} alt={`Preview of ${pending.file.name}`} className="max-h-52 w-full object-contain" />
+            <p className="mt-2 truncate text-xs" title={pending.file.name}>{pending.file.name}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" className={btn.primary} disabled={importing} onClick={() => void uploadWallpaper()}>
+                {importing ? 'Uploading…' : 'Use background'}
+              </button>
+              <button type="button" className={btn.ghost} disabled={importing} onClick={() => { setPending(null); setImportError(null) }}>Cancel</button>
+            </div>
+          </div>
+        )}
         {importError && <p role="alert" className="mt-2 text-xs text-danger">{importError}</p>}
         {loading ? <p role="status" className={field.hint}>Loading wallpapers…</p> : error ? (
         <div className="mt-2">
@@ -165,6 +243,13 @@ export function OverviewBackgroundPicker({ value, onChange }: {
           </div>
         )}
       </>}
+        <details className="mt-3 text-xs text-dim">
+          <summary className="w-fit cursor-pointer select-none hover:text-fg">Advanced options</summary>
+          <button type="button" className={cn(btn.ghost, 'mt-2')} disabled={importing || Boolean(pending)}
+            onClick={() => void importServerWallpaper()}>
+            {importing && !pending ? 'Importing…' : 'Import from server path…'}
+          </button>
+        </details>
       </>}
     </fieldset>
   )

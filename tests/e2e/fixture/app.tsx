@@ -221,7 +221,7 @@ declare global {
       selectProject: (id: string) => void
       overview: () => void
     }
-    wallpaperTest: { items: Wallpaper[]; reads: string[]; fail: boolean; loading: boolean }
+    wallpaperTest: { items: Wallpaper[]; reads: string[]; uploads: IpcRequests['wallpapers:upload'][]; fail: boolean; failUpload: boolean; loading: boolean }
     projectSettingsTest: { calls: IpcRequests['projects:update'][]; release: (reject?: boolean) => void }
     settingsTest: {
       apply: (patch: Partial<Settings>) => void
@@ -261,7 +261,7 @@ declare global {
   }
 }
 
-window.wallpaperTest = { items: [], reads: [], fail: false, loading: false }
+window.wallpaperTest = { items: [], reads: [], uploads: [], fail: false, failUpload: false, loading: false }
 if (query.has('wallpapers')) {
   window.wallpaperTest.items = Array.from({ length: 31 }, (_, index) => ({
     id: `image-${index}.png`, name: `image-${index}.png`, width: 4, height: 3
@@ -580,6 +580,13 @@ window.anvil = {
   },
   wallpapers: {
     importImage: async () => null,
+    upload: async (upload, workspaceId) => {
+      if (window.wallpaperTest.failUpload) throw new Error('Upload failed')
+      window.wallpaperTest.uploads.push({ ...upload, workspaceId })
+      const wallpaper = { id: upload.filename, name: upload.filename, width: 1, height: 1 }
+      window.wallpaperTest.items.push(wallpaper)
+      return wallpaper
+    },
     directory: async () => '/test/.anvil-composer-dev/wallpaper',
     list: async () => {
       while (window.wallpaperTest.loading) await new Promise((resolve) => setTimeout(resolve, 20))
