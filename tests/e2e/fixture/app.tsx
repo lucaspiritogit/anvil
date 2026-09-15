@@ -3,7 +3,7 @@ import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
 import { useTaskIssues } from '../../../src/client/renderer/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
-import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure, TaskResultNotice, TaskResultNoticeChange } from '../../../src/shared/types'
+import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure, TaskResultNotice, TaskResultNoticeChange } from '../../../src/shared/types'
 import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import type { IpcRequests } from '../../../src/shared/ipc-requests'
@@ -130,6 +130,44 @@ index 3333333..4444444 100644
 let githubTokenConfigured = false
 let comments: TaskComment[] = []
 let diffRequests = 0
+const conflictFiles = (): TaskMergeConflictSnapshot['files'] => [
+  {
+    path: 'src/sidebar.ts', status: 'both_modified', stages: [1, 2, 3], support: 'text', contentsHash: 'sidebar-1',
+    contents: 'export const spacing =\n<<<<<<< HEAD\n12\n=======\n16\n>>>>>>> anvil/review\n'
+  },
+  {
+    path: 'README.md', status: 'both_modified', stages: [1, 2, 3], support: 'text', contentsHash: 'readme-1',
+    contents: '# Anvil\n<<<<<<< HEAD\nResolve locally.\n=======\nResolve in the task.\n>>>>>>> anvil/review\n'
+  },
+  ...(query.has('conflictUnsupported')
+    ? [{ path: 'public/logo.png', status: 'both_modified' as const, stages: [1, 2, 3] as (1 | 2 | 3)[], support: 'unsupported' as const, reason: 'binary' as const }]
+    : [])
+]
+let activeConflict: TaskMergeConflict | null = null
+let activeConflictFiles = conflictFiles()
+let conflictReads = 0
+window.mergeConflictTest = { saves: [], fixes: [], completions: [], aborts: [] }
+const conflictSnapshot = (): TaskMergeConflictSnapshot => ({
+  id: activeConflict!.id,
+  taskId: activeConflict!.taskId,
+  sourceBranch: activeConflict!.sourceBranch,
+  targetBranch: activeConflict!.targetBranch,
+  requestedAction: activeConflict!.requestedAction,
+  files: structuredClone(activeConflictFiles),
+  canComplete: activeConflictFiles.length === 0
+})
+const beginConflict = (taskId: string, requestedAction: TaskMergeConflict['requestedAction']): Task => {
+  const task = tasks.find((entry) => entry.id === taskId)!
+  activeConflictFiles = conflictFiles()
+  conflictReads = 0
+  activeConflict = {
+    id: 'fixture-conflict', taskId, workspaceId: task.workspaceId, projectId: task.projectId,
+    repositoryRoot: '/tmp/anvil', sourceBranch: task.branchName!, targetBranch: 'user-current',
+    sourceCommit: 'source-head', targetCommit: 'target-head', mergeHeadCommit: 'source-head',
+    conflictedFiles: activeConflictFiles.map((file) => file.path), requestedAction, createdAt: Date.now()
+  }
+  return update({ ...task, deliveryStatus: 'merge_conflict', mergeConflict: activeConflict, reviewedAt: undefined, deliveryError: undefined })
+}
 const events = (taskId: string): TaskEvent[] => {
   if (query.has('historySize')) return Array.from({ length: Number(query.get('historySize')) }, (_, index) => ({
     id: `history-${index + 1}`, taskId, ts: index, stream: 'stdout', kind: 'output', category: 'message',
@@ -213,6 +251,12 @@ declare global {
       failNext: boolean
       emit: (notice: TaskResultNotice) => void
       resolve: (noticeId: string) => void
+    }
+    mergeConflictTest: {
+      saves: IpcRequests['tasks:merge-conflict-save'][]
+      fixes: IpcRequests['tasks:merge-conflict-fix-agent'][]
+      completions: IpcRequests['tasks:merge-conflict-complete'][]
+      aborts: IpcRequests['tasks:merge-conflict-abort'][]
     }
   }
 }
@@ -653,11 +697,50 @@ window.anvil = {
     }
   },
   tasks: {
-    mergeConflict: async () => { throw new Error('Merge conflict fixture is not configured') },
-    saveMergeConflict: async () => { throw new Error('Merge conflict fixture is not configured') },
-    completeMergeConflict: async () => { throw new Error('Merge conflict fixture is not configured') },
-    fixMergeConflictWithAgent: async () => { throw new Error('Merge conflict fixture is not configured') },
-    abortMergeConflict: async () => { throw new Error('Merge conflict fixture is not configured') },
+    mergeConflict: async ({ taskId, conflictId }) => {
+      if (!activeConflict || activeConflict.taskId !== taskId || activeConflict.id !== conflictId) throw new Error('The conflict session changed')
+      conflictReads += 1
+      if (query.has('conflictLoadFailure') && conflictReads === 1) throw new Error('Could not read the conflicted files')
+      return conflictSnapshot()
+    },
+    saveMergeConflict: async (input) => {
+      window.mergeConflictTest.saves.push(structuredClone(input))
+      const file = activeConflictFiles.find((entry) => entry.path === input.path)
+      if (!file || file.support !== 'text' || file.contentsHash !== input.expectedContentsHash) throw new Error('The conflicted file changed after it was loaded')
+      if (query.has('conflictSaveFailure') && window.mergeConflictTest.saves.length === 1) {
+        file.contents = file.contents.replace('12', '14')
+        file.contentsHash = `${file.contentsHash}-external`
+        throw new Error('The conflicted file changed after it was loaded. Refresh it before saving.')
+      }
+      if (/^(?:<{7,}|={7,}\s*$|>{7,})/m.test(input.contents)) {
+        file.contents = input.contents
+        file.contentsHash = `${file.contentsHash}-saved`
+      } else {
+        activeConflictFiles = activeConflictFiles.filter((entry) => entry.path !== input.path)
+      }
+      return conflictSnapshot()
+    },
+    completeMergeConflict: async (input) => {
+      window.mergeConflictTest.completions.push(structuredClone(input))
+      if (activeConflictFiles.length) throw new Error('Resolve all merge conflicts before completing the merge')
+      activeConflict = null
+      return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', mergeConflict: undefined, reviewedAt: Date.now() })
+    },
+    fixMergeConflictWithAgent: async (input) => {
+      window.mergeConflictTest.fixes.push(structuredClone(input))
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      const task = tasks.find((entry) => entry.id === input.taskId)!
+      if (query.has('conflictAgentIncomplete')) return task
+      activeConflictFiles = []
+      activeConflict = null
+      return update({ ...task, deliveryStatus: 'approved', mergeConflict: undefined, reviewedAt: Date.now() })
+    },
+    abortMergeConflict: async (input) => {
+      window.mergeConflictTest.aborts.push(structuredClone(input))
+      activeConflictFiles = []
+      activeConflict = null
+      return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'reviewable', mergeConflict: undefined, reviewedAt: undefined })
+    },
     stack: async ({ taskId, parentTaskId }) => {
       const task = tasks.find((entry) => entry.id === taskId)!
       const parent = tasks.find((entry) => entry.id === parentTaskId)!
@@ -738,6 +821,7 @@ window.anvil = {
       window.dispatchEvent(new CustomEvent('fixture:approval', { detail: input }))
       await new Promise((resolve) => setTimeout(resolve, 200))
       if (query.has('mergeFailure')) throw new Error('Merge failed. The task was not merged.')
+      if (query.has('mergeConflict')) return beginConflict(input.taskId, 'merge')
       return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', reviewedAt: Date.now() })
     },
     mergeAndPushPreview: async (taskId: string): Promise<TaskMergeAndPushPreview> => ({
@@ -746,6 +830,7 @@ window.anvil = {
     }),
     mergeAndPush: async (input) => {
       window.dispatchEvent(new CustomEvent('fixture:merge-and-push', { detail: input }))
+      if (query.has('mergeConflict')) return beginConflict(input.taskId, 'merge_and_push')
       return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', reviewedAt: Date.now() })
     },
     pushPreview: async (): Promise<TaskPushPreview> => ({

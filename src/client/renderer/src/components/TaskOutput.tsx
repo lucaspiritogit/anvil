@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Task, TaskEvent, TaskEventCategory } from '@shared/types'
 import type { taskIssuePresentation } from '@shared/task-issue-presentation'
 import { BROWSER_VIEWPORTS, type BrowserViewport } from '@shared/browser-observation'
@@ -14,12 +14,30 @@ const BROWSER_MAX_WIDTH_RATIO = 0.48
 type Direction = 'initial' | 'latest'
 type Anchor = { id: string; offset: number }
 
+const MergeConflictOutput = lazy(async () => ({
+  default: (await import('./TaskMergeConflictOutput')).TaskMergeConflictOutput
+}))
+
 export function TaskOutput({ task, visible, presentation }: {
   task: Task
   visible: boolean
   presentation: ReturnType<typeof taskIssuePresentation>
 }): JSX.Element {
-  const events = useStore((s) => s.eventsByTask[task.id])
+  const events = useStore((state) => task.deliveryStatus === 'merge_conflict' ? undefined : state.eventsByTask[task.id])
+  if (task.deliveryStatus === 'merge_conflict' && task.mergeConflict) {
+    return <Suspense fallback={<section id="task-panel-output" aria-label="Output" className={cn('grid flex-1 place-content-center text-sm text-dim', !visible && 'hidden')}>Loading conflict resolver…</section>}>
+      <MergeConflictOutput task={task} conflict={task.mergeConflict} visible={visible} />
+    </Suspense>
+  }
+  return <TaskOutputHistory task={task} visible={visible} presentation={presentation} events={events} />
+}
+
+function TaskOutputHistory({ task, visible, presentation, events }: {
+  task: Task
+  visible: boolean
+  presentation: ReturnType<typeof taskIssuePresentation>
+  events: TaskEvent[] | undefined
+}): JSX.Element {
   const history = useStore((s) => s.taskEventHistory?.taskId === task.id ? s.taskEventHistory : null)
   const loadTaskEvents = useStore((s) => s.loadTaskEvents)
   const outputRef = useRef<HTMLDivElement>(null)

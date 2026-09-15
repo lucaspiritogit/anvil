@@ -536,6 +536,11 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   const issueReviewPending = Boolean(issue && !issueIsReviewReady(snapshot))
   const finalDiffPending = task.status === 'running' || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit'
   const [activePanel, setActivePanel] = useState<TaskPanel>(initialPanel)
+  const conflictId = task.deliveryStatus === 'merge_conflict' ? task.mergeConflict?.id : undefined
+
+  useEffect(() => {
+    if (conflictId) setActivePanel('output')
+  }, [conflictId])
 
   useEffect(() => {
     setNow(Date.now())
@@ -662,7 +667,11 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                 {work && <><span className="text-dim">·</span>
                 <span className={cn('flex items-center gap-1.5', openPullRequest ? 'text-ok' : deliveryTone(task.deliveryStatus))}>
                   {openPullRequest && <Icon icon="git-branch" size={14} aria-hidden="true" />}
-                  {openPullRequest ? 'Open PR' : DELIVERY_LABEL[task.deliveryStatus]}
+                  {openPullRequest
+                    ? 'Open PR'
+                    : task.deliveryStatus === 'merge_conflict' && task.mergeConflict
+                      ? `Merge conflicts with ${task.mergeConflict.targetBranch}`
+                      : DELIVERY_LABEL[task.deliveryStatus]}
                 </span></>}
                 </>}
               </span>

@@ -17,6 +17,7 @@ import type {
   TaskEventCursor,
   TaskEventsRequest,
   TaskMergeAndPushPreview,
+  TaskMergeConflictSnapshot,
   TaskMergePreview,
   TaskPushPreview,
   Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskReviewPolicy, TaskCheckoutMode,
@@ -39,6 +40,7 @@ export interface TaskEventHistory {
   error: string | null
 }
 let taskViewGeneration = 0
+let mergeConflictGeneration = 0
 interface HistoryRequest {
   promise: Promise<void>
   live: Map<string, TaskEvent>
@@ -50,9 +52,10 @@ interface HistoryRequest {
 let historyRequest: HistoryRequest | null = null
 const evictTaskEvents = () => {
   taskViewGeneration += 1
+  mergeConflictGeneration += 1
   historyRequest?.live.clear()
   historyRequest = null
-  return { eventsByTask: {}, taskEventHistory: null }
+  return { eventsByTask: {}, taskEventHistory: null, mergeConflictState: null }
 }
 const emptyHistory = (taskId: string): TaskEventHistory => ({
   taskId, oldestCursor: null, newestCursor: null, hasOlder: false, hasNewer: false,
@@ -77,6 +80,16 @@ const taskDiffRevision = (task?: Task): string => JSON.stringify(task ? [
 ] : null)
 type CaffeineSave = { value: boolean; status: 'pending' | 'error' }
 type TaskResultNoticeError = { workspaceId: string; projectId: string; message: string }
+export interface MergeConflictState {
+  taskId: string
+  conflictId: string
+  snapshot?: TaskMergeConflictSnapshot
+  loading: boolean
+  error: string | null
+  savingPath: string | null
+  action: 'complete' | 'fix' | 'abort' | null
+  revision: number
+}
 
 export type TaskPanel = 'output' | 'changes' | 'issues'
 export type CenterView = { kind: 'home' } | { kind: 'analytics' } | { kind: 'task'; taskId: string; panel?: TaskPanel }
@@ -135,6 +148,7 @@ interface AnvilState {
   rebasing: string | null
   sendingComments: string | null
   commentError: string | null
+  mergeConflictState: MergeConflictState | null
   gitInitPending: string | null
   gitInitError: string | null
 
@@ -165,7 +179,11 @@ interface AnvilState {
 
   approveTask: (taskId: string, preview: TaskMergePreview) => Promise<void>
   mergeAndPushTask: (taskId: string, preview: TaskMergeAndPushPreview) => Promise<void>
+  loadMergeConflict: (taskId: string, conflictId: string) => Promise<void>
+  saveMergeConflict: (taskId: string, conflictId: string, path: string, contents: string, expectedContentsHash: string) => Promise<void>
+  completeMergeConflict: (taskId: string, conflictId: string) => Promise<void>
   fixMergeConflictWithAgent: (taskId: string, conflictId: string) => Promise<void>
+  abortMergeConflict: (taskId: string, conflictId: string) => Promise<void>
   pushTask: (taskId: string, preview: TaskPushPreview) => Promise<void>
   approveIssue: (taskId: string, issueId: string, headCommit: string | null) => Promise<void>
   rejectIssue: (taskId: string, issueId: string, headCommit: string | null) => Promise<void>
@@ -203,6 +221,20 @@ interface AnvilState {
   saveSettings: (patch: Partial<Settings>, workspaceId?: string) => Promise<void>
   toggleSidebar: () => void
   setSettingsOpen: (open: boolean) => void
+}
+
+const mergeConflictRequestIsCurrent = (
+  get: () => AnvilState,
+  generation: number,
+  workspaceId: string | null,
+  taskId: string,
+  conflictId: string
+): boolean => {
+  const state = get()
+  const task = state.tasks.find((item) => item.id === taskId)
+  return generation === mergeConflictGeneration && workspaceId === state.activeWorkspaceId &&
+    state.view.kind === 'task' && state.view.taskId === taskId &&
+    task?.deliveryStatus === 'merge_conflict' && task.mergeConflict?.id === conflictId
 }
 
 export const useStore = create<AnvilState>((set, get) => ({
@@ -371,6 +403,7 @@ export const useStore = create<AnvilState>((set, get) => ({
   rebasing: null,
   sendingComments: null,
   commentError: null,
+  mergeConflictState: null,
 
   taskComposerFocusRequest: 0,
   settingsOpen: false,
@@ -757,13 +790,140 @@ export const useStore = create<AnvilState>((set, get) => ({
     }))
   },
 
+  loadMergeConflict: async (taskId, conflictId) => {
+    const generation = ++mergeConflictGeneration
+    const workspaceId = get().activeWorkspaceId
+    const current = get().mergeConflictState
+    const revision = current?.taskId === taskId && current.conflictId === conflictId ? current.revision : 0
+    set({
+      mergeConflictState: {
+        taskId,
+        conflictId,
+        ...(current?.taskId === taskId && current.conflictId === conflictId && current.snapshot
+          ? { snapshot: current.snapshot }
+          : {}),
+        loading: true,
+        error: null,
+        savingPath: null,
+        action: null,
+        revision
+      }
+    })
+    try {
+      const snapshot = await window.anvil.tasks.mergeConflict({ taskId, conflictId })
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      set({ mergeConflictState: { taskId, conflictId, snapshot, loading: false, error: null, savingPath: null, action: null, revision: revision + 1 } })
+    } catch (error) {
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      set({
+        mergeConflictState: {
+          taskId,
+          conflictId,
+          ...(current?.snapshot ? { snapshot: current.snapshot } : {}),
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+          savingPath: null,
+          action: null,
+          revision
+        }
+      })
+    }
+  },
+
+  saveMergeConflict: async (taskId, conflictId, path, contents, expectedContentsHash) => {
+    const current = get().mergeConflictState
+    if (current?.taskId !== taskId || current.conflictId !== conflictId || current.savingPath || current.action) return
+    const generation = ++mergeConflictGeneration
+    const workspaceId = get().activeWorkspaceId
+    set({ mergeConflictState: { ...current, loading: false, error: null, savingPath: path } })
+    try {
+      const snapshot = await window.anvil.tasks.saveMergeConflict({ taskId, conflictId, path, contents, expectedContentsHash })
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      set({ mergeConflictState: { taskId, conflictId, snapshot, loading: false, error: null, savingPath: null, action: null, revision: current.revision + 1 } })
+    } catch (error) {
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      const message = error instanceof Error ? error.message : String(error)
+      set({ mergeConflictState: { ...current, loading: true, error: message, savingPath: null } })
+      try {
+        const snapshot = await window.anvil.tasks.mergeConflict({ taskId, conflictId })
+        if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+        set({ mergeConflictState: { taskId, conflictId, snapshot, loading: false, error: message, savingPath: null, action: null, revision: current.revision + 1 } })
+      } catch (refreshError) {
+        if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+        const refreshMessage = refreshError instanceof Error ? refreshError.message : String(refreshError)
+        set({ mergeConflictState: { ...current, loading: false, error: `${message} Could not refresh the conflicted files: ${refreshMessage}`, savingPath: null } })
+      }
+    }
+  },
+
+  completeMergeConflict: async (taskId, conflictId) => {
+    const current = get().mergeConflictState
+    if (current?.taskId !== taskId || current.conflictId !== conflictId || !current.snapshot?.canComplete || current.savingPath || current.action) return
+    const generation = ++mergeConflictGeneration
+    const workspaceId = get().activeWorkspaceId
+    set({ mergeConflictState: { ...current, error: null, action: 'complete' } })
+    try {
+      const task = await window.anvil.tasks.completeMergeConflict({ taskId, conflictId })
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      mergeConflictGeneration += 1
+      set((state) => ({
+        tasks: state.tasks.map((item) => item.id === task.id ? task : item),
+        mergeConflictState: null,
+        commentError: null
+      }))
+    } catch (error) {
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      set({ mergeConflictState: { ...current, error: error instanceof Error ? error.message : String(error), action: null } })
+    }
+  },
+
   fixMergeConflictWithAgent: async (taskId, conflictId) => {
-    const task = await window.anvil.tasks.fixMergeConflictWithAgent({ taskId, conflictId })
-    if (!get().tasks.some((item) => item.id === taskId)) return
-    set((s) => ({
-      tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
-      commentError: null
-    }))
+    const current = get().mergeConflictState
+    if (current?.taskId !== taskId || current.conflictId !== conflictId || current.savingPath || current.action) return
+    const generation = ++mergeConflictGeneration
+    const workspaceId = get().activeWorkspaceId
+    set({ mergeConflictState: { ...current, error: null, action: 'fix' } })
+    try {
+      const task = await window.anvil.tasks.fixMergeConflictWithAgent({ taskId, conflictId })
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      set((state) => ({
+        tasks: state.tasks.map((item) => item.id === task.id ? task : item),
+        commentError: null
+      }))
+      if (task.deliveryStatus !== 'merge_conflict' || task.mergeConflict?.id !== conflictId) {
+        mergeConflictGeneration += 1
+        set({ mergeConflictState: null })
+        return
+      }
+      set({ mergeConflictState: { ...current, loading: true, error: null, savingPath: null, action: null } })
+      const snapshot = await window.anvil.tasks.mergeConflict({ taskId, conflictId })
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      set({ mergeConflictState: { taskId, conflictId, snapshot, loading: false, error: null, savingPath: null, action: null, revision: current.revision + 1 } })
+    } catch (error) {
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      set({ mergeConflictState: { ...current, error: error instanceof Error ? error.message : String(error), action: null } })
+    }
+  },
+
+  abortMergeConflict: async (taskId, conflictId) => {
+    const current = get().mergeConflictState
+    if (current?.taskId !== taskId || current.conflictId !== conflictId || current.savingPath || current.action) return
+    const generation = ++mergeConflictGeneration
+    const workspaceId = get().activeWorkspaceId
+    set({ mergeConflictState: { ...current, error: null, action: 'abort' } })
+    try {
+      const task = await window.anvil.tasks.abortMergeConflict({ taskId, conflictId })
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      mergeConflictGeneration += 1
+      set((state) => ({
+        tasks: state.tasks.map((item) => item.id === task.id ? task : item),
+        mergeConflictState: null,
+        commentError: null
+      }))
+    } catch (error) {
+      if (!mergeConflictRequestIsCurrent(get, generation, workspaceId, taskId, conflictId)) return
+      set({ mergeConflictState: { ...current, error: error instanceof Error ? error.message : String(error), action: null } })
+    }
   },
 
   pushTask: async (taskId, preview) => {
@@ -935,7 +1095,10 @@ export const useStore = create<AnvilState>((set, get) => ({
       if (task.workspaceId !== s.activeWorkspaceId) return s
       const existingTask = s.tasks.find((item) => item.id === task.id)
       const changed = taskDiffRevision(existingTask) !== taskDiffRevision(task)
+      const conflictChanged = existingTask?.mergeConflict?.id !== task.mergeConflict?.id ||
+        existingTask?.deliveryStatus !== task.deliveryStatus
       if (changed) taskDiffRequests.delete(task.id)
+      if (conflictChanged && s.mergeConflictState?.taskId === task.id) mergeConflictGeneration += 1
       return {
         // Other clients learn about newly created tasks through this event.
         tasks: existingTask
@@ -944,7 +1107,8 @@ export const useStore = create<AnvilState>((set, get) => ({
         ...(changed ? {
           diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== task.id)),
           diffErrorsByTask: Object.fromEntries(Object.entries(s.diffErrorsByTask).filter(([id]) => id !== task.id))
-        } : {})
+        } : {}),
+        ...(conflictChanged && s.mergeConflictState?.taskId === task.id ? { mergeConflictState: null } : {})
       }
     }),
 

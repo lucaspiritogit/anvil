@@ -28,6 +28,7 @@ const DOT_TONE: Record<TaskStatus, string> = {
 
 const DELIVERY_TONE: Partial<Record<DeliveryStatus, string>> = {
   reviewable: 'text-accent',
+  merge_conflict: 'text-warn',
   approved: 'text-violet',
   did_not_commit: 'text-warn',
   unavailable: 'text-warn',
