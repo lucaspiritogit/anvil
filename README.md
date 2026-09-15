@@ -68,7 +68,7 @@ host machine. Remote devices only need a browser.
 
 | Mode | Start | Access |
 | --- | --- | --- |
-| Desktop | Launch Anvil, then open **Settings > Connections** | Local by default, with optional LAN or Tailscale access |
+| Desktop | Launch Anvil, then open **Settings > Connections** | Built-in local server or a saved remote Anvil server |
 | Headless local | `npm run serve` | `http://127.0.0.1:4780`, without authentication |
 | Headless LAN | `npm run serve:lan` | `http://host:4780` with username `anvil` and your server password |
 | Headless Tailscale | `npm run serve:tailscale` | Private HTTPS address managed by Tailscale |
@@ -89,6 +89,15 @@ On Windows, use `anvil-server.cmd`.
 For desktop LAN access, set a server password in **Settings > Connections** and
 enable **Allow other devices**. Open `http://host:4780` from another device on
 the same trusted network and sign in with username `anvil`.
+
+An Electron client can instead use **Connect to remote server** in **Settings >
+Connections** to select an Anvil HTTP or HTTPS base URL. Anvil verifies the new
+server before saving it and reloading the client, so a failed connection leaves
+the working server active. The saved desktop choice is restored on future
+launches. It takes precedence over `ANVIL_SERVER_URL`; that environment variable
+is only the initial fallback when no desktop choice has been saved. Choosing
+**Built-in local server** is also saved and intentionally overrides
+`ANVIL_SERVER_URL` until the desktop preference file is removed.
 
 Enable **Tailscale HTTPS** to access the desktop server from another network.
 Install and connect Tailscale on both devices, then open the HTTPS address shown

@@ -18,10 +18,133 @@ import { DEFAULT_KEYBINDINGS, formatAccelerator, SHORTCUTS } from '@shared/keybi
 import type { Keybindings, ShortcutDefinition } from '@shared/keybindings'
 import { DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { DEFAULT_EMBEDDING_MODEL, DEFAULT_OLLAMA_BASE_URL } from '@shared/memory-settings'
+import { serverAddress, type ServerTarget } from '@shared/server-address'
+import type { DesktopServerConnectionState } from '@shared/desktop-requests'
 import type { ConnectionsStatus, RebaseMode, Settings } from '@shared/types'
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
+}
+
+function DesktopServerConnectionSettings(): JSX.Element | null {
+  const serverConnection = window.anvil.serverConnection
+  const [connection, setConnection] = useState<DesktopServerConnectionState | null>(null)
+  const [mode, setMode] = useState<ServerTarget['mode']>('local')
+  const [remoteUrl, setRemoteUrl] = useState('')
+  const [pending, setPending] = useState(false)
+  const [requestError, setRequestError] = useState('')
+  const [reconnecting, setReconnecting] = useState(false)
+  const requestInFlight = useRef(false)
+
+  useEffect(() => {
+    if (!serverConnection) return
+    let active = true
+    void serverConnection.get().then((state) => {
+      if (!active) return
+      setConnection(state)
+      setMode(state.target.mode)
+      if (state.target.mode === 'remote') setRemoteUrl(state.target.url)
+    }).catch((error) => {
+      if (active) setRequestError(errorMessage(error, 'Could not load the desktop server target.'))
+    })
+    return () => { active = false }
+  }, [serverConnection])
+
+  if (!serverConnection) return null
+
+  const apply = async (target: ServerTarget): Promise<void> => {
+    if (requestInFlight.current) return
+    let normalized = target
+    if (target.mode === 'remote') {
+      try {
+        normalized = { mode: 'remote', url: serverAddress(target.url.trim()) }
+      } catch (error) {
+        setRequestError(errorMessage(error, 'Enter a valid Anvil server URL.'))
+        return
+      }
+    }
+    requestInFlight.current = true
+    setPending(true)
+    setReconnecting(false)
+    setRequestError('')
+    try {
+      const next = await serverConnection.set(normalized)
+      setConnection(next)
+      setMode(next.target.mode)
+      if (next.target.mode === 'remote') setRemoteUrl(next.target.url)
+      setReconnecting(true)
+    } catch (error) {
+      setRequestError(errorMessage(error, 'Could not connect to the Anvil server.'))
+    } finally {
+      requestInFlight.current = false
+      setPending(false)
+    }
+  }
+
+  return (
+    <section aria-labelledby="desktop-server-target" className="mb-6 border-b border-line pb-6">
+      <h3 id="desktop-server-target" className="mb-1 font-medium">Connect to remote server</h3>
+      <p className="mb-4 text-xs text-dim">Choose the server used by this Electron client. Applying a change verifies the server, saves the choice for future launches, and reloads Anvil to reconnect.</p>
+
+      <div className="mb-4 border border-line bg-raised p-3 text-xs">
+        <span className="block text-dim">Active client target</span>
+        {connection
+          ? <><strong className="mt-1 block">{connection.target.mode === 'local' ? 'Built-in local server' : 'Remote server'}</strong><code className="mt-1 block break-all text-dim">{connection.url}</code></>
+          : <span role="status" className="mt-1 block text-dim">Loading desktop server target…</span>}
+      </div>
+
+      <OptionCards
+        ariaLabel="Electron server target"
+        name="electron-server-target"
+        value={mode}
+        disabled={!connection || pending}
+        onChange={(value) => {
+          setMode(value as ServerTarget['mode'])
+          setRequestError('')
+          setReconnecting(false)
+        }}
+        options={[
+          { value: 'local', label: 'Built-in local server', description: 'Run and connect to the Anvil server on this computer.' },
+          { value: 'remote', label: 'Remote server', description: 'Connect this desktop client to another Anvil HTTP or HTTPS server.' }
+        ]}
+      />
+
+      {mode === 'remote' ? (
+        <form noValidate onSubmit={(event) => { event.preventDefault(); void apply({ mode: 'remote', url: remoteUrl }) }}>
+          <label className={field.wrap}>
+            <span className={field.label}>Remote Anvil URL</span>
+            <input
+              aria-label="Remote Anvil URL"
+              className={field.sized}
+              type="url"
+              inputMode="url"
+              placeholder="https://anvil.example.com"
+              value={remoteUrl}
+              disabled={pending}
+              spellCheck={false}
+              onChange={(event) => {
+                setRemoteUrl(event.target.value)
+                setRequestError('')
+                setReconnecting(false)
+              }}
+            />
+            <small className={field.hint}>Enter the HTTP or HTTPS base address without a path, query, fragment, or credentials.</small>
+          </label>
+          <button className={btn.primary} type="submit" disabled={!connection || pending || remoteUrl.trim().length === 0}>
+            {pending ? 'Connecting…' : 'Connect'}
+          </button>
+        </form>
+      ) : (
+        <button className={btn.primary} type="button" disabled={!connection || pending || connection.target.mode === 'local'} onClick={() => { void apply({ mode: 'local' }) }}>
+          {pending ? 'Connecting…' : 'Use built-in local server'}
+        </button>
+      )}
+
+      {pending && <p role="status" className="mt-3 text-xs text-dim">Verifying the server before reconnecting…</p>}
+      {reconnecting && <p role="status" className="mt-3 text-xs text-ok">Server ready. Reloading Anvil…</p>}
+      {requestError && <p role="alert" className="mt-3 text-xs text-danger">{requestError}</p>}
+    </section>
+  )
 }
 
 function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): JSX.Element {
@@ -141,6 +264,10 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
   const showPasswordForm = status !== null && !status.headlessAccess && (!status.passwordConfigured || passwordPurpose !== null)
   return (
     <div>
+      <DesktopServerConnectionSettings />
+      <section aria-labelledby="server-access-settings">
+      <h3 id="server-access-settings" className="mb-1 font-medium">Server access</h3>
+      <p className="mb-4 text-xs text-dim">Configure how other devices can reach the server currently shown above.</p>
       <ToggleRow
         title="Allow other devices"
         description={<>Make Anvil available over HTTP on port 4780 to devices on this local network. Remote requests require the username <code>anvil</code> and your password.</>}
@@ -239,6 +366,7 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
       )}
       {pending && <p role="status" className="mt-4 text-xs text-dim">Changing connection access…</p>}
       {(requestError || status?.error) && <p role="alert" className="mt-4 text-xs text-danger">{requestError || status?.error}</p>}
+      </section>
     </div>
   )
 }

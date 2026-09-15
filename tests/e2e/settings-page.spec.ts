@@ -94,9 +94,10 @@ test('Connections gates first enablement on a password and keeps LAN and Tailsca
   const connectionsButton = navigation.getByRole('button', { name: 'Connections', exact: true })
   await expect(connectionsButton.locator('svg')).toHaveCount(1)
   await connectionsButton.click()
+  await expect(page.getByRole('heading', { name: 'Connect to remote server' })).toHaveCount(0)
 
   const toggle = page.getByRole('checkbox', { name: /Allow other devices/ })
-  const tailscale = page.getByRole('checkbox', { name: /Tailscale HTTPS/ })
+  const tailscale = page.getByRole('checkbox', { name: /^Tailscale HTTPS/ })
   await expect(toggle).not.toBeChecked()
   await expect(tailscale).not.toBeChecked()
   await expect(tailscale).toBeEnabled()
@@ -111,7 +112,7 @@ test('Connections gates first enablement on a password and keeps LAN and Tailsca
   await expect(page.getByText('A server password is configured.')).toBeVisible()
   await expect(password).toHaveCount(0)
   expect(await page.evaluate(() => window.connectionsTest.calls)).toEqual([
-    { allowOtherDevices: true, passwordProvided: true }
+    { allowOtherDevices: true, tailscaleHttps: false, passwordProvided: true }
   ])
 
   await toggle.click()
@@ -136,6 +137,69 @@ test('Connections gates first enablement on a password and keeps LAN and Tailsca
   await page.getByRole('button', { name: 'Save new password', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Replace password', exact: true })).toBeVisible()
   await expect(toggle).toBeChecked()
+})
+
+test('Electron Connections validates, reconnects, restores, and resets its server target', async ({ page }) => {
+  await page.goto(`${fixture}?electron&connectionConfigured`)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Connections', exact: true }).click()
+
+  await expect(page.getByRole('heading', { name: 'Connect to remote server' })).toBeVisible()
+  const target = page.getByRole('radiogroup', { name: 'Electron server target' })
+  await expect(target.getByRole('radio', { name: /Built-in local server/ })).toBeChecked()
+  await expect(page.getByText('http://127.0.0.1:4780', { exact: true })).toBeVisible()
+
+  const remote = target.getByRole('radio', { name: /Remote server/ })
+  await remote.focus()
+  await page.keyboard.press('Space')
+  const input = page.getByLabel('Remote Anvil URL', { exact: true })
+  await input.focus()
+  await page.keyboard.type('https://remote.example/path')
+  await page.getByRole('button', { name: 'Connect', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Anvil server URL cannot include a path.')
+  expect(await page.evaluate(() => window.desktopServerTest.calls)).toEqual([])
+
+  await input.focus()
+  await page.keyboard.press('ControlOrMeta+A')
+  await page.keyboard.type('https://remote.example')
+  await page.evaluate(() => { window.desktopServerTest.failNext = true })
+  await page.getByRole('button', { name: 'Connect', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Remote server unavailable for testing')
+  await expect(input).toHaveValue('https://remote.example')
+  await expect(page.getByText('Built-in local server', { exact: true }).first()).toBeVisible()
+
+  await page.evaluate(() => { window.desktopServerTest.holdNext = true })
+  const connect = page.getByRole('button', { name: 'Connect', exact: true })
+  await connect.click()
+  await expect(page.getByRole('button', { name: 'Connecting…', exact: true })).toBeDisabled()
+  await expect(page.getByText('Verifying the server before reconnecting…', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => window.desktopServerTest.calls)).toEqual([
+    { mode: 'remote', url: 'https://remote.example' },
+    { mode: 'remote', url: 'https://remote.example' }
+  ])
+  await page.evaluate(() => window.desktopServerTest.release())
+  await expect(page.getByText('Server ready. Reloading Anvil…', { exact: true })).toBeVisible()
+  await expect(page.getByText('https://remote.example', { exact: true }).first()).toBeVisible()
+  expect(await page.evaluate(() => window.desktopServerTest.reconnects)).toBe(1)
+
+  await page.reload()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Connections', exact: true }).click()
+  await expect(page.getByRole('radio', { name: /Remote server/ })).toBeChecked()
+  await expect(page.getByLabel('Remote Anvil URL', { exact: true })).toHaveValue('https://remote.example')
+  await expect(page.getByText('https://remote.example', { exact: true }).first()).toBeVisible()
+
+  await page.getByRole('radio', { name: /Built-in local server/ }).click()
+  await page.getByRole('button', { name: 'Use built-in local server', exact: true }).click()
+  await expect(page.getByText('Server ready. Reloading Anvil…', { exact: true })).toBeVisible()
+  await expect(page.getByText('http://127.0.0.1:4780', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => window.desktopServerTest.calls)).toEqual([{ mode: 'local' }])
+
+  await page.reload()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Connections', exact: true }).click()
+  await expect(page.getByRole('radio', { name: /Built-in local server/ })).toBeChecked()
+  await expect(page.getByText('http://127.0.0.1:4780', { exact: true })).toBeVisible()
 })
 
 test('Connections reflects a failed rebind and recovers on retry', async ({ page }) => {

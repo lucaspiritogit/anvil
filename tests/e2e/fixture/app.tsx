@@ -7,6 +7,8 @@ import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreference
 import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import type { IpcRequests } from '../../../src/shared/ipc-requests'
+import type { DesktopServerConnectionState } from '../../../src/shared/desktop-requests'
+import { serverAddress, type ServerTarget } from '../../../src/shared/server-address'
 import { useStore } from '../../../src/client/renderer/src/state/store'
 import '../../../src/client/renderer/src/styles.css'
 
@@ -240,6 +242,13 @@ declare global {
       failNextRequest: boolean
       failNextRebind: boolean
     }
+    desktopServerTest: {
+      calls: ServerTarget[]
+      failNext: boolean
+      holdNext: boolean
+      reconnects: number
+      release: () => void
+    }
     terminalTest: {
       creates: Array<{ input: IpcRequests['terminals:create']; sessionId: string }>
       attaches: string[]
@@ -361,6 +370,23 @@ let connectionStatus: ConnectionsStatus = {
   pending: false
 }
 window.connectionsTest = { calls: [], failNextRequest: false, failNextRebind: false }
+let releaseDesktopServer: (() => void) | undefined
+window.desktopServerTest = {
+  calls: [],
+  failNext: false,
+  holdNext: false,
+  reconnects: 0,
+  release: () => {
+    if (!releaseDesktopServer) throw new Error('No desktop server request is pending')
+    const release = releaseDesktopServer
+    releaseDesktopServer = undefined
+    release()
+  }
+}
+const savedDesktopTarget = JSON.parse(localStorage.getItem('fixture:desktop-server-target') ?? 'null') as ServerTarget | null
+let desktopServerState: DesktopServerConnectionState = savedDesktopTarget?.mode === 'remote'
+  ? { target: savedDesktopTarget, url: savedDesktopTarget.url }
+  : { target: { mode: 'local' }, url: 'http://127.0.0.1:4780' }
 if (query.has('settingsLoading')) {
   settings.caffeineMode = true
   // Exercise a Settings modal mounted before the initial settings read finishes.
@@ -467,6 +493,28 @@ window.anvil = {
     viewport: async ({ taskId, viewport }) => ({ taskId, open: false, viewport }),
     onChanged: () => noop
   },
+  ...(query.has('electron') ? {
+    serverConnection: {
+      get: async () => structuredClone(desktopServerState),
+      set: async (target: ServerTarget) => {
+        window.desktopServerTest.calls.push(structuredClone(target))
+        if (window.desktopServerTest.failNext) {
+          window.desktopServerTest.failNext = false
+          throw new Error('Remote server unavailable for testing')
+        }
+        if (window.desktopServerTest.holdNext) {
+          window.desktopServerTest.holdNext = false
+          await new Promise<void>((resolve) => { releaseDesktopServer = resolve })
+        }
+        desktopServerState = target.mode === 'local'
+          ? { target: { mode: 'local' }, url: 'http://127.0.0.1:4780' }
+          : { target: { mode: 'remote', url: serverAddress(target.url) }, url: serverAddress(target.url) }
+        localStorage.setItem('fixture:desktop-server-target', JSON.stringify(desktopServerState.target))
+        window.desktopServerTest.reconnects += 1
+        return structuredClone(desktopServerState)
+      }
+    }
+  } : {}),
   analytics: {
     get: async (range) => {
       window.analyticsTest.requests.push(range)

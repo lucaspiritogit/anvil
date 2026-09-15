@@ -25,6 +25,6 @@ export default defineConfig({
       return { code: `import { useLayoutEffect as __outputCommit } from 'react'\n${instrumented}`, map: null }
     }
   }, react(), tailwindcss()],
-  resolve: { alias: { '@shared': resolve('src/shared'), '@public': resolve('public') } },
+  resolve: { alias: { '@shared': resolve('src/shared'), '@public': resolve('public'), '@dither-kit': resolve('src/components/dither-kit') } },
   server: { host: '127.0.0.1', port: 4174, strictPort: true }
 })

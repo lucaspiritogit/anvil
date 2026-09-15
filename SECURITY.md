@@ -34,6 +34,20 @@ LAN mode uses plain HTTP, so use it only on a trusted network. Use Tailscale
 HTTPS for access outside that network. The headless local mode
 (`npm run serve`) binds to `127.0.0.1` without authentication; do not expose it.
 
+The Electron **Connect to remote server** setting changes which Anvil server the
+desktop client trusts and uses. Only enter addresses for servers you control or
+trust. Plain HTTP can expose credentials and Anvil activity to other devices on
+the network, so reserve HTTP remote targets for trusted LANs. Use HTTPS for
+remote, shared, or untrusted networks and verify that the certificate belongs to
+the intended server. Anvil accepts only an HTTP or HTTPS origin without embedded
+credentials, a path, query string, or fragment.
+
+The desktop target is stored in the local Electron profile, outside server and
+workspace data. A saved local or remote selection takes precedence over
+`ANVIL_SERVER_URL`; the environment value is used only when no saved selection
+exists. This prevents a later environment change from silently redirecting a
+client whose target was chosen explicitly.
+
 ## Unsigned builds
 
 Release builds are unsigned for now, so your OS may warn on first launch.
