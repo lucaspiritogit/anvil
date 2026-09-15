@@ -19,7 +19,6 @@ import { TASK_STYLES, TASK_STYLE_LABELS } from '@shared/task-style'
 import type { TaskCheckoutMode, TaskReviewPolicy } from '@shared/types'
 
 const compactSelect = 'min-w-0 field-sizing-content appearance-none bg-transparent py-1.5 pl-2 pr-6 text-sm text-dim outline-none hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45'
-const styleSelect = compactSelect.replace('pl-2 pr-6', 'pl-1 pr-1')
 export function TaskComposer(): JSX.Element {
   const projectId = useStore((state) => state.activeProjectId)
   const workspaceId = useStore((state) => state.activeWorkspaceId)
@@ -212,22 +211,12 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 event.currentTarget.value = ''
               }}
             />
-            <button
-              type="button"
-              aria-label="Attach image"
-              title="Attach image"
-              className="grid w-8 shrink-0 place-items-center self-stretch text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
-              disabled={!projectId || busy}
-              onClick={() => imageInputRef.current?.click()}
-            >
-              <Icon icon="paperclip" size={17} aria-hidden="true" />
-            </button>
             <label className="relative flex min-w-0 items-center overflow-hidden" title="Task style">
               <span className="sr-only">Task style</span>
               <Icon icon={style === 'quick' ? 'rabbit' : 'anvil'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
               <select
                 aria-label="Task style"
-                className={cn(styleSelect, 'pl-8')}
+                className={cn(compactSelect, 'pl-8')}
                 value={style}
                 onChange={(event) => setStyle(event.target.value as typeof style)}
               >
@@ -272,6 +261,16 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
               </label>
             </ComposerOverflowOptions>
             <div className="ml-auto flex shrink-0 items-stretch gap-3 self-stretch pl-2">
+              <button
+                type="button"
+                aria-label="Attach image"
+                title="Attach image"
+                className="grid w-8 shrink-0 place-items-center text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
+                disabled={!projectId || busy}
+                onClick={() => imageInputRef.current?.click()}
+              >
+                <Icon icon="paperclip" size={17} aria-hidden="true" />
+              </button>
               <button
                 type="submit"
                 aria-label={busy ? 'Starting…' : 'Send'}
