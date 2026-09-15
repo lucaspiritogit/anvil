@@ -1,4 +1,4 @@
-import { MAX_TASK_EVENT_PAGE_SIZE } from '../../shared/types'
+import { MAX_TASK_EVENT_PAGE_SIZE, MERGE_CONFLICT_MAX_FILE_BYTES } from '../../shared/types'
 import { MIN_FONT_SIZE, MAX_FONT_SIZE, OVERVIEW_COLOR_PATTERN, WALLPAPER_ID_PATTERN } from '../../shared/appearance'
 import { hasTaskContent, parseTaskImages } from '../../shared/task-images'
 import { isOllamaBaseUrl } from '../../shared/memory-settings'
@@ -66,6 +66,7 @@ const none: Check<undefined> = (value, field) => {
 const id = text(128, true, /^[A-Za-z0-9][A-Za-z0-9_-]*$/)
 const identifier = text(512, true, /^\S+$/)
 const sha = text(64, true, /^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/)
+const sha256 = text(64, true, /^[a-fA-F0-9]{64}$/)
 const branch = text(1024, true, /^(?!-)[^\s\x00-\x1f\x7f]+$/)
 const file: Check<string> = (value, field) => {
   const path = text(4096)(value, field)
@@ -210,6 +211,16 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:approve': object({ taskId: id, preview: object(mergePreview) }),
   'tasks:merge-and-push-preview': id,
   'tasks:merge-and-push': object({ taskId: id, preview: object({ ...mergePreview, ...pushRemotePreview }) }),
+  'tasks:merge-conflict': object({ taskId: id, conflictId: id }),
+  'tasks:merge-conflict-save': object({
+    taskId: id,
+    conflictId: id,
+    path: file,
+    contents: text(MERGE_CONFLICT_MAX_FILE_BYTES, false),
+    expectedContentsHash: sha256
+  }),
+  'tasks:merge-conflict-complete': object({ taskId: id, conflictId: id }),
+  'tasks:merge-conflict-abort': object({ taskId: id, conflictId: id }),
   'tasks:push-preview': id,
   'tasks:push': object({ taskId: id, preview: object(pushPreview) }),
   'tasks:approve-issue': object({ taskId: id, issueId: id, headCommit: nullable(id) }),

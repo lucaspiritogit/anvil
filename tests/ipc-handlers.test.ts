@@ -5,7 +5,7 @@ import { test, expect, vi } from 'vitest'
 import { pngWithDimensions } from './image-fixtures'
 import { TaskImageStorage } from '../src/server/task-image-storage'
 import { taskImages } from './task-image-fixture'
-import { TASK_IMAGE_LIMITS } from '../src/shared/types'
+import { MERGE_CONFLICT_MAX_FILE_BYTES, TASK_IMAGE_LIMITS } from '../src/shared/types'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -57,8 +57,17 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   const gitDelivery = new GitDeliveryManager()
   const rebaseCalls: unknown[][] = []
   const mergeCalls: unknown[][] = []
+  const mergeConflictCalls: { operation: string; args: unknown[] }[] = []
   const pushCalls: unknown[][] = []
-  const mergeState = { conflict: false, validationFailure: false, finish: undefined as (() => void) | undefined }
+  const mergeState = {
+    conflict: false,
+    validationFailure: false,
+    finish: undefined as (() => void) | undefined,
+    files: [{
+      path: 'src/conflicted.ts', status: 'both_modified' as const, stages: [1, 2, 3] as (1 | 2 | 3)[], support: 'text' as const,
+      contents: '<<<<<<< HEAD\ntarget\n=======\nsource\n>>>>>>> task\n', contentsHash: '1'.repeat(64)
+    }]
+  }
   onTestCleanup(() => { mergeState.finish?.() })
   const delivery = Object.assign(gitDelivery, {
     async getPullRequestPreview() {
@@ -78,12 +87,33 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
       if (mergeState.validationFailure) throw new Error('The paused merge no longer matches this task.')
       return conflict?.conflictedFiles ?? []
     },
+    async getMergeConflict(...args: unknown[]) {
+      mergeConflictCalls.push({ operation: 'load', args })
+      const conflict = args[1] as NonNullable<Task['mergeConflict']>
+      return { id: conflict.id, taskId: conflict.taskId, sourceBranch: conflict.sourceBranch, targetBranch: conflict.targetBranch, requestedAction: conflict.requestedAction, files: mergeState.files, canComplete: mergeState.files.length === 0 }
+    },
+    async saveMergeConflictFile(...args: unknown[]) {
+      mergeConflictCalls.push({ operation: 'save', args })
+      const conflict = args[1] as NonNullable<Task['mergeConflict']>
+      const contents = args[3] as string
+      mergeState.files = contents.includes('<<<<<<<') ? [{ ...mergeState.files[0], contents, contentsHash: '2'.repeat(64) }] : []
+      return { id: conflict.id, taskId: conflict.taskId, sourceBranch: conflict.sourceBranch, targetBranch: conflict.targetBranch, requestedAction: conflict.requestedAction, files: mergeState.files, canComplete: mergeState.files.length === 0 }
+    },
+    async completeMergeConflict(...args: unknown[]) {
+      mergeConflictCalls.push({ operation: 'complete', args })
+      if (mergeState.files.length) throw new Error('Resolve all merge conflicts before completing the merge')
+      return 'e'.repeat(40)
+    },
+    async abortMergeConflict(...args: unknown[]) {
+      mergeConflictCalls.push({ operation: 'abort', args })
+    },
     async getPushPreview(_path: string, targetBranch: string) {
       return {
         targetBranch, targetCommit: 'b'.repeat(40), remote: 'origin',
         remoteTargetCommit: 'c'.repeat(40), remoteUrlHash: 'f'.repeat(64)
       }
     },
+    async push(...args: unknown[]) { pushCalls.push(args) },
     async rebase(...args: unknown[]) {
       rebaseCalls.push(args)
       return { headCommit: 'rebased', filesChanged: 0, additions: 0, deletions: 0, commits: [] }
@@ -136,7 +166,7 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
 
   return {
     databaseFile, taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses,
-    gitDelivery, delivery, rebaseCalls, mergeCalls, pushCalls, mergeState, memory,
+    gitDelivery, delivery, rebaseCalls, mergeCalls, mergeConflictCalls, pushCalls, mergeState, memory,
     credentials, client, call, tick,
     get prRefreshes() { return prRefreshes },
     get credentialRefreshes() { return credentialRefreshes }
@@ -499,7 +529,7 @@ test('runs Quick tasks directly without issue plans or task worktrees', async ()
 test('executes issues, reviews, handles credentials and PRs, approves, rebases and guards deletion', async () => {
   const comment = { taskId: 'task', file: 'src/file.ts', side: 'additions', lineNumber: 1, body: 'Review' }
   const fixture = setupIpc()
-  const { taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses, gitDelivery, rebaseCalls, mergeCalls, pushCalls, mergeState, call, tick } = fixture
+  const { taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses, gitDelivery, rebaseCalls, mergeCalls, mergeConflictCalls, pushCalls, mergeState, call, tick } = fixture
   const task: Task = await call('tasks:start', { projectId: project.id, agentId: 'codex', model: 'chosen-model', reasoningEffort: 'high', prompt: 'Task title\nDetails' })
   await tick()
   expect(task.title).toBe('Task title')
@@ -602,6 +632,24 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   })
   expect(tasks.get(task.id)?.reviewedAt).toBe(undefined)
   expect(events.at(-1)?.text).toBe('Merge paused: 1 file conflict with main.')
+  const conflictId = conflicted.mergeConflict!.id
+  const snapshot = await call('tasks:merge-conflict', { taskId: task.id, conflictId })
+  expect(snapshot).toMatchObject({ id: conflictId, taskId: task.id, targetBranch: 'main', canComplete: false })
+  expect(snapshot.files[0]).toMatchObject({ path: 'src/conflicted.ts', status: 'both_modified', support: 'text' })
+  expect(() => call('tasks:merge-conflict-save', {
+    taskId: task.id, conflictId, path: '../outside.ts', contents: 'resolved', expectedContentsHash: '1'.repeat(64)
+  })).toThrow(/Invalid IPC request/)
+  expect(() => call('tasks:merge-conflict-save', {
+    taskId: task.id, conflictId, path: 'src/conflicted.ts', contents: 'x'.repeat(MERGE_CONFLICT_MAX_FILE_BYTES + 1), expectedContentsHash: '1'.repeat(64)
+  })).toThrow(/Invalid IPC request/)
+  expect(() => call('tasks:merge-conflict-save', {
+    taskId: task.id, conflictId, path: 'src/conflicted.ts', contents: 'resolved', expectedContentsHash: '1'.repeat(40)
+  })).toThrow(/Invalid IPC request/)
+  await expect(call('tasks:merge-conflict-complete', { taskId: task.id, conflictId })).rejects.toThrow(/Resolve all merge conflicts/)
+  const stillConflicted = await call('tasks:merge-conflict-save', {
+    taskId: task.id, conflictId, path: 'src/conflicted.ts', contents: '<<<<<<< HEAD\nnew target\n=======\nsource\n>>>>>>> task\n', expectedContentsHash: '1'.repeat(64)
+  })
+  expect(stillConflicted).toMatchObject({ canComplete: false, files: [{ contentsHash: '2'.repeat(64) }] })
   await expect(call('tasks:delete', task.id)).rejects.toThrow(/Abort the paused merge/)
   await expect(call('projects:remove', project.id)).rejects.toThrow(/Abort the paused task merge/)
   await expect(call('projects:checkout', { projectId: project.id, branchName: 'other' })).rejects.toThrow(/paused task merge/)
@@ -617,7 +665,11 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   await expect(call('tasks:merge-preview', competitor.id)).rejects.toThrow(/no longer matches/)
   mergeState.validationFailure = false
   store.deleteTaskCascade(competitor.id)
-  store.updateTask(task.id, { deliveryStatus: 'reviewable', mergeConflict: undefined })
+  const aborted: Task = await call('tasks:merge-conflict-abort', { taskId: task.id, conflictId })
+  expect(aborted).toMatchObject({ deliveryStatus: 'reviewable', reviewedAt: undefined })
+  expect(aborted.mergeConflict).toBeUndefined()
+  expect(events.at(-1)?.text).toMatch(/Aborted the paused merge into main/)
+  await expect(call('tasks:merge-conflict', { taskId: task.id, conflictId })).rejects.toThrow(/session changed/)
   const mergeAndPushPreview = await call('tasks:merge-and-push-preview', task.id)
   const pushConflict: Task = await call('tasks:merge-and-push', { taskId: task.id, preview: mergeAndPushPreview })
   expect(pushConflict.mergeConflict).toMatchObject({
@@ -630,6 +682,25 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
       remoteUrlHash: 'f'.repeat(64)
     }
   })
+  const pushConflictId = pushConflict.mergeConflict!.id
+  await expect(call('tasks:merge-conflict-save', {
+    taskId: task.id, conflictId: 'stale-session', path: 'src/conflicted.ts', contents: 'resolved\n', expectedContentsHash: '2'.repeat(64)
+  })).rejects.toThrow(/session changed/)
+  const resolved = await call('tasks:merge-conflict-save', {
+    taskId: task.id, conflictId: pushConflictId, path: 'src/conflicted.ts', contents: 'resolved\n', expectedContentsHash: '2'.repeat(64)
+  })
+  expect(resolved).toMatchObject({ canComplete: true, files: [] })
+  const manuallyApproved: Task = await call('tasks:merge-conflict-complete', { taskId: task.id, conflictId: pushConflictId })
+  expect(manuallyApproved).toMatchObject({ deliveryStatus: 'approved', mergeConflict: undefined })
+  expect(pushCalls.at(-1)?.slice(0, 3)).toStrictEqual([
+    testHome,
+    expect.objectContaining({ targetBranch: 'main', targetCommit: 'e'.repeat(40), remoteTargetCommit: 'c'.repeat(40) }),
+    preview.sourceCommit
+  ])
+  expect(events.some((event) => event.text.includes(`Completed the paused merge of task into main at ${'e'.repeat(40)}`))).toBeTruthy()
+  expect(mergeConflictCalls.map((call) => call.operation)).toStrictEqual([
+    'load', 'complete', 'save', 'abort', 'save', 'complete'
+  ])
   store.updateTask(task.id, { deliveryStatus: 'reviewable', mergeConflict: undefined })
   mergeState.conflict = false
   const pendingApproval = call('tasks:approve', { taskId: task.id, preview })

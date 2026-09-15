@@ -147,6 +147,39 @@ export interface TaskMergeConflict {
   createdAt: number
 }
 
+export const MERGE_CONFLICT_MAX_FILE_BYTES = 2 * 1024 * 1024
+
+export type TaskMergeConflictFileStatus =
+  | 'both_modified'
+  | 'both_added'
+  | 'both_deleted'
+  | 'added_by_us'
+  | 'added_by_them'
+  | 'deleted_by_us'
+  | 'deleted_by_them'
+  | 'unsupported'
+
+interface TaskMergeConflictFileBase {
+  path: string
+  status: TaskMergeConflictFileStatus
+  stages: (1 | 2 | 3)[]
+}
+
+export type TaskMergeConflictFile = TaskMergeConflictFileBase & (
+  | { support: 'text'; contents: string; contentsHash: string }
+  | { support: 'unsupported'; reason: 'missing' | 'binary' | 'oversized' | 'symlink' | 'submodule' | 'other' | 'unsafe_path' | 'unsupported_status' }
+)
+
+export interface TaskMergeConflictSnapshot {
+  id: string
+  taskId: string
+  sourceBranch: string
+  targetBranch: string
+  requestedAction: TaskMergeConflict['requestedAction']
+  files: TaskMergeConflictFile[]
+  canComplete: boolean
+}
+
 export interface PullRequestGitPreview extends TaskMergePreview {
   repository: string
   remote: 'origin'

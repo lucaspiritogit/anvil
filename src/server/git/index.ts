@@ -14,6 +14,8 @@ import type {
   PullRequestGitPreview,
   RebaseStep,
   TaskDiff,
+  TaskMergeConflict,
+  TaskMergeConflictSnapshot,
   TaskMergePreview,
   TaskPushPreview
 } from '../../shared/types'
@@ -22,7 +24,7 @@ import { releaseWorktree, prepareBranch, checkoutBranch, worktreeHead } from './
 import { renameTaskBranch, restackBranch, finalizeBranch } from './task-branches'
 import { rebase } from './rebase'
 import { getPullRequestPreview, pushPullRequestBranch } from './pull-requests'
-import { getMergePreview, getPushPreview, merge, push, validateMergeConflict } from './merge'
+import { abortMergeConflict, completeMergeConflict, getMergeConflict, getMergePreview, getPushPreview, merge, push, saveMergeConflictFile, validateMergeConflict } from './merge'
 import { changedFiles, getDiff, getIssueDiff } from './diff'
 
 export type { PreparedCheckout, RebasedBranch, FinalizeOptions, FinalizedCheckout, IssueDiffSource, MergeResult } from './types'
@@ -172,6 +174,37 @@ export class GitDeliveryManager {
     expected: Parameters<typeof validateMergeConflict>[1]
   ): Promise<string[]> {
     return validateMergeConflict(projectPath, expected)
+  }
+
+  getMergeConflict(projectPath: string, conflict: TaskMergeConflict): Promise<TaskMergeConflictSnapshot> {
+    return getMergeConflict(this.context, projectPath, conflict)
+  }
+
+  saveMergeConflictFile(
+    projectPath: string,
+    conflict: TaskMergeConflict,
+    path: string,
+    contents: string,
+    expectedContentsHash: string,
+    check: () => void = () => {}
+  ): Promise<TaskMergeConflictSnapshot> {
+    return saveMergeConflictFile(this.context, projectPath, conflict, path, contents, expectedContentsHash, check)
+  }
+
+  completeMergeConflict(
+    projectPath: string,
+    conflict: TaskMergeConflict,
+    check: () => void = () => {}
+  ): Promise<string> {
+    return completeMergeConflict(this.context, projectPath, conflict, check)
+  }
+
+  abortMergeConflict(
+    projectPath: string,
+    conflict: TaskMergeConflict,
+    check: () => void = () => {}
+  ): Promise<void> {
+    return abortMergeConflict(this.context, projectPath, conflict, check)
   }
 
   getPushPreview(projectPath: string, expectedTargetBranch?: string, requiredCommit?: string): Promise<TaskPushPreview> {

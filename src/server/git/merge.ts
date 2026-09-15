@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
-import type { TaskMergePreview, TaskPushPreview } from '../../shared/types'
+import { lstat, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { MERGE_CONFLICT_MAX_FILE_BYTES, type TaskMergeConflict, type TaskMergeConflictFile, type TaskMergeConflictFileStatus, type TaskMergeConflictSnapshot, type TaskMergePreview, type TaskPushPreview } from '../../shared/types'
 import type { GitContext, MergeConflictResult, MergeResult } from './types'
 import { git } from './command'
 import { withRepoLock, repositoryRoot } from './repository'
@@ -87,25 +88,258 @@ export async function merge(
 
 export async function validateMergeConflict(
   projectPath: string,
-  expected: Pick<MergeConflictResult, 'repositoryRoot' | 'mergeHeadCommit'> & Omit<TaskMergePreview, 'commitCount'>
+  expected: Pick<TaskMergeConflict, 'repositoryRoot' | 'sourceBranch' | 'targetBranch' | 'sourceCommit' | 'targetCommit' | 'mergeHeadCommit' | 'conflictedFiles'>
 ): Promise<string[]> {
   const repoRoot = await repositoryRoot(projectPath)
+  return (await validateMergeConflictState(repoRoot, expected)).map((entry) => entry.path)
+}
+
+interface UnmergedEntry {
+  path: string
+  stages: (1 | 2 | 3)[]
+  modes: string[]
+}
+
+async function unmergedEntries(repoRoot: string): Promise<UnmergedEntry[]> {
+  const records = (await git(repoRoot, ['ls-files', '--unmerged', '-z'])).stdout.split('\0').filter(Boolean)
+  const entries = new Map<string, { stages: Set<1 | 2 | 3>; modes: Set<string> }>()
+  for (const record of records) {
+    const separator = record.indexOf('\t')
+    const metadata = separator >= 0 ? record.slice(0, separator) : ''
+    const path = separator >= 0 ? record.slice(separator + 1) : ''
+    const [mode, , stageText] = metadata.split(' ')
+    const stage = Number(stageText)
+    if (!path || !mode || (stage !== 1 && stage !== 2 && stage !== 3)) {
+      throw new Error('Git reported an unsupported unmerged index entry.')
+    }
+    const entry = entries.get(path) ?? { stages: new Set<1 | 2 | 3>(), modes: new Set<string>() }
+    entry.stages.add(stage)
+    entry.modes.add(mode)
+    entries.set(path, entry)
+  }
+  return [...entries].map(([path, entry]) => ({
+    path,
+    stages: [...entry.stages].sort() as (1 | 2 | 3)[],
+    modes: [...entry.modes].sort()
+  })).sort((first, second) => first.path.localeCompare(second.path))
+}
+
+async function validateMergeConflictState(
+  repoRoot: string,
+  expected: Pick<TaskMergeConflict, 'repositoryRoot' | 'sourceBranch' | 'targetBranch' | 'sourceCommit' | 'targetCommit' | 'mergeHeadCommit' | 'conflictedFiles'>
+): Promise<UnmergedEntry[]> {
   if (repoRoot !== expected.repositoryRoot) throw new Error('The merge conflict belongs to a different repository checkout.')
   const [branch, head, source, mergeHead, unmerged] = await Promise.all([
     git(repoRoot, ['branch', '--show-current']),
     git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}']),
     git(repoRoot, ['rev-parse', '--verify', `refs/heads/${expected.sourceBranch}^{commit}`]),
     git(repoRoot, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], [0, 1]),
-    git(repoRoot, ['diff', '--name-only', '--diff-filter=U', '-z'])
+    unmergedEntries(repoRoot)
   ])
-  const conflictedFiles = unmerged.stdout.split('\0').filter(Boolean)
+  const originalPaths = new Set(expected.conflictedFiles)
   if (branch.stdout.trim() !== expected.targetBranch || head.stdout.trim() !== expected.targetCommit ||
       source.stdout.trim() !== expected.sourceCommit || mergeHead.exitCode !== 0 ||
       mergeHead.stdout.trim() !== expected.mergeHeadCommit || expected.mergeHeadCommit !== expected.sourceCommit ||
-      conflictedFiles.length === 0) {
+      unmerged.some((entry) => !originalPaths.has(entry.path))) {
     throw new Error('The paused merge no longer matches this task. Inspect the repository before continuing.')
   }
-  return conflictedFiles
+  return unmerged
+}
+
+function conflictStatus(stages: readonly number[]): TaskMergeConflictFileStatus {
+  switch (stages.join('')) {
+    case '1': return 'both_deleted'
+    case '2': return 'added_by_us'
+    case '3': return 'added_by_them'
+    case '12': return 'deleted_by_them'
+    case '13': return 'deleted_by_us'
+    case '23': return 'both_added'
+    case '123': return 'both_modified'
+    default: return 'unsupported'
+  }
+}
+
+function pathInside(root: string, candidate: string): boolean {
+  const child = relative(root, candidate)
+  return child === '' || (!isAbsolute(child) && child !== '..' && !child.startsWith(`..${sep}`))
+}
+
+async function conflictPath(repoRoot: string, path: string): Promise<string> {
+  if (!path || isAbsolute(path) || path.split(/[\\/]/).some((part) => !part || part === '.' || part === '..')) {
+    throw new Error('Git reported an unsafe unmerged path.')
+  }
+  const candidate = resolve(repoRoot, path)
+  if (!pathInside(repoRoot, candidate)) throw new Error('Git reported an unsafe unmerged path.')
+  let existing = dirname(candidate)
+  while (pathInside(repoRoot, existing)) {
+    try {
+      const resolvedParent = await realpath(existing)
+      if (!pathInside(repoRoot, resolvedParent)) throw new Error('The conflicted file escapes the repository through a symbolic link.')
+      return candidate
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      const parent = dirname(existing)
+      if (parent === existing) break
+      existing = parent
+    }
+  }
+  throw new Error('The conflicted file is outside the repository checkout.')
+}
+
+function unsupportedFile(entry: UnmergedEntry, reason: Extract<TaskMergeConflictFile, { support: 'unsupported' }>['reason']): TaskMergeConflictFile {
+  return { path: entry.path, status: conflictStatus(entry.stages), stages: entry.stages, support: 'unsupported', reason }
+}
+
+async function conflictFile(repoRoot: string, entry: UnmergedEntry): Promise<TaskMergeConflictFile> {
+  if (/[\x00-\x1f\x7f]/.test(entry.path)) return unsupportedFile(entry, 'unsafe_path')
+  const path = await conflictPath(repoRoot, entry.path)
+  const status = conflictStatus(entry.stages)
+  if (status === 'unsupported') return unsupportedFile(entry, 'unsupported_status')
+  if (entry.modes.includes('160000')) return unsupportedFile(entry, 'submodule')
+  if (entry.modes.includes('120000')) return unsupportedFile(entry, 'symlink')
+  let metadata
+  try {
+    metadata = await lstat(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return unsupportedFile(entry, 'missing')
+    throw error
+  }
+  if (metadata.isSymbolicLink()) return unsupportedFile(entry, 'symlink')
+  if (!metadata.isFile()) return unsupportedFile(entry, 'other')
+  if (metadata.size > MERGE_CONFLICT_MAX_FILE_BYTES) return unsupportedFile(entry, 'oversized')
+  const bytes = await readFile(path)
+  if (bytes.length > MERGE_CONFLICT_MAX_FILE_BYTES) return unsupportedFile(entry, 'oversized')
+  if (bytes.includes(0)) return unsupportedFile(entry, 'binary')
+  let contents: string
+  try {
+    contents = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return unsupportedFile(entry, 'binary')
+  }
+  return {
+    path: entry.path,
+    status,
+    stages: entry.stages,
+    support: 'text',
+    contents,
+    contentsHash: createHash('sha256').update(bytes).digest('hex')
+  }
+}
+
+async function mergeConflictSnapshot(
+  repoRoot: string,
+  conflict: TaskMergeConflict,
+  entries: UnmergedEntry[]
+): Promise<TaskMergeConflictSnapshot> {
+  const files = await Promise.all(entries.map((entry) => conflictFile(repoRoot, entry)))
+  return {
+    id: conflict.id,
+    taskId: conflict.taskId,
+    sourceBranch: conflict.sourceBranch,
+    targetBranch: conflict.targetBranch,
+    requestedAction: conflict.requestedAction,
+    files,
+    canComplete: files.length === 0
+  }
+}
+
+export async function getMergeConflict(
+  context: GitContext,
+  projectPath: string,
+  conflict: TaskMergeConflict
+): Promise<TaskMergeConflictSnapshot> {
+  const repoRoot = await repositoryRoot(projectPath)
+  return withRepoLock(context, repoRoot, async () => {
+    const entries = await validateMergeConflictState(repoRoot, conflict)
+    return mergeConflictSnapshot(repoRoot, conflict, entries)
+  })
+}
+
+function hasConflictMarkers(contents: string): boolean {
+  return /^(?:<{7,}(?: |$)|\|{7,}(?: |$)|={7,}\s*$|>{7,}(?: |$))/m.test(contents)
+}
+
+export async function saveMergeConflictFile(
+  context: GitContext,
+  projectPath: string,
+  conflict: TaskMergeConflict,
+  path: string,
+  contents: string,
+  expectedContentsHash: string,
+  check: () => void = () => {}
+): Promise<TaskMergeConflictSnapshot> {
+  if (Buffer.byteLength(contents) > MERGE_CONFLICT_MAX_FILE_BYTES) throw new Error('The resolved file is too large to save.')
+  const repoRoot = await repositoryRoot(projectPath)
+  return withRepoLock(context, repoRoot, async () => {
+    const entries = await validateMergeConflictState(repoRoot, conflict)
+    const entry = entries.find((candidate) => candidate.path === path)
+    if (!entry) throw new Error('This file is no longer unmerged. Refresh the conflict details.')
+    const current = await conflictFile(repoRoot, entry)
+    if (current.support !== 'text') throw new Error(`This conflicted file cannot be edited as text (${current.reason}).`)
+    if (current.contentsHash !== expectedContentsHash) throw new Error('The conflicted file changed after it was loaded. Refresh it before saving.')
+    check()
+    const target = await conflictPath(repoRoot, path)
+    const mode = (await lstat(target)).mode & 0o777
+    const temporary = join(dirname(target), `.anvil-merge-resolution-${randomUUID()}`)
+    try {
+      await writeFile(temporary, contents, { flag: 'wx', mode })
+      await rename(temporary, target)
+    } finally {
+      await rm(temporary, { force: true })
+    }
+    if (!hasConflictMarkers(contents)) await git(repoRoot, ['add', '--', path])
+    const refreshed = await unmergedEntries(repoRoot)
+    return mergeConflictSnapshot(repoRoot, conflict, refreshed)
+  })
+}
+
+export async function completeMergeConflict(
+  context: GitContext,
+  projectPath: string,
+  conflict: TaskMergeConflict,
+  check: () => void = () => {}
+): Promise<string> {
+  const repoRoot = await repositoryRoot(projectPath)
+  return withRepoLock(context, repoRoot, async () => {
+    const entries = await validateMergeConflictState(repoRoot, conflict)
+    if (entries.length) throw new Error(`Resolve all merge conflicts before completing the merge (${entries.length} remaining).`)
+    check()
+    await git(repoRoot, ['commit', '--no-edit'])
+    const [branch, head, mergeHead, containsTarget, containsSource] = await Promise.all([
+      git(repoRoot, ['branch', '--show-current']),
+      git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}']),
+      git(repoRoot, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], [0, 1]),
+      git(repoRoot, ['merge-base', '--is-ancestor', conflict.targetCommit, 'HEAD'], [0, 1]),
+      git(repoRoot, ['merge-base', '--is-ancestor', conflict.sourceCommit, 'HEAD'], [0, 1])
+    ])
+    if (branch.stdout.trim() !== conflict.targetBranch || mergeHead.exitCode === 0 ||
+      containsTarget.exitCode !== 0 || containsSource.exitCode !== 0) {
+      throw new Error('The completed merge does not contain the confirmed source and target commits. Inspect the repository before continuing.')
+    }
+    return head.stdout.trim()
+  })
+}
+
+export async function abortMergeConflict(
+  context: GitContext,
+  projectPath: string,
+  conflict: TaskMergeConflict,
+  check: () => void = () => {}
+): Promise<void> {
+  const repoRoot = await repositoryRoot(projectPath)
+  return withRepoLock(context, repoRoot, async () => {
+    await validateMergeConflictState(repoRoot, conflict)
+    check()
+    await git(repoRoot, ['merge', '--abort'])
+    const [branch, head, mergeHead] = await Promise.all([
+      git(repoRoot, ['branch', '--show-current']),
+      git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}']),
+      git(repoRoot, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], [0, 1])
+    ])
+    if (branch.stdout.trim() !== conflict.targetBranch || head.stdout.trim() !== conflict.targetCommit || mergeHead.exitCode === 0) {
+      throw new Error('Git did not restore the confirmed target checkout after aborting the merge.')
+    }
+  })
 }
 
 async function originPushUrl(projectPath: string): Promise<string> {

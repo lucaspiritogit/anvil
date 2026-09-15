@@ -653,6 +653,10 @@ window.anvil = {
     }
   },
   tasks: {
+    mergeConflict: async () => { throw new Error('Merge conflict fixture is not configured') },
+    saveMergeConflict: async () => { throw new Error('Merge conflict fixture is not configured') },
+    completeMergeConflict: async () => { throw new Error('Merge conflict fixture is not configured') },
+    abortMergeConflict: async () => { throw new Error('Merge conflict fixture is not configured') },
     stack: async ({ taskId, parentTaskId }) => {
       const task = tasks.find((entry) => entry.id === taskId)!
       const parent = tasks.find((entry) => entry.id === parentTaskId)!

@@ -30,6 +30,7 @@ import type {
   TaskEventsRequest,
   TaskEventsPage,
   TaskMergeAndPushPreview,
+  TaskMergeConflictSnapshot,
   TaskMergePreview,
   TaskPushPreview,
   TaskResultNotice,
@@ -194,6 +195,14 @@ export function createAnvilApi(url: string, host: ClientHost) {
       approve: (input: IpcRequests['tasks:approve']): Promise<Task> => invoke('tasks:approve', input),
       mergeAndPushPreview: (taskId: string): Promise<TaskMergeAndPushPreview> => invoke('tasks:merge-and-push-preview', taskId),
       mergeAndPush: (input: IpcRequests['tasks:merge-and-push']): Promise<Task> => invoke('tasks:merge-and-push', input),
+      mergeConflict: (input: IpcRequests['tasks:merge-conflict']): Promise<TaskMergeConflictSnapshot> =>
+        invoke('tasks:merge-conflict', input),
+      saveMergeConflict: (input: IpcRequests['tasks:merge-conflict-save']): Promise<TaskMergeConflictSnapshot> =>
+        invoke('tasks:merge-conflict-save', input),
+      completeMergeConflict: (input: IpcRequests['tasks:merge-conflict-complete']): Promise<Task> =>
+        invoke('tasks:merge-conflict-complete', input),
+      abortMergeConflict: (input: IpcRequests['tasks:merge-conflict-abort']): Promise<Task> =>
+        invoke('tasks:merge-conflict-abort', input),
       pushPreview: (taskId: string): Promise<TaskPushPreview> => invoke('tasks:push-preview', taskId),
       push: (input: IpcRequests['tasks:push']): Promise<Task> => invoke('tasks:push', input),
       approveIssue: (input: IpcRequests['tasks:approve-issue']): Promise<Task> => invoke('tasks:approve-issue', input),
