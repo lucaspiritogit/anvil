@@ -22,7 +22,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   const issue: Omit<BatchIssue, 'parentId'> = { key: 'first', title: 'Small change', description: 'One behavior', labels: ['backend'], priority: 'medium', dependencies: [], checklist: ['Change behavior', 'Verify result'], validation: 'Run focused test' }
   const start = async (prompt: string, agentId = 'codex'): Promise<string> => {
     const task = await call('tasks:start', { projectId: 'project', agentId, prompt })
-    await tick()
+    await vi.waitFor(() => expect(agentProcesses.starts.some((entry) => entry.taskId === task.id), prompt).toBe(true))
     return task.id
   }
   const trackerHead = (taskId: string): string | null => store.issueTracker('project').get(store.getTaskExecution(taskId)!.currentIssueId!).headCommit ?? null
@@ -307,6 +307,8 @@ test('schedules dependencies and priorities sequentially and retains final task 
   await call('tasks:approve', { taskId: deliveryId, preview: await call('tasks:merge-preview', deliveryId) })
   expect(store.getTask(deliveryId)?.deliveryStatus).toBe('approved')
   GitDeliveryManager.failFinalize = false
+  expect(call('tasks:cancel', unrelatedTaskId)).toBe(true)
+  await tick()
   GitDeliveryManager.repository = false
   for (const agentId of ['opencode', 'codex']) {
     const serverId = await start('Server task without Git', agentId)
