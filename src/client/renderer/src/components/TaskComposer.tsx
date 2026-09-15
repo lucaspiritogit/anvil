@@ -38,6 +38,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const style = useStore((state) => state.taskComposerStyle)
   const setStyle = useStore((state) => state.setTaskComposerStyle)
   const promptRef = useRef<HTMLTextAreaElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLFormElement>(null)
   const preferences = useComposerPreferences()
   const reviewPolicy = preferences.reviewPolicy ?? 'review_each_issue'
@@ -197,8 +198,31 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
               ))}
             </ul>
           )}
-          {attachments.pasteError && <p role="alert" className="px-5 pb-3 text-xs text-danger max-[700px]:px-4">{attachments.pasteError}</p>}
+          {attachments.attachmentError && <p role="alert" className="px-5 pb-3 text-xs text-danger max-[700px]:px-4">{attachments.attachmentError}</p>}
           <div className="flex min-w-0 items-center gap-1 px-3 pb-3 pt-1 max-[700px]:px-2">
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={(event) => {
+                attachments.attach(Array.from(event.currentTarget.files ?? []))
+                event.currentTarget.value = ''
+              }}
+            />
+            <button
+              type="button"
+              aria-label="Attach image"
+              title="Attach image"
+              className="grid w-8 shrink-0 place-items-center self-stretch text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
+              disabled={!projectId || busy}
+              onClick={() => imageInputRef.current?.click()}
+            >
+              <Icon icon="paperclip" size={17} aria-hidden="true" />
+            </button>
             <label className="relative flex min-w-0 items-center overflow-hidden" title="Task style">
               <span className="sr-only">Task style</span>
               <Icon icon={style === 'quick' ? 'rabbit' : 'anvil'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />

@@ -25,6 +25,7 @@ import loader from './icons/loader.svg?raw'
 import merge from './icons/merge.svg?raw'
 import monitor from './icons/monitor.svg?raw'
 import moonStar from './icons/moon-star.svg?raw'
+import paperclip from './icons/paperclip.svg?raw'
 import pencil from './icons/pencil.svg?raw'
 import rabbit from './icons/rabbit.svg?raw'
 import search from './icons/search.svg?raw'
@@ -75,6 +76,7 @@ const artwork = {
   merge: body(merge),
   monitor: body(monitor),
   'moon-star': body(moonStar),
+  paperclip: body(paperclip),
   pencil: body(pencil),
   rabbit: body(rabbit),
   search: body(search),

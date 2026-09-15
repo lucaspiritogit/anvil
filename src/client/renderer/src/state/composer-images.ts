@@ -13,6 +13,12 @@ interface ComposerImage {
   error?: string
 }
 
+interface ImageInput {
+  file: File | null
+  mimeType: string
+  pasted: boolean
+}
+
 async function readImage(file: File): Promise<TaskImageAttachment> {
   const [image] = parseTaskImages([{
     filename: file.name, mimeType: file.type, bytes: new Uint8Array(await file.arrayBuffer())
@@ -31,7 +37,7 @@ async function readImage(file: File): Promise<TaskImageAttachment> {
 
 export function useComposerImages() {
   const [images, setImages] = useState<ComposerImage[]>([])
-  const [pasteError, setPasteError] = useState<string | null>(null)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const entries = useRef(new Map<number, ComposerImage>())
   const nextId = useRef(0)
 
@@ -46,29 +52,27 @@ export function useComposerImages() {
     if (entry?.preview) URL.revokeObjectURL(entry.preview)
     entries.current.delete(id)
     setImages([...entries.current.values()])
-    setPasteError(null)
+    setAttachmentError(null)
   }
 
-  const paste = (items: DataTransferItemList): void => {
-    setPasteError(null)
-    for (const item of Array.from(items)) {
-      if (item.kind !== 'file' || !item.type.startsWith('image/')) continue
+  const ingest = (inputs: readonly ImageInput[]): void => {
+    setAttachmentError(null)
+    for (const input of inputs) {
       if (entries.current.size >= TASK_IMAGE_LIMITS.count) {
-        setPasteError(`Attach at most ${TASK_IMAGE_LIMITS.count} images. Remove an image before pasting more.`)
+        setAttachmentError(`Attach at most ${TASK_IMAGE_LIMITS.count} images. Remove an image before attaching more.`)
         break
       }
       const id = ++nextId.current
-      const entry: ComposerImage = { id, filename: `Pasted image ${id}`, size: 0, status: 'reading' }
+      const entry: ComposerImage = { id, filename: input.file?.name || `${input.pasted ? 'Pasted' : 'Attached'} image ${id}`, size: 0, status: 'reading' }
       entries.current.set(id, entry)
       try {
-        if (!Object.hasOwn(TASK_IMAGE_FORMATS, item.type)) throw new Error('Paste a PNG, JPEG or WebP image')
-        const clipboardFile = item.getAsFile()
-        if (!clipboardFile) throw new Error('The clipboard image could not be read. Copy it again and retry.')
-        if (clipboardFile.type !== item.type) throw new Error('The clipboard file MIME type does not match the image item')
-        const extension = TASK_IMAGE_FORMATS[item.type as TaskImageAttachment['mimeType']]
-        const filename = clipboardFile.name.trim() && clipboardFile.name.length <= 255 && !/[\\/\x00-\x1f\x7f]/.test(clipboardFile.name)
-          ? clipboardFile.name : `pasted-image-${id}.${extension}`
-        const file = filename === clipboardFile.name ? clipboardFile : new File([clipboardFile], filename, { type: item.type })
+        if (!Object.hasOwn(TASK_IMAGE_FORMATS, input.mimeType)) throw new Error('Attach a PNG, JPEG or WebP image')
+        if (!input.file) throw new Error('The clipboard image could not be read. Copy it again and retry.')
+        if (input.file.type !== input.mimeType) throw new Error('The clipboard file MIME type does not match the image item')
+        const extension = TASK_IMAGE_FORMATS[input.mimeType as TaskImageAttachment['mimeType']]
+        const validFilename = input.file.name.trim() && input.file.name.length <= 255 && !/[\\/\x00-\x1f\x7f]/.test(input.file.name)
+        const filename = validFilename ? input.file.name : input.pasted ? `pasted-image-${id}.${extension}` : input.file.name
+        const file = filename === input.file.name ? input.file : new File([input.file], filename, { type: input.mimeType })
         entry.filename = filename
         if (!file.size || file.size > TASK_IMAGE_LIMITS.perImageBytes) throw new Error('Images must be nonempty and at most 10 MiB each')
         const total = [...entries.current.values()].reduce((sum, image) => sum + image.size, 0)
@@ -92,16 +96,26 @@ export function useComposerImages() {
       } catch (error) {
         entry.status = 'error'
         entry.size = 0
-        entry.error = error instanceof Error ? error.message : 'The clipboard image could not be read'
+        entry.error = error instanceof Error ? error.message : 'The image could not be read'
       }
     }
     setImages([...entries.current.values()])
   }
 
+  const attach = (files: readonly File[]): void => {
+    ingest(files.map((file) => ({ file, mimeType: file.type, pasted: false })))
+  }
+
+  const paste = (items: DataTransferItemList): void => {
+    ingest(Array.from(items)
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => ({ file: item.getAsFile(), mimeType: item.type, pasted: true })))
+  }
+
   return {
-    images, pasteError, paste, remove,
+    images, attachmentError, attach, paste, remove,
     pending: images.some((image) => image.status === 'reading'),
     ready: images.flatMap((entry) => entry.image ? [entry.image] : []),
-    reset: (): void => { clear(); setImages([]); setPasteError(null) }
+    reset: (): void => { clear(); setImages([]); setAttachmentError(null) }
   }
 }
