@@ -79,7 +79,7 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
     { id: 'change-thinking', ref: thinkingRef, icon: 'sparkles', label: 'Change thinking',
       description: reasoningEffort ? reasoningOptions.find((option) => option.id === reasoningEffort)?.level : undefined,
       onClick: () => setNestedPicker('thinking') },
-    { id: 'change-project', ref: projectRef, icon: 'folder', label: 'Change project',
+    { id: 'change-project', ref: projectRef, icon: 'folder-git-2', label: 'Change project',
       description: activeProject?.name, onClick: () => setNestedPicker('project') },
     { id: 'open-terminal', icon: 'terminal', label: 'Open terminal', disabled: !activeProject,
       description: activeProject ? activeProject.name : 'No active project',

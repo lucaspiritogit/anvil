@@ -50,7 +50,7 @@ export function ProjectPicker({ projects, value, onChange }: {
     }}>
       <label htmlFor={id} className="mb-1 block text-[11px] text-dim">Project</label>
       <div className="flex h-9 items-center gap-2 border border-line px-2.5 focus-within:border-accent">
-        <Icon icon="folder" size={16} className="shrink-0 text-dim" aria-hidden="true" />
+        <Icon icon="folder-git-2" size={16} className="shrink-0 text-dim" aria-hidden="true" />
         <input
           id={id}
           ref={inputRef}

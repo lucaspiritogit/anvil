@@ -15,6 +15,7 @@ import chevronUp from './icons/chevron-up.svg?raw'
 import coffee from './icons/coffee.svg?raw'
 import command from './icons/command.svg?raw'
 import copy from './icons/copy.svg?raw'
+import folderGit2 from './icons/folder-git-2.svg?raw'
 import folderPlus from './icons/folder-plus.svg?raw'
 import folder from './icons/folder.svg?raw'
 import gitBranch from './icons/git-branch.svg?raw'
@@ -63,6 +64,7 @@ const artwork = {
   coffee: body(coffee),
   command: body(command),
   copy: body(copy),
+  'folder-git-2': body(folderGit2),
   'folder-plus': body(folderPlus),
   folder: body(folder),
   'git-branch': body(gitBranch),
