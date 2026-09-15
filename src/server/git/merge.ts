@@ -301,19 +301,38 @@ export async function completeMergeConflict(
 ): Promise<string> {
   const repoRoot = await repositoryRoot(projectPath)
   return withRepoLock(context, repoRoot, async () => {
+    if (repoRoot !== conflict.repositoryRoot) throw new Error('The merge conflict belongs to a different repository checkout.')
+    const mergeInProgress = await git(repoRoot, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], [0, 1])
+    if (mergeInProgress.exitCode !== 0) {
+      const [branch, source, head, containsTarget, containsSource, status] = await Promise.all([
+        git(repoRoot, ['branch', '--show-current']),
+        git(repoRoot, ['rev-parse', '--verify', `refs/heads/${conflict.sourceBranch}^{commit}`]),
+        git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}']),
+        git(repoRoot, ['merge-base', '--is-ancestor', conflict.targetCommit, 'HEAD'], [0, 1]),
+        git(repoRoot, ['merge-base', '--is-ancestor', conflict.sourceCommit, 'HEAD'], [0, 1]),
+        git(repoRoot, ['status', '--porcelain=v1'])
+      ])
+      if (branch.stdout.trim() !== conflict.targetBranch || source.stdout.trim() !== conflict.sourceCommit ||
+        containsTarget.exitCode !== 0 || containsSource.exitCode !== 0 || status.stdout.trim()) {
+        throw new Error('The checkout is not a clean completed merge containing the confirmed source and target commits.')
+      }
+      check()
+      return head.stdout.trim()
+    }
     const entries = await validateMergeConflictState(repoRoot, conflict)
     if (entries.length) throw new Error(`Resolve all merge conflicts before completing the merge (${entries.length} remaining).`)
     check()
     await git(repoRoot, ['commit', '--no-edit'])
-    const [branch, head, mergeHead, containsTarget, containsSource] = await Promise.all([
+    const [branch, head, mergeHead, containsTarget, containsSource, status] = await Promise.all([
       git(repoRoot, ['branch', '--show-current']),
       git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}']),
       git(repoRoot, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], [0, 1]),
       git(repoRoot, ['merge-base', '--is-ancestor', conflict.targetCommit, 'HEAD'], [0, 1]),
-      git(repoRoot, ['merge-base', '--is-ancestor', conflict.sourceCommit, 'HEAD'], [0, 1])
+      git(repoRoot, ['merge-base', '--is-ancestor', conflict.sourceCommit, 'HEAD'], [0, 1]),
+      git(repoRoot, ['status', '--porcelain=v1'])
     ])
     if (branch.stdout.trim() !== conflict.targetBranch || mergeHead.exitCode === 0 ||
-      containsTarget.exitCode !== 0 || containsSource.exitCode !== 0) {
+      containsTarget.exitCode !== 0 || containsSource.exitCode !== 0 || status.stdout.trim()) {
       throw new Error('The completed merge does not contain the confirmed source and target commits. Inspect the repository before continuing.')
     }
     return head.stdout.trim()

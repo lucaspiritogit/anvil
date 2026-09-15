@@ -11,7 +11,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { join } from 'node:path'
 import { taskState } from './task-state'
 import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
-import { agentRebasePrompt } from '../src/server/agents/task-prompts'
+import { agentRebasePrompt, mergeConflictRepairPrompt } from '../src/server/agents/task-prompts'
 import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git'
 import { registerAgentHandlers } from '../src/server/handlers/agents'
 import { registerGitHubHandlers } from '../src/server/handlers/github'
@@ -636,6 +636,40 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   const snapshot = await call('tasks:merge-conflict', { taskId: task.id, conflictId })
   expect(snapshot).toMatchObject({ id: conflictId, taskId: task.id, targetBranch: 'main', canComplete: false })
   expect(snapshot.files[0]).toMatchObject({ path: 'src/conflicted.ts', status: 'both_modified', support: 'text' })
+  expect(() => call('tasks:merge-conflict-fix-agent', { taskId: task.id, conflictId, extra: true })).toThrow(/Invalid IPC request/)
+  const executionBeforeRepair = store.getTaskExecution(task.id)
+  const failedRepair = call('tasks:merge-conflict-fix-agent', { taskId: task.id, conflictId })
+  await tick()
+  expect(agentProcesses.starts.at(-1)).toMatchObject({
+    taskId: task.id,
+    cwd: project.path,
+    projectPath: project.path,
+    model: 'chosen-model',
+    reasoningEffort: 'high',
+    resumeSessionId: 'session',
+    issueTracker: false,
+    prompt: mergeConflictRepairPrompt(conflicted.mergeConflict!, ['src/conflicted.ts'])
+  })
+  expect(agentProcesses.starts.at(-1)).not.toHaveProperty('issueId')
+  await expect(call('tasks:merge-conflict-save', {
+    taskId: task.id, conflictId, path: 'src/conflicted.ts', contents: 'resolved', expectedContentsHash: '1'.repeat(64)
+  })).rejects.toThrow(/busy with merge-repair/)
+  agentProcesses.finishTurn(task.id, 'Repair incomplete', 1)
+  expect(await failedRepair).toMatchObject({ deliveryStatus: 'merge_conflict' })
+  expect(store.getTaskExecution(task.id)).toStrictEqual(executionBeforeRepair)
+  expect(events.at(-1)?.text).toContain('remains paused')
+
+  const cancelledRepair = call('tasks:merge-conflict-fix-agent', { taskId: task.id, conflictId })
+  await tick()
+  expect(await call('tasks:cancel', task.id)).toBe(true)
+  expect(await cancelledRepair).toMatchObject({ deliveryStatus: 'merge_conflict' })
+  expect(tasks.get(task.id)?.status).toBe('succeeded')
+  expect(events.at(-1)?.text).toContain('was cancelled')
+
+  vi.spyOn(agentProcesses, 'startResumed').mockRejectedValueOnce(new Error('Repair dispatch failed'))
+  await expect(call('tasks:merge-conflict-fix-agent', { taskId: task.id, conflictId })).rejects.toThrow('Repair dispatch failed')
+  expect(tasks.get(task.id)?.deliveryStatus).toBe('merge_conflict')
+  expect(events.at(-1)?.text).toContain('Could not start agent merge repair')
   expect(() => call('tasks:merge-conflict-save', {
     taskId: task.id, conflictId, path: '../outside.ts', contents: 'resolved', expectedContentsHash: '1'.repeat(64)
   })).toThrow(/Invalid IPC request/)
@@ -699,9 +733,23 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   ])
   expect(events.some((event) => event.text.includes(`Completed the paused merge of task into main at ${'e'.repeat(40)}`))).toBeTruthy()
   expect(mergeConflictCalls.map((call) => call.operation)).toStrictEqual([
-    'load', 'complete', 'save', 'abort', 'save', 'complete'
+    'load', 'load', 'load', 'load', 'complete', 'save', 'abort', 'save', 'complete'
   ])
   store.updateTask(task.id, { deliveryStatus: 'reviewable', mergeConflict: undefined })
+  mergeState.files = [{
+    path: 'src/conflicted.ts', status: 'both_modified', stages: [1, 2, 3], support: 'text',
+    contents: '<<<<<<< HEAD\ntarget\n=======\nsource\n>>>>>>> task\n', contentsHash: '3'.repeat(64)
+  }]
+  const agentConflict: Task = await call('tasks:approve', { taskId: task.id, preview })
+  const agentRepair = call('tasks:merge-conflict-fix-agent', { taskId: task.id, conflictId: agentConflict.mergeConflict!.id })
+  await tick()
+  mergeState.files = []
+  agentProcesses.finishTurn(task.id, 'Merge repaired')
+  const agentApproved: Task = await agentRepair
+  expect(agentApproved).toMatchObject({ deliveryStatus: 'approved', mergeConflict: undefined })
+  expect(store.getTaskExecution(task.id)).toStrictEqual(executionBeforeRepair)
+  expect(events.some((event) => event.text.includes('Agent completed the paused merge of task into main'))).toBeTruthy()
+  store.updateTask(task.id, { deliveryStatus: 'reviewable', mergeConflict: undefined, reviewedAt: undefined })
   mergeState.conflict = false
   const pendingApproval = call('tasks:approve', { taskId: task.id, preview })
   expect(tasks.get(task.id)?.deliveryStatus, 'Approval waits for Git to finish').toBe('reviewable')
@@ -713,6 +761,7 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(mergeCalls.map((args) => args.slice(0, 3))).toStrictEqual([
     [testHome, 'task', preview],
     [testHome, 'task', mergeAndPushPreview],
+    [testHome, 'task', preview],
     [testHome, 'task', preview]
   ])
   expect(approved.deliveryStatus).toBe('approved')

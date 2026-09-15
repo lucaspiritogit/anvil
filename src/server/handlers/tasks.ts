@@ -285,7 +285,11 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
     const detachChildren = (): void => {
       void stacks.restackChildren(taskId, true).catch((error) => recordSystemEvent(taskId, String(error), 'delivery', 'error'))
     }
+    const operation = taskOperationKind(store, taskId)
     const cancelledOperation = cancelTaskOperation(store, taskId)
+    if (operation === 'merge-repair') {
+      return agentProcesses.isRunning(taskId) ? agentProcesses.cancel(taskId) : cancelledOperation
+    }
     if (agentProcesses.isRunning(taskId)) {
       store.taskImages.remove(taskId)
       recordSystemEvent(taskId, 'Stop requested by user.')

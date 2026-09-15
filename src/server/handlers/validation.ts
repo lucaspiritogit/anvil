@@ -220,6 +220,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
     expectedContentsHash: sha256
   }),
   'tasks:merge-conflict-complete': object({ taskId: id, conflictId: id }),
+  'tasks:merge-conflict-fix-agent': object({ taskId: id, conflictId: id }),
   'tasks:merge-conflict-abort': object({ taskId: id, conflictId: id }),
   'tasks:push-preview': id,
   'tasks:push': object({ taskId: id, preview: object(pushPreview) }),

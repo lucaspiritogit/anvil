@@ -142,6 +142,10 @@ test('merges into the current branch while guarding stale previews, local change
     expect(git('rev-parse', 'HEAD')).toBe(completedCommit)
     expect(git('merge-base', '--is-ancestor', sourceCommit, completedCommit)).toBe('')
     expect(git('merge-base', '--is-ancestor', conflictHead, completedCommit)).toBe('')
+    await expect(manager.completeMergeConflict(repo, ownedConflict)).resolves.toBe(completedCommit)
+    await writeFile(join(repo, 'unfinished.txt'), 'agent left this behind\n')
+    await expect(manager.completeMergeConflict(repo, ownedConflict)).rejects.toThrow(/clean completed merge/)
+    await rm(join(repo, 'unfinished.txt'))
 
     git('reset', '--hard', conflictHead)
     const secondConflict = await manager.merge(repo, 'agent/task', conflicting)

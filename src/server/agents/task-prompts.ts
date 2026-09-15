@@ -1,4 +1,4 @@
-import type { Issue, Task, TaskComment, TaskExecutionState, TaskStyle } from '../../shared/types'
+import type { Issue, Task, TaskComment, TaskExecutionState, TaskMergeConflict, TaskStyle } from '../../shared/types'
 
 const TOOLS = 'Use anvil_issue_tracker tools.'
 export const BROWSER_TOOL_INSTRUCTION = 'Use anvil_browser if the task requires a design decision or a component/interfaces needs to be tested.'
@@ -77,6 +77,24 @@ export function agentRebasePrompt(baseCommit: string): string {
   return [
     `Run \`git reset --soft ${baseCommit}\` and commit once.`,
     'Do not change files or earlier history.'
+  ].join('\n')
+}
+
+export function mergeConflictRepairPrompt(
+  conflict: Pick<TaskMergeConflict, 'sourceBranch' | 'targetBranch'>,
+  unresolvedFiles: string[]
+): string {
+  return [
+    'Repair the existing paused Git merge in this target project checkout.',
+    `Source branch: ${JSON.stringify(conflict.sourceBranch)}`,
+    `Target branch: ${JSON.stringify(conflict.targetBranch)}`,
+    'Unresolved files:',
+    ...unresolvedFiles.map((path) => `- ${JSON.stringify(path)}`),
+    'Resolve every conflict while preserving the intended changes from both branches.',
+    'Stage every resolved file and finish the existing merge with its current merge message.',
+    'Do not checkout or switch branches, reset, abort the merge, create another worktree, or change the task or issue status.',
+    'Do not use Anvil issue-tracker tools during this repair.',
+    'Leave the repository clean with the merge completed.'
   ].join('\n')
 }
 

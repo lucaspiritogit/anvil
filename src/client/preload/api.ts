@@ -201,6 +201,8 @@ export function createAnvilApi(url: string, host: ClientHost) {
         invoke('tasks:merge-conflict-save', input),
       completeMergeConflict: (input: IpcRequests['tasks:merge-conflict-complete']): Promise<Task> =>
         invoke('tasks:merge-conflict-complete', input),
+      fixMergeConflictWithAgent: (input: IpcRequests['tasks:merge-conflict-fix-agent']): Promise<Task> =>
+        invoke('tasks:merge-conflict-fix-agent', input),
       abortMergeConflict: (input: IpcRequests['tasks:merge-conflict-abort']): Promise<Task> =>
         invoke('tasks:merge-conflict-abort', input),
       pushPreview: (taskId: string): Promise<TaskPushPreview> => invoke('tasks:push-preview', taskId),

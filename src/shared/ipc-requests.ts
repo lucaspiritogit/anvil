@@ -67,6 +67,7 @@ export interface IpcRequests {
   'tasks:merge-conflict': { taskId: string; conflictId: string }
   'tasks:merge-conflict-save': { taskId: string; conflictId: string; path: string; contents: string; expectedContentsHash: string }
   'tasks:merge-conflict-complete': { taskId: string; conflictId: string }
+  'tasks:merge-conflict-fix-agent': { taskId: string; conflictId: string }
   'tasks:merge-conflict-abort': { taskId: string; conflictId: string }
   'tasks:push-preview': string
   'tasks:push': { taskId: string; preview: TaskPushPreview }

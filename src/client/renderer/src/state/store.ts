@@ -165,6 +165,7 @@ interface AnvilState {
 
   approveTask: (taskId: string, preview: TaskMergePreview) => Promise<void>
   mergeAndPushTask: (taskId: string, preview: TaskMergeAndPushPreview) => Promise<void>
+  fixMergeConflictWithAgent: (taskId: string, conflictId: string) => Promise<void>
   pushTask: (taskId: string, preview: TaskPushPreview) => Promise<void>
   approveIssue: (taskId: string, issueId: string, headCommit: string | null) => Promise<void>
   rejectIssue: (taskId: string, issueId: string, headCommit: string | null) => Promise<void>
@@ -750,6 +751,15 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   mergeAndPushTask: async (taskId, preview) => {
     const task = await window.anvil.tasks.mergeAndPush({ taskId, preview })
+    set((s) => ({
+      tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+      commentError: null
+    }))
+  },
+
+  fixMergeConflictWithAgent: async (taskId, conflictId) => {
+    const task = await window.anvil.tasks.fixMergeConflictWithAgent({ taskId, conflictId })
+    if (!get().tasks.some((item) => item.id === taskId)) return
     set((s) => ({
       tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
       commentError: null
