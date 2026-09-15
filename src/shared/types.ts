@@ -569,8 +569,24 @@ export interface AnalyticsBreakdown {
   reportedCostUsd: number
 }
 
+export interface AnalyticsDailyPoint {
+  date: string
+  inputTokens: number
+  outputTokens: number
+  cachedTokens: number
+  totalTokens: number
+  reportedCostUsd: number
+  taskCount: number
+  statusCounts: Record<TaskStatus, number>
+  workingTimeMs: number
+  filesChanged: number
+  additions: number
+  deletions: number
+}
+
 export interface WorkspaceAnalytics {
   range: AnalyticsRange
+  daily: AnalyticsDailyPoint[]
   tokens: AnalyticsTokenTotals
   cost: AnalyticsCostTotals
   tasks: AnalyticsTaskTotals

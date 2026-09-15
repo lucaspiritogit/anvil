@@ -5,6 +5,8 @@ export interface AnalyticsPeriod {
   end: string
 }
 
+export type AnalyticsPreset = '7d' | '30d' | 'this-month' | 'last-month' | 'all'
+
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 
 function dateParts(value: string): [number, number, number] {
@@ -41,6 +43,20 @@ export function currentMonthPeriod(now = new Date()): AnalyticsPeriod {
     start: formatDate(new Date(now.getFullYear(), now.getMonth(), 1, 12)),
     end: formatDate(new Date(now.getFullYear(), now.getMonth() + 1, 0, 12))
   }
+}
+
+export function analyticsPresetPeriod(preset: AnalyticsPreset, now = new Date()): AnalyticsPeriod {
+  const today = formatDate(now)
+  if (preset === '7d') return { start: addDays(today, -6), end: today }
+  if (preset === '30d') return { start: addDays(today, -29), end: today }
+  if (preset === 'this-month') return currentMonthPeriod(now)
+  if (preset === 'last-month') {
+    return {
+      start: formatDate(new Date(now.getFullYear(), now.getMonth() - 1, 1, 12)),
+      end: formatDate(new Date(now.getFullYear(), now.getMonth(), 0, 12))
+    }
+  }
+  return { start: '1970-01-01', end: today }
 }
 
 export function moveAnalyticsPeriod(period: AnalyticsPeriod, direction: -1 | 1): AnalyticsPeriod {

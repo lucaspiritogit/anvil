@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { analyticsRange, currentMonthPeriod, moveAnalyticsPeriod } from '../src/client/renderer/src/analytics-period'
+import { analyticsPresetPeriod, analyticsRange, currentMonthPeriod, moveAnalyticsPeriod } from '../src/client/renderer/src/analytics-period'
 
 describe('analytics periods', () => {
   test('uses the current local calendar month at month boundaries', () => {
@@ -10,6 +10,15 @@ describe('analytics periods', () => {
   test('includes leap day in a leap-year month', () => {
     expect(currentMonthPeriod(new Date(2024, 1, 12))).toEqual({ start: '2024-02-01', end: '2024-02-29' })
     expect(currentMonthPeriod(new Date(2025, 1, 12))).toEqual({ start: '2025-02-01', end: '2025-02-28' })
+  })
+
+  test('builds live range presets from the supplied local date', () => {
+    const now = new Date(2026, 8, 15, 12)
+    expect(analyticsPresetPeriod('7d', now)).toEqual({ start: '2026-09-09', end: '2026-09-15' })
+    expect(analyticsPresetPeriod('30d', now)).toEqual({ start: '2026-08-17', end: '2026-09-15' })
+    expect(analyticsPresetPeriod('this-month', now)).toEqual({ start: '2026-09-01', end: '2026-09-30' })
+    expect(analyticsPresetPeriod('last-month', now)).toEqual({ start: '2026-08-01', end: '2026-08-31' })
+    expect(analyticsPresetPeriod('all', now)).toEqual({ start: '1970-01-01', end: '2026-09-15' })
   })
 
   test('moves custom ranges backward and forward by the same inclusive length', () => {

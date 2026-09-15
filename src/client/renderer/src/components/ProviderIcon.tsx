@@ -6,6 +6,8 @@ import opencodeMark from '@public/agents/opencode.svg'
 import deepseekMark from '@public/providers/deepseek.svg'
 import kimiMark from '@public/providers/kimi.svg'
 import grokMark from '@public/providers/grok.svg'
+import anthropicMark from '@public/providers/anthropic.svg'
+import googleMark from '@public/providers/google.svg'
 
 const COLOR_MARKS: Record<string, string> = {
   'OpenCode Go': opencodeMark,
@@ -18,6 +20,8 @@ const MONOCHROME_MARKS: Record<string, string> = {
   OpenAI: openaiMark,
   OpenRouter: openrouterMark,
   Codex: openaiMark,
+  Anthropic: anthropicMark,
+  Google: googleMark,
   xAI: grokMark
 }
 
@@ -33,16 +37,6 @@ export function ProviderIcon({ company, size = 18 }: { company: string; size?: n
         aria-hidden="true"
         className="inline-block shrink-0 bg-current"
         style={{ width: size, height: size, mask: `url("${artwork}") center / contain no-repeat` }}
-      />
-    )
-  }
-  if (company === 'Anthropic' || company === 'Google') {
-    return (
-      <Icon
-        icon="sparkles"
-        size={size}
-        className={company === 'Anthropic' ? 'shrink-0 text-[#d48b70]' : 'shrink-0 text-accent'}
-        aria-hidden="true"
       />
     )
   }

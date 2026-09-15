@@ -153,12 +153,82 @@ test('aggregates the inclusive/exclusive range and scopes it to the active works
     { key: 'project-a', taskCount: 3, totalTokens: 36 },
     { key: 'project-b', taskCount: 2, totalTokens: 29 }
   ])
+  expect(result.daily).toHaveLength(1)
+  expect(result.daily[0]).toMatchObject({
+    inputTokens: 15,
+    outputTokens: 50,
+    cachedTokens: 5,
+    totalTokens: 65,
+    reportedCostUsd: 3.75,
+    taskCount: 5,
+    statusCounts: { pending: 1, running: 1, succeeded: 1, failed: 1, cancelled: 1 },
+    workingTimeMs: 1500,
+    filesChanged: 15,
+    additions: 30,
+    deletions: 15
+  })
+})
+
+test('groups daily chart values by the local task start date', () => {
+  const { store, analytics } = fixture()
+  addProject(store, 'project-a')
+  const firstDay = new Date(2026, 8, 10)
+  const secondDay = new Date(2026, 8, 11)
+  const fourthDay = new Date(2026, 8, 13)
+  addTask(store, {
+    id: 'morning', startedAt: new Date(2026, 8, 10, 9).getTime(), status: 'succeeded',
+    inputTokens: 10, outputTokens: 4, cachedTokens: 3, totalTokens: 14, costUsd: 0.25,
+    workingTimeMs: 100, filesChanged: 1, additions: 5, deletions: 2
+  })
+  addTask(store, {
+    id: 'evening', startedAt: new Date(2026, 8, 10, 17).getTime(), status: 'failed',
+    inputTokens: 20, outputTokens: 8, cachedTokens: 6, totalTokens: 28, costUsd: null,
+    workingTimeMs: 200, filesChanged: 2, additions: 10, deletions: 4
+  })
+  addTask(store, {
+    id: 'later', startedAt: new Date(2026, 8, 12, 12).getTime(), status: 'cancelled',
+    inputTokens: 30, outputTokens: 12, cachedTokens: 9, totalTokens: 42, costUsd: 0.75,
+    workingTimeMs: 300, filesChanged: 3, additions: 15, deletions: 6
+  })
+
+  expect(analytics(firstDay.getTime(), fourthDay.getTime()).daily).toEqual([
+    {
+      date: '2026-09-10',
+      inputTokens: 30,
+      outputTokens: 12,
+      cachedTokens: 9,
+      totalTokens: 42,
+      reportedCostUsd: 0.25,
+      taskCount: 2,
+      statusCounts: { pending: 0, running: 0, succeeded: 1, failed: 1, cancelled: 0 },
+      workingTimeMs: 300,
+      filesChanged: 3,
+      additions: 15,
+      deletions: 6
+    },
+    {
+      date: '2026-09-12',
+      inputTokens: 30,
+      outputTokens: 12,
+      cachedTokens: 9,
+      totalTokens: 42,
+      reportedCostUsd: 0.75,
+      taskCount: 1,
+      statusCounts: { pending: 0, running: 0, succeeded: 0, failed: 0, cancelled: 1 },
+      workingTimeMs: 300,
+      filesChanged: 3,
+      additions: 15,
+      deletions: 6
+    }
+  ])
+  expect(analytics(firstDay.getTime(), secondDay.getTime()).daily).toHaveLength(1)
 })
 
 test('returns a complete empty result for a period without tasks', () => {
   const { analytics } = fixture()
   expect(analytics(1_000, 2_000)).toEqual({
     range: { startAt: 1_000, endAt: 2_000 },
+    daily: [],
     tokens: { input: 0, output: 0, cached: 0, total: 0 },
     cost: { reportedUsd: 0, reportedTaskCount: 0, unreportedTaskCount: 0 },
     tasks: {

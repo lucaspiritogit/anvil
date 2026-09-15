@@ -1,78 +1,333 @@
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AnalyticsBreakdown, TaskStatus, WorkspaceAnalytics } from '@shared/types'
-import { analyticsRange, currentMonthPeriod, moveAnalyticsPeriod, type AnalyticsPeriod } from '../analytics-period'
+import type { AnalyticsBreakdown, AnalyticsDailyPoint, TaskStatus, WorkspaceAnalytics } from '@shared/types'
+import { AreaChart, LineChart } from '@dither-kit/area-chart'
+import { Area, Line } from '@dither-kit/area'
+import { BarChart } from '@dither-kit/bar-chart'
+import { Bar } from '@dither-kit/bar'
+import { BlockLegend } from '@dither-kit/block-legend'
+import type { ChartConfig } from '@dither-kit/chart-context'
+import { ActiveDot } from '@dither-kit/dot'
+import { Grid } from '@dither-kit/grid'
+import { Legend } from '@dither-kit/legend'
+import type { DitherColor } from '@dither-kit/palette'
+import { PieChart } from '@dither-kit/pie-chart'
+import { Pie } from '@dither-kit/pie'
+import { ReferenceLine } from '@dither-kit/reference-line'
+import { Tooltip } from '@dither-kit/tooltip'
+import { XAxis } from '@dither-kit/x-axis'
+import { YAxis } from '@dither-kit/y-axis'
+import { analyticsPresetPeriod, analyticsRange, moveAnalyticsPeriod, type AnalyticsPeriod, type AnalyticsPreset } from '../analytics-period'
 import { formatCost, formatDurationMs, formatTokens } from '../format'
-import { humanizeModelName } from '../model-options'
+import { describeModel, humanizeModelName } from '../model-options'
 import { useStore } from '../state/store'
 import { cn } from '../ui'
+import { ProviderIcon } from './ProviderIcon'
 
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  pending: 'Pending',
-  running: 'Running',
-  succeeded: 'Succeeded',
-  failed: 'Failed',
-  cancelled: 'Cancelled'
+const TONE = {
+  blue: 'text-accent',
+  green: 'text-ok',
+  purple: 'text-violet',
+  pink: 'text-violet',
+  red: 'text-danger',
+  orange: 'text-warn',
+  grey: 'text-dim'
+} satisfies Record<DitherColor, string>
+
+const STATUS_CONFIG: Record<TaskStatus, { label: string; color: DitherColor }> = {
+  pending: { label: 'Pending', color: 'orange' },
+  running: { label: 'Running', color: 'blue' },
+  succeeded: { label: 'Succeeded', color: 'green' },
+  failed: { label: 'Failed', color: 'red' },
+  cancelled: { label: 'Cancelled', color: 'purple' }
 }
 
-const STATUS_COLORS: Record<TaskStatus, string> = {
-  pending: 'bg-warn',
-  running: 'bg-accent',
-  succeeded: 'bg-ok',
-  failed: 'bg-danger',
-  cancelled: 'bg-violet'
+const TOKEN_CONFIG: ChartConfig = {
+  totalTokens: { label: 'Tokens', color: 'blue' }
 }
+
+const TOKEN_MIX_CONFIG: ChartConfig = {
+  inputTokens: { label: 'Input', color: 'blue' },
+  cachedTokens: { label: 'Cached', color: 'green' },
+  outputTokens: { label: 'Output', color: 'purple' }
+}
+
+const TASK_CONFIG: ChartConfig = {
+  taskCount: { label: 'Tasks', color: 'orange' }
+}
+
+const CODE_CONFIG: ChartConfig = {
+  additions: { label: 'Additions', color: 'green' },
+  deletions: { label: 'Deletions', color: 'red' }
+}
+
+const PRESETS: { id: AnalyticsPreset; label: string }[] = [
+  { id: '7d', label: '7d' },
+  { id: '30d', label: '30d' },
+  { id: 'this-month', label: 'This month' },
+  { id: 'last-month', label: 'Last month' },
+  { id: 'all', label: 'All' }
+]
 
 function count(value: number): string {
-  return value.toLocaleString('en')
+  return Math.round(value).toLocaleString('en')
 }
 
 function percent(value: number | null): string {
   return value === null ? 'n/a' : `${Math.round(value * 100)}%`
 }
 
-function PrimaryCard({ label, value, detail, title }: {
-  label: string
-  value: string
-  detail: string
-  title?: string
-}): JSX.Element {
-  return (
-    <div className="min-w-0 border border-line bg-raised p-4">
-      <dt className="text-[11px] font-medium uppercase tracking-[0.1em] text-dim">{label}</dt>
-      <dd className="mt-2 min-w-0 truncate text-xl font-semibold text-fg" title={title}>{value}</dd>
-      <p className="mt-1 truncate text-[11px] text-dim" title={detail}>{detail}</p>
-    </div>
-  )
+function fmtCompact(value: number): string {
+  return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
 }
 
-function Panel({ title, children, className }: { title: string; children: React.ReactNode; className?: string }): JSX.Element {
+function dayTick(value: unknown): string {
+  return typeof value === 'string' ? value.slice(5).replace('-', '/') : ''
+}
+
+function asciiBar(ratio: number, width: number): string {
+  const bounded = Math.max(0, Math.min(1, ratio))
+  const filled = Math.round(bounded * width)
+  return `${'█'.repeat(filled)}${'░'.repeat(width - filled)}`
+}
+
+export function Panel({
+  title,
+  aside,
+  children,
+  className,
+  bodyClassName
+}: {
+  title: string
+  aside?: ReactNode
+  children: ReactNode
+  className?: string
+  bodyClassName?: string
+}): JSX.Element {
+  const headingId = `analytics-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
   return (
-    <section aria-labelledby={`analytics-${title.toLowerCase().replace(/[^a-z]+/g, '-')}`} className={cn('min-w-0 border border-line bg-raised p-4', className)}>
-      <h2 id={`analytics-${title.toLowerCase().replace(/[^a-z]+/g, '-')}`} className="mb-4 text-xs font-semibold uppercase tracking-[0.1em] text-dim">{title}</h2>
-      {children}
+    <section
+      aria-labelledby={headingId}
+      className={cn('corner-marks flex min-w-0 flex-col border border-line bg-card/90 backdrop-blur-[2px]', className)}
+    >
+      <header className="flex items-center gap-3 border-b border-dashed border-line px-4 py-2.5">
+        <h2 id={headingId} className="shrink-0 text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
+          <span className="text-foreground/40">{'//'}</span> {title}
+        </h2>
+        <span
+          aria-hidden="true"
+          className="h-px min-w-0 flex-1 bg-[repeating-linear-gradient(to_right,var(--color-line)_0_2px,transparent_2px_5px)]"
+        />
+        {aside ? <div className="shrink-0 text-[11px] text-muted-foreground">{aside}</div> : null}
+      </header>
+      <div className={cn('flex min-w-0 flex-1 flex-col p-4', bodyClassName)}>{children}</div>
     </section>
   )
 }
 
-function MeterRow({ label, value, total, color = 'bg-accent' }: {
+export function AsciiMeter({
+  label,
+  value,
+  ratio,
+  tone = 'blue',
+  width = 24,
+  className
+}: {
   label: string
-  value: number
-  total: number
-  color?: string
+  value: string
+  ratio: number
+  tone?: keyof typeof TONE
+  width?: number
+  className?: string
 }): JSX.Element {
-  const width = total ? Math.min(100, value / total * 100) : 0
+  const pct = Math.round(Math.max(0, Math.min(1, ratio)) * 100)
   return (
-    <div className="space-y-1.5">
+    <div className={cn('grid gap-1', className)}>
       <div className="flex items-baseline justify-between gap-3 text-xs">
-        <span className="text-dim">{label}</span>
-        <span className="font-mono text-fg">{formatTokens(value)}</span>
+        <span className="truncate text-muted-foreground">{label}</span>
+        <span className="tabular-nums">{value}</span>
       </div>
-      <div className="h-1.5 overflow-hidden bg-line" aria-hidden="true">
-        <div className={cn('h-full', color)} style={{ width: `${width}%` }} />
+      <div
+        className="flex items-center gap-2"
+        role="meter"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        aria-label={label}
+      >
+        <span className={cn('truncate text-[11px] leading-none tracking-[-0.04em] select-none', TONE[tone])}>
+          {asciiBar(ratio, width)}
+        </span>
+        <span className="w-9 shrink-0 text-right text-[10px] text-muted-foreground tabular-nums">{pct}%</span>
       </div>
     </div>
   )
+}
+
+export function KpiCard({
+  label,
+  value,
+  detail,
+  index,
+  className
+}: {
+  label: string
+  value: string
+  detail: string
+  index: number
+  className?: string
+}): JSX.Element {
+  return (
+    <article
+      className={cn(
+        'corner-marks relative flex min-w-0 flex-col justify-between gap-4 overflow-hidden border border-line bg-card/90 p-4 transition-colors hover:border-foreground/40',
+        className
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[11px] tracking-[0.18em] text-muted-foreground uppercase">{label}</p>
+        <span className="text-[10px] text-muted-foreground/60 tabular-nums select-none">
+          [{String(index).padStart(2, '0')}]
+        </span>
+      </div>
+      <div className="relative">
+        <p className="relative truncate text-[26px] leading-none font-semibold tracking-tight tabular-nums">{value}</p>
+        <p className="relative mt-2 truncate text-[11px] text-muted-foreground">{detail}</p>
+      </div>
+    </article>
+  )
+}
+
+function TokensOverTime({ daily }: { daily: AnalyticsDailyPoint[] }): JSX.Element {
+  return (
+    <div className="h-52 w-full">
+      <AreaChart data={daily} config={TOKEN_CONFIG} bloom="low" margins={{ left: 46, right: 8, top: 12, bottom: 22 }}>
+        <Grid strokeDasharray="1 4" />
+        <XAxis dataKey="date" tickFormatter={dayTick} maxTicks={7} />
+        <YAxis tickFormatter={fmtCompact} tickCount={4} />
+        <Tooltip labelKey="date" valueFormatter={(value) => count(value)} />
+        <Area dataKey="totalTokens" variant="dotted">
+          <ActiveDot variant="filled" />
+        </Area>
+      </AreaChart>
+    </div>
+  )
+}
+
+export function TokenMixChart({ daily }: { daily: AnalyticsDailyPoint[] }): JSX.Element {
+  return (
+    <div className="flex h-52 w-full flex-col">
+      <ul aria-label="Token colors" className="mb-2 flex justify-end gap-4 text-[11px] text-dim">
+        {Object.entries(TOKEN_MIX_CONFIG).map(([key, entry]) => (
+          <li key={key} className="flex items-center gap-1.5">
+            <span className={cn('text-sm leading-none', TONE[entry.color])} aria-hidden="true">■</span>
+            <span>{entry.label}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="min-h-0 flex-1">
+        <BarChart
+          data={daily}
+          config={TOKEN_MIX_CONFIG}
+          stackType="stacked"
+          bloom="low"
+          margins={{ left: 46, right: 8, top: 6, bottom: 22 }}
+        >
+          <Grid strokeDasharray="1 4" />
+          <XAxis dataKey="date" tickFormatter={dayTick} maxTicks={7} />
+          <YAxis tickFormatter={fmtCompact} tickCount={4} />
+          <Tooltip labelKey="date" valueFormatter={(value) => count(value)} />
+          <Bar dataKey="cachedTokens" variant="dotted" isClickable />
+          <Bar dataKey="inputTokens" variant="solid" isClickable />
+          <Bar dataKey="outputTokens" variant="hatched" isClickable />
+        </BarChart>
+      </div>
+    </div>
+  )
+}
+
+export function OutcomesDonut({ counts }: { counts: Record<TaskStatus, number> }): JSX.Element | null {
+  const data = useMemo(
+    () => (Object.keys(STATUS_CONFIG) as TaskStatus[])
+      .filter((status) => counts[status] > 0)
+      .map((status) => ({ status, count: counts[status] })),
+    [counts]
+  )
+  const config = useMemo(() => {
+    const result: ChartConfig = {}
+    for (const row of data) result[row.status] = STATUS_CONFIG[row.status]
+    return result
+  }, [data])
+
+  if (data.length === 0) return null
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="h-40 w-full">
+        <PieChart
+          data={data}
+          config={config}
+          dataKey="count"
+          nameKey="status"
+          innerRadius={0.62}
+          bloom="low"
+          margins={{ top: 6, right: 6, bottom: 6, left: 6 }}
+        >
+          <Tooltip />
+          <Pie variant="dotted" />
+        </PieChart>
+      </div>
+      <BlockLegend
+        config={config}
+        values={Object.fromEntries(data.map((row) => [row.status, row.count]))}
+        valueFormatter={count}
+        align="center"
+      />
+    </div>
+  )
+}
+
+function TasksPerDay({ daily }: { daily: AnalyticsDailyPoint[] }): JSX.Element {
+  return (
+    <div className="h-48 w-full">
+      <BarChart data={daily} config={TASK_CONFIG} bloom="low" margins={{ left: 32, right: 8, top: 12, bottom: 22 }}>
+        <Grid strokeDasharray="1 4" />
+        <XAxis dataKey="date" tickFormatter={dayTick} maxTicks={6} />
+        <YAxis tickFormatter={(value) => count(value)} tickCount={4} />
+        <Tooltip labelKey="date" valueFormatter={(value) => count(value)} />
+        <Bar dataKey="taskCount" variant="dotted" />
+      </BarChart>
+    </div>
+  )
+}
+
+function CodeChangesChart({ daily }: { daily: AnalyticsDailyPoint[] }): JSX.Element {
+  return (
+    <div className="h-48 w-full">
+      <LineChart data={daily} config={CODE_CONFIG} bloom="low" margins={{ left: 40, right: 8, top: 28, bottom: 22 }}>
+        <Grid strokeDasharray="1 4" />
+        <XAxis dataKey="date" tickFormatter={dayTick} maxTicks={6} />
+        <YAxis tickFormatter={fmtCompact} tickCount={4} />
+        <ReferenceLine y={0} />
+        <Legend isClickable />
+        <Tooltip labelKey="date" valueFormatter={(value) => count(value)} />
+        <Line dataKey="additions" variant="dotted" isClickable>
+          <ActiveDot variant="filled" />
+        </Line>
+        <Line dataKey="deletions" variant="hatched" strokeVariant="dashed" isClickable>
+          <ActiveDot variant="filled" />
+        </Line>
+      </LineChart>
+    </div>
+  )
+}
+
+function rankingCompany(entry: AnalyticsBreakdown, modelNames: boolean): string {
+  if (modelNames) return describeModel(entry.key, '').company
+  if (entry.key === 'codex') return 'OpenAI'
+  if (entry.key === 'opencode') return 'OpenCode Zen'
+  if (entry.key === 'claude') return 'Anthropic'
+  return entry.label
 }
 
 function RankedList({ entries, empty, modelNames = false }: {
@@ -81,95 +336,195 @@ function RankedList({ entries, empty, modelNames = false }: {
   modelNames?: boolean
 }): JSX.Element {
   const maximum = entries[0]?.taskCount ?? 0
-  if (!entries.length) return <p className="text-xs text-dim">{empty}</p>
+  if (entries.length === 0) return <p className="text-xs text-dim">{empty}</p>
+
   return (
-    <ol className="space-y-3">
-      {entries.slice(0, 5).map((entry) => (
-        <li key={entry.key} className="relative min-w-0 overflow-hidden px-2 py-1.5">
-          <span className="absolute inset-y-0 left-0 bg-accent/8" style={{ width: `${maximum ? entry.taskCount / maximum * 100 : 0}%` }} aria-hidden="true" />
-          <span className="relative flex min-w-0 items-baseline justify-between gap-3 text-xs">
-            <span className="truncate text-fg" title={entry.label}>{modelNames ? humanizeModelName(entry.label) : entry.label}</span>
-            <span className="shrink-0 text-dim">{count(entry.taskCount)} {entry.taskCount === 1 ? 'task' : 'tasks'} · {formatTokens(entry.totalTokens)}</span>
-          </span>
+    <ol className="space-y-3.5">
+      {entries.slice(0, 5).map((entry, index) => (
+        <li key={entry.key} className="grid min-w-0 gap-1">
+          <div className="flex items-baseline gap-2 text-xs">
+            <span className="w-5 shrink-0 text-dim">{String(index + 1).padStart(2, '0')}</span>
+            <span className="min-w-0 truncate" title={entry.label}>
+              {modelNames ? humanizeModelName(entry.label) : entry.label}
+            </span>
+            <ProviderIcon company={rankingCompany(entry, modelNames)} size={15} />
+            <span className="min-w-0 flex-1" />
+            <span className="shrink-0 text-[11px] text-dim tabular-nums">
+              {count(entry.taskCount)}t · {formatTokens(entry.totalTokens)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 pl-7 text-[10px] leading-none text-accent" aria-hidden="true">
+            <span className="truncate tracking-[-0.05em]">{asciiBar(maximum ? entry.taskCount / maximum : 0, 22)}</span>
+            <span className="text-dim">{percent(maximum ? entry.taskCount / maximum : 0)}</span>
+          </div>
         </li>
       ))}
     </ol>
   )
 }
 
+function TokenTotals({ analytics }: { analytics: WorkspaceAnalytics }): JSX.Element {
+  const total = analytics.tokens.total
+  return (
+    <div className="space-y-4">
+      <AsciiMeter label="Input" value={formatTokens(analytics.tokens.input)} ratio={total ? analytics.tokens.input / total : 0} />
+      <AsciiMeter label="Cached input" value={formatTokens(analytics.tokens.cached)} ratio={total ? analytics.tokens.cached / total : 0} tone="green" />
+      <AsciiMeter label="Output" value={formatTokens(analytics.tokens.output)} ratio={total ? analytics.tokens.output / total : 0} tone="purple" />
+    </div>
+  )
+}
+
+function RangePicker({ period, onChange }: { period: AnalyticsPeriod; onChange: (period: AnalyticsPeriod) => void }): JSX.Element {
+  const invalid = period.start > period.end
+  const activePreset = PRESETS.find(({ id }) => {
+    const value = analyticsPresetPeriod(id)
+    return value.start === period.start && value.end === period.end
+  })?.id
+
+  return (
+    <div aria-label="Analytics period" className="flex max-w-full flex-col items-end gap-2 max-[840px]:items-start">
+      <div className="flex max-w-full flex-wrap items-end justify-end gap-1.5 max-[840px]:justify-start">
+        <button
+          type="button"
+          aria-label="Previous period"
+          disabled={invalid}
+          onClick={() => onChange(moveAnalyticsPeriod(period, -1))}
+          className="h-8 border border-line px-2.5 text-[11px] text-dim hover:border-fg/40 hover:text-fg disabled:opacity-40"
+        >
+          ← Prev
+        </button>
+        <label className="text-[10px] tracking-[0.12em] text-dim uppercase">
+          Start date
+          <input
+            type="date"
+            value={period.start}
+            onChange={(event) => event.target.value && onChange({ ...period, start: event.target.value })}
+            className="mt-1 block h-8 min-w-0 border border-line bg-canvas px-2 text-xs tracking-normal text-fg outline-none [color-scheme:dark] focus:border-accent"
+          />
+        </label>
+        <span className="pb-2 text-dim">···</span>
+        <label className="text-[10px] tracking-[0.12em] text-dim uppercase">
+          End date
+          <input
+            type="date"
+            value={period.end}
+            onChange={(event) => event.target.value && onChange({ ...period, end: event.target.value })}
+            className="mt-1 block h-8 min-w-0 border border-line bg-canvas px-2 text-xs tracking-normal text-fg outline-none [color-scheme:dark] focus:border-accent"
+          />
+        </label>
+        <button
+          type="button"
+          aria-label="Next period"
+          disabled={invalid}
+          onClick={() => onChange(moveAnalyticsPeriod(period, 1))}
+          className="h-8 border border-line px-2.5 text-[11px] text-dim hover:border-fg/40 hover:text-fg disabled:opacity-40"
+        >
+          Next →
+        </button>
+      </div>
+      <div className="flex max-w-full flex-wrap justify-end gap-1 max-[840px]:justify-start">
+        {PRESETS.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={activePreset === id}
+            onClick={() => onChange(analyticsPresetPeriod(id))}
+            className={cn(
+              'h-6 border px-2 text-[10px] tracking-[0.08em] uppercase transition-colors',
+              activePreset === id
+                ? 'border-accent bg-accent text-canvas'
+                : 'border-line bg-canvas/70 text-dim hover:border-fg/40 hover:text-fg'
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function AnalyticsContent({ analytics }: { analytics: WorkspaceAnalytics }): JSX.Element {
-  const { tasks, tokens, cost, favoriteModel, favoriteProvider, timing, codeChanges, breakdowns } = analytics
-  const costValue = tasks.total > 0 && cost.reportedTaskCount === 0 ? formatCost(null) : formatCost(cost.reportedUsd)
-  const costDetail = tasks.total === 0
-    ? 'No tasks in this period'
-    : cost.unreportedTaskCount
-      ? `${count(cost.reportedTaskCount)} of ${count(tasks.total)} tasks reported cost`
-      : 'Reported by all tasks'
-  const modelDetail = favoriteModel ? `${count(favoriteModel.taskCount)} ${favoriteModel.taskCount === 1 ? 'task' : 'tasks'}` : tasks.total ? 'No model data reported' : 'No tasks in this period'
-  const averageTokens = tasks.total ? tokens.total / tasks.total : 0
+  const favoriteModel = analytics.favoriteModel
+  const favoriteProvider = analytics.favoriteProvider
+  const costValue = analytics.tasks.total > 0 && analytics.cost.reportedTaskCount === 0
+    ? formatCost(null)
+    : formatCost(analytics.cost.reportedUsd)
+  const costDetail = analytics.cost.unreportedTaskCount > 0
+    ? `${count(analytics.cost.reportedTaskCount)} of ${count(analytics.tasks.total)} tasks reported cost`
+    : 'Reported by all tasks'
+
+  if (analytics.tasks.total === 0) {
+    return (
+      <Panel title="No activity" aside="SQLite" bodyClassName="min-h-72 items-center justify-center text-center">
+        <p className="text-sm text-fg">No tasks started during this period.</p>
+        <p className="mt-2 max-w-md text-xs leading-relaxed text-dim">Choose another date range to explore workspace activity.</p>
+      </Panel>
+    )
+  }
+
   return (
     <>
-      {tasks.total === 0 && (
-        <div role="status" className="border border-line bg-raised px-4 py-3 text-sm text-dim">
-          No tasks started during this period. Choose another date range to explore workspace activity.
+      {analytics.cost.unreportedTaskCount > 0 ? (
+        <div role="note" className="corner-marks border border-warn/35 bg-warn/8 px-4 py-3 text-xs text-dim">
+          USD totals include reported costs only. {count(analytics.cost.unreportedTaskCount)} {analytics.cost.unreportedTaskCount === 1 ? 'task has' : 'tasks have'} no cost data.
         </div>
-      )}
-      {cost.unreportedTaskCount > 0 && (
-        <div role="note" className="border border-warn/35 bg-warn/8 px-4 py-3 text-xs text-dim">
-          USD totals include only reported costs. {count(cost.unreportedTaskCount)} {cost.unreportedTaskCount === 1 ? 'task has' : 'tasks have'} no cost data.
-        </div>
-      )}
-      <dl aria-label="Analytics summary" className="grid grid-cols-5 gap-3 max-[1100px]:grid-cols-3 max-[760px]:grid-cols-2 max-[440px]:grid-cols-1">
-        <PrimaryCard label="Tokens used" value={formatTokens(tokens.total)} detail={`${count(tokens.total)} total tokens`} />
-        <PrimaryCard label="Reported USD used" value={costValue} detail={costDetail} />
-        <PrimaryCard label="Favorite model" value={favoriteModel ? humanizeModelName(favoriteModel.label) : '—'} detail={modelDetail} title={favoriteModel?.label} />
-        <PrimaryCard label="Favorite provider" value={favoriteProvider?.label ?? '—'} detail={favoriteProvider ? `${count(favoriteProvider.taskCount)} ${favoriteProvider.taskCount === 1 ? 'task' : 'tasks'}` : 'No provider data'} title={favoriteProvider?.label} />
-        <PrimaryCard label="Completed tasks" value={count(tasks.completed)} detail={`${count(tasks.total)} total · ${percent(tasks.successRate)} success`} />
+      ) : null}
+      <dl aria-label="Analytics summary" className="grid grid-cols-5 gap-3 max-[1180px]:grid-cols-3 max-[760px]:grid-cols-2 max-[440px]:grid-cols-1">
+        <KpiCard index={1} label="Tokens used" value={formatTokens(analytics.tokens.total)} detail={`${count(analytics.tokens.total)} total tokens`} />
+        <KpiCard index={2} label="Reported USD" value={costValue} detail={costDetail} />
+        <KpiCard index={3} label="Favorite model" value={favoriteModel ? humanizeModelName(favoriteModel.label) : '—'} detail={favoriteModel ? `${count(favoriteModel.taskCount)} tasks` : 'No model activity'} />
+        <KpiCard index={4} label="Favorite provider" value={favoriteProvider?.label ?? '—'} detail={favoriteProvider ? `${count(favoriteProvider.taskCount)} tasks` : 'No provider activity'} />
+        <KpiCard index={5} label="Completed tasks" value={count(analytics.tasks.completed)} detail={`${count(analytics.tasks.total)} total · ${percent(analytics.tasks.successRate)} success`} className="max-[1180px]:col-span-2 max-[760px]:col-span-1" />
       </dl>
-      <div className="grid grid-cols-12 gap-3 max-[920px]:grid-cols-2 max-[620px]:grid-cols-1">
-        <Panel title="Token mix" className="col-span-4 max-[920px]:col-span-1">
-          <div className="space-y-3">
-            <MeterRow label="Input" value={tokens.input} total={tokens.total} />
-            <MeterRow label="Output" value={tokens.output} total={tokens.total} color="bg-violet" />
-            <MeterRow label="Cached input" value={tokens.cached} total={tokens.total} color="bg-cyan" />
+
+      <div className="grid grid-cols-12 gap-3 max-[940px]:grid-cols-1">
+        <Panel title="Tokens over time" aside={`${analytics.daily.length} active days`} className="col-span-8 max-[940px]:col-span-1" bodyClassName="pb-3">
+          <TokensOverTime daily={analytics.daily} />
+        </Panel>
+        <Panel title="Token totals" aside={formatTokens(analytics.tokens.total)} className="col-span-4 max-[940px]:col-span-1" bodyClassName="justify-center">
+          <TokenTotals analytics={analytics} />
+        </Panel>
+
+        <Panel title="Token mix per day" aside="stacked" className="col-span-8 max-[940px]:col-span-1" bodyClassName="pb-3">
+          <TokenMixChart daily={analytics.daily} />
+        </Panel>
+        <Panel title="Task outcomes" aside={percent(analytics.tasks.successRate)} className="col-span-4 max-[940px]:col-span-1">
+          <AsciiMeter
+            label="Success rate"
+            value={`${count(analytics.tasks.successful)} / ${count(analytics.tasks.completed)}`}
+            ratio={analytics.tasks.successRate ?? 0}
+            tone="green"
+            width={18}
+            className="mb-2"
+          />
+          <OutcomesDonut counts={analytics.tasks.statusCounts} />
+        </Panel>
+
+        <Panel title="Tasks per day" aside={`${count(analytics.tasks.total)} total`} className="col-span-6 max-[940px]:col-span-1" bodyClassName="pb-3">
+          <TasksPerDay daily={analytics.daily} />
+          <div className="mt-2 grid grid-cols-2 gap-4 border-t border-dashed border-line pt-3 text-xs">
+            <div><span className="text-dim">Avg tokens/task</span><strong className="mt-1 block font-medium">{formatTokens(analytics.tokens.total / analytics.tasks.total)}</strong></div>
+            <div><span className="text-dim">Avg working time</span><strong className="mt-1 block font-medium">{formatDurationMs(analytics.timing.averageWorkingTimeMs)}</strong></div>
           </div>
         </Panel>
-        <Panel title="Task outcomes" className="col-span-4 max-[920px]:col-span-1">
-          <div className="mb-4 flex items-end justify-between gap-3">
-            <span className="text-xs text-dim">Success rate</span>
-            <strong className="text-xl font-semibold">{percent(tasks.successRate)}</strong>
+        <Panel title="Additions vs deletions" aside={`${count(analytics.codeChanges.filesChanged)} files`} className="col-span-6 max-[940px]:col-span-1" bodyClassName="pb-3">
+          <CodeChangesChart daily={analytics.daily} />
+          <div className="mt-2 flex gap-5 border-t border-dashed border-line pt-3 text-xs">
+            <span className="text-ok">+{count(analytics.codeChanges.additions)} additions</span>
+            <span className="text-danger">−{count(analytics.codeChanges.deletions)} deletions</span>
+            <span className="ml-auto text-dim">{formatDurationMs(analytics.timing.workingTimeMs)} worked</span>
           </div>
-          <ul className="grid grid-cols-2 gap-x-4 gap-y-2">
-            {(Object.keys(STATUS_LABELS) as TaskStatus[]).map((status) => (
-              <li key={status} className="flex items-center justify-between gap-2 text-xs">
-                <span className="flex items-center gap-2 text-dim"><span className={cn('size-1.5 rounded-full', STATUS_COLORS[status])} aria-hidden="true" />{STATUS_LABELS[status]}</span>
-                <span className="font-mono">{count(tasks.statusCounts[status])}</span>
-              </li>
-            ))}
-          </ul>
         </Panel>
-        <Panel title="Per task averages" className="col-span-4 max-[920px]:col-span-2 max-[620px]:col-span-1">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-4">
-            <div><dt className="text-xs text-dim">Tokens</dt><dd className="mt-1 text-lg font-semibold">{formatTokens(averageTokens)}</dd></div>
-            <div><dt className="text-xs text-dim">Working time</dt><dd className="mt-1 text-lg font-semibold">{formatDurationMs(timing.averageWorkingTimeMs)}</dd></div>
-            <div className="col-span-2 border-t border-line pt-3"><dt className="text-xs text-dim">Total working time</dt><dd className="mt-1 font-mono text-sm">{formatDurationMs(timing.workingTimeMs)}</dd></div>
-          </dl>
+
+        <Panel title="Top models" className="col-span-4 max-[940px]:col-span-1">
+          <RankedList entries={analytics.breakdowns.models} empty="No model activity." modelNames />
         </Panel>
-        <Panel title="Top models" className="col-span-4 max-[920px]:col-span-1">
-          <RankedList entries={breakdowns.models} empty="No model data reported." modelNames />
+        <Panel title="Top providers" className="col-span-4 max-[940px]:col-span-1">
+          <RankedList entries={analytics.breakdowns.providers} empty="No provider activity." />
         </Panel>
-        <Panel title="Top providers" className="col-span-4 max-[920px]:col-span-1">
-          <RankedList entries={breakdowns.providers} empty="No provider activity." />
-        </Panel>
-        <Panel title="Top projects" className="col-span-4 max-[920px]:col-span-2 max-[620px]:col-span-1">
-          <RankedList entries={breakdowns.projects} empty="No project activity." />
-        </Panel>
-        <Panel title="Code changes" className="col-span-12 max-[920px]:col-span-2 max-[620px]:col-span-1">
-          <dl className="grid grid-cols-3 divide-x divide-line text-center">
-            <div><dt className="text-xs text-dim">Files changed</dt><dd className="mt-1 text-lg font-semibold">{count(codeChanges.filesChanged)}</dd></div>
-            <div><dt className="text-xs text-dim">Additions</dt><dd className="mt-1 text-lg font-semibold text-ok">+{count(codeChanges.additions)}</dd></div>
-            <div><dt className="text-xs text-dim">Deletions</dt><dd className="mt-1 text-lg font-semibold text-danger">−{count(codeChanges.deletions)}</dd></div>
-          </dl>
+        <Panel title="Top projects" className="col-span-4 max-[940px]:col-span-1">
+          <RankedList entries={analytics.breakdowns.projects} empty="No project activity." />
         </Panel>
       </div>
     </>
@@ -178,20 +533,25 @@ function AnalyticsContent({ analytics }: { analytics: WorkspaceAnalytics }): JSX
 
 export function AnalyticsPage(): JSX.Element {
   const workspaceId = useStore((state) => state.activeWorkspaceId)
-  const [period, setPeriod] = useState<AnalyticsPeriod>(() => currentMonthPeriod())
+  const [period, setPeriod] = useState<AnalyticsPeriod>(() => analyticsPresetPeriod('30d'))
   const [analytics, setAnalytics] = useState<WorkspaceAnalytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
   const requestId = useRef(0)
-  const thisMonth = useMemo(() => currentMonthPeriod(), [])
+  const invalidRange = period.start > period.end
 
   useEffect(() => {
-    if (!workspaceId) return
     const currentRequest = ++requestId.current
-    setLoading(true)
-    setError(null)
+    if (!workspaceId || invalidRange) {
+      setAnalytics(null)
+      setError(null)
+      setLoading(false)
+      return
+    }
     setAnalytics(null)
+    setError(null)
+    setLoading(true)
     void window.anvil.analytics.get(analyticsRange(period)).then((result) => {
       if (requestId.current !== currentRequest) return
       setAnalytics(result)
@@ -202,50 +562,34 @@ export function AnalyticsPage(): JSX.Element {
       setLoading(false)
     })
     return () => { requestId.current += 1 }
-  }, [period, retry, workspaceId])
-
-  const setStart = (start: string): void => {
-    if (!start) return
-    setPeriod((current) => ({ start, end: start > current.end ? start : current.end }))
-  }
-  const setEnd = (end: string): void => {
-    if (!end) return
-    setPeriod((current) => ({ start: end < current.start ? end : current.start, end }))
-  }
+  }, [invalidRange, period, retry, workspaceId])
 
   return (
-    <div className="h-full overflow-y-auto bg-canvas px-8 py-7 max-[900px]:px-5 max-[700px]:px-3 max-[700px]:py-3">
-      <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4">
-        <header className="flex items-start justify-between gap-6 max-[760px]:flex-col max-[760px]:gap-4">
-          <div>
-            <h1 className="text-xl font-semibold">Analytics</h1>
-            <p className="mt-1 text-xs text-dim">Workspace task usage and outcomes for the selected period.</p>
+    <div className="analytics-grid h-full overflow-y-auto px-8 py-7 font-mono max-[900px]:px-5 max-[700px]:px-3 max-[700px]:py-3">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4">
+        <header className="flex items-start justify-between gap-8 border-b border-dashed border-line pb-4 max-[840px]:flex-col max-[840px]:gap-4">
+          <div className="min-w-0">
+            <p className="mb-2 text-[10px] tracking-[0.2em] text-accent uppercase">Workspace telemetry / SQLite</p>
+            <h1 className="text-xl font-semibold tracking-[-0.03em]">Analytics</h1>
+            <p className="mt-1 text-xs text-dim">Task usage and outcomes for the selected period.</p>
           </div>
-          <div aria-label="Analytics period" className="flex max-w-full flex-wrap items-end justify-end gap-2 max-[760px]:w-full max-[760px]:justify-start">
-            <button type="button" aria-label="Previous period" title="Previous period" onClick={() => setPeriod((value) => moveAnalyticsPeriod(value, -1))}
-              className="h-8 border border-line px-2.5 text-sm text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent">←</button>
-            <label className="text-[11px] text-dim">Start date
-              <input type="date" value={period.start} max={period.end} onChange={(event) => setStart(event.target.value)}
-                className="mt-1 block h-8 min-w-0 bg-canvas px-2 text-xs text-fg [color-scheme:dark] border border-line outline-none focus:border-accent" />
-            </label>
-            <label className="text-[11px] text-dim">End date
-              <input type="date" value={period.end} min={period.start} onChange={(event) => setEnd(event.target.value)}
-                className="mt-1 block h-8 min-w-0 bg-canvas px-2 text-xs text-fg [color-scheme:dark] border border-line outline-none focus:border-accent" />
-            </label>
-            <button type="button" aria-label="Next period" title="Next period" onClick={() => setPeriod((value) => moveAnalyticsPeriod(value, 1))}
-              className="h-8 border border-line px-2.5 text-sm text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent">→</button>
-            <button type="button" onClick={() => setPeriod(currentMonthPeriod())} disabled={period.start === thisMonth.start && period.end === thisMonth.end}
-              className="h-8 border border-line px-3 text-xs text-dim hover:bg-hover hover:text-fg disabled:cursor-default disabled:opacity-45 focus-visible:outline focus-visible:outline-accent">This month</button>
-          </div>
+          <RangePicker period={period} onChange={setPeriod} />
         </header>
-        {loading && <div role="status" className="grid min-h-64 place-items-center border border-line bg-raised text-sm text-dim">Loading analytics…</div>}
-        {!loading && error && (
-          <div role="alert" className="border border-danger/40 bg-danger/8 p-4 text-sm">
+
+        {invalidRange ? (
+          <div role="alert" className="corner-marks border border-danger/50 bg-danger/8 px-4 py-5 text-sm text-danger">
+            Start date must not be after end date. Adjust either date or choose a preset.
+          </div>
+        ) : loading ? (
+          <div role="status" className="corner-marks grid min-h-64 place-items-center border border-line bg-raised/90 text-sm text-dim">
+            Reading analytics from SQLite…
+          </div>
+        ) : error ? (
+          <div role="alert" className="corner-marks border border-danger/40 bg-danger/8 p-4 text-sm">
             <p>Analytics could not be loaded. {error}</p>
             <button type="button" className="mt-3 border border-line px-3 py-1.5 text-xs text-accent hover:bg-hover focus-visible:outline focus-visible:outline-accent" onClick={() => setRetry((value) => value + 1)}>Retry</button>
           </div>
-        )}
-        {!loading && analytics && <AnalyticsContent analytics={analytics} />}
+        ) : analytics ? <AnalyticsContent analytics={analytics} /> : null}
       </div>
     </div>
   )

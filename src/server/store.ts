@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DEFAULT_WORKSPACE_ID, DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '../shared/types'
-import type { AnalyticsBreakdown, AnalyticsFavorite, AnalyticsRange, TaskEventsRequest, TaskEventsPage, TaskEventCursor, TaskStatus, WorkspaceAnalytics } from '../shared/types'
+import type { AnalyticsBreakdown, AnalyticsDailyPoint, AnalyticsFavorite, AnalyticsRange, TaskEventsRequest, TaskEventsPage, TaskEventCursor, TaskStatus, WorkspaceAnalytics } from '../shared/types'
 import * as schema from './db/schema'
 import { canSettleTask, settlementDeadline } from '../shared/task-settlement'
 import { advanceTaskWorkingTime, isTaskWorking, type TaskWorkingTime } from '../shared/task-timing'
@@ -53,6 +53,18 @@ function compareAnalyticsBreakdown(left: AnalyticsBreakdown, right: AnalyticsBre
 function analyticsFavorite(breakdown: AnalyticsBreakdown[]): AnalyticsFavorite | null {
   const favorite = breakdown[0]
   return favorite ? { key: favorite.key, label: favorite.label, taskCount: favorite.taskCount } : null
+}
+
+function analyticsDate(timestamp: number): string {
+  const date = new Date(timestamp)
+  const year = String(date.getFullYear()).padStart(4, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function emptyAnalyticsStatusCounts(): Record<TaskStatus, number> {
+  return { pending: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 }
 }
 
 /** The settings table stores text, so non-string values are encoded here. */
@@ -708,6 +720,52 @@ export class Store {
     }).from(tasks).innerJoin(projects, eq(tasks.projectId, projects.id)).where(scope)
       .groupBy(tasks.projectId, projects.name).all()
       .map(toBreakdown).sort(compareAnalyticsBreakdown)
+    const dailyByDate = new Map<string, AnalyticsDailyPoint>()
+    const dailyRows = db.select({
+      startedAt: tasks.startedAt,
+      inputTokens: tasks.inputTokens,
+      outputTokens: tasks.outputTokens,
+      cachedTokens: tasks.cachedTokens,
+      totalTokens: tasks.totalTokens,
+      costUsd: tasks.costUsd,
+      status: tasks.status,
+      workingTimeMs: tasks.workingTimeMs,
+      filesChanged: tasks.filesChanged,
+      additions: tasks.additions,
+      deletions: tasks.deletions
+    }).from(tasks).where(scope).orderBy(asc(tasks.startedAt)).all()
+    for (const row of dailyRows) {
+      const date = analyticsDate(row.startedAt)
+      let point = dailyByDate.get(date)
+      if (!point) {
+        point = {
+          date,
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedTokens: 0,
+          totalTokens: 0,
+          reportedCostUsd: 0,
+          taskCount: 0,
+          statusCounts: emptyAnalyticsStatusCounts(),
+          workingTimeMs: 0,
+          filesChanged: 0,
+          additions: 0,
+          deletions: 0
+        }
+        dailyByDate.set(date, point)
+      }
+      point.inputTokens += row.inputTokens
+      point.outputTokens += row.outputTokens
+      point.cachedTokens += row.cachedTokens
+      point.totalTokens += row.totalTokens
+      point.reportedCostUsd += row.costUsd ?? 0
+      point.taskCount += 1
+      point.statusCounts[row.status] += 1
+      point.workingTimeMs += row.workingTimeMs
+      point.filesChanged += row.filesChanged
+      point.additions += row.additions
+      point.deletions += row.deletions
+    }
     const statusCounts = Object.fromEntries(
       ANALYTICS_TASK_STATUSES.map((status) => [status, statuses.find((entry) => entry.key === status)?.taskCount ?? 0])
     ) as Record<TaskStatus, number>
@@ -717,6 +775,7 @@ export class Store {
     const workingTimeMs = totals?.workingTimeMs ?? 0
     return {
       range: { ...range },
+      daily: [...dailyByDate.values()],
       tokens: {
         input: totals?.inputTokens ?? 0,
         output: totals?.outputTokens ?? 0,

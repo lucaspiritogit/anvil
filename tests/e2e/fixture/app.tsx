@@ -299,6 +299,20 @@ window.settingsTest = {
 }
 const analyticsResponse: WorkspaceAnalytics = {
   range: { startAt: 0, endAt: 0 },
+  daily: [{
+    date: '2026-09-15',
+    inputTokens: 100_000,
+    outputTokens: 25_000,
+    cachedTokens: 40_000,
+    totalTokens: 125_000,
+    reportedCostUsd: 4.25,
+    taskCount: 6,
+    statusCounts: { pending: 0, running: 1, succeeded: 4, failed: 1, cancelled: 0 },
+    workingTimeMs: 900_000,
+    filesChanged: 12,
+    additions: 350,
+    deletions: 90
+  }],
   tokens: { input: 100_000, output: 25_000, cached: 40_000, total: 125_000 },
   cost: { reportedUsd: 4.25, reportedTaskCount: 5, unreportedTaskCount: 1 },
   tasks: {
@@ -329,6 +343,7 @@ const analyticsResponse: WorkspaceAnalytics = {
   }
 }
 if (query.has('analyticsEmpty')) {
+  analyticsResponse.daily = []
   analyticsResponse.tokens = { input: 0, output: 0, cached: 0, total: 0 }
   analyticsResponse.cost = { reportedUsd: 0, reportedTaskCount: 0, unreportedTaskCount: 0 }
   analyticsResponse.tasks = { total: 0, completed: 0, successful: 0, successRate: null, statusCounts: { pending: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 } }

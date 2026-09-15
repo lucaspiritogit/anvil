@@ -18,6 +18,13 @@
   --color-warn: #d9a441;
   --color-violet: #bb9af7;
   --color-cyan: #7dcfa0;
+  --color-background: var(--color-canvas);
+  --color-card: var(--color-raised);
+  --color-border: var(--color-line);
+  --color-foreground: var(--color-fg);
+  --color-muted-foreground: var(--color-dim);
+  --color-popover: var(--color-raised);
+  --color-popover-foreground: var(--color-fg);
 
   /* The accent hairline used by the sidebar's review badge. */
   --color-accent-edge: color-mix(in srgb, var(--color-accent) 45%, var(--color-line));
@@ -89,4 +96,43 @@
 
 @utility no-drag {
   -webkit-app-region: no-drag;
+}
+
+@layer components {
+  .analytics-grid {
+    background-color: var(--color-canvas);
+    background-image: radial-gradient(color-mix(in srgb, var(--color-dim) 22%, transparent) 0.7px, transparent 0.7px);
+    background-size: 10px 10px;
+  }
+
+  .corner-marks {
+    background-image:
+      linear-gradient(var(--color-accent), var(--color-accent)),
+      linear-gradient(var(--color-accent), var(--color-accent)),
+      linear-gradient(var(--color-accent), var(--color-accent)),
+      linear-gradient(var(--color-accent), var(--color-accent)),
+      linear-gradient(var(--color-accent), var(--color-accent)),
+      linear-gradient(var(--color-accent), var(--color-accent)),
+      linear-gradient(var(--color-accent), var(--color-accent)),
+      linear-gradient(var(--color-accent), var(--color-accent));
+    background-position:
+      left 8px top,
+      left 4px top 4px,
+      right 8px top,
+      right 4px top 4px,
+      left 8px bottom,
+      left 4px bottom 4px,
+      right 8px bottom,
+      right 4px bottom 4px;
+    background-repeat: no-repeat;
+    background-size:
+      1px 9px,
+      9px 1px,
+      1px 9px,
+      9px 1px,
+      1px 9px,
+      9px 1px,
+      1px 9px,
+      9px 1px;
+  }
 }

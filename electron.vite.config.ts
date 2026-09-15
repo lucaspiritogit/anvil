@@ -25,6 +25,7 @@ export default defineConfig({
     root: resolve(__dirname, 'src/client/renderer'),
     resolve: {
       alias: {
+        '@dither-kit': resolve(__dirname, 'src/components/dither-kit'),
         '@shared': resolve(__dirname, 'src/shared'),
         '@renderer': resolve(__dirname, 'src/client/renderer/src'),
         '@public': resolve(__dirname, 'public')

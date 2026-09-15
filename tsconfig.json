@@ -1,4 +1,11 @@
 {
   "files": [],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@renderer/*": ["./src/client/renderer/src/*"],
+      "@dither-kit/*": ["./src/components/dither-kit/*"]
+    }
+  },
   "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }]
 }
