@@ -126,6 +126,8 @@ backend and embedding settings.
 
 ## Philosophy
 
+**Local-first by design: your tasks, diffs, and project memory live on hardware you control, and because Anvil is a client and a server, you can self-host the entire stack and never get vendor-locked.**
+
 Coding agents have changed programming, but an agent is still a tool.
 In Anvil, it is an instrument you point at a problem, like a compiler or a test
 runner. There is no chat window or persona to interact with.
@@ -133,6 +135,10 @@ runner. There is no chat window or persona to interact with.
 Treating agents as teammates, with personalities and conversations you steer
 turn by turn, shifts decisions away from the developer. Anvil keeps the focus on
 the work and the diff you review.
+
+Anvil runs against agent CLIs on your own machines, keeps storage, repositories,
+and memory local, and ships the server as something you can run yourself. Your
+work outlives any single model or vendor.
 
 Researching and asking questions are completely valid ways to use AI. But
 following an agent's suggestion without investigating it yourself means accepting
