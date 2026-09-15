@@ -117,11 +117,14 @@ export class GitDeliveryManager {
   static failPrepare = false
   static head = 0
   async status(): Promise<any> { return { isRepository: GitDeliveryManager.repository, gitAvailable: true } }
-  async prepareBranch(): Promise<any> {
+  async prepareBranch(_projectPath?: string, _taskId?: string, _check?: () => void, base?: { commit: string; branch: string }): Promise<any> {
     if (GitDeliveryManager.failPrepare) throw new Error('prepare failed')
-    return { cwd: testHome, baseCommit: 'base', branchName: 'task', baseBranch: 'main' }
+    return { cwd: testHome, baseCommit: base?.commit ?? 'base', branchName: 'task', baseBranch: base?.branch ?? 'main' }
   }
   async checkoutBranch(): Promise<any> { return this.prepareBranch() }
+  async resolveWorktreeBase(_projectPath: string, requested: string): Promise<any> {
+    return { commit: `base-${requested}`, branch: requested }
+  }
   async releaseWorktree(_projectPathOrTaskId: string, _taskId?: string, _expectedBranch?: string): Promise<void> {}
   async finalizeBranch(): Promise<any> {
     if (GitDeliveryManager.failFinalize) throw new Error('finalize failed')

@@ -3,6 +3,7 @@ import type { TaskContext } from './context'
 import { withTaskOperation } from './operations'
 import { renameChildBranchReferences } from './task-stacks'
 import { temporaryTaskBranch, temporaryTaskBranchPrefix } from '../../shared/task-branch'
+import { taskCheckoutMode } from '../../shared/task-checkout'
 export { temporaryTaskBranch } from '../../shared/task-branch'
 
 export function taskBranchNaming(task: Task): { branchName: string | null; canNameBranch: boolean } {
@@ -13,7 +14,7 @@ export function taskBranchNaming(task: Task): { branchName: string | null; canNa
 }
 
 function available(task: Task): boolean {
-  return task.status === 'running' && task.deliveryStatus === 'working' &&
+  return taskCheckoutMode(task) === 'worktree' && task.status === 'running' && task.deliveryStatus === 'working' &&
     task.settledAt === undefined && !task.restackState && !!task.baseCommit
 }
 

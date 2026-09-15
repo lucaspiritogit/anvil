@@ -45,17 +45,50 @@ export async function init(projectPath: string): Promise<ProjectGitStatus> {
 }
 
 export async function branches(projectPath: string): Promise<ProjectBranches> {
-  const [current, branches] = await Promise.all([
+  const [current, localBranches, remoteBranches, originHead] = await Promise.all([
     git(projectPath, ['branch', '--show-current']),
-    git(projectPath, ['for-each-ref', '--sort=refname', '--format=%(refname:strip=2)%09%(worktreepath)', 'refs/heads/'])
+    git(projectPath, ['for-each-ref', '--sort=refname', '--format=%(refname)%09%(refname:strip=2)%09%(worktreepath)', 'refs/heads/']),
+    git(projectPath, ['for-each-ref', '--sort=refname', '--format=%(refname)%09%(refname:strip=2)%09%(symref)', 'refs/remotes/']),
+    git(projectPath, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'], [0, 1, 128])
   ])
+  const local = localBranches.stdout.split('\n').filter(Boolean).map((line) => {
+    const [ref, name, worktreePath] = line.split('\t')
+    return { ref, name, worktreePath }
+  })
+  const remote = remoteBranches.stdout.split('\n').filter(Boolean).flatMap((line) => {
+    const [ref, name, symbolicTarget] = line.split('\t')
+    return symbolicTarget ? [] : [{ ref, name }]
+  })
+  const worktreeBases = [
+    ...local.map(({ name, ref }) => ({ name, ref, remote: false })),
+    ...remote.map(({ name, ref }) => ({ name, ref, remote: true }))
+  ]
+  const currentBranch = current.stdout.trim() || null
+  const originDefaultRef = originHead.stdout.trim()
+  const defaultWorktreeBase = worktreeBases.find((candidate) => candidate.ref === originDefaultRef)
+    ?? worktreeBases.find((candidate) => candidate.ref === 'refs/remotes/origin/main')
+    ?? worktreeBases.find((candidate) => !candidate.remote && candidate.name === currentBranch)
+    ?? worktreeBases[0]
+    ?? null
   return {
-    currentBranch: current.stdout.trim() || null,
-    branches: branches.stdout.split('\n').filter(Boolean).map((line) => {
-      const [name, worktreePath] = line.split('\t')
-      return { name, checkedOut: Boolean(worktreePath) }
-    })
+    currentBranch,
+    branches: local.map(({ name, worktreePath }) => ({ name, checkedOut: Boolean(worktreePath) })),
+    worktreeBases,
+    defaultWorktreeBase
   }
+}
+
+export async function resolveWorktreeBase(projectPath: string, requested: string): Promise<{ commit: string; branch: string }> {
+  const metadata = await branches(projectPath)
+  const exactRef = metadata.worktreeBases?.find((candidate) => candidate.ref === requested)
+  const named = metadata.worktreeBases?.filter((candidate) => candidate.name === requested) ?? []
+  const selected = exactRef ?? (named.length === 1 ? named[0] : undefined)
+  if (!selected) {
+    if (named.length > 1) throw new Error(`Worktree base ${requested} is ambiguous. Select its full ref.`)
+    throw new Error(`Worktree base ${requested} is no longer available`)
+  }
+  const commit = (await git(projectPath, ['rev-parse', '--verify', `${selected.ref}^{commit}`])).stdout.trim()
+  return { commit, branch: selected.name }
 }
 
 export async function switchProjectBranch(

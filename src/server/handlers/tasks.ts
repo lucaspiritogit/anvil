@@ -15,6 +15,7 @@ import { TaskIssues } from '../tasks/task-issues'
 import { titleFor } from '../tasks/task-title'
 import type { Task, TaskDiff, TaskIssueSnapshot, TaskEvent, TaskEventsPage } from '../../shared/types'
 import { taskStyle } from '../../shared/task-style'
+import { requireProjectCheckoutAvailable, usesManagedWorktree } from '../tasks/checkout'
 
 interface TaskHandlerDependencies extends TaskContext, TaskEvents, TaskExecution {
   promptWithProjectMemory: TaskMemory['promptWithProjectMemory']
@@ -22,7 +23,7 @@ interface TaskHandlerDependencies extends TaskContext, TaskEvents, TaskExecution
 
 export function registerTaskHandlers(ipc: HandlerRegistry, {
   store, agentProcesses, gitDelivery, send, recordSystemEvent, forgetUsage,
-  issueReviewReady, initializeTask, stopTask, deferTaskCleanup, finishTaskTurn, requireFinishedTask, promptWithProjectMemory
+  issueReviewReady, initializeTask, stopTask, deferTaskCleanup, skipTaskCleanup, finishTaskTurn, requireFinishedTask, promptWithProjectMemory
 }: TaskHandlerDependencies): void {
   const stacks = new TaskStacks({ store, agentProcesses, gitDelivery, send })
   const startTask = registerTaskStarts({ store, agentProcesses, gitDelivery, send, recordSystemEvent, stopTask, promptWithProjectMemory })
@@ -58,6 +59,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
   // Retry cleanup for tasks that settled before the app last closed.
   for (const task of store.getTasks()) {
     const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
+    if (!usesManagedWorktree(task)) continue
     if (task.settledAt !== undefined && project && task.branchName) {
       void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
     } else if (task.settledAt !== undefined) void gitDelivery.releaseWorktree(task.id)
@@ -65,8 +67,10 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
   const settleDueTasks = (): void => {
     for (const task of store.settleDueTasks()) {
       const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
-      if (project && task.branchName) void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
-      else void gitDelivery.releaseWorktree(task.id)
+      if (usesManagedWorktree(task)) {
+        if (project && task.branchName) void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
+        else void gitDelivery.releaseWorktree(task.id)
+      }
       send('task:updated', task)
     }
   }
@@ -98,8 +102,10 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
     requireFinishedTask(taskId)
     const task = store.settleTask(taskId)
     const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
-    if (project && task.branchName) void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
-    else void gitDelivery.releaseWorktree(task.id)
+    if (usesManagedWorktree(task)) {
+      if (project && task.branchName) void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
+      else void gitDelivery.releaseWorktree(task.id)
+    }
     send('task:updated', task)
     return task
   })
@@ -115,7 +121,8 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
     }
     // Release only this process's claim; the independent Valence records survive deletion.
     const running = agentProcesses.isRunning(taskId)
-    if (running && project && deletedTask?.branchName) deferTaskCleanup(taskId, project.path, deletedTask.branchName)
+    if (running && project && deletedTask?.branchName && usesManagedWorktree(deletedTask)) deferTaskCleanup(taskId, project.path, deletedTask.branchName)
+    else if (running && deletedTask && !usesManagedWorktree(deletedTask)) skipTaskCleanup(taskId)
     store.transaction(() => {
       stopTask(taskId, 'Anvil task deleted.')
       // Remove before cancellation so late callbacks cannot restore Anvil metadata.
@@ -123,8 +130,10 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
     }, store.getTask(taskId)?.workspaceId)
     forgetUsage(taskId)
     if (running) agentProcesses.cancel(taskId)
-    else if (project && deletedTask?.branchName) void gitDelivery.releaseWorktree(project.path, taskId, deletedTask.branchName)
-    else void gitDelivery.releaseWorktree(taskId)
+    else if (deletedTask && usesManagedWorktree(deletedTask)) {
+      if (project && deletedTask.branchName) void gitDelivery.releaseWorktree(project.path, taskId, deletedTask.branchName)
+      else void gitDelivery.releaseWorktree(taskId)
+    }
   })
   const issues = new TaskIssues(store)
   ipc.handle('tasks:issues', (taskId: string): TaskIssueSnapshot | null => {
@@ -181,16 +190,20 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       }
       const model = input.model || agent.defaultModel
       const style = input.style ?? 'work'
+      const checkoutMode = input.checkoutMode ?? 'worktree'
       if (style !== 'work' && input.parentTaskId) throw new Error('Only Work tasks can be stacked')
       if (style !== 'work' && input.reviewPolicy === 'review_at_task_end') throw new Error('Only Work tasks can run unattended')
-      if (style === 'quick' && store.getTasks(workspaceId).some((task) => task.projectId === project.id && taskStyle(task) === 'quick' && task.status === 'running')) {
-        throw new Error('Wait for the active Quick task in this project to finish')
-      }
+      if (style !== 'work' && (input.checkoutMode !== undefined || input.startBase !== undefined)) throw new Error('Only Work tasks can choose a checkout mode or start base')
+      if (checkoutMode === 'local' && input.startBase !== undefined) throw new Error('Local checkout tasks cannot choose a worktree start base')
+      if (checkoutMode === 'local' && input.parentTaskId) throw new Error('Stacked tasks must use a new worktree')
+      if (input.parentTaskId && input.startBase !== undefined) throw new Error('Stacked tasks start from their parent task')
 
       const task: Task = {
         id: randomUUID(),
         style,
         reviewPolicy: style === 'work' ? input.reviewPolicy ?? 'review_each_issue' : 'review_each_issue',
+        checkoutMode,
+        ...(input.startBase === undefined ? {} : { startBase: input.startBase }),
         workspaceId,
         projectId: project.id,
         agentId: agent.id,
@@ -214,6 +227,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       }
       if (input.parentTaskId) requireStackParent(store, task, input.parentTaskId)
       task.parentTaskId = input.parentTaskId
+      requireProjectCheckoutAvailable(store, task)
       store.addTask(task)
       try {
         if (images?.length) store.taskImages.save(task.id, images)

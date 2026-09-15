@@ -82,6 +82,33 @@ test('parallel tasks use independent branches and worktrees through nested and s
   expect(git(repo, 'worktree', 'list', '--porcelain').match(/^worktree /gm)).toHaveLength(3)
 })
 
+test('discovers local and remote worktree bases and resolves the origin default without switching checkout', async () => {
+  const { repo, manager } = await fixture()
+  const remoteBase = git(repo, 'rev-parse', 'HEAD')
+  git(repo, 'update-ref', 'refs/remotes/origin/stable', remoteBase)
+  git(repo, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/stable')
+  await writeFile(join(repo, 'later.txt'), 'later\n')
+  git(repo, 'add', 'later.txt')
+  git(repo, 'commit', '-m', 'Later main change')
+  const projectHead = git(repo, 'rev-parse', 'HEAD')
+
+  const metadata = await manager.branches(repo)
+  expect(metadata.currentBranch).toBe('main')
+  expect(metadata.worktreeBases).toEqual(expect.arrayContaining([
+    { name: 'main', ref: 'refs/heads/main', remote: false },
+    { name: 'origin/stable', ref: 'refs/remotes/origin/stable', remote: true }
+  ]))
+  expect(metadata.defaultWorktreeBase).toEqual({ name: 'origin/stable', ref: 'refs/remotes/origin/stable', remote: true })
+
+  const base = await manager.resolveWorktreeBase(repo, 'origin/stable')
+  expect(base).toEqual({ branch: 'origin/stable', commit: remoteBase })
+  const prepared = await manager.prepareBranch(repo, 'remote-base', () => {}, base)
+  expect(git(prepared.cwd, 'rev-parse', 'HEAD')).toBe(remoteBase)
+  expect(git(repo, 'branch', '--show-current')).toBe('main')
+  expect(git(repo, 'rev-parse', 'HEAD')).toBe(projectHead)
+  await expect(manager.resolveWorktreeBase(repo, 'origin/missing')).rejects.toThrow(/no longer available/)
+})
+
 test('restart preserves unfinished work and follow-ups retain the cumulative diff and rebase', async () => {
   const { repo, manager, worktrees } = await fixture()
   const task = await manager.prepareBranch(repo, 'resume')

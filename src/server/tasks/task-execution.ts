@@ -1,7 +1,7 @@
 import { TaskStacks, stackParentIsReady } from './task-stacks'
 import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
-import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
+import { GIT_SYSTEM_PROMPT, LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { implementationPrompt, taskRecoveryPrompt } from '../agents/task-prompts'
 import { taskStyle } from '../../shared/task-style'
 import type { ExitInfo } from '../agents/process-manager'
@@ -10,6 +10,8 @@ import type { RecordSystemEvent } from './context'
 import { TaskIssues, type VerifiedNoChanges } from './task-issues'
 import type { TaskCompletion } from './completion'
 import type { TaskExecutionState } from '../../shared/types'
+import { taskCheckoutMode } from '../../shared/task-checkout'
+import { requireProjectCheckoutAvailable, usesManagedWorktree } from './checkout'
 
 const MAX_RECOVERY_ATTEMPTS = 3
 const RECOVERY_WINDOW_MS = 120_000
@@ -27,6 +29,7 @@ export interface TaskExecution {
   rollbackTaskResume(taskId: string, previousState: TaskExecutionState): void
   stopTask(taskId: string, error: string): void
   deferTaskCleanup(taskId: string, projectPath: string, branchName: string): void
+  skipTaskCleanup(taskId: string): void
   finishTaskTurn(info: ExitInfo): Promise<void>
   requireFinishedTask(taskId: string): void
   issueReviewReady(taskId: string): boolean
@@ -45,6 +48,7 @@ export function registerTaskExecution(
   // interrupted-task recovery policy instead of silently relaunching work.
   const retries = new Map<string, TaskRetry>()
   const deferredTaskCleanup = new Map<string, { projectPath: string; branchName: string }>()
+  const skippedTaskCleanup = new Set<string>()
   let closing = false
   const clearRetry = (taskId: string): void => {
     clearTimeout(retries.get(taskId)?.timer)
@@ -122,7 +126,7 @@ export function registerTaskExecution(
       const workspace = resolveTaskWorkspace(store, task.id)
       let cwd = task.cwd
       let baseCommit: string | undefined
-      if (task.branchName) {
+      if (usesManagedWorktree(task) && task.branchName) {
         const checkout = await gitDelivery.checkoutBranch(project.path, taskId, task.branchName, task.baseBranch, () => {
           if (store.getTask(taskId)?.status !== 'running') throw new Error('Task stopped before the next issue')
           if (!parentIsReady(taskId)) throw new Error('Wait for the parent task to finish before continuing')
@@ -132,8 +136,10 @@ export function registerTaskExecution(
       }
       if (store.getTask(taskId)?.status !== 'running') {
         if (!store.getTask(taskId)) {
-          if (task.branchName) void gitDelivery.releaseWorktree(project.path, taskId, task.branchName)
-          else void gitDelivery.releaseWorktree(taskId)
+          if (usesManagedWorktree(task)) {
+            if (task.branchName) void gitDelivery.releaseWorktree(project.path, taskId, task.branchName)
+            else void gitDelivery.releaseWorktree(taskId)
+          }
         }
         return
       }
@@ -141,13 +147,14 @@ export function registerTaskExecution(
         waitingForParent.add(taskId)
         return
       }
+      requireProjectCheckoutAvailable(store, task)
       const images = state.hasImages ? store.taskImages.read(taskId) : undefined
       if (state.hasImages && !images) throw new Error('The original task images were cleared. Start a new task and attach the images again.')
       const issue = issues.claim(taskId, baseCommit)
       if (!issue) throw new Error('No task issue is ready in Valence. Inspect dependencies and work claimed by other clients.')
       const running = store.updateTask(taskId, {
         cwd, endedAt: undefined, error: undefined, exitCode: null,
-        deliveryStatus: task.branchName ? 'working' : 'unavailable', deliveryError: undefined
+        deliveryStatus: usesManagedWorktree(task) && task.branchName ? 'working' : 'unavailable', deliveryError: undefined
       })!
       send('task:updated', running)
       agentProcesses.start({
@@ -156,11 +163,17 @@ export function registerTaskExecution(
         reasoningEffort: state.reasoningEffort,
         images,
         beforeDispatch: () => {
-          if (store.getTask(taskId)?.status !== 'running' || !parentIsReady(taskId)) {
+          const current = store.getTask(taskId)
+          if (current?.status !== 'running' || !parentIsReady(taskId)) {
             throw new Error('Task stopped or parent changed before dispatch')
           }
+          requireProjectCheckoutAvailable(store, current)
         },
-        prompt: `${task.branchName ? GIT_SYSTEM_PROMPT : ''}\n\n${implementationPrompt(task.prompt, issue, project.path)}`
+        prompt: `${usesManagedWorktree(task) && task.branchName
+          ? GIT_SYSTEM_PROMPT
+          : taskCheckoutMode(task) === 'local' && (await gitDelivery.status(project.path)).isRepository
+            ? LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT
+            : ''}\n\n${implementationPrompt(task.prompt, issue, project.path)}`
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -233,6 +246,12 @@ export function registerTaskExecution(
           const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
           const agent = getAgent(task.agentId)
           if (!project || project.path !== state.projectPath || !agent) throw new Error('Task project or agent is unavailable')
+          requireProjectCheckoutAvailable(store, task)
+          const guidance = !quick && usesManagedWorktree(task) && task.branchName
+            ? GIT_SYSTEM_PROMPT
+            : !quick && taskCheckoutMode(task) === 'local' && (await gitDelivery.status(project.path)).isRepository
+              ? LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT
+              : ''
           recordSystemEvent(task.id, `Resuming the saved agent session, attempt ${attempt}/${MAX_RECOVERY_ATTEMPTS}.`)
           agentProcesses.start({
             taskId: task.id, issueId: state.currentIssueId ?? undefined,
@@ -243,8 +262,10 @@ export function registerTaskExecution(
             autoCompact: shouldCompactContext(store.getTask(task.id) ?? task, store.getSettings(task.workspaceId)),
             beforeDispatch: () => {
               if (!stillCurrent()) throw new Error('Task recovery was cancelled or superseded')
+              const current = store.getTask(task.id)
+              if (current) requireProjectCheckoutAvailable(store, current)
             },
-            prompt: taskRecoveryPrompt(task, state)
+            prompt: `${guidance ? `${guidance}\n\n` : ''}${taskRecoveryPrompt(task, state)}`
           })
         } catch (error) {
           if (!stillCurrent()) return
@@ -269,7 +290,7 @@ export function registerTaskExecution(
       : `Unattended review policy accepted issue ${issueId}.`)
     if (state.phase === 'complete') {
       const task = store.getTask(taskId)
-      const completedDeliveryStatus = task?.baseCommit && task.branchName
+      const completedDeliveryStatus = task && usesManagedWorktree(task) && task.baseCommit && task.branchName
         ? task.filesChanged > 0 ? 'reviewable' as const : 'no_changes' as const
         : undefined
       await finishTask({ taskId, code: 0, cancelled: false }, {
@@ -350,7 +371,7 @@ export function registerTaskExecution(
         const task = store.getTask(info.taskId)!
         let delivery: Awaited<ReturnType<typeof gitDelivery.finalizeBranch>> | undefined
         let noChanges: VerifiedNoChanges | undefined
-        if (task.branchName) {
+        if (usesManagedWorktree(task) && task.branchName) {
           finalizing = true
           if (!task.baseCommit) throw new Error('The task has no base commit for finalization.')
           const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
@@ -427,7 +448,9 @@ export function registerTaskExecution(
     if (!store.getTask(info.taskId)) {
       const cleanup = deferredTaskCleanup.get(info.taskId)
       deferredTaskCleanup.delete(info.taskId)
-      if (cleanup) void gitDelivery.releaseWorktree(cleanup.projectPath, info.taskId, cleanup.branchName)
+      if (skippedTaskCleanup.delete(info.taskId)) {
+        deferredTaskCleanup.delete(info.taskId)
+      } else if (cleanup) void gitDelivery.releaseWorktree(cleanup.projectPath, info.taskId, cleanup.branchName)
       else void gitDelivery.releaseWorktree(info.taskId)
     }
     void finishTaskTurn(info)
@@ -435,6 +458,9 @@ export function registerTaskExecution(
 
   const deferTaskCleanup: TaskExecution['deferTaskCleanup'] = (taskId, projectPath, branchName) => {
     deferredTaskCleanup.set(taskId, { projectPath, branchName })
+  }
+  const skipTaskCleanup: TaskExecution['skipTaskCleanup'] = (taskId) => {
+    skippedTaskCleanup.add(taskId)
   }
 
   const requireStoppedTurn = (taskId: string): void => {
@@ -462,7 +488,7 @@ export function registerTaskExecution(
       const rejected = issues.rejectIssue(taskId)
       store.updateTask(taskId, {
         status: 'running', endedAt: undefined, exitCode: null, error: undefined,
-        deliveryStatus: task?.branchName ? 'working' : 'unavailable', deliveryError: undefined
+        deliveryStatus: task && usesManagedWorktree(task) && task.branchName ? 'working' : 'unavailable', deliveryError: undefined
       })
       return rejected
     }, task?.workspaceId)
@@ -511,7 +537,7 @@ export function registerTaskExecution(
       if (state?.phase !== 'reviewing' || !state.currentIssueId) return false
       const task = store.getTask(taskId)
       if (!task || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'failed') return false
-      if (!task.branchName) return true
+      if (!usesManagedWorktree(task) || !task.branchName) return true
       const source = issues.issueDiffSource(taskId, state.currentIssueId)
       return Boolean(source.baseCommit && source.headCommit ||
         !source.baseCommit && !source.headCommit && source.taskBaseCommit && source.taskHeadCommit)
@@ -519,5 +545,5 @@ export function registerTaskExecution(
   }
 
   return { issueReviewReady, initializeTask, resumeTask, acceptTaskResume, rollbackTaskResume,
-    stopTask, deferTaskCleanup, finishTaskTurn, requireFinishedTask, approveIssue, rejectIssue }
+    stopTask, deferTaskCleanup, skipTaskCleanup, finishTaskTurn, requireFinishedTask, approveIssue, rejectIssue }
 }

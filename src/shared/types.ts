@@ -45,6 +45,7 @@ export const TASK_IMAGE_LIMITS = {
 export type TaskStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type TaskStyle = 'work' | 'quick'
 export type TaskReviewPolicy = 'review_each_issue' | 'review_at_task_end'
+export type TaskCheckoutMode = 'worktree' | 'local'
 
 export type DeliveryStatus =
   | 'preparing'
@@ -141,6 +142,8 @@ export interface GitHubCredentialStatus {
 export interface ProjectBranches {
   currentBranch: string | null
   branches: { name: string; checkedOut: boolean }[]
+  worktreeBases?: { name: string; ref: string; remote: boolean }[]
+  defaultWorktreeBase?: { name: string; ref: string; remote: boolean } | null
 }
 
 export interface ProjectGitStatus {
@@ -352,6 +355,8 @@ export interface TaskStackTarget {
 export interface Task {
   style?: TaskStyle
   reviewPolicy?: TaskReviewPolicy
+  checkoutMode?: TaskCheckoutMode
+  startBase?: string
   parentTaskId?: string
   expectedFiles?: string[]
   restackState?: 'pending' | 'conflict'

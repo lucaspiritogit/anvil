@@ -2,6 +2,7 @@ import type { ExitInfo } from '../agents/process-manager'
 import type { TaskMemory } from '../memory/task-memory'
 import type { RecordSystemEvent, TaskContext } from './context'
 import { taskStyle } from '../../shared/task-style'
+import { usesManagedWorktree } from './checkout'
 
 interface TaskCompletionOptions {
   finalize: boolean
@@ -20,7 +21,7 @@ export function createTaskCompletion(
     const status = info.cancelled ? 'cancelled' : info.code === 0 ? 'succeeded' : 'pending'
     // Git tasks deliver a final diff from their branch.
     const existing = store.getTask(info.taskId)
-    const managed = Boolean(existing?.baseCommit && existing.branchName)
+    const managed = Boolean(existing && usesManagedWorktree(existing) && existing.baseCommit && existing.branchName)
     const completedDeliveryStatus = status === 'succeeded' ? options?.completedDeliveryStatus : undefined
     let task = store.updateTask(info.taskId, {
       status,

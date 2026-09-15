@@ -273,6 +273,20 @@ test('serializes steering and comments through resume, completion and recovery',
     await tick()
     expect(store.getTask('unmanaged')?.deliveryStatus).toBe('unavailable')
 
+    store.addTask({
+      ...finished, id: 'local-checkout', checkoutMode: 'local', startBase: undefined,
+      branchName: undefined, baseBranch: undefined, baseCommit: undefined, headCommit: undefined,
+      deliveryStatus: 'unavailable'
+    })
+    store.saveTaskExecution({ ...new TaskIssues(store).initialize('local-checkout', testHome), phase: 'complete' })
+    gitDelivery.checkoutBranch = async () => { throw new Error('Local checkout tried to open a worktree') }
+    await steer('local-checkout', 'Continue in the project checkout')
+    expect(agentProcesses.starts.at(-1)).toMatchObject({ taskId: 'local-checkout', cwd: testHome })
+    agentProcesses.finishTurn('local-checkout')
+    await tick()
+    expect(store.getTask('local-checkout')).toMatchObject({ checkoutMode: 'local', deliveryStatus: 'unavailable' })
+    gitDelivery.checkoutBranch = originalReopen
+
     store.addTask({ ...finished, id: 'settled', prompt: 'Settled task', settledAt: 1 })
     await expect(steer('settled')).rejects.toThrow(/settled and cannot receive new instructions/)
     expect(store.getTask('settled')?.status, 'A settled task stays closed').toBe('succeeded')
@@ -286,6 +300,7 @@ test('serializes steering and comments through resume, completion and recovery',
     expect(task.model).toBe('original-model')
     expect(task.sessionId).toBe('newest-session')
     expect(restarted.getTaskExecution(task.id)?.reasoningEffort, 'Reasoning settings survive restart').toBe('high')
+    expect(restarted.getTask('local-checkout')).toMatchObject({ checkoutMode: 'local', cwd: testHome, deliveryStatus: 'unavailable' })
   } finally {
     restarted.close()
   }

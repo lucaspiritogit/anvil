@@ -109,6 +109,8 @@ function toTask(row: TaskRow): Task {
     id: row.id,
     style: row.style,
     reviewPolicy: row.reviewPolicy,
+    checkoutMode: row.checkoutMode,
+    ...(row.startBase === null ? {} : { startBase: row.startBase }),
     projectId: row.projectId,
     workspaceId: row.workspaceId,
     agentId: row.agentId,
@@ -200,6 +202,8 @@ function toTaskRow(task: Task): typeof tasks.$inferInsert {
   return {
     ...withoutPullRequest(task),
     reviewPolicy: task.reviewPolicy ?? 'review_each_issue',
+    checkoutMode: task.checkoutMode ?? 'worktree',
+    startBase: task.startBase ?? null,
     parentTaskId: task.parentTaskId ?? null,
     expectedFiles: task.expectedFiles ?? null,
     restackState: task.restackState ?? null,
@@ -587,6 +591,7 @@ export class Store {
       ...task,
       style: task.style ?? 'work',
       reviewPolicy: task.reviewPolicy ?? 'review_each_issue',
+      checkoutMode: task.checkoutMode ?? 'worktree',
       workspaceId: task.workspaceId ?? this.getActiveWorkspace().id,
       ...advanceTaskWorkingTime({ workingTimeMs: task.workingTimeMs }, isTaskWorking(task), Date.now())
     }

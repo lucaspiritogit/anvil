@@ -1,10 +1,12 @@
 import { requireStackParent, stackParentIsReady } from './task-stacks'
 import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
-import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
+import { GIT_SYSTEM_PROMPT, LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { taskStyle } from '../../shared/task-style'
+import { taskCheckoutMode } from '../../shared/task-checkout'
 import type { Task, TaskExecutionState } from '../../shared/types'
 import type { TaskContext } from './context'
+import { requireProjectCheckoutAvailable, usesManagedWorktree } from './checkout'
 
 interface ResumeOptions {
   check: (expected?: Task) => Task
@@ -45,6 +47,7 @@ export async function resumeTaskTurn(
     validate(current)
     if (style === 'work') requireParentFinished(current)
     if (agentProcesses.isRunning(task.id)) throw new Error('This task is already running')
+    requireProjectCheckoutAvailable(store, current)
     return current
   }
   const savedState = store.getTaskExecution(task.id)
@@ -54,13 +57,18 @@ export async function resumeTaskTurn(
   }
   try {
     let location: Partial<Task> = { cwd: project.path }
-    if (style === 'work' && task.branchName) {
+    const git = style === 'work' ? await gitDelivery.status(project.path) : undefined
+    if (style === 'work' && usesManagedWorktree(task) && task.branchName) {
       const checkout = await gitDelivery.checkoutBranch(project.path, task.id, task.branchName, task.baseBranch, guard)
       location = { cwd: checkout.cwd }
-    } else if (style === 'work' && task.deliveryStatus !== 'unavailable' && (await gitDelivery.status(project.path)).isRepository) {
+    } else if (style === 'work' && usesManagedWorktree(task) && task.deliveryStatus !== 'unavailable' && git?.isRepository) {
       guard()
       const parent = task.parentTaskId ? requireStackParent(store, task, task.parentTaskId) : undefined
-      const base = parent ? await gitDelivery.stackBase(project.path, parent.branchName) : undefined
+      const base = parent
+        ? await gitDelivery.stackBase(project.path, parent.branchName)
+        : task.startBase
+          ? await gitDelivery.resolveWorktreeBase(project.path, task.startBase)
+          : undefined
       const prepared = await gitDelivery.prepareBranch(project.path, task.id, () => {
         guard()
         if (task.parentTaskId) requireStackParent(store, task, task.parentTaskId)
@@ -78,8 +86,13 @@ export async function resumeTaskTurn(
     try {
       const state = resumeExecution ? resumeExecution(task.id) : previousState
       const message = prompt(current, state)
-      const managed = Boolean(location.branchName ?? current.branchName)
-      const executionPrompt = managed && gitInstructions ? `${GIT_SYSTEM_PROMPT}\n\n${message}` : message
+      const managed = usesManagedWorktree(current) && Boolean(location.branchName ?? current.branchName)
+      const guidance = managed
+        ? GIT_SYSTEM_PROMPT
+        : style === 'work' && taskCheckoutMode(current) === 'local' && git?.isRepository
+          ? LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT
+          : ''
+      const executionPrompt = guidance && gitInstructions ? `${guidance}\n\n${message}` : message
       guard()
       running = store.updateTask(task.id, {
         ...location, status: 'running', endedAt: undefined, exitCode: null, error: undefined,
@@ -88,7 +101,11 @@ export async function resumeTaskTurn(
       // No scheduled callback: startup errors return to the invoking handler.
       await agentProcesses.startResumed({
         workspace,
-        beforeDispatch: () => { if (style === 'work') requireParentFinished(check(running)) },
+        beforeDispatch: () => {
+          const dispatching = check(running)
+          if (style === 'work') requireParentFinished(dispatching)
+          requireProjectCheckoutAvailable(store, dispatching)
+        },
         taskId: task.id, issueId: state?.currentIssueId ?? undefined, agent, cwd: running.cwd,
         projectPath: project.path, model: current.model, reasoningEffort: state?.reasoningEffort,
         issueTracker: style === 'work',
@@ -124,7 +141,7 @@ export async function resumeTaskTurn(
       throw error
     }
   } catch (error) {
-    if (!store.getTask(task.id)) await gitDelivery.releaseWorktree(task.id)
+    if (!store.getTask(task.id) && usesManagedWorktree(task)) await gitDelivery.releaseWorktree(task.id)
     throw error
   }
 }

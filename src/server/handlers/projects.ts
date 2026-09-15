@@ -7,22 +7,25 @@ import type { TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
 import type { Project } from '../../shared/types'
 import { listProjectFiles, projectFileError } from '../project-files'
+import { usesManagedWorktree, usesProjectCheckout } from '../tasks/checkout'
 import { taskStyle } from '../../shared/task-style'
 
 interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDelivery' | 'agentProcesses'> {
   stopTask: TaskExecution['stopTask']
   deferTaskCleanup: TaskExecution['deferTaskCleanup']
+  skipTaskCleanup: TaskExecution['skipTaskCleanup']
   projectMemory?: ProjectMemory
   projectsChanged?(workspaceId: string): void
 }
 
 export function registerProjectHandlers(ipc: HandlerRegistry, {
-  store, gitDelivery, agentProcesses, stopTask, deferTaskCleanup, projectMemory, projectsChanged
+  store, gitDelivery, agentProcesses, stopTask, deferTaskCleanup, skipTaskCleanup, projectMemory, projectsChanged
 }: ProjectHandlerDependencies): void {
   const requireCheckoutAvailable = (projectId: string): void => {
-    if (store.getTasks().some((task) => task.projectId === projectId && taskStyle(task) === 'quick' && task.status === 'running')) {
-      throw new Error('Wait for the active Quick task in this project to finish')
-    }
+    const conflict = store.getTasks().find((task) => task.projectId === projectId && task.status === 'running' && usesProjectCheckout(task))
+    if (!conflict) return
+    if (taskStyle(conflict) === 'quick') throw new Error('Wait for the active Quick task in this project to finish')
+    throw new Error('Wait for the active task using this project checkout to finish')
   }
   ipc.handle('projects:list', () => store.getProjects())
   ipc.handle('projects:files', async ({ projectId }) => {
@@ -61,7 +64,8 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
       ? (projectMemory as import('../memory/workspace-project-memory').WorkspaceProjectMemory).forWorkspace(workspaceId) : projectMemory
     const projectTasks = store.getTasks(workspaceId).filter((task) => task.projectId === id)
     for (const task of projectTasks) {
-      if (project && task.branchName && agentProcesses.isRunning(task.id)) deferTaskCleanup(task.id, project.path, task.branchName)
+      if (project && task.branchName && usesManagedWorktree(task) && agentProcesses.isRunning(task.id)) deferTaskCleanup(task.id, project.path, task.branchName)
+      else if (!usesManagedWorktree(task) && agentProcesses.isRunning(task.id)) skipTaskCleanup(task.id)
     }
     store.transaction(() => {
       for (const task of projectTasks) stopTask(task.id, 'Anvil project removed.')
@@ -69,8 +73,10 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     }, workspaceId)
     for (const task of projectTasks) {
       if (agentProcesses.isRunning(task.id)) agentProcesses.cancel(task.id)
-      else if (project && task.branchName) void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
-      else void gitDelivery.releaseWorktree(task.id)
+      else if (usesManagedWorktree(task)) {
+        if (project && task.branchName) void gitDelivery.releaseWorktree(project.path, task.id, task.branchName)
+        else void gitDelivery.releaseWorktree(task.id)
+      }
     }
     if (memory) {
       try {

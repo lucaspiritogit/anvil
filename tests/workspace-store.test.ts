@@ -127,6 +127,24 @@ test('persists every settings field, composer selections and selected project in
   expect(store.getActiveWorkspace()).toEqual(initial)
 })
 
+test('persists checkout settings and defaults omitted task records to managed worktrees', () => {
+  const { open } = fixture()
+  let store = open()
+  addProject(store)
+  const legacy = store.addTask(taskInput('legacy-checkout'))
+  const local = store.addTask({ ...taskInput('local-checkout'), checkoutMode: 'local' })
+  const based = store.addTask({ ...taskInput('based-checkout'), checkoutMode: 'worktree', startBase: 'origin/main' })
+  expect(legacy.checkoutMode).toBe('worktree')
+  expect(local).toMatchObject({ checkoutMode: 'local' })
+  expect(based).toMatchObject({ checkoutMode: 'worktree', startBase: 'origin/main' })
+  store.close()
+
+  store = open()
+  expect(store.getTask(legacy.id)).toMatchObject({ checkoutMode: 'worktree' })
+  expect(store.getTask(local.id)).toMatchObject({ checkoutMode: 'local' })
+  expect(store.getTask(based.id)).toMatchObject({ checkoutMode: 'worktree', startBase: 'origin/main' })
+})
+
 test('does not share mutable defaults, returned preferences or caller-owned objects', () => {
   const { open } = fixture()
   const store = open()
@@ -365,4 +383,38 @@ test('migrates the applied Ask and Do task style schema to Quick', () => {
   const taskSchema = migrated.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'tasks'").get() as { sql: string }
   expect(taskSchema.sql).toContain("CHECK(\"style\" IN ('work', 'quick'))")
   expect(migrated.prepare('SELECT style FROM tasks WHERE id = ?').get('quick')).toEqual({ style: 'quick' })
+})
+
+test('migrates legacy tasks to the worktree checkout strategy', () => {
+  const { open, directory, database } = fixture()
+  const migrationNames = readdirSync(migrationsFolder, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+  const checkoutMigrationIndex = migrationNames.indexOf('20260915044519_medical_yellow_claw')
+  expect(checkoutMigrationIndex).toBeGreaterThan(0)
+
+  const workspaceDirectory = join(directory, 'workspaces', 'Default')
+  mkdirSync(workspaceDirectory, { recursive: true })
+  const workspaceDatabase = join(workspaceDirectory, 'anvil.db')
+  migrateBefore(workspaceDatabase, checkoutMigrationIndex)
+  const before = rawDatabase(workspaceDatabase)
+  before.prepare("INSERT OR IGNORE INTO workspaces(id, name, name_key, created_at) VALUES ('default', 'Default', 'default', 1)").run()
+  before.prepare("INSERT INTO projects(id, name, path, created_at) VALUES ('project', 'Project', '/test/project', 1)").run()
+  before.prepare("INSERT INTO tasks(id, project_id, agent_id, agent_label, prompt, title, cwd, status, started_at, delivery_status) VALUES ('legacy', 'project', 'codex', 'Codex', 'Task', 'Task', '/test/project', 'succeeded', 1, 'reviewable')").run()
+  before.close()
+  writeFileSync(database, JSON.stringify({
+    version: 1,
+    workspaces: [{ id: 'default', name: 'Default', createdAt: 1 }],
+    activeWorkspaceId: 'default'
+  }))
+
+  const store = open()
+  expect(store.getTask('legacy')).toMatchObject({ checkoutMode: 'worktree' })
+  store.close()
+  const migrated = rawDatabase(workspaceDatabase)
+  const taskSchema = migrated.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'tasks'").get() as { sql: string }
+  expect(taskSchema.sql).toContain("CHECK(\"checkout_mode\" IN ('worktree', 'local'))")
+  expect(migrated.prepare('SELECT checkout_mode, start_base FROM tasks WHERE id = ?').get('legacy'))
+    .toEqual({ checkout_mode: 'worktree', start_base: null })
 })

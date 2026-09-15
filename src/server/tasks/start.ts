@@ -1,5 +1,5 @@
 import type { Task } from '../../shared/types'
-import { getAgent } from '../agents/registry'
+import { getAgent, LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT } from '../agents/registry'
 import { resolveWorkspaceExecution } from '../agents/workspace-execution'
 import { planningPrompt } from '../agents/task-prompts'
 import { quickTaskPrompt } from '../agents/task-prompts'
@@ -8,6 +8,8 @@ import type { TaskMemory } from '../memory/task-memory'
 import type { RecordSystemEvent, TaskContext } from './context'
 import type { TaskExecution } from './task-execution'
 import { requireStackParent, stackParentIsReady } from './task-stacks'
+import { taskCheckoutMode } from '../../shared/task-checkout'
+import { requireProjectCheckoutAvailable, usesManagedWorktree } from './checkout'
 
 interface TaskStartContext extends TaskContext {
   recordSystemEvent: RecordSystemEvent
@@ -35,6 +37,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         if (!current) throw new Error('Task was deleted')
         if (closing || current.status !== 'running') throw new Error('Task stopped during preparation')
         if (!stackParentIsReady(context, current)) throw new Error('Wait for the parent task to finish before starting')
+        requireProjectCheckoutAvailable(store, current)
       }
       try {
         const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
@@ -73,8 +76,33 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         // Without Git there is no task branch or diff. Run directly in the project folder.
         const git = await gitDelivery.status(project.path)
         requireRunningTask()
+        if (taskCheckoutMode(task) === 'local') {
+          const localTask = store.updateTask(task.id, {
+            cwd: project.path,
+            deliveryStatus: 'unavailable'
+          })!
+          send('task:updated', localTask)
+          recordSystemEvent(task.id, `Using local checkout: ${project.path}`)
+          const planning = planningPrompt(await promptWithProjectMemory(project.id, task.prompt, task.workspaceId), state)
+          const prompt = git.isRepository ? `${LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT}\n\n${planning}` : planning
+          requireRunningTask()
+          agentProcesses.start({
+            workspace,
+            taskId: task.id,
+            agent,
+            prompt,
+            images,
+            model: task.model,
+            reasoningEffort: state.reasoningEffort,
+            cwd: project.path,
+            projectPath: project.path,
+            beforeDispatch: requireRunningTask
+          })
+          return localTask
+        }
         if (!git.isRepository) {
           if (task.parentTaskId) throw new Error('Stacked tasks require a Git repository')
+          requireProjectCheckoutAvailable(store, task, true)
           const unmanagedTask = store.updateTask(task.id, {
             cwd: project.path,
             deliveryStatus: 'unavailable'
@@ -99,7 +127,11 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
 
         const parentId = store.getTask(task.id)?.parentTaskId
         const parent = parentId ? requireStackParent(store, task, parentId) : undefined
-        const base = parent ? await gitDelivery.stackBase(project.path, parent.branchName) : undefined
+        const base = parent
+          ? await gitDelivery.stackBase(project.path, parent.branchName)
+          : task.startBase
+            ? await gitDelivery.resolveWorktreeBase(project.path, task.startBase)
+            : undefined
         const prepared = await gitDelivery.prepareBranch(project.path, task.id, () => {
           requireRunningTask()
           if (parentId) requireStackParent(store, task, parentId)
@@ -137,7 +169,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         store.taskImages.remove(task.id)
         const current = store.getTask(task.id)
         if (!current) {
-          await gitDelivery.releaseWorktree(task.id)
+          if (usesManagedWorktree(task)) await gitDelivery.releaseWorktree(task.id)
           throw new Error('Task was deleted')
         }
         if (current.status !== 'running') return current

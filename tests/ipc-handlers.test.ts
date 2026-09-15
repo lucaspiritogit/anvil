@@ -113,7 +113,7 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   registerWorkspaceHandlers(rendererIpc, store, context.send)
   registerSettingsHandlers(rendererIpc, context.store, new WallpaperLibrary(testHome))
   registerAgentHandlers(rendererIpc, store)
-  registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, deferTaskCleanup: execution.deferTaskCleanup })
+  registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, deferTaskCleanup: execution.deferTaskCleanup, skipTaskCleanup: execution.skipTaskCleanup })
   const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, name === 'settings:set' ? { workspaceId: 'default', patch: input } : input)
   const tick = async (): Promise<void> => {
     for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve))
@@ -241,6 +241,82 @@ test('persists task ownership before preparation and retains it when selection c
   store.addProject(project, work.id)
   store.selectWorkspace(work.id)
   expect(call('tasks:list').map((entry: Task) => entry.id)).toEqual([task.id])
+})
+
+test('validates and routes local checkout and selected-base Work tasks', async () => {
+  const { store, call, project, tick, agentProcesses, gitDelivery } = setupIpc()
+  const prepare = vi.spyOn(gitDelivery, 'prepareBranch')
+  const resolveBase = vi.spyOn(gitDelivery, 'resolveWorktreeBase')
+
+  expect(() => call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', checkoutMode: 'shared' }))
+    .toThrow(/checkoutMode/)
+  await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', checkoutMode: 'local', startBase: 'origin/main' }))
+    .rejects.toThrow(/cannot choose a worktree start base/)
+  await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', style: 'quick', checkoutMode: 'local' }))
+    .rejects.toThrow(/Only Work tasks/)
+  await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', checkoutMode: 'local', parentTaskId: 'parent' }))
+    .rejects.toThrow(/Stacked tasks must use a new worktree/)
+  await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', parentTaskId: 'parent', startBase: 'origin/main' }))
+    .rejects.toThrow(/start from their parent task/)
+
+  const local: Task = await call('tasks:start', {
+    projectId: project.id, agentId: 'codex', prompt: 'Use this checkout', checkoutMode: 'local'
+  })
+  await tick()
+  expect(store.getTask(local.id)).toMatchObject({ checkoutMode: 'local', cwd: project.path, deliveryStatus: 'unavailable' })
+  expect(agentProcesses.starts.at(-1)).toMatchObject({ taskId: local.id, cwd: project.path, projectPath: project.path })
+  expect(store.getTaskExecution(local.id)).toMatchObject({ phase: 'planning', projectPath: project.path })
+  expect(agentProcesses.starts.at(-1).prompt).toContain("project's existing checkout")
+  expect(prepare).not.toHaveBeenCalled()
+
+  await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Conflicting local task', checkoutMode: 'local' }))
+    .rejects.toThrow(/active task using this project checkout/)
+  await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Conflicting Quick task', style: 'quick' }))
+    .rejects.toThrow(/active task using this project checkout/)
+  await expect(call('projects:checkout', { projectId: project.id, branchName: 'main' }))
+    .rejects.toThrow(/active task using this project checkout/)
+
+  const finalize = vi.spyOn(gitDelivery, 'finalizeBranch')
+  agentProcesses.plan(local.id, [{
+    key: 'local-work', title: 'Local work', description: 'Work in the current checkout', labels: [], priority: 'medium',
+    dependencies: [], checklist: ['Verify local work'], validation: 'Run focused test'
+  }])
+  await tick()
+  const localIssue = store.getTaskExecution(local.id)!.currentIssueId!
+  expect(agentProcesses.starts.at(-1)).toMatchObject({ taskId: local.id, issueId: localIssue, cwd: project.path })
+  expect(agentProcesses.starts.at(-1).prompt).toContain("project's existing checkout")
+  callIssueTool(store, local.id, local.workspaceId, 'anvil_submit_review', {
+    id: localIssue, checklist: [true], evidence: 'Local workflow passed'
+  })
+  agentProcesses.finishTurn(local.id, 'Local work ready')
+  await tick()
+  expect(store.getTaskExecution(local.id)).toMatchObject({ phase: 'reviewing', currentIssueId: localIssue })
+  expect(finalize).not.toHaveBeenCalled()
+  await call('tasks:approve-issue', { taskId: local.id, issueId: localIssue, headCommit: null })
+  await tick()
+  expect(store.getTask(local.id)).toMatchObject({ status: 'succeeded', checkoutMode: 'local', deliveryStatus: 'unavailable' })
+  expect(finalize).not.toHaveBeenCalled()
+  const releaseWorktree = vi.spyOn(gitDelivery, 'releaseWorktree')
+  await call('tasks:delete', local.id)
+  expect(releaseWorktree).not.toHaveBeenCalled()
+  const deletedWhileRunning: Task = await call('tasks:start', {
+    projectId: project.id, agentId: 'codex', prompt: 'Delete this local task', checkoutMode: 'local'
+  })
+  await tick()
+  await call('tasks:delete', deletedWhileRunning.id)
+  await tick()
+  expect(store.getTask(deletedWhileRunning.id)).toBeUndefined()
+  expect(releaseWorktree).not.toHaveBeenCalled()
+
+  const based: Task = await call('tasks:start', {
+    projectId: project.id, agentId: 'codex', prompt: 'Use remote base', checkoutMode: 'worktree', startBase: 'origin/main'
+  })
+  await tick()
+  expect(resolveBase).toHaveBeenCalledWith(project.path, 'origin/main')
+  expect(prepare).toHaveBeenCalledWith(project.path, based.id, expect.any(Function), {
+    commit: 'base-origin/main', branch: 'origin/main'
+  })
+  expect(store.getTask(based.id)).toMatchObject({ checkoutMode: 'worktree', startBase: 'origin/main', baseBranch: 'origin/main' })
 })
 
 test('rejects malformed IPC requests before accessing dependencies or files', async () => {

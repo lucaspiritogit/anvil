@@ -16,7 +16,7 @@ import type {
   TaskMergePreview,
   TaskPushPreview
 } from '../../shared/types'
-import { status, init, branches, switchProjectBranch, stackBase, commonBase, withRepoLock } from './repository'
+import { status, init, branches, switchProjectBranch, resolveWorktreeBase, stackBase, commonBase, withRepoLock } from './repository'
 import { releaseWorktree, prepareBranch, checkoutBranch, worktreeHead } from './worktrees'
 import { renameTaskBranch, restackBranch, finalizeBranch } from './task-branches'
 import { rebase } from './rebase'
@@ -47,6 +47,10 @@ export class GitDeliveryManager {
 
   switchProjectBranch(projectPath: string, branchName: string): Promise<ProjectBranches> {
     return switchProjectBranch(this.context, projectPath, branchName)
+  }
+
+  resolveWorktreeBase(projectPath: string, requested: string): Promise<{ commit: string; branch: string }> {
+    return resolveWorktreeBase(projectPath, requested)
   }
 
   releaseWorktree(taskId: string): Promise<void>
