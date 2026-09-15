@@ -2,7 +2,8 @@ import { onTestCleanup } from './test-cleanup'
 import { test, expect } from 'vitest'
 import { EventEmitter } from 'node:events'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
-import { isCodexLoginUrl, openExternalCodexLogin, createDesktopIpc, isRendererSender, isRendererUrl, openExternalPullRequest, protectRendererWindow } from '../src/client/main/renderer-security'
+import { isCodexLoginUrl, openExternalCodexLogin, createDesktopIpc, isRendererSender, isRendererUrl, openExternalLink, openExternalPullRequest, protectRendererWindow } from '../src/client/main/renderer-security'
+import { DITHER_KIT_URL } from '../src/shared/external-links'
 import { handlers, shell } from './issue-tracker-doubles'
 import { rendererContents, rendererEvent, rendererFrame, rendererUrl, rendererWindow } from './renderer-fixture'
 
@@ -91,6 +92,10 @@ test('validates PR URLs and blocks navigation, subframes and popups', async () =
   }
   expect(popup!({ url: prUrl }).action).toBe('deny')
   expect(opened).toStrictEqual([prUrl, prUrl])
+  await openExternalLink(DITHER_KIT_URL)
+  expect(popup!({ url: DITHER_KIT_URL }).action).toBe('deny')
+  expect(opened).toStrictEqual([prUrl, prUrl, DITHER_KIT_URL, DITHER_KIT_URL])
+  await expect(openExternalLink('https://www.tripwire.sh/dither-kit?redirect=evil')).rejects.toThrow(/Invalid external URL/)
   Object.assign(shell, { openExternal: async () => { throw new Error('fixture opener failure') } })
   await expect(openExternalPullRequest(prUrl)).rejects.toThrow(/Could not open the GitHub PR/)
   const warnings: unknown[][] = []

@@ -1,5 +1,6 @@
 import type { JSX, ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { DITHER_KIT_URL } from '@shared/external-links'
 import type { AnalyticsBreakdown, AnalyticsDailyPoint, TaskStatus, WorkspaceAnalytics } from '@shared/types'
 import { AreaChart, LineChart } from '@dither-kit/area-chart'
 import { Area, Line } from '@dither-kit/area'
@@ -167,12 +168,14 @@ export function AsciiMeter({
 export function KpiCard({
   label,
   value,
+  valueIcon,
   detail,
   index,
   className
 }: {
   label: string
   value: string
+  valueIcon?: ReactNode
   detail: string
   index: number
   className?: string
@@ -191,7 +194,10 @@ export function KpiCard({
         </span>
       </div>
       <div className="relative">
-        <p className="relative truncate text-[26px] leading-none font-semibold tracking-tight tabular-nums">{value}</p>
+        <div className="relative flex min-w-0 items-center gap-2.5">
+          <p className="min-w-0 truncate text-[26px] leading-none font-semibold tracking-tight tabular-nums">{value}</p>
+          {valueIcon}
+        </div>
         <p className="relative mt-2 truncate text-[11px] text-muted-foreground">{detail}</p>
       </div>
     </article>
@@ -322,7 +328,7 @@ function CodeChangesChart({ daily }: { daily: AnalyticsDailyPoint[] }): JSX.Elem
   )
 }
 
-function rankingCompany(entry: AnalyticsBreakdown, modelNames: boolean): string {
+function rankingCompany(entry: Pick<AnalyticsBreakdown, 'key' | 'label'>, modelNames: boolean): string {
   if (modelNames) return describeModel(entry.key, '').company
   if (entry.key === 'codex') return 'OpenAI'
   if (entry.key === 'opencode') return 'OpenCode Zen'
@@ -474,7 +480,13 @@ function AnalyticsContent({ analytics }: { analytics: WorkspaceAnalytics }): JSX
         <KpiCard index={1} label="Tokens used" value={formatTokens(analytics.tokens.total)} detail={`${count(analytics.tokens.total)} total tokens`} />
         <KpiCard index={2} label="Reported USD" value={costValue} detail={costDetail} />
         <KpiCard index={3} label="Favorite model" value={favoriteModel ? humanizeModelName(favoriteModel.label) : '—'} detail={favoriteModel ? `${count(favoriteModel.taskCount)} tasks` : 'No model activity'} />
-        <KpiCard index={4} label="Favorite provider" value={favoriteProvider?.label ?? '—'} detail={favoriteProvider ? `${count(favoriteProvider.taskCount)} tasks` : 'No provider activity'} />
+        <KpiCard
+          index={4}
+          label="Favorite provider"
+          value={favoriteProvider?.label ?? '—'}
+          valueIcon={favoriteProvider ? <ProviderIcon company={rankingCompany(favoriteProvider, false)} size={25} /> : undefined}
+          detail={favoriteProvider ? `${count(favoriteProvider.taskCount)} tasks` : 'No provider activity'}
+        />
         <KpiCard index={5} label="Completed tasks" value={count(analytics.tasks.completed)} detail={`${count(analytics.tasks.total)} total · ${percent(analytics.tasks.successRate)} success`} className="max-[1180px]:col-span-2 max-[760px]:col-span-1" />
       </dl>
 
@@ -572,6 +584,16 @@ export function AnalyticsPage(): JSX.Element {
             <p className="mb-2 text-[10px] tracking-[0.2em] text-accent uppercase">Workspace telemetry / SQLite</p>
             <h1 className="text-xl font-semibold tracking-[-0.03em]">Analytics</h1>
             <p className="mt-1 text-xs text-dim">Task usage and outcomes for the selected period.</p>
+            <a
+              href={DITHER_KIT_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 border-b border-dotted border-accent/50 pb-0.5 text-[10px] tracking-[0.12em] text-dim uppercase transition-colors hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              <span aria-hidden="true" className="text-accent">◆</span>
+              Charts by Dither Kit
+              <span aria-hidden="true">↗</span>
+            </a>
           </div>
           <RangePicker period={period} onChange={setPeriod} />
         </header>

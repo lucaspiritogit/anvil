@@ -1,5 +1,6 @@
 import { ipcMain, shell, type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { isDesktopRequest, type DesktopRequests } from '../../shared/desktop-requests'
+import { DITHER_KIT_URL } from '../../shared/external-links'
 import { isGitHubPullRequestUrl } from '../../shared/github-repository'
 
 /** Only the configured document may use the desktop bridge. Hash routes are local. */
@@ -52,6 +53,19 @@ export async function openExternalPullRequest(value: unknown): Promise<void> {
   }
 }
 
+export async function openExternalLink(value: unknown): Promise<void> {
+  const isPullRequest = typeof value === 'string' && isGitHubPullRequestUrl(value)
+  const isDitherKit = value === DITHER_KIT_URL
+  if (typeof value !== 'string' || (!isPullRequest && !isDitherKit) || new URL(value).href !== value) {
+    throw new Error('Invalid external URL.')
+  }
+  try {
+    await shell.openExternal(value)
+  } catch (error) {
+    throw new Error('Could not open the external URL in your browser.', { cause: error })
+  }
+}
+
 export function protectRendererWindow(window: BrowserWindow, rendererUrl: string): void {
   const contents = window.webContents
   contents.on('will-navigate', (event, url) => {
@@ -64,7 +78,7 @@ export function protectRendererWindow(window: BrowserWindow, rendererUrl: string
     if (!isMainFrame || !isRendererUrl(url, rendererUrl)) event.preventDefault()
   })
   contents.setWindowOpenHandler(({ url }) => {
-    void openExternalPullRequest(url).catch((error) => console.warn('External window denied or unavailable:', error.message))
+    void openExternalLink(url).catch((error) => console.warn('External window denied or unavailable:', error.message))
     return { action: 'deny' }
   })
 }
