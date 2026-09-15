@@ -1,13 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { chooseBranch, chooseProvider, restoreComposerSelection } from './composer-setup'
+import { chooseBranch, chooseProject, chooseProvider, restoreComposerSelection } from './composer-setup'
 import { taskImages } from '../task-image-fixture'
 
 test('overview submits the selected project, provider, model, image and path reference together', async ({ page }, testInfo) => {
   await restoreComposerSelection(page)
   await page.goto('/tests/e2e/fixture/')
-  const project = page.getByRole('combobox', { name: 'Project', exact: true })
-  await project.fill('work')
-  await page.getByRole('option').filter({ hasText: '/tmp/workbench' }).click()
+  const project = page.getByRole('button', { name: 'Project', exact: true })
+  await chooseProject(project, 'work', 'Workbench')
   const surface = page.getByTestId('project-overview')
   const composer = surface.getByRole('form', { name: 'Start a task' })
   const prompt = composer.getByRole('textbox', { name: 'Task prompt' })
@@ -19,8 +18,6 @@ test('overview submits the selected project, provider, model, image and path ref
   const nameBox = (await projectName.boundingBox())!
   expect(nameBox.x + nameBox.width).toBeLessThanOrEqual((await branch.boundingBox())!.x)
   await chooseProvider(composer.getByRole('button', { name: /^(Choose a model|Model:)/ }), 'opencode')
-  await composer.getByRole('button', { name: 'Model: model', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Choose model' }).getByRole('button', { name: 'model', exact: true }).click()
   await prompt.fill('Inspect @Only')
   await expect(page.getByRole('option', { name: 'workbench/OnlyHere.ts', exact: true })).toBeVisible()
   await prompt.press('Enter')
@@ -52,8 +49,11 @@ test('overview submits the selected project, provider, model, image and path ref
   })))
   expect(requests).toEqual([0, 1].map(() => ({
     workspaceId: 'default', projectId: 'project-1', agentId: 'opencode', model: 'provider/model', prompt: draft.trim(),
+    style: 'work', reviewPolicy: 'review_each_issue', checkoutMode: 'local', parentTaskId: undefined,
     fileReferences: ['workbench/OnlyHere.ts'], images: [{ ...image, bytes: Array.from(image.bytes) }]
   })))
+  await expect.poll(async () => (await page.evaluate(() => window.anvil.tasks.list())).find((task) => task.id.startsWith('started-')))
+    .toMatchObject({ checkoutMode: 'local', cwd: '/tmp/workbench', branchName: 'feature/composer', baseBranch: 'feature/composer' })
   expect(await page.evaluate(() => window.anvil.projects.branches('project-1'))).toMatchObject({ currentBranch: 'feature/composer' })
   expect(await page.evaluate(() => window.anvil.projects.branches('project-0'))).toMatchObject({ currentBranch: 'main' })
   await expect(composer).toHaveCount(0)

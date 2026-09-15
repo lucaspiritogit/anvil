@@ -39,6 +39,13 @@ export async function chooseProvider(trigger: import('@playwright/test').Locator
 
 export async function chooseBranch(trigger: import('@playwright/test').Locator, name: string): Promise<void> {
   await trigger.click()
-  await trigger.page().getByRole('dialog', { name: 'Choose branch', exact: true })
+  await trigger.page().getByRole('dialog', { name: 'Choose local branch', exact: true })
     .getByRole('button', { name, exact: true }).click()
+}
+
+export async function chooseProject(trigger: import('@playwright/test').Locator, query: string, name: string): Promise<void> {
+  await trigger.click()
+  const dialog = trigger.page().getByRole('dialog', { name: 'Choose project', exact: true })
+  await dialog.getByRole('searchbox', { name: 'Search projects', exact: true }).fill(query)
+  await dialog.getByRole('button', { name, exact: true }).click()
 }

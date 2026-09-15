@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { chooseProvider } from './composer-setup'
+import { chooseProject, chooseProvider } from './composer-setup'
 
 const fixture = '/tests/e2e/fixture/'
 const picker = (page: Page) => page.getByRole('combobox', { name: 'Workspace', exact: true })
@@ -142,10 +142,13 @@ test('switching restores project, preferences and history while background tasks
   await page.goto(fixture)
   const composer = page.getByRole('form', { name: 'Start a task' })
   await chooseProvider(composer.getByRole('button', { name: /^(Choose a model|Model:)/ }), 'codex', 'gpt-5-mini')
-  await page.getByRole('combobox', { name: 'Project', exact: true }).fill('workbench')
-  await page.keyboard.press('Enter')
+  await chooseProject(page.getByRole('button', { name: 'Project', exact: true }), 'workbench', 'Workbench')
   await composer.getByRole('textbox').fill('Private draft')
   await page.getByRole('searchbox').fill('layout')
+  await page.evaluate(async () => {
+    const running = (await window.anvil.tasks.list()).find((task) => task.id === 'running')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...running, title: 'Background work continues' } }))
+  })
   await createWorkspace(page, 'Work')
   await page.getByRole('button', { name: 'Display', exact: true }).click()
   await expect(page.getByLabel('Font size', { exact: true })).toHaveValue('14')
@@ -153,25 +156,20 @@ test('switching restores project, preferences and history while background tasks
   await expect(page.getByText('Saved', { exact: true })).toBeVisible()
   await back(page)
   await expect(page.getByRole('searchbox')).toHaveValue('')
-  await expect(page.getByRole('combobox', { name: 'Project', exact: true })).toHaveValue('All')
+  await expect(page.getByRole('complementary').getByRole('combobox', { name: 'Project', exact: true })).toHaveCount(0)
   await expect(composer.getByRole('textbox')).toHaveValue('')
   await expect(composer.getByRole('button', { name: 'Choose a model', exact: true })).toBeVisible()
   await expect(page.getByText('No tasks yet.', { exact: true })).toBeVisible()
   await expect(page.getByTestId('composer-project-name')).toHaveText('Anvil')
-  // An update from the background profile must not appear in this profile.
-  await page.evaluate(async () => {
-    const running = (await window.anvil.tasks.list()).find((task) => task.id === 'running')!
-    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...running, title: 'Background work continues' } }))
-  })
   await expect(page.getByRole('button', { name: 'Open task: Background work continues', exact: true })).toHaveCount(0)
   await selectWorkspace(page, 'Default')
   await expect(page.getByTestId('composer-project-name')).toHaveText('Workbench')
   await expect(composer.getByRole('button', { name: 'Model: GPT 5 Mini', exact: true })).toBeVisible()
   await expect(composer.getByRole('textbox')).toHaveValue('Private draft')
   await page.getByRole('button', { name: 'Open task: Background work continues', exact: true }).click()
-  await expect(page.getByLabel('Task workspace', { exact: true })).toHaveText('Default')
+  await expect(page.getByLabel('Task workspace', { exact: true }).first()).toHaveText('Default')
   await page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true }).click()
-  await expect(page.getByLabel('Task workspace', { exact: true })).toHaveText('Default')
+  await expect(page.getByLabel('Task workspace', { exact: true }).first()).toHaveText('Default')
   await selectWorkspace(page, 'Work')
   await page.reload()
   await expect(picker(page)).toHaveValue('Work')
@@ -216,6 +214,7 @@ test('switch failures retain one coherent selected workspace and can be retried'
 test('long names fit small windows and collapsed sidebar is absent from keyboard navigation', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 600, height: 500 })
   await page.goto(fixture)
+  await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
   const longName = 'Work '.repeat(15).trim()
   await createWorkspace(page, longName)
   await back(page)
@@ -247,7 +246,7 @@ test('Escape closes workspace actions and restores combobox focus', async ({ pag
 
 test('rapid queued selections end with one workspace and its own settings', async ({ page }) => {
   await page.goto(fixture + '?workspaceDelay')
-  await page.getByRole('combobox', { name: 'Project', exact: true }).fill('workbench')
+  await chooseProject(page.getByRole('button', { name: 'Project', exact: true }), 'workbench', 'Workbench')
   await page.evaluate(async () => {
     const work = await window.anvil.workspaces.create('Work')
     const personal = await window.anvil.workspaces.create('Personal')
@@ -259,8 +258,8 @@ test('rapid queued selections end with one workspace and its own settings', asyn
     ])
   })
   await expect(picker(page)).toHaveValue('Personal')
-  await expect(page.getByRole('combobox', { name: 'Project', exact: true })).toHaveValue('All')
-  await expect(page.getByRole('combobox', { name: 'Project', exact: true })).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('complementary').getByRole('combobox', { name: 'Project', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Project', exact: true })).toHaveAccessibleDescription('Anvil, /tmp/anvil')
   expect((await page.evaluate(() => window.anvil.workspaces.snapshot())).workspace.name).toBe('Personal')
   await expect(page.getByText('No tasks yet.', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()

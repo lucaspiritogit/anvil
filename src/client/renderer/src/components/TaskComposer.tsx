@@ -199,7 +199,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
           )}
           {attachments.pasteError && <p role="alert" className="px-5 pb-3 text-xs text-danger max-[700px]:px-4">{attachments.pasteError}</p>}
           <div className="flex min-w-0 items-center gap-1 px-3 pb-3 pt-1 max-[700px]:px-2">
-            <label className="relative flex shrink-0 items-center" title="Task style">
+            <label className="relative flex min-w-0 items-center overflow-hidden" title="Task style">
               <span className="sr-only">Task style</span>
               <Icon icon={style === 'quick' ? 'rabbit' : 'anvil'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
               <select
@@ -212,7 +212,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
               </select>
               <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
             </label>
-            {style === 'work' && <label className="relative flex shrink-0 items-center" title={reviewPolicy === 'review_at_task_end' ? 'Run through issue reviews and stop at the final task review' : 'Pause after every issue for review'}>
+            {style === 'work' && <label className="relative flex min-w-0 items-center overflow-hidden" title={reviewPolicy === 'review_at_task_end' ? 'Run through issue reviews and stop at the final task review' : 'Pause after every issue for review'}>
               <Icon icon={reviewPolicy === 'review_at_task_end' ? 'moon-star' : 'table-of-contents'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
               <select
                 aria-label="Review policy"

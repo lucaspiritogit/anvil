@@ -1,17 +1,42 @@
 import { expect, test } from '@playwright/test'
-import { chooseBranch, restoreComposerSelection } from './composer-setup'
+import { chooseBranch, chooseProject, restoreComposerSelection } from './composer-setup'
 
 test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
-test('project branch floats above the composer and switches local branches', async ({ page }, testInfo) => {
+test('three checkout controls default to the local checkout and support keyboard operation', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/')
-  const branch = page.getByRole('button', { name: 'Project branch', exact: true })
-  const composer = page.getByRole('form', { name: 'Start a task' })
+  const surface = page.getByTestId('project-overview')
+  const project = surface.getByRole('button', { name: 'Project', exact: true })
+  const location = surface.getByRole('button', { name: 'Execution location', exact: true })
+  const branch = surface.getByRole('button', { name: 'Project branch', exact: true })
+  const composer = surface.getByRole('form', { name: 'Start a task' })
+
+  await expect(project).toHaveAccessibleDescription('Anvil, /tmp/anvil')
+  await expect(location).toHaveAccessibleDescription('Local checkout')
   await expect(branch).toHaveAccessibleDescription('main')
-  await branch.click()
-  await expect(page.getByRole('dialog', { name: 'Choose branch' }).getByRole('button', { name: 'task-running', exact: true })).toBeDisabled()
+  for (const control of [project, location, branch]) {
+    await expect(control).toHaveAttribute('aria-haspopup', 'dialog')
+    await expect(control).toHaveAttribute('aria-expanded', 'false')
+    await expect(control.locator('svg').last()).toHaveAttribute('width', '12')
+  }
+
+  await project.focus()
+  await project.press('Enter')
+  await expect(project).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('dialog', { name: 'Choose project' }).getByRole('searchbox')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(project).toBeFocused()
+  await location.press('Enter')
+  await expect(location).toHaveAttribute('aria-expanded', 'true')
+  await page.keyboard.press('Escape')
+  await expect(location).toBeFocused()
+  await branch.press('Enter')
+  await expect(branch).toHaveAttribute('aria-expanded', 'true')
+  const picker = page.getByRole('dialog', { name: 'Choose local branch' })
+  await expect(picker.getByRole('button', { name: 'task-running', exact: true })).toBeDisabled()
   await page.keyboard.press('Escape')
   await expect(branch).toBeFocused()
+
   const branchBounds = (await branch.boundingBox())!
   expect(branchBounds.y + branchBounds.height).toBeLessThan((await composer.boundingBox())!.y)
   await composer.getByRole('textbox').fill('Keep my draft')
@@ -19,10 +44,13 @@ test('project branch floats above the composer and switches local branches', asy
   await expect(branch).toHaveAccessibleDescription('feature/composer')
   expect((await page.evaluate(() => window.anvil.projects.branches('project-0'))).currentBranch).toBe('feature/composer')
   await expect(composer.getByRole('textbox')).toHaveValue('Keep my draft')
-  await page.screenshot({ path: testInfo.outputPath('project-branch.png'), fullPage: true })
-  await page.setViewportSize({ width: 600, height: 600 })
-  await expect(branch).toBeInViewport()
-  await page.screenshot({ path: testInfo.outputPath('project-branch-compact.png'), fullPage: true })
+
+  for (const width of [1280, 600]) {
+    await page.setViewportSize({ width, height: 600 })
+    for (const control of [project, location, branch]) await expect(control).toBeInViewport()
+    expect(await surface.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`checkout-controls-${width}.png`) })
+  }
 })
 
 test('checkout errors retain the branch and a pending checkout blocks task submission', async ({ page }) => {
@@ -42,7 +70,7 @@ test('checkout errors retain the branch and a pending checkout blocks task submi
   await expect(branch).toBeFocused()
   await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
   await composer.getByRole('textbox').press('Control+Enter')
-  expect(await page.evaluate(async () => (await window.anvil.tasks.list()).filter((task) => task.id.startsWith('started-')))).toHaveLength(0)
+  expect(await page.evaluate(() => window.composerTest.starts)).toEqual([])
   await page.evaluate(() => window.dispatchEvent(new Event('fixture:checkout-ready')))
   await expect(page.getByRole('alert')).toContainText('local changes would be overwritten')
   await expect(branch).toHaveAccessibleDescription('main')
@@ -50,7 +78,7 @@ test('checkout errors retain the branch and a pending checkout blocks task submi
   await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
 })
 
-test('branch keyboard navigation skips in-use branches and exposes long project and branch names', async ({ page }, testInfo) => {
+test('branch keyboard navigation skips in-use branches and truncates long labels', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/')
   const longBranch = 'feature/a-very-long-branch-name-that-should-truncate-without-hiding-the-project-name'
   const longProject = 'A very long project name that remains next to the branch'
@@ -59,20 +87,18 @@ test('branch keyboard navigation skips in-use branches and exposes long project 
     for (const project of projects) await window.anvil.projects.update({ id: project.id, name: longProject })
     window.anvil.projects.branches = async () => ({ currentBranch: longBranch, branches: [
       { name: longBranch, checkedOut: true }, { name: 'in-use', checkedOut: true }, { name: 'main', checkedOut: false }
-    ] })
+    ], worktreeBases: [{ name: 'origin/main', ref: 'refs/remotes/origin/main', remote: true }],
+    defaultWorktreeBase: { name: 'origin/main', ref: 'refs/remotes/origin/main', remote: true } })
   }, { longBranch, longProject })
-  // Refresh the overview branch picker so the mocked project and branches are loaded.
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
-  const composer = page.getByTestId('project-overview')
-  const branch = composer.getByRole('button', { name: 'Project branch', exact: true })
+  const surface = page.getByTestId('project-overview')
+  const branch = surface.getByRole('button', { name: 'Project branch', exact: true })
+  const project = surface.getByRole('button', { name: 'Project', exact: true })
   await expect(branch).toHaveAccessibleDescription(longBranch)
-  const project = composer.getByTestId('composer-project-name')
-  await expect(project).toHaveText(longProject)
-  await expect(project).toHaveAttribute('title', longProject)
-  const projectBounds = (await project.boundingBox())!
-  expect(projectBounds.x + projectBounds.width).toBeLessThan((await branch.boundingBox())!.x)
+  await expect(project).toHaveAccessibleDescription(`${longProject}, /tmp/anvil`)
+  await expect(surface.getByTestId('composer-project-name')).toHaveText(longProject)
   await branch.click()
-  const picker = page.getByRole('dialog', { name: 'Choose branch' })
+  const picker = page.getByRole('dialog', { name: 'Choose local branch' })
   await expect(picker.getByRole('button', { name: longBranch, exact: true })).toHaveAttribute('aria-pressed', 'true')
   await picker.getByRole('searchbox').press('ArrowDown')
   await page.keyboard.press('ArrowDown')
@@ -80,32 +106,33 @@ test('branch keyboard navigation skips in-use branches and exposes long project 
   await picker.getByRole('searchbox').fill('no-match')
   await expect(picker.getByRole('status')).toHaveText('No branches match your search.')
   await page.keyboard.press('Escape')
+
   for (const width of [1280, 600]) {
     await page.setViewportSize({ width, height: 600 })
     await expect(branch).toBeInViewport()
     await expect(project).toBeInViewport()
-    expect(await composer.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    expect(await surface.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`branch-long-${width}.png`) })
   }
 })
 
-test('detached HEAD can choose a branch and non-Git projects retain their name', async ({ page }) => {
+test('detached HEAD and non-Git projects keep an explicit branch control', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/')
   await page.evaluate(() => {
-    window.anvil.projects.branches = async () => ({ currentBranch: null, branches: [{ name: 'main', checkedOut: false }] })
+    window.anvil.projects.branches = async () => ({ currentBranch: null, branches: [{ name: 'main', checkedOut: false }], worktreeBases: [], defaultWorktreeBase: null })
   })
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
-  const composer = page.getByTestId('project-overview')
-  const branch = composer.getByRole('button', { name: 'Project branch', exact: true })
+  const surface = page.getByTestId('project-overview')
+  const branch = surface.getByRole('button', { name: 'Project branch', exact: true })
   await expect(branch).toHaveAccessibleDescription('Detached HEAD')
   await branch.click()
-  await expect(page.getByRole('dialog', { name: 'Choose branch' }).getByRole('button', { name: 'main', exact: true })).toBeEnabled()
+  await expect(page.getByRole('dialog', { name: 'Choose local branch' }).getByRole('button', { name: 'main', exact: true })).toBeEnabled()
   await page.keyboard.press('Escape')
   await page.evaluate(() => { window.anvil.projects.gitStatus = async () => ({ isRepository: false }) })
-  await page.getByRole('button', { name: 'Open task: Layout test task', exact: true }).click()
-  await page.getByRole('button', { name: 'New task', exact: true }).click()
-  await expect(branch).toHaveCount(0)
-  await expect(composer.getByTestId('composer-project-name')).toBeVisible()
+  await chooseProject(surface.getByRole('button', { name: 'Project', exact: true }), 'workbench', 'Workbench')
+  await expect(surface.getByTestId('composer-project-name')).toHaveText('Workbench')
+  await expect(branch).toHaveAccessibleDescription('No Git branch')
+  await expect(branch).toBeDisabled()
 })
 
 test('switching projects ignores a late checkout result and releases submission for the new project', async ({ page }) => {
@@ -113,14 +140,13 @@ test('switching projects ignores a late checkout result and releases submission 
   await page.evaluate(() => {
     window.anvil.projects.checkout = async () => {
       await new Promise<void>((resolve) => window.addEventListener('fixture:checkout-ready', () => resolve(), { once: true }))
-      return { currentBranch: 'old-project-branch', branches: [{ name: 'old-project-branch', checkedOut: true }] }
+      return { currentBranch: 'old-project-branch', branches: [{ name: 'old-project-branch', checkedOut: true }], worktreeBases: [], defaultWorktreeBase: null }
     }
   })
   const branch = page.getByRole('button', { name: 'Project branch', exact: true })
   await chooseBranch(branch, 'feature/composer')
   await expect(branch).toBeDisabled()
-  await page.getByRole('combobox', { name: 'Project', exact: true }).click()
-  await page.getByRole('option').filter({ hasText: '/tmp/workbench' }).click()
+  await page.evaluate(() => window.composerTest.selectProject('project-1'))
   await expect(page.getByTestId('composer-project-name')).toHaveText('Workbench')
   await expect(branch).toHaveAccessibleDescription('main')
   await expect(branch).toBeEnabled()
@@ -140,35 +166,48 @@ test('branch loading and discovery errors recover on refresh', async ({ page }) 
     }
   })
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
-  const composer = page.getByTestId('project-overview')
-  const branch = composer.getByRole('button', { name: 'Project branch', exact: true })
+  const surface = page.getByTestId('project-overview')
+  const branch = surface.getByRole('button', { name: 'Project branch', exact: true })
   await expect(branch).toHaveAccessibleDescription('Loading branch…')
   await expect(branch).toBeDisabled()
   await page.evaluate(() => window.dispatchEvent(new Event('fixture:branches-ready')))
   await expect(branch).toHaveAccessibleDescription('Branch unavailable')
-  await expect(composer.getByRole('alert')).toHaveText('Repository is temporarily unavailable')
+  await expect(surface.getByRole('alert')).toHaveText('Repository is temporarily unavailable')
   await page.evaluate(() => {
-    window.anvil.projects.branches = async () => ({ currentBranch: 'recovered', branches: [{ name: 'recovered', checkedOut: true }] })
+    window.anvil.projects.branches = async () => ({ currentBranch: 'recovered', branches: [{ name: 'recovered', checkedOut: true }], worktreeBases: [], defaultWorktreeBase: null })
     window.dispatchEvent(new Event('focus'))
   })
   await expect(branch).toHaveAccessibleDescription('recovered')
   await expect(branch).toBeEnabled()
-  await expect(composer.getByRole('alert')).toHaveCount(0)
+  await expect(surface.getByRole('alert')).toHaveCount(0)
 })
 
-test('project and worktree selectors route the task without switching the local checkout', async ({ page }) => {
+test('project picker adds projects and retains the draft when adding fails', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/')
+  const composer = page.getByRole('form', { name: 'Start a task' })
+  const prompt = composer.getByRole('textbox')
+  const project = page.getByRole('button', { name: 'Project', exact: true })
+  await prompt.fill('Keep this project draft')
+  await page.evaluate(() => {
+    const add = window.anvil.projects.add
+    window.addEventListener('fixture:restore-add', () => { window.anvil.projects.add = add }, { once: true })
+    window.anvil.projects.add = async () => { throw new Error('Folder picker unavailable') }
+  })
+  await project.click()
+  await page.getByRole('dialog', { name: 'Choose project' }).getByRole('button', { name: 'Add project', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Choose project' }).getByRole('alert')).toHaveText('Folder picker unavailable')
+  await expect(prompt).toHaveValue('Keep this project draft')
+  await page.evaluate(() => window.dispatchEvent(new Event('fixture:restore-add')))
+  await page.getByRole('dialog', { name: 'Choose project' }).getByRole('button', { name: 'Add project', exact: true }).click()
+  await expect(project).toHaveAccessibleDescription('New project, /tmp/new-project')
+  await expect(project).toBeFocused()
+})
+
+test('new worktrees use the selected base without switching the local checkout', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/')
   const project = page.getByRole('button', { name: 'Project', exact: true })
-  await expect(project).toHaveAccessibleDescription('Anvil, /tmp/anvil')
-  await project.click()
-  const projects = page.getByRole('dialog', { name: 'Choose project' })
-  await projects.getByRole('searchbox').fill('workbench')
-  await projects.getByRole('button', { name: 'Workbench', exact: true }).click()
-  await expect(project).toHaveAccessibleDescription('Workbench, /tmp/workbench')
-  await expect(project).toBeFocused()
-
+  await chooseProject(project, 'workbench', 'Workbench')
   const location = page.getByRole('button', { name: 'Execution location', exact: true })
-  await expect(location).toHaveAccessibleDescription('Local checkout')
   await location.click()
   await page.getByRole('dialog', { name: 'Choose execution location' })
     .getByRole('button', { name: 'New worktree', exact: true }).click()
@@ -176,16 +215,31 @@ test('project and worktree selectors route the task without switching the local 
 
   const branch = page.getByRole('button', { name: 'Project branch', exact: true })
   await expect(branch).toHaveAccessibleDescription('Branch from origin/main')
+  const composer = page.getByRole('form', { name: 'Start a task' })
+  const prompt = composer.getByRole('textbox', { name: 'Task prompt' })
+  await prompt.fill('Use an isolated checkout')
+  await page.evaluate(() => { window.composerTest.failNextStart = true })
+  await composer.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.composerTest.starts[0])).toEqual({
+    workspaceId: 'default', projectId: 'project-1', style: 'work', reviewPolicy: 'review_each_issue',
+    checkoutMode: 'worktree', startBase: 'refs/remotes/origin/main', agentId: 'codex', model: 'gpt-5',
+    prompt: 'Use an isolated checkout', parentTaskId: undefined, reasoningEffort: 'high'
+  })
+  await expect(composer.getByRole('alert')).toHaveText('Task could not be started')
+  await expect(prompt).toHaveValue('Use an isolated checkout')
   await branch.click()
   await page.getByRole('dialog', { name: 'Choose worktree base' })
     .getByRole('button', { name: 'main', exact: true }).click()
   await expect(branch).toHaveAccessibleDescription('Branch from main')
+  expect((await page.evaluate(() => window.anvil.projects.branches('project-1'))).currentBranch).toBe('main')
 
-  const composer = page.getByRole('form', { name: 'Start a task' })
-  await composer.getByRole('textbox', { name: 'Task prompt' }).fill('Use an isolated checkout')
   await composer.getByRole('button', { name: 'Send', exact: true }).click()
-  await expect.poll(() => page.evaluate(() => window.composerTest.starts[0])).toMatchObject({
-    projectId: 'project-1', checkoutMode: 'worktree', startBase: 'refs/heads/main'
+  await expect.poll(() => page.evaluate(() => window.composerTest.starts[1])).toEqual({
+    workspaceId: 'default', projectId: 'project-1', style: 'work', reviewPolicy: 'review_each_issue',
+    checkoutMode: 'worktree', startBase: 'refs/heads/main', agentId: 'codex', model: 'gpt-5',
+    prompt: 'Use an isolated checkout', parentTaskId: undefined, reasoningEffort: 'high'
   })
+  await expect.poll(async () => (await page.evaluate(() => window.anvil.tasks.list())).find((task) => task.id.startsWith('started-')))
+    .toMatchObject({ checkoutMode: 'worktree', startBase: 'refs/heads/main', branchName: expect.stringMatching(/^anvil\//), baseBranch: 'main', cwd: expect.stringMatching(/^\/tmp\/anvil-worktrees\//) })
   expect((await page.evaluate(() => window.anvil.projects.branches('project-1'))).currentBranch).toBe('main')
 })

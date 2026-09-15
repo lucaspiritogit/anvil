@@ -87,7 +87,7 @@ for (const width of [1440, 900]) {
   })
 }
 
-test('children survive filters, search, cached read errors and settlement; deletion removes the group', async ({ page }) => {
+test('children survive workspace-wide search, cached read errors and settlement; deletion removes the group', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/')
   const sidebar = page.getByRole('complementary')
   const search = sidebar.getByRole('searchbox')
@@ -101,12 +101,7 @@ test('children survive filters, search, cached read errors and settlement; delet
   await sidebar.getByRole('button', { name: 'Expand subtasks: Polish task cards', exact: true }).click()
   await expect(children.getByRole('listitem')).toHaveCount(4)
   await expect(sidebar.getByRole('article')).toHaveCount(1)
-  const selector = sidebar.getByRole('combobox', { name: 'Project', exact: true })
-  await selector.click()
-  await sidebar.getByRole('option').filter({ hasText: '/tmp/workbench' }).click()
-  await expect(parent).toHaveCount(0)
-  await selector.click()
-  await sidebar.getByRole('option', { name: 'All Tasks from all projects', exact: true }).click()
+  await expect(sidebar.getByRole('combobox', { name: 'Project', exact: true })).toHaveCount(0)
   await expect(children).toBeVisible()
   await page.evaluate(() => { window.anvil.tasks.issues = async () => { throw new Error('Read unavailable') } })
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))

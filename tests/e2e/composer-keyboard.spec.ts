@@ -18,7 +18,7 @@ test.describe(() => {
     const text = '  First line\n\n@"src/TaskComposer.tsx"  \n'
     await prompt(page).fill(text)
     for (const sidebar of [false, true]) {
-      await page.getByText('Build streaming support', { exact: true }).click()
+      await page.getByRole('button', { name: 'Open task: Build streaming support', exact: true }).click()
       await expect(composer(page)).toHaveCount(0)
       if (sidebar) await page.getByRole('button', { name: 'New task', exact: true }).click()
       else await page.keyboard.press('Control+n')
@@ -70,7 +70,7 @@ test.describe(() => {
       await prompt(page).fill('Submitted draft')
       await prompt(page).press('Enter')
       await expect(prompt(page)).toBeDisabled()
-      await page.getByText('Build streaming support', { exact: true }).click()
+      await page.getByRole('button', { name: 'Open task: Build streaming support', exact: true }).click()
       await page.keyboard.press('Control+n')
       await expect(prompt(page)).toHaveValue('Submitted draft')
       if (outcome === 'newer') await prompt(page).fill('Newer draft')
@@ -211,7 +211,7 @@ test.describe(() => {
 
     const branch = page.getByRole('button', { name: 'Project branch', exact: true })
     await branch.click()
-    const branches = page.getByRole('dialog', { name: 'Choose branch', exact: true })
+    const branches = page.getByRole('dialog', { name: 'Choose local branch', exact: true })
     const branchSearch = branches.getByRole('searchbox')
     await branchSearch.fill('feature/composer')
     await branchSearch.press('Enter')
