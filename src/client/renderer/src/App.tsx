@@ -310,7 +310,7 @@ export function App(): JSX.Element {
           inert={settingsOpen || switching || (mobileNavigation && mobileNavigationOpen)}>
           <div className="min-h-0 flex-1"><Workspace key={workspaceId} mobileNavigation={mobileNavigation}
             mobileNavigationOpen={mobileNavigationOpen} navigationButtonRef={mobileNavigationButtonRef} onToggleNavigation={toggleNavigation} /></div>
-          {!settingsOpen && terminalCreated && projectId && <TerminalDrawer key={`${workspaceId}:${projectId}`} projectId={projectId} visible={terminalOpen} onClose={() => { setTerminalCreated(false); setTerminalOpen(false) }} />}
+          {!settingsOpen && terminalCreated && projectId && <TerminalDrawer key={`${workspaceId}:${projectId}`} projectId={projectId} visible={terminalOpen} onClose={() => setTerminalOpen(false)} />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
         {settingsOpen && <div className="contents" inert={switching}><Suspense fallback={<p role="status" className="p-5 text-sm text-dim">Loading settings…</p>}><SettingsPage key={workspaceId} /></Suspense></div>}

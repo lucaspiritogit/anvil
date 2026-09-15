@@ -1,7 +1,7 @@
 import type { JSX } from 'react'
 import { canStackOnTask } from '@shared/task-stacks'
-import { useEffect, useId, useRef, useState } from 'react'
-import { Icon, type IconName } from '../icons'
+import { useEffect, useRef, useState } from 'react'
+import { Icon } from '../icons'
 import { hasTaskContent } from '@shared/task-images'
 import { useStore } from '../state/store'
 import { useAgentModels } from '../state/agent-models'
@@ -15,15 +15,11 @@ import { ComposerModelPicker } from './ComposerModelPicker'
 import { ComposerOverflowOptions } from './ComposerOverflowOptions'
 import { ProjectBranchSelector } from './ProjectBranchSelector'
 import { TaskStyleBadge } from './TaskStyleBadge'
-import { DEFAULT_KEYBINDINGS, acceleratorKeycaps, formatAccelerator } from '@shared/keybindings'
-import { IS_MAC } from '../keys'
 import { TASK_STYLES, TASK_STYLE_LABELS } from '@shared/task-style'
 import type { TaskReviewPolicy } from '@shared/types'
 
 const compactSelect = 'min-w-0 field-sizing-content appearance-none bg-transparent py-1.5 pl-2 pr-6 text-sm text-dim outline-none hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45'
 const styleSelect = compactSelect.replace('pl-2 pr-6', 'pl-1 pr-1')
-const KEYCAP_ICONS: Record<string, IconName> = { '⌘': 'command', '⇧': 'arrow-big-up', Shift: 'arrow-big-up' }
-
 export function TaskComposer(): JSX.Element {
   const projectId = useStore((state) => state.activeProjectId)
   const workspaceId = useStore((state) => state.activeWorkspaceId)
@@ -40,11 +36,8 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const taskComposerFocusRequest = useStore((state) => state.taskComposerFocusRequest)
   const style = useStore((state) => state.taskComposerStyle)
   const setStyle = useStore((state) => state.setTaskComposerStyle)
-  const styleShortcut = useStore((state) => state.settings?.keybindings.cycleTaskStyle) ?? DEFAULT_KEYBINDINGS.cycleTaskStyle
-  const reviewPolicyShortcut = useStore((state) => state.settings?.keybindings.cycleReviewPolicy) ?? DEFAULT_KEYBINDINGS.cycleReviewPolicy
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const composerRef = useRef<HTMLFormElement>(null)
-  const keyboardHelpId = useId()
   const preferences = useComposerPreferences()
   const reviewPolicy = preferences.reviewPolicy ?? 'review_each_issue'
   const agent = agents.find((candidate) => candidate.id === preferences.agentId)
@@ -143,7 +136,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         <fieldset disabled={busy} className="min-w-0">
           <textarea
             aria-label="Task prompt"
-            aria-describedby={keyboardHelpId}
             ref={promptRef}
             rows={5}
             className="block w-full resize-none bg-transparent px-5 pb-3 pt-4 text-sm leading-relaxed outline-none placeholder:text-dim/60 max-[700px]:min-h-[clamp(10rem,28dvh,12rem)] max-[700px]:px-4"
@@ -186,7 +178,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
           )}
           {attachments.pasteError && <p role="alert" className="px-5 pb-3 text-xs text-danger max-[700px]:px-4">{attachments.pasteError}</p>}
           <div className="flex min-w-0 items-center gap-1 px-3 pb-3 pt-1 max-[700px]:px-2">
-            <label className="flex shrink-0 items-center gap-1.5" title={`Task style · ${formatAccelerator(styleShortcut, IS_MAC)}`}>
+            <label className="flex shrink-0 items-center gap-1.5" title="Task style">
               <span className="sr-only">Task style</span>
               <Icon icon={style === 'quick' ? 'rabbit' : 'anvil'} size={16} className="shrink-0 text-dim" aria-hidden="true" />
               <select
@@ -197,15 +189,8 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
               >
                 {TASK_STYLES.map((option) => <option className="bg-raised text-fg" key={option} value={option}>{TASK_STYLE_LABELS[option]}</option>)}
               </select>
-              <span aria-hidden="true" className="hidden items-center gap-1 pl-1 @min-[620px]/composer:inline-flex">
-                {acceleratorKeycaps(styleShortcut, IS_MAC).map((cap, index) => (
-                  <kbd key={index} className="inline-flex min-w-[1.4rem] items-center justify-center rounded border border-line bg-fg/[0.04] px-1.5 py-1 font-mono text-[11px] leading-none text-dim">
-                    {KEYCAP_ICONS[cap] ? <Icon icon={KEYCAP_ICONS[cap]} size={11} className="shrink-0" aria-hidden="true" /> : cap}
-                  </kbd>
-                ))}
-              </span>
             </label>
-            {style === 'work' && <label className="relative flex shrink-0 items-center" title={`${reviewPolicy === 'review_at_task_end' ? 'Run through issue reviews and stop at the final task review' : 'Pause after every issue for review'} · ${formatAccelerator(reviewPolicyShortcut, IS_MAC)}`}>
+            {style === 'work' && <label className="relative flex shrink-0 items-center" title={reviewPolicy === 'review_at_task_end' ? 'Run through issue reviews and stop at the final task review' : 'Pause after every issue for review'}>
               <Icon icon={reviewPolicy === 'review_at_task_end' ? 'moon-star' : 'table-of-contents'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
               <select
                 aria-label="Review policy"

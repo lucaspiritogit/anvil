@@ -136,7 +136,16 @@ export function GhosttyTerminal({ sessionId, className, visible = true, onExit }
     })
     return () => { cancelled = true; cleanup() }
   }, [sessionId])
-  useEffect(() => { if (visible) terminal.current?.focus() }, [visible])
+  useEffect(() => {
+    if (!visible) return
+    const frame = requestAnimationFrame(() => {
+      const term = terminal.current
+      if (!term?.renderer || !term.wasmTerm) return
+      term.renderer.render(term.wasmTerm, true, term.viewportY, term)
+      term.focus()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [visible])
   return <div data-terminal data-terminal-session={sessionId} className={className} onKeyDown={(event) => {
     if (event.key === 'Escape') { (document.activeElement as HTMLElement)?.blur(); event.stopPropagation() }
   }}>

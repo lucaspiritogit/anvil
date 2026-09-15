@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 for (const [platform, modifier] of [['darwin', 'Meta'], ['linux', 'Control']] as const) {
-  test(`${modifier}+T toggles the project terminal and close ends the session`, async ({ page }) => {
+  test(`${modifier}+T and close hide the project terminal without replacing its session`, async ({ page }) => {
     await page.goto(`/tests/e2e/fixture/?platform=${platform}`)
     await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeVisible()
     await page.keyboard.press(`${modifier}+t`)
@@ -18,8 +18,13 @@ for (const [platform, modifier] of [['darwin', 'Meta'], ['linux', 'Control']] as
     expect(await page.evaluate(() => window.terminalTest.creates.map((call) => call.sessionId))).toEqual([sessionId])
     expect(await page.evaluate(() => window.terminalTest.attaches)).toEqual([sessionId])
     await page.getByRole('button', { name: 'Close project terminal' }).click()
-    await expect(panel).toHaveCount(0)
-    await expect.poll(() => page.evaluate(() => window.terminalTest.disposes)).toEqual([sessionId])
+    await expect(panel).toBeHidden()
+    await page.keyboard.press(`${modifier}+t`)
+    await expect(panel).toBeVisible()
+    await expect(panel.locator(`[data-terminal-session="${sessionId}"]`)).toHaveCount(1)
+    expect(await page.evaluate(() => window.terminalTest.creates.map((call) => call.sessionId))).toEqual([sessionId])
+    expect(await page.evaluate(() => window.terminalTest.attaches)).toEqual([sessionId])
+    expect(await page.evaluate(() => window.terminalTest.disposes)).toEqual([])
   })
 }
 
