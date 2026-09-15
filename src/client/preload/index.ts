@@ -31,6 +31,8 @@ const api = createAnvilApi(url, {
   browserState: (taskId) => ipcRenderer.invoke('desktop:browser-state', taskId),
   browserLayout: (layout) => ipcRenderer.invoke('desktop:browser-layout', layout),
   browserViewport: (input) => ipcRenderer.invoke('desktop:browser-viewport', input),
+  serverTarget: () => ipcRenderer.invoke('desktop:server-target'),
+  setServerTarget: (target) => ipcRenderer.invoke('desktop:set-server-target', target),
   onBrowserChanged(handler) {
     const listener = (_event: IpcRendererEvent, state: BrowserObservationState): void => handler(state)
     ipcRenderer.on('desktop:browser-changed', listener)

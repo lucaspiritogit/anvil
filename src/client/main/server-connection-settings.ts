@@ -68,4 +68,8 @@ export class ServerConnectionSettings {
     }
     return normalized
   }
+
+  async clear(): Promise<void> {
+    await rm(this.path, { force: true })
+  }
 }

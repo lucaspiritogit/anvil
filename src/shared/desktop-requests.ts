@@ -1,4 +1,10 @@
 import type { BrowserObservationLayout, BrowserViewportRequest } from './browser-observation'
+import type { ServerTarget } from './server-address'
+
+export interface DesktopServerConnectionState {
+  target: ServerTarget
+  url: string
+}
 
 export interface DesktopRequests {
   'desktop:pick-project': undefined
@@ -9,6 +15,8 @@ export interface DesktopRequests {
   'desktop:browser-state': string
   'desktop:browser-layout': BrowserObservationLayout
   'desktop:browser-viewport': BrowserViewportRequest
+  'desktop:server-target': undefined
+  'desktop:set-server-target': ServerTarget
 }
 
 function text(value: unknown): value is string {
@@ -37,12 +45,22 @@ function browserViewport(value: unknown): value is BrowserViewportRequest {
     && (input.viewport === 'desktop' || input.viewport === 'mobile')
 }
 
+function serverTarget(value: unknown): value is ServerTarget {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const input = value as Partial<ServerTarget>
+  const keys = Object.keys(input)
+  if (input.mode === 'local') return keys.length === 1 && keys[0] === 'mode'
+  return input.mode === 'remote' && keys.length === 2 && keys.includes('mode') && keys.includes('url') && text(input.url)
+}
+
 export function isDesktopRequest<C extends keyof DesktopRequests>(channel: C, value: unknown): value is DesktopRequests[C] {
   switch (channel) {
     case 'desktop:pick-project':
-    case 'desktop:pick-wallpaper': return value === undefined
+    case 'desktop:pick-wallpaper':
+    case 'desktop:server-target': return value === undefined
     case 'desktop:browser-layout': return browserLayout(value)
     case 'desktop:browser-viewport': return browserViewport(value)
+    case 'desktop:set-server-target': return serverTarget(value)
     default: return text(value)
   }
 }

@@ -5,6 +5,8 @@ import { type AppReadiness } from '../../shared/app-lifecycle'
 import { createEventLatch } from '../../shared/event-latch'
 import type { IpcRequests } from '../../shared/ipc-requests'
 import type { BrowserObservationLayout, BrowserObservationState, BrowserViewportRequest } from '../../shared/browser-observation'
+import type { DesktopServerConnectionState } from '../../shared/desktop-requests'
+import type { ServerTarget } from '../../shared/server-address'
 import type {
   Workspace,
   WorkspaceSnapshot,
@@ -53,6 +55,8 @@ export interface ClientHost {
   browserLayout(layout: BrowserObservationLayout): Promise<void>
   browserViewport(input: BrowserViewportRequest): Promise<BrowserObservationState>
   onBrowserChanged(handler: (state: BrowserObservationState) => void): () => void
+  serverTarget?(): Promise<DesktopServerConnectionState>
+  setServerTarget?(target: ServerTarget): Promise<DesktopServerConnectionState>
 }
 
 export function createAnvilApi(url: string, host: ClientHost) {
@@ -81,6 +85,10 @@ export function createAnvilApi(url: string, host: ClientHost) {
       viewport: host.browserViewport,
       onChanged: host.onBrowserChanged
     },
+    ...(host.serverTarget && host.setServerTarget ? { serverConnection: {
+      get: host.serverTarget,
+      set: host.setServerTarget
+    } } : {}),
     terminals: {
       create: (input: IpcRequests['terminals:create']): Promise<{ sessionId: string }> => invoke('terminals:create', input),
       attach: (sessionId: string): Promise<TerminalSnapshot> => invoke('terminals:attach', sessionId),

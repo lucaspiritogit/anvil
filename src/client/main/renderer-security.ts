@@ -3,6 +3,11 @@ import { isDesktopRequest, type DesktopRequests } from '../../shared/desktop-req
 import { DITHER_KIT_URL } from '../../shared/external-links'
 import { isGitHubPullRequestUrl } from '../../shared/github-repository'
 
+interface TrustedRenderer {
+  window: BrowserWindow
+  url: string
+}
+
 /** Only the configured document may use the desktop bridge. Hash routes are local. */
 export function isRendererUrl(value: string, rendererUrl: string): boolean {
   try {
@@ -29,11 +34,13 @@ export function isRendererSender(
 }
 
 /** Only desktop operations are registered with Electron. */
-export function createDesktopIpc(getWindow: () => BrowserWindow | null, rendererUrl: string) {
+export function createDesktopIpc(getRenderers: () => readonly TrustedRenderer[]) {
   return {
     handle<C extends keyof DesktopRequests>(channel: C, listener: (input: DesktopRequests[C]) => unknown): void {
       ipcMain.handle(channel, (event, ...args) => {
-        if (!isRendererSender(event, getWindow(), rendererUrl)) throw new Error('Unauthorized IPC sender')
+        if (!getRenderers().some((renderer) => isRendererSender(event, renderer.window, renderer.url))) {
+          throw new Error('Unauthorized IPC sender')
+        }
         const input = args[0]
         if (args.length > 1 || !isDesktopRequest(channel, input)) throw new Error('Invalid desktop request')
         return listener(input as DesktopRequests[C])

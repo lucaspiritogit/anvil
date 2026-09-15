@@ -33,12 +33,15 @@ test('validates renderer URLs and exact sender frame identity', async () => {
 })
 
 test('desktop IPC rejects secondary renderers and malformed shell inputs', async () => {
-  const ipc = createDesktopIpc(() => rendererWindow, rendererUrl)
+  let trustedUrl = rendererUrl
+  const ipc = createDesktopIpc(() => [{ window: rendererWindow, url: trustedUrl }])
   ipc.handle('desktop:open-path', (path) => path)
   ipc.handle('desktop:pick-project', () => '/project')
   ipc.handle('desktop:browser-state', (taskId) => ({ taskId, open: true, viewport: 'desktop' }))
   ipc.handle('desktop:browser-layout', (layout) => layout)
   ipc.handle('desktop:browser-viewport', (input) => input)
+  ipc.handle('desktop:server-target', () => ({ target: { mode: 'local' }, url: 'http://127.0.0.1:4780' }))
+  ipc.handle('desktop:set-server-target', (target) => target)
   const open = handlers.get('desktop:open-path')!
   expect(open(rendererEvent, '/project')).toBe('/project')
   expect(() => open({ ...rendererEvent, senderFrame: null }, '/project')).toThrow('Unauthorized IPC sender')
@@ -60,6 +63,16 @@ test('desktop IPC rejects secondary renderers and malformed shell inputs', async
   for (const malformed of [{ taskId: '', viewport: 'mobile' }, { taskId: 'task-a', viewport: 'tablet' }, { taskId: 'task-a' }, { taskId: 'task-a', viewport: 'desktop', extra: true }]) {
     expect(() => handlers.get('desktop:browser-viewport')!(rendererEvent, malformed)).toThrow('Invalid desktop request')
   }
+  expect(handlers.get('desktop:server-target')!(rendererEvent)).toEqual({ target: { mode: 'local' }, url: 'http://127.0.0.1:4780' })
+  expect(handlers.get('desktop:set-server-target')!(rendererEvent, { mode: 'remote', url: 'https://anvil.example' })).toEqual({ mode: 'remote', url: 'https://anvil.example' })
+  for (const malformed of [undefined, null, {}, { mode: 'local', url: 'https://anvil.example' }, { mode: 'remote' }, { mode: 'remote', url: '' }, { mode: 'remote', url: 'https://anvil.example', extra: true }]) {
+    expect(() => handlers.get('desktop:set-server-target')!(rendererEvent, malformed)).toThrow('Invalid desktop request')
+  }
+  trustedUrl = 'https://remote.example/'
+  expect(() => open(rendererEvent, '/project')).toThrow('Unauthorized IPC sender')
+  rendererFrame.url = trustedUrl
+  expect(open(rendererEvent, '/project')).toBe('/project')
+  rendererFrame.url = rendererUrl
 })
 
 test('validates PR URLs and blocks navigation, subframes and popups', async () => {
