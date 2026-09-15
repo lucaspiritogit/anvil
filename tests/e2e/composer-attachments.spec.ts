@@ -58,6 +58,35 @@ async function paste(prompt: Locator, images: ClipboardImage[]): Promise<void> {
   }, images)
 }
 
+async function pick(input: Locator, images: ClipboardImage[]): Promise<void> {
+  await input.setInputFiles(images.map((image) => ({
+    name: image.filename,
+    mimeType: image.mimeType,
+    buffer: Buffer.from(image.bytes)
+  })))
+}
+
+async function pickSynthetic(input: Locator, images: ClipboardImage[]): Promise<void> {
+  await input.evaluate((element: HTMLInputElement, images) => {
+    const files = images.map((image) => {
+      const file = new File([new Uint8Array(image.bytes)], image.filename, { type: image.mimeType })
+      if (image.size !== undefined) Object.defineProperty(file, 'size', { value: image.size })
+      if (image.read) {
+        const read = file.arrayBuffer.bind(file)
+        file.arrayBuffer = async () => {
+          if (image.read === 'fail') throw new Error('Attachment read failed')
+          await new Promise<void>((resolve) => window.addEventListener('fixture:read-ready', () => resolve(), { once: true }))
+          return read()
+        }
+      }
+      return file
+    })
+    Object.defineProperty(element, 'files', { configurable: true, value: files })
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+    delete (element as unknown as { files?: File[] }).files
+  }, images)
+}
+
 async function nativePaste(page: Page, prompt: Locator, text: string, withImage: boolean): Promise<void> {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.evaluate(async ({ text, image }) => {
@@ -85,6 +114,8 @@ test.describe(() => {
     const composer = (page: Page): Locator => page.getByRole('form', { name: 'Start a task' })
     const prompt = (page: Page): Locator => composer(page).getByRole('textbox', { name: 'Task prompt' })
     const send = (page: Page): Locator => composer(page).getByRole('button', { name: 'Send', exact: true })
+    const attach = (page: Page): Locator => composer(page).getByRole('button', { name: 'Attach image', exact: true })
+    const imageInput = (page: Page): Locator => composer(page).locator('input[type="file"]')
 
     test('preserves ordinary text paste and submits text without attachments', async ({ page }) => {
       await expect(send(page)).toBeDisabled()
@@ -108,6 +139,63 @@ test.describe(() => {
       await send(page).click()
       await expect.poll(() => page.evaluate(() => window.composerTest.starts[0]?.images?.length)).toBe(1)
       expect(await page.evaluate(() => window.composerTest.starts[0].prompt)).toBe('Before clipboard text after')
+    })
+
+    test('chooses multiple files from the keyboard, supports same-file reselection and submits without text', async ({ page }) => {
+      await expect(attach(page)).toBeEnabled()
+      await expect(imageInput(page)).toHaveAttribute('accept', 'image/png,image/jpeg,image/webp')
+      await expect(imageInput(page)).toHaveAttribute('multiple', '')
+      const chooserPromise = page.waitForEvent('filechooser')
+      await attach(page).press('Enter')
+      const chooser = await chooserPromise
+      await chooser.setFiles(samples.map((image) => ({
+        name: image.filename,
+        mimeType: image.mimeType,
+        buffer: Buffer.from(image.bytes)
+      })))
+      await expect(composer(page).getByRole('img')).toHaveCount(3)
+      await expect(imageInput(page)).toHaveValue('')
+      await composer(page).getByRole('button', { name: `Remove ${samples[0].filename}` }).click()
+      await expect.poll(() => page.evaluate(() => (window as unknown as { imageUrls: { revoked: string[] } }).imageUrls.revoked.length)).toBe(1)
+      await pick(imageInput(page), [samples[0]])
+      await expect(composer(page).getByRole('img')).toHaveCount(3)
+      await expect(composer(page).getByRole('img', { name: `Preview of ${samples[0].filename}` })).toHaveCount(1)
+      await send(page).click()
+      await expect.poll(() => page.evaluate(() => window.composerTest.starts[0]?.images?.map((image) => image.filename))).toEqual([
+        samples[1].filename, samples[2].filename, samples[0].filename
+      ])
+      await expect(composer(page)).toHaveCount(0)
+      await expectUrlsReleased(page)
+    })
+
+    test('validates selected formats, sizes, counts and reads and blocks submission while reading', async ({ page }) => {
+      await prompt(page).fill('Validate selections')
+      await pickSynthetic(imageInput(page), [
+        { ...samples[0], mimeType: 'image/svg+xml' },
+        { ...samples[0], filename: 'empty.png', bytes: [] },
+        { ...samples[0], filename: 'oversized.png', size: 10 * 1024 * 1024 + 1 },
+        { ...samples[0], filename: 'malformed.png', bytes: [1, 2, 3] },
+        { ...samples[0], filename: 'unreadable.png', read: 'fail' }
+      ])
+      await expect(composer(page).getByRole('alert')).toHaveCount(5)
+      await expect(composer(page).getByRole('alert').first()).toContainText('Attach a PNG, JPEG or WebP image')
+      await expect(composer(page).getByRole('alert').last()).toContainText('Attachment read failed')
+      for (let i = 0; i < 5; i++) await composer(page).getByRole('button', { name: /^Remove / }).first().click()
+      await pick(imageInput(page), Array.from({ length: 9 }, (_, index) => ({ ...samples[0], filename: `count-${index}.png` })))
+      await expect(composer(page).getByRole('img')).toHaveCount(8)
+      await expect(composer(page).getByRole('alert')).toContainText('at most 8 images')
+      for (let i = 0; i < 8; i++) await composer(page).getByRole('button', { name: /^Remove / }).first().click()
+      await pickSynthetic(imageInput(page), [
+        { ...samples[0], filename: 'large-1.png', size: 10 * 1024 * 1024, read: 'pending' },
+        { ...samples[0], filename: 'large-2.png', size: 10 * 1024 * 1024, read: 'pending' },
+        { ...samples[0], filename: 'large-3.png', size: 1 }
+      ])
+      await expect(composer(page).getByRole('alert')).toContainText('20 MiB')
+      await expect(send(page)).toBeDisabled()
+      await prompt(page).press('Enter')
+      expect(await page.evaluate(() => window.composerTest.starts)).toEqual([])
+      await page.evaluate(() => window.dispatchEvent(new Event('fixture:read-ready')))
+      await expect(send(page)).toBeEnabled()
     })
 
     test('sends multiple image formats without text and releases previews after success', async ({ page }) => {
@@ -222,24 +310,28 @@ test.describe(() => {
       await expect.poll(() => page.evaluate(() => window.composerTest.starts.length)).toBe(1)
     })
 
-    test('retains the prompt and images on failure, then retries unchanged', async ({ page }) => {
+    test('retains selected and pasted images on failure, then retries unchanged', async ({ page }) => {
       await prompt(page).fill('Retry my screenshot\n@tskc')
       await expect(page.getByRole('option', { name: 'src/TaskComposer.tsx', exact: true })).toBeVisible()
       await prompt(page).press('Enter')
       const draft = 'Retry my screenshot\n@"src/TaskComposer.tsx" '
       await expect(prompt(page)).toHaveValue(draft)
-      await paste(prompt(page), [samples[0]])
-      await expect(composer(page).getByRole('img')).toHaveCount(1)
+      await pick(imageInput(page), [samples[0]])
+      await paste(prompt(page), [samples[1]])
+      await expect(composer(page).getByRole('img')).toHaveCount(2)
       await page.evaluate(() => { window.composerTest.failNextStart = true })
       await prompt(page).press('Enter')
+      await expect(attach(page)).toBeDisabled()
       await expect(composer(page).getByRole('alert')).toHaveText('Task could not be started')
+      await expect(attach(page)).toBeEnabled()
       await expect(prompt(page)).toHaveValue(draft)
-      await expect(composer(page).getByRole('img')).toHaveCount(1)
+      await expect(composer(page).getByRole('img')).toHaveCount(2)
       await prompt(page).press('Enter')
       await expect(composer(page)).toHaveCount(0)
       const [first, second] = await page.evaluate(() => window.composerTest.starts)
       expect(first.prompt).toBe(draft.trim())
       expect(first.fileReferences).toEqual(['src/TaskComposer.tsx'])
+      expect(first.images?.map((image) => image.filename)).toEqual([samples[0].filename, samples[1].filename])
       expect(second).toEqual(first)
       await expectUrlsReleased(page)
     })
@@ -270,7 +362,8 @@ test.describe(() => {
     })
 
     test('closing or replacing the draft releases previews and ignores late reads', async ({ page }) => {
-      await paste(prompt(page), [samples[0], { ...samples[1], read: 'pending' }])
+      await pick(imageInput(page), [samples[0]])
+      await paste(prompt(page), [{ ...samples[1], read: 'pending' }])
       await expect(composer(page).getByRole('img')).toHaveCount(1)
       await page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true }).click()
       await expect(composer(page)).toHaveCount(0)
