@@ -113,7 +113,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   return (
     <div>
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
-      {projectId && <ProjectBranchSelector key={projectId} projectId={projectId} disabled={busy} onSwitching={setSwitchingBranch} />}
       {style === 'quick' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><TaskStyleBadge style="quick" /> Runs without a plan or worktree in the current checkout.</p>}
       {style === 'work' && reviewPolicy === 'review_at_task_end' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><Icon icon="moon-star" size={14} /> Runs through issue reviews automatically. Final merge and push still wait for you.</p>}
       {style === 'work' && parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
@@ -241,6 +240,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         </fieldset>
         {error && <p role="alert" className="px-5 pb-4 text-xs text-danger max-[700px]:px-4">{error}</p>}
       </form>
+      {projectId && <ProjectBranchSelector key={projectId} projectId={projectId} disabled={busy} onSwitching={setSwitchingBranch} />}
     </div>
   )
 }

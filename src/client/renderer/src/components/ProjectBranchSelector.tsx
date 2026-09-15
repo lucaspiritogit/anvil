@@ -86,8 +86,8 @@ export function ProjectBranchSelector({ projectId, disabled, onSwitching }: Prop
   const current = branches?.currentBranch ?? ''
   const branchLabel = current || (branches ? 'Detached HEAD' : error ? 'Branch unavailable' : 'Loading branch…')
   return (
-    <div className="mb-3 flex min-w-0 flex-col items-start gap-2">
-      <div className="flex max-w-full items-center gap-3 text-xs text-fg">
+    <div className="mt-3 flex min-w-0 flex-col items-start gap-2">
+      <div className="flex max-w-full items-center gap-3 text-sm text-fg">
         <span data-testid="composer-project-name" title={projectName} className="min-w-0 max-w-[50%] truncate font-medium">{projectName}</span>
         {isRepository !== false && <button
           ref={triggerRef}
@@ -97,7 +97,7 @@ export function ProjectBranchSelector({ projectId, disabled, onSwitching }: Prop
           aria-haspopup="dialog"
           aria-expanded={open}
           title={`${branchLabel}. New tasks start from this branch.`}
-          className="inline-flex min-w-0 items-center gap-1 py-1 text-xs text-dim hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60"
+          className="inline-flex min-w-0 items-center gap-1.5 py-1 text-sm text-dim hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60"
           disabled={disabled || !branches}
           aria-disabled={switching}
           onClick={() => {
@@ -106,6 +106,7 @@ export function ProjectBranchSelector({ projectId, disabled, onSwitching }: Prop
             setOpen(true)
           }}
         >
+          <Icon icon="git-branch" size={14} className="shrink-0" aria-hidden="true" />
           <span className="truncate">{branchLabel}</span>
           <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
         </button>}
