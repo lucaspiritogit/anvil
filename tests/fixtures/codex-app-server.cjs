@@ -174,8 +174,15 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       id: 'plain-id', model: 'plain', supportedReasoningEfforts: [], defaultReasoningEffort: 'none'
     }] : [{
       id: 'catalogue-id', model: 'reasoner', inputModalities: ['text', 'image'],
-      supportedReasoningEfforts: [{ reasoningEffort: 'native-max', description: 'Maximum reasoning' }, { reasoningEffort: 'low', description: 'Fast reasoning' }],
-      defaultReasoningEffort: 'native-max'
+      supportedReasoningEfforts: [
+        { reasoningEffort: 'max', description: 'Maximum possible reasoning' },
+        { reasoningEffort: 'high', description: 'Greater reasoning depth for complex problems' },
+        { reasoningEffort: 'minimal', description: 'Quick answers' },
+        { reasoningEffort: 'xhigh', description: 'Extra high reasoning' },
+        { reasoningEffort: 'medium', description: 'Balances speed and reasoning depth' },
+        { reasoningEffort: 'low', description: 'Favors speed' }
+      ],
+      defaultReasoningEffort: 'minimal'
     }]
     return respond(message.id, { data, nextCursor: message.params.cursor && scenario !== 'models-cycle' ? null : 'page-2' })
   }

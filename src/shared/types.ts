@@ -1,5 +1,6 @@
 import type { Issue, ParentIssue } from './valence'
 import type { Keybindings } from './keybindings'
+import type { ThinkingLevel } from './reasoning-levels'
 
 export type { Issue } from './valence'
 
@@ -165,7 +166,7 @@ export type ModelSource =
 
 export interface ModelReasoningCapabilities {
   /** Opaque, model-scoped protocol values. Empty means no configurable reasoning. */
-  options: Array<{ id: string; label: string }>
+  options: Array<{ id: string; level: ThinkingLevel }>
   /** Only present when the provider advertises a default. */
   default?: string
 }

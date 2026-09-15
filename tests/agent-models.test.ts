@@ -1,5 +1,5 @@
 import type { ProviderListResponse } from '@opencode-ai/sdk/client'
-import { expect, test, vi } from 'vitest'
+import { afterAll, beforeAll, expect, test, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,29 +8,54 @@ import type { AgentDefinition, ProviderModelList } from '../src/shared/types'
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 
+let unitHome: string | undefined
+
+beforeAll(async () => {
+  if (process.env.ANVIL_TEST_HOME) return
+  unitHome = await mkdtemp(join(tmpdir(), 'anvil-models-home-'))
+  process.env.ANVIL_TEST_HOME = unitHome
+})
+
+afterAll(async () => {
+  if (!unitHome) return
+  delete process.env.ANVIL_TEST_HOME
+  await rm(unitHome, { recursive: true, force: true })
+})
+
 const expected = {
   models: ['openrouter/deepseek/deepseek-v4', 'openai/plain', 'openai/custom'],
   reasoningByModel: {
-    'openrouter/deepseek/deepseek-v4': { options: [{ id: 'high', label: 'high' }, { id: 'max', label: 'max' }] },
+    'openrouter/deepseek/deepseek-v4': { options: [
+      { id: 'fast', level: 'fast' },
+      { id: 'low', level: 'low' },
+      { id: 'medium', level: 'medium' },
+      { id: 'high', level: 'high' },
+      { id: 'xhigh', level: 'xhigh' },
+      { id: 'max', level: 'max' }
+    ] },
     'openai/plain': { options: [] },
-    'openai/custom': { options: [{ id: 'default', label: 'default' }, { id: 'custom-effort', label: 'custom-effort' }] }
+    'openai/custom': { options: [
+      { id: 'low', level: 'low' },
+      { id: 'medium', level: 'medium' },
+      { id: 'high', level: 'high' }
+    ] }
   },
   capabilitiesByModel: {
     'openrouter/deepseek/deepseek-v4': { imageInput: true },
     'openai/plain': { imageInput: false },
     'openai/custom': { imageInput: true }
   }
-}
+} satisfies Pick<ProviderModelList, 'models' | 'reasoningByModel' | 'capabilitiesByModel'>
 
 test('normalizes SDK model metadata for reasoning and image validation', () => {
   const providers = {
     all: [
       { id: 'openrouter', models: {
-        'deepseek/deepseek-v4': { id: 'deepseek/deepseek-v4', variants: { high: {}, max: {} }, capabilities: { input: { image: true } } }
+        'deepseek/deepseek-v4': { id: 'deepseek/deepseek-v4', variants: { max: {}, low: {}, fast: {}, xhigh: {}, medium: {}, high: {} }, capabilities: { input: { image: true } } }
       } },
       { id: 'openai', models: {
         plain: { id: 'plain', variants: {}, capabilities: { input: { image: false } } },
-        custom: { id: 'custom', variants: { default: {}, 'custom-effort': {} }, modalities: { input: ['text', 'image'] } }
+        custom: { id: 'custom', variants: { high: {}, 'custom-effort': {}, low: {}, medium: {} }, modalities: { input: ['text', 'image'] } }
       } }
     ],
     default: {},
@@ -53,7 +78,7 @@ test('discovers adapter models, preserves cached metadata and reports failures',
       id: 'catalogue-fixture', label: 'Fixture', description: '', command: 'unused', args: [],
       models: { kind: 'adapter', adapterId: 'catalogue-fixture' }
     }
-    const futureCatalogue = { models: ['future'], reasoningByModel: { future: { options: [{ id: 'budget:8192', label: 'Thorough' }], default: 'budget:8192' } } }
+    const futureCatalogue = { models: ['future'], reasoningByModel: { future: { options: [{ id: 'budget:8192', level: 'high' as const }], default: 'budget:8192' } } }
     const executor = { execute: async () => { throw new Error('unused') } }
     let discoveryFailure = false
     registerAgentAdapter({ id: 'future', createExecutor: () => executor, listModels: async () => futureCatalogue })
@@ -87,7 +112,17 @@ test('discovers adapter models, preserves cached metadata and reports failures',
     const codex = { ...agent, id: 'codex-fixture', command: process.execPath, args: [join(process.cwd(), 'tests/fixtures/codex-app-server.cjs'), 'models', join(directory, 'codex.jsonl')], models: { kind: 'adapter' as const, adapterId: 'codex' } }
     const codexModels = await listModels(codex, testWorkspace())
     expect(codexModels.models).toStrictEqual(['reasoner', 'plain'])
-    expect(codexModels.reasoningByModel?.reasoner.default).toBe('native-max')
+    expect(codexModels.reasoningByModel?.reasoner).toStrictEqual({
+      options: [
+        { id: 'minimal', level: 'fast' },
+        { id: 'low', level: 'low' },
+        { id: 'medium', level: 'medium' },
+        { id: 'high', level: 'high' },
+        { id: 'xhigh', level: 'xhigh' },
+        { id: 'max', level: 'max' }
+      ],
+      default: 'minimal'
+    })
     expect(codexModels.reasoningByModel?.plain.options).toStrictEqual([])
     const codexError = await listModels({ ...codex, id: 'codex-error', args: [codex.args[0], 'models-error', codex.args[2]] }, testWorkspace())
     expect(codexError.error!).toMatch(/Discovery unavailable/)

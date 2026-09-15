@@ -378,20 +378,20 @@ window.anvil = {
     ],
     models: async (agentId: string): Promise<ProviderModelList> => query.has('composerModel') ? {
       agentId, models: [query.get('composerModel')!], reasoningByModel: {
-        [query.get('composerModel')!]: { options: ['low', 'medium', 'high'].map((id) => ({ id, label: id })) }
+        [query.get('composerModel')!]: { options: ['low', 'medium', 'high'].map((id) => ({ id, level: id as 'low' | 'medium' | 'high' })) }
       }
     } : query.has('reasoningModels') && agentId === 'opencode' ? {
       agentId,
       models: ['openrouter/deepseek/deepseek-v4', 'provider/reasoner', 'provider/plain'],
       reasoningByModel: {
-        'openrouter/deepseek/deepseek-v4': { options: ['high', 'max'].map((id) => ({ id, label: id })) },
-        'provider/reasoner': { options: ['low', 'medium', 'high'].map((id) => ({ id, label: id })), default: 'medium' },
+        'openrouter/deepseek/deepseek-v4': { options: [{ id: 'high', level: 'high' }, { id: 'max', level: 'max' }] },
+        'provider/reasoner': { options: [{ id: 'low', level: 'low' }, { id: 'medium', level: 'medium' }, { id: 'high', level: 'high' }], default: 'medium' },
         'provider/plain': { options: [] }
       }
     } : {
       agentId, models: agentId === 'codex' ? ['gpt-5', 'gpt-5-mini'] : ['provider/model'],
       reasoningByModel: agentId === 'codex' ? Object.fromEntries(['gpt-5', 'gpt-5-mini'].map((model) => [model, {
-        options: [{ id: 'native-max', label: 'Maximum reasoning' }, { id: 'high', label: 'High' }], default: 'high'
+        options: [{ id: 'high', level: 'high' }, { id: 'native-max', level: 'max' }], default: 'high'
       }])) : { 'provider/model': { options: [] } }
     }
   },

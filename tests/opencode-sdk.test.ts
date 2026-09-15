@@ -36,7 +36,7 @@ test('discovers typed SDK models in isolated workspaces and closes each server',
     const catalogue = await openCodeAdapter.listModels(agent, workspace)
     expect(catalogue).toStrictEqual({
       models: [`openai/${key}`],
-      reasoningByModel: { [`openai/${key}`]: { options: [{ id: 'high', label: 'high' }] } },
+      reasoningByModel: { [`openai/${key}`]: { options: [{ id: 'high', level: 'high' }] } },
       capabilitiesByModel: { [`openai/${key}`]: { imageInput: true } }
     })
     const entries = await fixture.entries(workspace)

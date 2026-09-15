@@ -1,5 +1,6 @@
 import type { Model, ProviderListResponse } from '@opencode-ai/sdk/client'
 import type { ProviderModelList } from '../../shared/types'
+import { canonicalReasoningOptions } from '../../shared/reasoning-levels'
 
 type OpenCodeProvider = ProviderListResponse['all'][number]
 type OpenCodeProviderModel = OpenCodeProvider['models'][string]
@@ -25,7 +26,7 @@ export function openCodeModelCatalogue(providers: ProviderListResponse): Pick<Pr
       const model = providerModel as CurrentOpenCodeModel
       const variants = model.variants && !Array.isArray(model.variants) ? Object.keys(model.variants) : []
       reasoningByModel[modelId] = {
-        options: variants.map((variant) => ({ id: variant, label: variant }))
+        options: canonicalReasoningOptions(variants)
       }
       capabilitiesByModel[modelId] = {
         imageInput: model.capabilities?.input.image === true ||

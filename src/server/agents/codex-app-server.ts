@@ -7,6 +7,7 @@ import { codexTurn, type CodexAppServerRequests, type CodexObject, type CodexThr
 import { LazyAgentServer } from './lazy-agent-server'
 import { codexSandboxPolicy } from './codex-sandbox'
 import type { ProviderModelList, ModelReasoningCapabilities } from '../../shared/types'
+import { canonicalReasoningOptions } from '../../shared/reasoning-levels'
 
 interface CodexExecution extends ConnectionHandlers {
   taskId: string
@@ -111,9 +112,10 @@ export class CodexAppServerClient implements AgentExecutor {
     do {
       const page = await connection.request('model/list', { cursor })
       for (const model of page.data) {
+        const options = canonicalReasoningOptions(model.supportedReasoningEfforts.map((option) => option.reasoningEffort))
         reasoning.set(model.model, {
-          options: model.supportedReasoningEfforts.map((option) => ({ id: option.reasoningEffort, label: option.description })),
-          default: model.defaultReasoningEffort
+          options,
+          ...(options.some((option) => option.id === model.defaultReasoningEffort) ? { default: model.defaultReasoningEffort } : {})
         })
       }
       cursor = page.nextCursor ?? undefined

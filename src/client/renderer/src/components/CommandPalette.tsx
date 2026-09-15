@@ -77,7 +77,7 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
       description: preferences.saveError ?? undefined, disabled: !agents.length,
       onClick: () => setNestedPicker('model') },
     { id: 'change-thinking', ref: thinkingRef, icon: 'sparkles', label: 'Change thinking',
-      description: reasoningEffort ? reasoningOptions.find((option) => option.id === reasoningEffort)?.label : undefined,
+      description: reasoningEffort ? reasoningOptions.find((option) => option.id === reasoningEffort)?.level : undefined,
       onClick: () => setNestedPicker('thinking') },
     { id: 'change-project', ref: projectRef, icon: 'folder', label: 'Change project',
       description: activeProject?.name, onClick: () => setNestedPicker('project') },
@@ -218,7 +218,7 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
         <ChoicePickerDialog
           anchorRef={thinkingRef}
           label="Choose thinking"
-          choices={reasoningOptions}
+          choices={reasoningOptions.map((option) => ({ id: option.id, label: option.level }))}
           selectedId={reasoningEffort}
           status={thinkingStatus(agentId, model, catalogue, capabilities)}
           onClose={() => setNestedPicker(null)}

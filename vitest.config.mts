@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config'
 // Keep new suites in integration until their dependencies are reviewed.
 const unitSuites = [
   'tests/agent-failure.test.ts',
+  'tests/agent-models.test.ts',
   'tests/app-lifecycle.test.ts',
   'tests/app-shutdown.test.ts',
   'tests/github-pull-requests.test.ts',

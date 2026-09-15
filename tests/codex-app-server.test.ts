@@ -68,7 +68,7 @@ test('reuses workspace catalogue reasoning capabilities until invalidated', asyn
   })
   const input: TaskInput = {
     workspace, taskId: 'cached-reasoning', cwd: directory, prompt: 'Implement the issue',
-    model: 'reasoner', reasoningEffort: 'native-max'
+    model: 'reasoner', reasoningEffort: 'minimal'
   }
   const modelRequests = async (): Promise<any[]> =>
     (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line)).filter((entry) => entry.method === 'model/list')
@@ -214,7 +214,7 @@ test('requires workspace authentication before migrated-session recovery or mode
   expect(requests.find((entry) => entry.method === 'turn/start')?.params.input).toEqual([{ type: 'text', text: input.resumeFallbackPrompt, text_elements: [] }])
   expect(events.some((event) => event.type === 'output' && event.event.text.includes('previous conversation history was not restored'))).toBe(true)
   expect((await client.launches()).map((launch) => launch.account)).toEqual([null, null, null, 'new-work-account'])
-  expect(await client.executor.listModels(fixture.directory)).toEqual({ models: ['new-work-account'], reasoningByModel: { 'new-work-account': { options: [], default: 'none' } } })
+  expect(await client.executor.listModels(fixture.directory)).toEqual({ models: ['new-work-account'], reasoningByModel: { 'new-work-account': { options: [] } } })
 })
 
 test('rejects unsupported or enforced credential stores before account access and cleans up failed servers', async () => {
@@ -266,8 +266,15 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
     expect(await discoveryClient.listModels(directory)).toStrictEqual({
       models: ['reasoner', 'plain'],
       reasoningByModel: {
-        reasoner: { options: [{ id: 'native-max', label: 'Maximum reasoning' }, { id: 'low', label: 'Fast reasoning' }], default: 'native-max' },
-        plain: { options: [], default: 'none' }
+        reasoner: { options: [
+          { id: 'minimal', level: 'fast' },
+          { id: 'low', level: 'low' },
+          { id: 'medium', level: 'medium' },
+          { id: 'high', level: 'high' },
+          { id: 'xhigh', level: 'xhigh' },
+          { id: 'max', level: 'max' }
+        ], default: 'minimal' },
+        plain: { options: [] }
       }
     })
     const discoveredRequests = await requests()
@@ -322,7 +329,7 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
     })
 
     for (const { resumeSessionId, reasoningEffort } of [
-      { resumeSessionId: undefined, reasoningEffort: 'native-max' },
+      { resumeSessionId: undefined, reasoningEffort: 'minimal' },
       { resumeSessionId: 'thread-test', reasoningEffort: 'low' },
       { resumeSessionId: undefined, reasoningEffort: undefined },
       { resumeSessionId: 'thread-test', reasoningEffort: undefined }
@@ -351,7 +358,7 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
       expect((await requests()).some((entry) => entry.method.startsWith('thread/') || entry.method === 'turn/start')).toBe(false)
     }
     await writeFile(transcript, '')
-    const rejected = await client('rejected-effort').execute({ ...input, model: 'reasoner', reasoningEffort: 'native-max' }, () => {})
+    const rejected = await client('rejected-effort').execute({ ...input, model: 'reasoner', reasoningEffort: 'minimal' }, () => {})
     expect(rejected.status).toBe('failed')
     expect(rejected.error, 'Preserve the actual RPC error without blaming reasoning settings').toBe('Effort rejected by backend')
     expect((await requests()).some((entry) => entry.method === 'turn/start')).toBe(false)

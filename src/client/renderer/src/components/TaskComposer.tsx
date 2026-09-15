@@ -236,7 +236,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                   onChange={(event) => setReasoningEffort(agentId, model, event.target.value)}
                 >
                   {!reasoningOptions.length && <option value="">{loadingEfforts ? 'Loading efforts…' : catalogue?.error || (model && !capabilities) ? 'Reasoning unavailable' : 'Agent default'}</option>}
-                  {reasoningOptions.map((option) => <option className="bg-raised text-fg" key={option.id} value={option.id}>{option.label}</option>)}
+                  {reasoningOptions.map((option) => <option className="bg-raised text-fg" key={option.id} value={option.id}>{option.level}</option>)}
                 </select>
                 <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
               </label>

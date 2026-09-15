@@ -16,17 +16,21 @@ test('model selection refreshes available efforts and remembers a valid choice p
     await composer.getByRole('button', { name: /^(Choose a model|Model:)/ }).click()
     await page.getByRole('dialog', { name: 'Choose model' }).getByRole('button', { name, exact: true }).click()
   }
-  await chooseModel('reasoner')
+  await chooseModel('Reasoner')
+  await expect(reasoning.locator('option')).toHaveText(['low', 'medium', 'high'])
   await expect(reasoning).toHaveValue('medium')
-  await reasoning.selectOption('low')
-  await chooseModel('deepseek-v4')
+  await page.keyboard.press('Control+Shift+T')
+  await expect(reasoning).toHaveValue('high')
+  await page.keyboard.press('Control+Shift+T')
+  await expect(reasoning).toHaveValue('low')
+  await chooseModel('Deepseek V4')
   await expect(reasoning.locator('option')).toHaveText(['high', 'max'])
   await expect(reasoning).toHaveValue('high')
   await reasoning.selectOption('max')
   await page.screenshot({ path: testInfo.outputPath('deepseek-reasoning.png') })
-  await chooseModel('reasoner')
+  await chooseModel('Reasoner')
   await expect(reasoning).toHaveValue('low')
-  await chooseModel('deepseek-v4')
+  await chooseModel('Deepseek V4')
   await expect(reasoning).toHaveValue('max')
   await page.reload()
   await expect(reasoning).toHaveValue('max')
@@ -94,7 +98,7 @@ test('models without efforts disable the selector and omit effort from submissio
   await configureModels(page)
   const composer = page.getByRole('form', { name: 'Start a task' })
   await composer.getByRole('button', { name: /^(Choose a model|Model:)/ }).click()
-  await page.getByRole('dialog', { name: 'Choose model' }).getByRole('button', { name: 'plain', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Choose model' }).getByRole('button', { name: 'Plain', exact: true }).click()
   const reasoning = composer.getByRole('combobox', { name: 'Reasoning effort' })
   await expect(reasoning).toBeDisabled()
   await expect(reasoning.locator('option:checked')).toHaveText('Agent default')
@@ -112,8 +116,8 @@ test('the same model ID keeps separate agent choices and forwards the Codex opti
       agentId, models: ['shared-model'], reasoningByModel: {
         'shared-model': {
           options: agentId === 'codex'
-            ? [{ id: 'native-max', label: 'Maximum reasoning' }, { id: 'low', label: 'Low' }]
-            : [{ id: 'fast', label: 'Fast reasoning' }, { id: 'max', label: 'Maximum' }],
+            ? [{ id: 'low', level: 'low' }, { id: 'native-max', level: 'max' }]
+            : [{ id: 'fast', level: 'fast' }, { id: 'max', level: 'max' }],
           default: agentId === 'codex' ? 'native-max' : 'fast'
         }
       }
@@ -124,14 +128,16 @@ test('the same model ID keeps separate agent choices and forwards the Codex opti
   const effort = composer.getByRole('combobox', { name: 'Reasoning effort' })
   const selectModel = async (): Promise<void> => {
     await composer.getByRole('button', { name: /^(Choose a model|Model:)/ }).click()
-    await page.getByRole('dialog', { name: 'Choose model' }).getByRole('button', { name: 'shared-model', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Choose model' }).getByRole('button', { name: 'Shared Model', exact: true }).click()
   }
   await chooseProvider(agent, 'codex')
   await selectModel()
+  await expect(effort.locator('option')).toHaveText(['low', 'max'])
   await expect(effort).toHaveValue('native-max')
-  await expect(effort.locator('option:checked')).toHaveText('Maximum reasoning')
+  await expect(effort.locator('option:checked')).toHaveText('max')
   await chooseProvider(agent, 'opencode')
   await selectModel()
+  await expect(effort.locator('option')).toHaveText(['fast', 'max'])
   await expect(effort).toHaveValue('fast')
   await effort.selectOption('max')
   await chooseProvider(agent, 'codex')
@@ -179,7 +185,7 @@ for (const agentId of ['codex', 'opencode']) {
       window.anvil.agents.models = async (requestedAgent) => {
         await new Promise<void>((resolve) => window.addEventListener('fixture:models-ready', () => resolve(), { once: true }))
         return { agentId: requestedAgent, models: ['shared-model'], reasoningByModel: {
-          'shared-model': { options: [{ id: agentId === 'codex' ? 'native-max' : 'max', label: 'Maximum' }] }
+          'shared-model': { options: [{ id: agentId === 'codex' ? 'native-max' : 'max', level: 'max' }] }
         } }
       }
     }, agentId)
