@@ -7,6 +7,15 @@ export interface GitContext {
   remoteGit: typeof git
 }
 
+export interface MergeConflictResult {
+  status: 'conflicted'
+  repositoryRoot: string
+  mergeHeadCommit: string
+  conflictedFiles: string[]
+}
+
+export type MergeResult = { status: 'merged'; commit: string } | MergeConflictResult
+
 export interface PreparedCheckout {
   baseBranch: string
   branchName: string

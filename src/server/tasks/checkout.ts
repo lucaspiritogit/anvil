@@ -14,6 +14,11 @@ export function usesManagedWorktree(task: Task): boolean {
 
 export function requireProjectCheckoutAvailable(store: Store, task: Task, force = false): void {
   if (!force && !usesProjectCheckout(task)) return
+  if (store.getTasks(task.workspaceId).some((candidate) => candidate.id !== task.id &&
+    candidate.projectId === task.projectId &&
+    (candidate.deliveryStatus === 'merge_conflict' || candidate.mergeConflict))) {
+    throw new Error('Resolve or abort the paused task merge before using this project checkout')
+  }
   const conflict = store.getTasks(task.workspaceId).find((candidate) => candidate.id !== task.id &&
     candidate.projectId === task.projectId && candidate.status === 'running' && (force || usesProjectCheckout(candidate)))
   if (conflict) {

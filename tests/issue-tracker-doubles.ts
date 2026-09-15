@@ -135,7 +135,7 @@ export class GitDeliveryManager {
     const sourceCommit = GitDeliveryManager.currentHeadCommit()
     return { sourceBranch: branchName, targetBranch: 'main', sourceCommit, targetCommit: 'b'.repeat(40), commitCount: 1 }
   }
-  async merge(): Promise<void> {}
+  async merge(): Promise<any> { return { status: 'merged', commit: 'd'.repeat(40) } }
   async getDiff(_path: string, base: string, head: string): Promise<any> { return { patch: `${base}..${head}`, commits: [] } }
   static worktreeHeadValue: string | null = null
   static currentHeadCommit(): string {

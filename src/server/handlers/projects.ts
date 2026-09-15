@@ -9,6 +9,7 @@ import type { Project } from '../../shared/types'
 import { listProjectFiles, projectFileError } from '../project-files'
 import { usesManagedWorktree, usesProjectCheckout } from '../tasks/checkout'
 import { taskStyle } from '../../shared/task-style'
+import { taskOperationKind } from '../tasks/operations'
 
 interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDelivery' | 'agentProcesses'> {
   stopTask: TaskExecution['stopTask']
@@ -22,6 +23,10 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
   store, gitDelivery, agentProcesses, stopTask, deferTaskCleanup, skipTaskCleanup, projectMemory, projectsChanged
 }: ProjectHandlerDependencies): void {
   const requireCheckoutAvailable = (projectId: string): void => {
+    if (store.getTasks().some((task) => task.projectId === projectId &&
+      (task.deliveryStatus === 'merge_conflict' || task.mergeConflict))) {
+      throw new Error('Resolve or abort the paused task merge before changing this project checkout')
+    }
     const conflict = store.getTasks().find((task) => task.projectId === projectId && task.status === 'running' && usesProjectCheckout(task))
     if (!conflict) return
     if (taskStyle(conflict) === 'quick') throw new Error('Wait for the active Quick task in this project to finish')
@@ -63,6 +68,12 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     const memory = projectMemory && 'forWorkspace' in projectMemory
       ? (projectMemory as import('../memory/workspace-project-memory').WorkspaceProjectMemory).forWorkspace(workspaceId) : projectMemory
     const projectTasks = store.getTasks(workspaceId).filter((task) => task.projectId === id)
+    if (projectTasks.some((task) => task.deliveryStatus === 'merge_conflict' || task.mergeConflict)) {
+      throw new Error('Abort the paused task merge before removing this project')
+    }
+    if (projectTasks.some((task) => taskOperationKind(store, task.id) === 'merge')) {
+      throw new Error('Wait for the task merge attempt to finish before removing this project')
+    }
     for (const task of projectTasks) {
       if (project && task.branchName && usesManagedWorktree(task) && agentProcesses.isRunning(task.id)) deferTaskCleanup(task.id, project.path, task.branchName)
       else if (!usesManagedWorktree(task) && agentProcesses.isRunning(task.id)) skipTaskCleanup(task.id)

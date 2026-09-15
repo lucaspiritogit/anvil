@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { onTestCleanup } from './test-cleanup'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GitDeliveryManager } from '../src/server/git'
@@ -83,17 +83,50 @@ test('merges into the current branch while guarding stale previews, local change
     git('commit', '-am', 'Conflict')
     const conflictHead = git('rev-parse', 'HEAD')
     const conflicting = await manager.getMergePreview(repo, 'agent/task')
-    await expect(manager.merge(repo, 'agent/task', conflicting)).rejects.toThrow(/Merge failed/)
+    const conflict = await manager.merge(repo, 'agent/task', conflicting)
+    expect(conflict).toStrictEqual({
+      status: 'conflicted',
+      repositoryRoot: repo,
+      mergeHeadCommit: sourceCommit,
+      conflictedFiles: ['shared.txt']
+    })
     expect(git('rev-parse', 'HEAD')).toBe(conflictHead)
-    expect(git('status', '--porcelain=v1'), 'Failed merge is aborted').toBe('')
-    expect(await readFile(join(repo, 'shared.txt'), 'utf8')).toBe('conflicting user change\n')
+    expect(git('status', '--porcelain=v1'), 'Content conflicts remain paused').toContain('UU shared.txt')
+    expect(await readFile(join(repo, 'shared.txt'), 'utf8')).toContain('<<<<<<< HEAD')
     expect(git('rev-parse', 'agent/task')).toBe(sourceCommit)
+    await expect(manager.validateMergeConflict(repo, { ...conflicting, ...conflict })).resolves.toStrictEqual(['shared.txt'])
+    await expect(manager.validateMergeConflict(repo, { ...conflicting, ...conflict, repositoryRoot: directory }))
+      .rejects.toThrow(/different repository checkout/)
+    git('update-ref', 'refs/heads/agent/task', firstCommit)
+    await expect(manager.validateMergeConflict(repo, { ...conflicting, ...conflict })).rejects.toThrow(/no longer matches/)
+    git('update-ref', 'refs/heads/agent/task', sourceCommit)
+    git('update-ref', 'HEAD', baseCommit)
+    await expect(manager.validateMergeConflict(repo, { ...conflicting, ...conflict })).rejects.toThrow(/no longer matches/)
+    git('update-ref', 'HEAD', conflictHead)
+    await writeFile(join(repo, '.git', 'MERGE_HEAD'), `${firstCommit}\n`)
+    await expect(manager.validateMergeConflict(repo, { ...conflicting, ...conflict })).rejects.toThrow(/no longer matches/)
+    await writeFile(join(repo, '.git', 'MERGE_HEAD'), `${sourceCommit}\n`)
+    await expect(manager.validateMergeConflict(repo, { ...conflicting, ...conflict })).resolves.toStrictEqual(['shared.txt'])
 
-    expect(() => git('merge', '--no-edit', 'agent/task')).toThrow()
     const conflictStatus = git('status', '--porcelain=v1')
     await expect(manager.merge(repo, 'agent/task', conflicting)).rejects.toThrow(/existing Git operation/)
     expect(git('status', '--porcelain=v1'), 'Pre-existing conflicts are not aborted').toBe(conflictStatus)
     git('merge', '--abort')
+
+    git('checkout', '-b', 'hook-failure', baseCommit)
+    await writeFile(join(repo, 'target.txt'), 'target\n')
+    git('add', '.')
+    git('commit', '-m', 'Diverged target')
+    const hookFailureHead = git('rev-parse', 'HEAD')
+    const hookFailure = await manager.getMergePreview(repo, 'agent/task')
+    const hook = join(repo, '.git', 'hooks', 'pre-merge-commit')
+    await writeFile(hook, '#!/bin/sh\nexit 1\n')
+    await chmod(hook, 0o755)
+    await expect(manager.merge(repo, 'agent/task', hookFailure)).rejects.toThrow(/Merge failed/)
+    expect(git('rev-parse', 'HEAD')).toBe(hookFailureHead)
+    expect(git('status', '--porcelain=v1'), 'Non-conflict merge failures are aborted').toBe('')
+    await rm(hook)
+
     git('checkout', '--detach')
     await expect(manager.getMergePreview(repo, 'agent/task')).rejects.toThrow(/Check out a branch/)
     git('checkout', 'agent/task')

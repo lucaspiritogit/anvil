@@ -315,6 +315,7 @@ const DELIVERY_LABEL: Record<DeliveryStatus, string> = {
   finalizing: 'Branch active',
   did_not_commit: 'Branch active',
   reviewable: 'Ready to review',
+  merge_conflict: 'Merge conflicts with target branch',
   approved: 'Merged',
   no_changes: 'No code changes',
   agent_failed: 'Code not reviewable',

@@ -32,6 +32,7 @@ import { titleFor } from '../src/server/tasks/task-title'
 import { withTaskOperation } from '../src/server/tasks/operations'
 import { callIssueTool } from '../src/server/issue-tools/server'
 import { Store } from '../src/server/store'
+import { TaskIssues } from '../src/server/tasks/task-issues'
 import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent } from '../src/shared/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome, shell, dialog } from './issue-tracker-doubles'
 
@@ -57,7 +58,7 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   const rebaseCalls: unknown[][] = []
   const mergeCalls: unknown[][] = []
   const pushCalls: unknown[][] = []
-  const mergeState = { failure: false, finish: undefined as (() => void) | undefined }
+  const mergeState = { conflict: false, validationFailure: false, finish: undefined as (() => void) | undefined }
   onTestCleanup(() => { mergeState.finish?.() })
   const delivery = Object.assign(gitDelivery, {
     async getPullRequestPreview() {
@@ -66,8 +67,22 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
     async pushPullRequestBranch(...args: unknown[]) { pushCalls.push(args) },
     async merge(...args: unknown[]) {
       mergeCalls.push(args)
-      if (mergeState.failure) throw new Error('Merge conflict')
+      if (mergeState.conflict) return {
+        status: 'conflicted', repositoryRoot: testHome, mergeHeadCommit: GitDeliveryManager.currentHeadCommit(),
+        conflictedFiles: ['src/conflicted.ts']
+      }
       await new Promise<void>((resolve) => { mergeState.finish = resolve })
+      return { status: 'merged', commit: 'd'.repeat(40) }
+    },
+    async validateMergeConflict(_path: string, conflict: Task['mergeConflict']) {
+      if (mergeState.validationFailure) throw new Error('The paused merge no longer matches this task.')
+      return conflict?.conflictedFiles ?? []
+    },
+    async getPushPreview(_path: string, targetBranch: string) {
+      return {
+        targetBranch, targetCommit: 'b'.repeat(40), remote: 'origin',
+        remoteTargetCommit: 'c'.repeat(40), remoteUrlHash: 'f'.repeat(64)
+      }
     },
     async rebase(...args: unknown[]) {
       rebaseCalls.push(args)
@@ -569,17 +584,66 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(preview.sourceBranch).toBe('task')
   expect(preview.targetBranch).toBe('main')
   expect(preview.commitCount).toBe(1)
-  mergeState.failure = true
-  await expect(call('tasks:approve', { taskId: task.id, preview })).rejects.toThrow(/Merge conflict/)
-  expect(tasks.get(task.id)?.deliveryStatus).toBe('reviewable')
+  mergeState.conflict = true
+  const conflicted: Task = await call('tasks:approve', { taskId: task.id, preview })
+  expect(conflicted.deliveryStatus).toBe('merge_conflict')
+  expect(conflicted.mergeConflict).toMatchObject({
+    taskId: task.id,
+    workspaceId: task.workspaceId,
+    projectId: task.projectId,
+    repositoryRoot: testHome,
+    sourceBranch: 'task',
+    targetBranch: 'main',
+    sourceCommit: preview.sourceCommit,
+    targetCommit: preview.targetCommit,
+    mergeHeadCommit: preview.sourceCommit,
+    conflictedFiles: ['src/conflicted.ts'],
+    requestedAction: 'merge'
+  })
   expect(tasks.get(task.id)?.reviewedAt).toBe(undefined)
-  mergeState.failure = false
+  expect(events.at(-1)?.text).toBe('Merge paused: 1 file conflict with main.')
+  await expect(call('tasks:delete', task.id)).rejects.toThrow(/Abort the paused merge/)
+  await expect(call('projects:remove', project.id)).rejects.toThrow(/Abort the paused task merge/)
+  await expect(call('projects:checkout', { projectId: project.id, branchName: 'other' })).rejects.toThrow(/paused task merge/)
+  expect(() => call('tasks:settle', task.id)).toThrow(/successful, reviewed/)
+  const competitor = store.addTask({
+    ...tasks.get(task.id)!, id: 'competing-task', branchName: 'competing-task',
+    deliveryStatus: 'reviewable', mergeConflict: undefined
+  })
+  const competitorExecution = new TaskIssues(store).initialize(competitor.id, project.path)
+  store.saveTaskExecution({ ...competitorExecution, phase: 'complete' })
+  await expect(call('tasks:merge-preview', competitor.id)).rejects.toThrow(/Another task owns a paused merge/)
+  mergeState.validationFailure = true
+  await expect(call('tasks:merge-preview', competitor.id)).rejects.toThrow(/no longer matches/)
+  mergeState.validationFailure = false
+  store.deleteTaskCascade(competitor.id)
+  store.updateTask(task.id, { deliveryStatus: 'reviewable', mergeConflict: undefined })
+  const mergeAndPushPreview = await call('tasks:merge-and-push-preview', task.id)
+  const pushConflict: Task = await call('tasks:merge-and-push', { taskId: task.id, preview: mergeAndPushPreview })
+  expect(pushConflict.mergeConflict).toMatchObject({
+    requestedAction: 'merge_and_push',
+    pushPreview: {
+      targetBranch: 'main',
+      targetCommit: preview.targetCommit,
+      remote: 'origin',
+      remoteTargetCommit: 'c'.repeat(40),
+      remoteUrlHash: 'f'.repeat(64)
+    }
+  })
+  store.updateTask(task.id, { deliveryStatus: 'reviewable', mergeConflict: undefined })
+  mergeState.conflict = false
   const pendingApproval = call('tasks:approve', { taskId: task.id, preview })
   expect(tasks.get(task.id)?.deliveryStatus, 'Approval waits for Git to finish').toBe('reviewable')
   await expect(call('tasks:approve', { taskId: task.id, preview })).rejects.toThrow(/already busy/)
+  await expect(call('tasks:delete', task.id)).rejects.toThrow(/merge attempt to finish/)
+  await expect(call('projects:remove', project.id)).rejects.toThrow(/merge attempt to finish/)
   mergeState.finish!()
   const approved: Task = await pendingApproval
-  expect(mergeCalls.map((args) => args.slice(0, 3))).toStrictEqual([[testHome, 'task', preview], [testHome, 'task', preview]])
+  expect(mergeCalls.map((args) => args.slice(0, 3))).toStrictEqual([
+    [testHome, 'task', preview],
+    [testHome, 'task', mergeAndPushPreview],
+    [testHome, 'task', preview]
+  ])
   expect(approved.deliveryStatus).toBe('approved')
   expect(approved.reviewedAt).toBeTruthy()
   await expect(call('tasks:merge-preview', task.id)).rejects.toThrow(/not awaiting review/)

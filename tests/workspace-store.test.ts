@@ -418,3 +418,54 @@ test('migrates legacy tasks to the worktree checkout strategy', () => {
   expect(migrated.prepare('SELECT checkout_mode, start_base FROM tasks WHERE id = ?').get('legacy'))
     .toEqual({ checkout_mode: 'worktree', start_base: null })
 })
+
+test('migrates and preserves owned merge-conflict delivery sessions across restart', () => {
+  const { open, directory, database } = fixture()
+  const migrationNames = readdirSync(migrationsFolder, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+  const conflictMigrationIndex = migrationNames.indexOf('20260915141851_nasty_the_fallen')
+  expect(conflictMigrationIndex).toBeGreaterThan(0)
+
+  const workspaceDirectory = join(directory, 'workspaces', 'Default')
+  mkdirSync(workspaceDirectory, { recursive: true })
+  const workspaceDatabase = join(workspaceDirectory, 'anvil.db')
+  migrateBefore(workspaceDatabase, conflictMigrationIndex)
+  const before = rawDatabase(workspaceDatabase)
+  before.prepare("INSERT OR IGNORE INTO workspaces(id, name, name_key, created_at) VALUES ('default', 'Default', 'default', 1)").run()
+  before.prepare("INSERT INTO projects(id, name, path, created_at) VALUES ('project', 'Project', '/test/project', 1)").run()
+  before.prepare("INSERT INTO tasks(id, project_id, agent_id, agent_label, prompt, title, cwd, status, started_at, delivery_status) VALUES ('legacy', 'project', 'codex', 'Codex', 'Task', 'Task', '/test/project', 'succeeded', 1, 'reviewable')").run()
+  before.close()
+  writeFileSync(database, JSON.stringify({
+    version: 1,
+    workspaces: [{ id: 'default', name: 'Default', createdAt: 1 }],
+    activeWorkspaceId: 'default'
+  }))
+
+  let store = open()
+  expect(store.getTask('legacy')?.deliveryStatus).toBe('reviewable')
+  const conflict = {
+    id: 'conflict-session', taskId: 'legacy', workspaceId: 'default', projectId: 'project',
+    repositoryRoot: '/test/project', sourceBranch: 'task', targetBranch: 'main',
+    sourceCommit: 'a'.repeat(40), targetCommit: 'b'.repeat(40), mergeHeadCommit: 'a'.repeat(40),
+    conflictedFiles: ['src/conflicted.ts'], requestedAction: 'merge_and_push' as const,
+    pushPreview: {
+      targetBranch: 'main', targetCommit: 'b'.repeat(40), remote: 'origin' as const,
+      remoteTargetCommit: 'c'.repeat(40), remoteUrlHash: 'f'.repeat(64)
+    },
+    createdAt: 123
+  }
+  store.updateTask('legacy', { deliveryStatus: 'merge_conflict', mergeConflict: conflict })
+  store.close()
+
+  store = open()
+  expect(store.getTask('legacy')).toMatchObject({
+    status: 'succeeded', deliveryStatus: 'merge_conflict', mergeConflict: conflict
+  })
+  expect(() => store.deleteTaskCascade('legacy')).toThrow(/Abort the paused merge/)
+  expect(() => store.removeProject('project')).toThrow(/Abort the paused task merge/)
+  const taskSchema = rawDatabase(workspaceDatabase)
+    .prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'tasks'").get() as { sql: string }
+  expect(taskSchema.sql).toContain("'merge_conflict'")
+})

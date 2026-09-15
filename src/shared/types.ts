@@ -75,6 +75,7 @@ export type DeliveryStatus =
   | 'finalizing'
   | 'did_not_commit'
   | 'reviewable'
+  | 'merge_conflict'
   | 'approved'
   | 'no_changes'
   | 'agent_failed'
@@ -127,6 +128,23 @@ export interface TaskMergeAndPushPreview extends TaskMergePreview {
   remoteTargetCommit: string | null
   /** Opaque identity used to reject a push when origin changes after preview. */
   remoteUrlHash: string
+}
+
+export interface TaskMergeConflict {
+  id: string
+  taskId: string
+  workspaceId: string
+  projectId: string
+  repositoryRoot: string
+  sourceBranch: string
+  targetBranch: string
+  sourceCommit: string
+  targetCommit: string
+  mergeHeadCommit: string
+  conflictedFiles: string[]
+  requestedAction: 'merge' | 'merge_and_push'
+  pushPreview?: TaskPushPreview
+  createdAt: number
 }
 
 export interface PullRequestGitPreview extends TaskMergePreview {
@@ -412,6 +430,7 @@ export interface Task {
   totalTokens: number
   costUsd: number | null
   deliveryStatus: DeliveryStatus
+  mergeConflict?: TaskMergeConflict
   baseBranch?: string
   branchName?: string
   baseCommit?: string

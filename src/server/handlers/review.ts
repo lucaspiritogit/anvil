@@ -8,7 +8,8 @@ import { resumeTaskTurn } from '../tasks/resume'
 import { issueReworkPrompt, reviewPrompt } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
-import type { Task, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview } from '../../shared/types'
+import type { Project, Task, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergePreview, TaskPushPreview } from '../../shared/types'
+import type { MergeConflictResult } from '../git/types'
 import { isTaskSettled } from '../../shared/task-settlement'
 
 interface ReviewHandlerDependencies extends TaskContext {
@@ -30,7 +31,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     if (!task.branchName || !task.headCommit) throw new Error('This task has no finalized branch to merge')
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
-    return { project, branchName: task.branchName, headCommit: task.headCommit }
+    return { task, project, branchName: task.branchName, headCommit: task.headCommit }
   }
 
   const requireApprovedTask = (taskId: string) => {
@@ -44,8 +45,61 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     return { task, project, headCommit: task.headCommit }
   }
 
+  const requireProjectDeliveryAvailable = async (project: Project, taskId: string): Promise<void> => {
+    const owner = store.getTasks().find((task) => task.projectId === project.id &&
+      (task.deliveryStatus === 'merge_conflict' || task.mergeConflict))
+    if (!owner) return
+    if (!owner.mergeConflict || owner.deliveryStatus !== 'merge_conflict') {
+      throw new Error('The paused merge has invalid task ownership metadata. Inspect the repository before continuing.')
+    }
+    const conflict = owner.mergeConflict
+    if (owner.workspaceId !== conflict.workspaceId || owner.projectId !== conflict.projectId || owner.id !== conflict.taskId) {
+      throw new Error('The paused merge has invalid task ownership metadata. Inspect the repository before continuing.')
+    }
+    await gitDelivery.validateMergeConflict(project.path, conflict)
+    throw new Error(owner.id === taskId
+      ? 'This task has merge conflicts with the target branch.'
+      : 'Another task owns a paused merge in this project. Resolve or abort it before delivering this task.')
+  }
+
+  const pauseMerge = (
+    task: Task,
+    preview: TaskMergePreview,
+    result: MergeConflictResult,
+    requestedAction: TaskMergeConflict['requestedAction'],
+    pushPreview?: TaskPushPreview
+  ): Task => {
+    const mergeConflict: TaskMergeConflict = {
+      id: randomUUID(),
+      taskId: task.id,
+      workspaceId: task.workspaceId,
+      projectId: task.projectId,
+      repositoryRoot: result.repositoryRoot,
+      sourceBranch: preview.sourceBranch,
+      targetBranch: preview.targetBranch,
+      sourceCommit: preview.sourceCommit,
+      targetCommit: preview.targetCommit,
+      mergeHeadCommit: result.mergeHeadCommit,
+      conflictedFiles: result.conflictedFiles,
+      requestedAction,
+      ...(pushPreview ? { pushPreview } : {}),
+      createdAt: Date.now()
+    }
+    const conflicted = store.updateTask(task.id, {
+      deliveryStatus: 'merge_conflict',
+      mergeConflict,
+      reviewedAt: undefined,
+      deliveryError: undefined
+    })
+    if (!conflicted) throw new Error('Task was deleted')
+    recordSystemEvent(task.id, `Merge paused: ${result.conflictedFiles.length} file${result.conflictedFiles.length === 1 ? '' : 's'} conflict with ${preview.targetBranch}.`)
+    send('task:updated', conflicted)
+    return conflicted
+  }
+
   const getReviewableMergePreview = async (taskId: string): Promise<TaskMergePreview> => {
     const { project, branchName, headCommit } = requireReviewableTask(taskId)
+    await requireProjectDeliveryAvailable(project, taskId)
     const preview = await gitDelivery.getMergePreview(project.path, branchName)
     if (preview.sourceCommit !== headCommit) {
       throw new Error('The task branch changed after review. Refresh or restore its finalized commit before merging.')
@@ -60,14 +114,16 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
   ipc.handle('tasks:approve', async (input): Promise<Task> => {
     const { taskId, preview } = input
     return withTaskOperation(store, taskId, 'merge', async (check) => {
-      const { project, branchName, headCommit } = requireReviewableTask(taskId)
+      const { task, project, branchName, headCommit } = requireReviewableTask(taskId)
+      await requireProjectDeliveryAvailable(project, taskId)
       if (preview.sourceCommit !== headCommit) throw new Error('The task branch changed after review. Refresh the merge details.')
       const guard = () => {
         check()
         requireReviewableTask(taskId)
       }
-      await gitDelivery.merge(project.path, branchName, preview, guard)
+      const result = await gitDelivery.merge(project.path, branchName, preview, guard)
       guard()
+      if (result.status === 'conflicted') return pauseMerge(task, preview, result, 'merge')
       const approved = store.updateTask(taskId, { deliveryStatus: 'approved', reviewedAt: Date.now() })
       if (!approved) throw new Error('Task was deleted')
       recordSystemEvent(taskId, `Merged ${branchName} into ${preview.targetBranch} with git merge, bringing in ${preview.commitCount} commit${preview.commitCount === 1 ? '' : 's'}.`)
@@ -95,14 +151,25 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
   ipc.handle('tasks:merge-and-push', async (input): Promise<Task> => {
     const { taskId, preview } = input
     return withTaskOperation(store, taskId, 'merge', async (check) => {
-      const { project, branchName, headCommit } = requireReviewableTask(taskId)
+      const { task, project, branchName, headCommit } = requireReviewableTask(taskId)
+      await requireProjectDeliveryAvailable(project, taskId)
       if (preview.sourceCommit !== headCommit) throw new Error('The task branch changed after review. Refresh the delivery details.')
       const reviewableGuard = () => {
         check()
         requireReviewableTask(taskId)
       }
-      const mergedCommit = await gitDelivery.merge(project.path, branchName, preview, reviewableGuard)
+      const result = await gitDelivery.merge(project.path, branchName, preview, reviewableGuard)
       reviewableGuard()
+      if (result.status === 'conflicted') {
+        return pauseMerge(task, preview, result, 'merge_and_push', {
+          targetBranch: preview.targetBranch,
+          targetCommit: preview.targetCommit,
+          remote: preview.remote,
+          remoteTargetCommit: preview.remoteTargetCommit,
+          remoteUrlHash: preview.remoteUrlHash
+        })
+      }
+      const mergedCommit = result.commit
       const approved = store.updateTask(taskId, { deliveryStatus: 'approved', reviewedAt: Date.now() })
       if (!approved) throw new Error('Task was deleted')
       recordSystemEvent(taskId, `Merged ${branchName} into ${preview.targetBranch} with git merge, bringing in ${preview.commitCount} commit${preview.commitCount === 1 ? '' : 's'}.`)

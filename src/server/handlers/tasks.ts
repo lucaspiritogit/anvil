@@ -10,7 +10,7 @@ import type { TaskMemory } from '../memory/task-memory'
 import type { TaskContext } from '../tasks/context'
 import type { TaskEvents } from '../tasks/events'
 import type { TaskExecution } from '../tasks/task-execution'
-import { withTaskOperation, cancelTaskOperation } from '../tasks/operations'
+import { withTaskOperation, cancelTaskOperation, taskOperationKind } from '../tasks/operations'
 import { TaskIssues } from '../tasks/task-issues'
 import { titleFor } from '../tasks/task-title'
 import type { Task, TaskDiff, TaskIssueSnapshot, TaskEvent, TaskEventsPage } from '../../shared/types'
@@ -133,6 +133,11 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
     return task
   })
   ipc.handle('tasks:delete', async (taskId: string): Promise<void> => {
+    const task = store.getTask(taskId)
+    if (task?.deliveryStatus === 'merge_conflict' || task?.mergeConflict) {
+      throw new Error('Abort the paused merge before deleting this task')
+    }
+    if (taskOperationKind(store, taskId) === 'merge') throw new Error('Wait for the merge attempt to finish before deleting this task')
     cancelTaskOperation(store, taskId)
     const deletedTask = store.getTask(taskId)
     const project = deletedTask && store.getProjects(deletedTask.workspaceId).find((entry) => entry.id === deletedTask.projectId)

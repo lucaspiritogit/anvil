@@ -36,6 +36,7 @@ const DELIVERY_STATUSES: DeliveryStatus[] = [
   'finalizing',
   'did_not_commit',
   'reviewable',
+  'merge_conflict',
   'approved',
   'no_changes',
   'agent_failed',
@@ -128,6 +129,7 @@ export const tasks = sqliteTable(
       .$type<DeliveryStatus>()
       .notNull()
       .default('unavailable'),
+    mergeConflict: text('merge_conflict', { mode: 'json' }).$type<import('../../shared/types').TaskMergeConflict>(),
     parentTaskId: text('parent_task_id').references((): AnySQLiteColumn => tasks.id, { onDelete: 'set null' }),
     expectedFiles: text('expected_files', { mode: 'json' }).$type<string[]>(),
     restackState: text('restack_state').$type<'pending' | 'conflict'>(),

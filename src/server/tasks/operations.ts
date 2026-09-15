@@ -24,6 +24,10 @@ export function taskOperationActive(store: Store, taskId: string): boolean {
   return operations(store).has(taskId)
 }
 
+export function taskOperationKind(store: Store, taskId: string): TaskOperation | undefined {
+  return operations(store).get(taskId)?.operation
+}
+
 /** All user task mutations conflict. Draft edits remain available during dispatch. */
 export async function withTaskOperation<T>(
   store: Store, taskId: string, operation: TaskOperation,

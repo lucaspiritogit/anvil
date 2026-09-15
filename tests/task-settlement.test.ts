@@ -65,12 +65,22 @@ test('settles eligible tasks at the review TTL and persists manual settlement', 
       addTask(id, patch)
       expect(() => call('tasks:settle', id)).toThrow(id === 'running' ? /not finished executing/ : /successful, reviewed/)
     }
+    addTask('merge-conflict', {
+      deliveryStatus: 'merge_conflict',
+      mergeConflict: {
+        id: 'conflict', taskId: 'merge-conflict', workspaceId: 'default', projectId: 'project',
+        repositoryRoot: testHome, sourceBranch: 'task', targetBranch: 'main',
+        sourceCommit: 'a'.repeat(40), targetCommit: 'b'.repeat(40), mergeHeadCommit: 'a'.repeat(40),
+        conflictedFiles: ['src/conflicted.ts'], requestedAction: 'merge', createdAt: now
+      }
+    })
+    expect(() => call('tasks:settle', 'merge-conflict')).toThrow(/successful, reviewed/)
     addTask('no-changes', { deliveryStatus: 'no_changes' })
     addTask('legacy-approved', { deliveryStatus: 'approved' })
     call('tasks:list')
     expect(store.getTask('no-changes')?.settledAt, 'No-change successes need no code review').toBeTruthy()
     expect(store.getTask('legacy-approved')?.settledAt, 'Older approvals fall back to completion time').toBeTruthy()
-    for (const id of ['unreviewed', 'running', 'failed', 'cancelled']) {
+    for (const id of ['unreviewed', 'running', 'failed', 'cancelled', 'merge-conflict']) {
       expect(store.getTask(id)?.settledAt, `${id} must remain visible regardless of age`).toBe(undefined)
     }
 

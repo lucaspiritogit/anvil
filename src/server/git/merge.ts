@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import type { TaskMergePreview, TaskPushPreview } from '../../shared/types'
-import type { GitContext } from './types'
+import type { GitContext, MergeConflictResult, MergeResult } from './types'
 import { git } from './command'
 import { withRepoLock, repositoryRoot } from './repository'
 
@@ -29,7 +29,7 @@ export async function merge(
   branchName: string,
   expected: TaskMergePreview,
   check: () => void = () => {}
-): Promise<string> {
+): Promise<MergeResult> {
   const repoRoot = await repositoryRoot(projectPath)
   return withRepoLock(context, repoRoot, async () => {
     const current = await getMergePreview(repoRoot, branchName)
@@ -56,6 +56,23 @@ export async function merge(
     } catch (error) {
       const mergeHead = await git(repoRoot, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], [0, 1])
       if (mergeHead.exitCode === 0) {
+        let conflict: MergeConflictResult | undefined
+        try {
+          const conflictedFiles = (await git(repoRoot, ['diff', '--name-only', '--diff-filter=U', '-z'])).stdout
+            .split('\0').filter(Boolean)
+          const head = (await git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}'])).stdout.trim()
+          if (conflictedFiles.length > 0 && mergeHead.stdout.trim() === expected.sourceCommit && head === expected.targetCommit) {
+            conflict = {
+              status: 'conflicted',
+              repositoryRoot: repoRoot,
+              mergeHeadCommit: mergeHead.stdout.trim(),
+              conflictedFiles
+            }
+          }
+        } catch {}
+        if (conflict) {
+          return conflict
+        }
         try {
           await git(repoRoot, ['merge', '--abort'])
         } catch (abortError) {
@@ -64,8 +81,31 @@ export async function merge(
       }
       throw new Error(`Merge failed. The task was not merged: ${error instanceof Error ? error.message : String(error)}`)
     }
-    return (await git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}'])).stdout.trim()
+    return { status: 'merged', commit: (await git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}'])).stdout.trim() }
   })
+}
+
+export async function validateMergeConflict(
+  projectPath: string,
+  expected: Pick<MergeConflictResult, 'repositoryRoot' | 'mergeHeadCommit'> & Omit<TaskMergePreview, 'commitCount'>
+): Promise<string[]> {
+  const repoRoot = await repositoryRoot(projectPath)
+  if (repoRoot !== expected.repositoryRoot) throw new Error('The merge conflict belongs to a different repository checkout.')
+  const [branch, head, source, mergeHead, unmerged] = await Promise.all([
+    git(repoRoot, ['branch', '--show-current']),
+    git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}']),
+    git(repoRoot, ['rev-parse', '--verify', `refs/heads/${expected.sourceBranch}^{commit}`]),
+    git(repoRoot, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], [0, 1]),
+    git(repoRoot, ['diff', '--name-only', '--diff-filter=U', '-z'])
+  ])
+  const conflictedFiles = unmerged.stdout.split('\0').filter(Boolean)
+  if (branch.stdout.trim() !== expected.targetBranch || head.stdout.trim() !== expected.targetCommit ||
+      source.stdout.trim() !== expected.sourceCommit || mergeHead.exitCode !== 0 ||
+      mergeHead.stdout.trim() !== expected.mergeHeadCommit || expected.mergeHeadCommit !== expected.sourceCommit ||
+      conflictedFiles.length === 0) {
+    throw new Error('The paused merge no longer matches this task. Inspect the repository before continuing.')
+  }
+  return conflictedFiles
 }
 
 async function originPushUrl(projectPath: string): Promise<string> {

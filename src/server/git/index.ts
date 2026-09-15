@@ -7,6 +7,7 @@ import type {
   FinalizedCheckout,
   IssueDiffSource
 } from './types'
+import type { MergeResult } from './types'
 import type {
   ProjectGitStatus,
   ProjectBranches,
@@ -21,10 +22,10 @@ import { releaseWorktree, prepareBranch, checkoutBranch, worktreeHead } from './
 import { renameTaskBranch, restackBranch, finalizeBranch } from './task-branches'
 import { rebase } from './rebase'
 import { getPullRequestPreview, pushPullRequestBranch } from './pull-requests'
-import { getMergePreview, getPushPreview, merge, push } from './merge'
+import { getMergePreview, getPushPreview, merge, push, validateMergeConflict } from './merge'
 import { changedFiles, getDiff, getIssueDiff } from './diff'
 
-export type { PreparedCheckout, RebasedBranch, FinalizeOptions, FinalizedCheckout, IssueDiffSource } from './types'
+export type { PreparedCheckout, RebasedBranch, FinalizeOptions, FinalizedCheckout, IssueDiffSource, MergeResult } from './types'
 
 export class GitDeliveryManager {
   private readonly context: GitContext
@@ -162,8 +163,15 @@ export class GitDeliveryManager {
     branchName: string,
     expected: TaskMergePreview,
     check: () => void = () => {}
-  ): Promise<string> {
+  ): Promise<MergeResult> {
     return merge(this.context, projectPath, branchName, expected, check)
+  }
+
+  validateMergeConflict(
+    projectPath: string,
+    expected: Parameters<typeof validateMergeConflict>[1]
+  ): Promise<string[]> {
+    return validateMergeConflict(projectPath, expected)
   }
 
   getPushPreview(projectPath: string, expectedTargetBranch?: string, requiredCommit?: string): Promise<TaskPushPreview> {

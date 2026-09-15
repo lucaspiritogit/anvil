@@ -156,6 +156,7 @@ function toTask(row: TaskRow): Task {
     ...(row.restackTarget === null ? {} : { restackTarget: row.restackTarget }),
     ...(row.stackSuggestion === null ? {} : { stackSuggestion: row.stackSuggestion }),
     deliveryStatus: row.deliveryStatus,
+    ...(row.mergeConflict === null ? {} : { mergeConflict: row.mergeConflict }),
     ...(row.baseBranch === null ? {} : { baseBranch: row.baseBranch }),
     ...(row.branchName === null ? {} : { branchName: row.branchName }),
     ...(row.baseCommit === null ? {} : { baseCommit: row.baseCommit }),
@@ -260,6 +261,7 @@ function toTaskRow(task: Task): typeof tasks.$inferInsert {
     baseCommit: task.baseCommit ?? null,
     headCommit: task.headCommit ?? null,
     deliveryError: task.deliveryError ?? null,
+    mergeConflict: task.mergeConflict ?? null,
     contextUsed: task.contextUsed ?? null,
     contextSize: task.contextSize ?? null,
     contextCompactionError: task.contextCompactionError ?? null,
@@ -612,6 +614,10 @@ export class Store {
   }
 
   removeProject(id: string, workspaceId = this.getActiveWorkspace().id): void {
+    if (this.getTasks(workspaceId).some((task) => task.projectId === id &&
+      (task.deliveryStatus === 'merge_conflict' || task.mergeConflict))) {
+      throw new Error('Abort the paused task merge before removing this project')
+    }
     const db = this.workspaceConnection(workspaceId).db
     const notices = db.select().from(taskResultNotices).where(eq(taskResultNotices.projectId, id)).all().map(toTaskResultNotice)
     for (const task of this.getTasks(workspaceId)) if (task.projectId === id) this.taskImages.remove(task.id)
@@ -806,6 +812,9 @@ export class Store {
       workspaceId: task.workspaceId ?? this.getActiveWorkspace().id,
       ...advanceTaskWorkingTime({ workingTimeMs: task.workingTimeMs }, isTaskWorking(task), Date.now())
     }
+    if ((ownedTask.deliveryStatus === 'merge_conflict') !== (ownedTask.mergeConflict !== undefined)) {
+      throw new Error('Merge conflict tasks require matching ownership metadata')
+    }
     if (ownedTask.workingStartedAt === undefined) delete ownedTask.workingStartedAt
     const connection = this.workspaceConnection(ownedTask.workspaceId)
     if (this.getTask(ownedTask.id)) throw new Error('Task already exists')
@@ -818,6 +827,9 @@ export class Store {
   deleteTaskCascade(taskId: string): void {
     const task = this.getTask(taskId)
     if (!task) return
+    if (task.deliveryStatus === 'merge_conflict' || task.mergeConflict) {
+      throw new Error('Abort the paused merge before deleting this task')
+    }
     const db = this.taskConnection(taskId).db
     const notices = db.select().from(taskResultNotices).where(eq(taskResultNotices.taskId, taskId)).all().map(toTaskResultNotice)
     this.taskImages.remove(taskId)
@@ -838,6 +850,9 @@ export class Store {
     const next = {
       ...withoutPullRequest(current), ...patch,
       ...(patch.status === 'running' ? { reviewedAt: undefined, settledAt: undefined } : {})
+    }
+    if ((next.deliveryStatus === 'merge_conflict') !== (next.mergeConflict !== undefined)) {
+      throw new Error('Merge conflict tasks require matching ownership metadata')
     }
     // Full task snapshots are used by callers; only explicit dispatch rollback
     // may restore a timing snapshot instead of advancing the current measurement.
