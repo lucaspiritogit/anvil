@@ -12,12 +12,13 @@ export interface PickerChoice {
   disabled?: boolean
 }
 
-export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, onSelect, onClose }: {
+export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, footer, onSelect, onClose }: {
   anchorRef: RefObject<HTMLButtonElement | null>
   label: string
   noun: string
   choices: PickerChoice[]
   value: string
+  footer?: ReactNode
   onSelect: (id: string) => void
   onClose: () => void
 }): JSX.Element {
@@ -86,6 +87,7 @@ export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, onS
           ))}
           {!filtered.length && <p role="status" className="px-3 py-6 text-center text-xs text-dim">No {noun} match your search.</p>}
         </div>
+        {footer}
       </div>
     </PickerDialog>
   )

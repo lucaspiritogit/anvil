@@ -3,7 +3,7 @@ import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { IS_MAC } from '../keys'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
-import { btn, cn } from '../ui'
+import { cn } from '../ui'
 import { TaskView } from './TaskView'
 import { ProjectOverview } from './ProjectOverview'
 
@@ -17,30 +17,11 @@ export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationBu
   const activeProjectId = useStore((s) => s.activeProjectId)
   const view = useStore((s) => s.view)
   const tasks = useStore((s) => s.tasks)
-  const addProject = useStore((s) => s.addProject)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const fontSize = useStore((s) => s.settings?.fontSize)
 
   const project = projects.find((p) => p.id === activeProjectId)
   const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
-
-  if (!project) {
-    return (
-      <main className="flex flex-col min-w-0 h-full">
-        {(mobileNavigation || sidebarCollapsed) && <NavigationHeader scale={scale} expanded={mobileNavigationOpen}
-          mobileNavigation={mobileNavigation} buttonRef={navigationButtonRef} onToggle={onToggleNavigation} />}
-        <div className="grid place-content-center justify-items-center gap-2.5 h-full text-center">
-          <h1 className="text-lg font-semibold">Add a project</h1>
-          <p className="max-w-[360px] mb-2 text-dim">
-            Point Anvil at a folder to start dispatching agents.
-          </p>
-          <button className={btn.primary} onClick={() => void addProject()}>
-            Choose folder
-          </button>
-        </div>
-      </main>
-    )
-  }
 
   const activeTask = view.kind === 'task' ? tasks.find((r) => r.id === view.taskId) : undefined
 

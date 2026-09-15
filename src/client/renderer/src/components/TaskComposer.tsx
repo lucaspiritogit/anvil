@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { canStackOnTask } from '@shared/task-stacks'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { hasTaskContent } from '@shared/task-images'
 import { useStore } from '../state/store'
@@ -16,7 +16,7 @@ import { ComposerOverflowOptions } from './ComposerOverflowOptions'
 import { ProjectBranchSelector } from './ProjectBranchSelector'
 import { TaskStyleBadge } from './TaskStyleBadge'
 import { TASK_STYLES, TASK_STYLE_LABELS } from '@shared/task-style'
-import type { TaskReviewPolicy } from '@shared/types'
+import type { TaskCheckoutMode, TaskReviewPolicy } from '@shared/types'
 
 const compactSelect = 'min-w-0 field-sizing-content appearance-none bg-transparent py-1.5 pl-2 pr-6 text-sm text-dim outline-none hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45'
 const styleSelect = compactSelect.replace('pl-2 pr-6', 'pl-1 pr-1')
@@ -31,6 +31,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const tasks = useStore((state) => state.tasks)
   const [parentTaskId, setParentTaskId] = useState('')
   const parents = tasks.filter((task) => task.projectId === projectId && canStackOnTask(task))
+  const parentBranch = parents.find((task) => task.id === parentTaskId)?.branchName
   const agents = useStore((state) => state.agents)
   const startTask = useStore((state) => state.startTask)
   const taskComposerFocusRequest = useStore((state) => state.taskComposerFocusRequest)
@@ -54,6 +55,8 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   }, [])
   const [busy, setBusy] = useState(false)
   const [switchingBranch, setSwitchingBranch] = useState(false)
+  const [selectedCheckoutMode, setSelectedCheckoutMode] = useState<TaskCheckoutMode>('local')
+  const [startBase, setStartBase] = useState<string>()
   const [error, setError] = useState<string | null>(null)
   const submitting = useRef(false)
   const catalogue = useAgentModels(agentId)
@@ -65,6 +68,11 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     ?? reasoningOptions.find((option) => option.id === capabilities?.default)?.id
     ?? reasoningOptions[0]?.id
   const setReasoningEffort = preferences.setReasoningEffort
+  const checkoutMode = parentTaskId ? 'worktree' : style === 'quick' ? 'local' : selectedCheckoutMode
+  const setCheckout = useCallback((mode: TaskCheckoutMode, base?: string): void => {
+    setSelectedCheckoutMode(mode)
+    setStartBase(mode === 'worktree' ? base : undefined)
+  }, [])
 
   useEffect(() => {
     if (reasoningEffort && savedEffort !== reasoningEffort) setReasoningEffort(agentId, model, reasoningEffort)
@@ -86,10 +94,13 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     setError(null)
     try {
       await startTask({
+        projectId,
         style,
         reviewPolicy: style === 'work' ? reviewPolicy : 'review_each_issue',
         agentId,
         parentTaskId: style === 'work' ? parentTaskId || undefined : undefined,
+        ...(style === 'work' ? { checkoutMode } : {}),
+        ...(style === 'work' && checkoutMode === 'worktree' && !parentTaskId && startBase ? { startBase } : {}),
         prompt: prompt.trim(),
         ...(mentions.references.length ? { fileReferences: mentions.references } : {}),
         model: model.trim() || undefined,
@@ -123,6 +134,17 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
           {parents.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}
         </select>
       </label>}
+      <ProjectBranchSelector
+        key={projectId ?? 'no-project'}
+        projectId={projectId}
+        style={style}
+        parentBranch={parentBranch}
+        checkoutMode={checkoutMode}
+        startBase={startBase}
+        disabled={busy}
+        onCheckoutChange={setCheckout}
+        onTransitioning={setSwitchingBranch}
+      />
       <form
         ref={composerRef}
         aria-label="Start a task"
@@ -241,7 +263,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         </fieldset>
         {error && <p role="alert" className="px-5 pb-4 text-xs text-danger max-[700px]:px-4">{error}</p>}
       </form>
-      {projectId && <ProjectBranchSelector key={projectId} projectId={projectId} disabled={busy} onSwitching={setSwitchingBranch} />}
     </div>
   )
 }

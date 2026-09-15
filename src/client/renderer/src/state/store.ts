@@ -19,7 +19,7 @@ import type {
   TaskMergeAndPushPreview,
   TaskMergePreview,
   TaskPushPreview,
-  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskReviewPolicy
+  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskReviewPolicy, TaskCheckoutMode
 } from '@shared/types'
 import { nextTaskStyle } from '../../../../shared/task-style'
 
@@ -134,7 +134,7 @@ interface AnvilState {
   settleTask: (taskId: string) => Promise<void>
 
   load: () => Promise<void>
-  addProject: () => Promise<void>
+  addProject: () => Promise<Project | null>
   removeProject: (id: string) => Promise<void>
   updateProject: (
     id: string,
@@ -166,7 +166,7 @@ interface AnvilState {
   sendComments: (taskId: string) => Promise<void>
 
   loadAgentModels: (agentId: string) => Promise<void>
-  startTask: (input: { style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
+  startTask: (input: { projectId?: string; style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
   steerTask: (taskId: string, message: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string) => Promise<void>
@@ -324,9 +324,9 @@ export const useStore = create<AnvilState>((set, get) => ({
     const workspaceId = get().activeWorkspaceId
     const generation = workspaceGeneration
     const project = await window.anvil.projects.add()
-    if (!project) return
+    if (!project) return null
     if (workspaceId) await enqueueWorkspaceRequest(() => window.anvil.workspaces.setPreferences(workspaceId, { lastProjectId: project.id }))
-    if (generation !== workspaceGeneration) return
+    if (generation !== workspaceGeneration) return null
     set((s) => ({
       projects: s.projects.some((p) => p.id === project.id) ? s.projects : [...s.projects, project],
       activeProjectId: project.id,
@@ -334,6 +334,7 @@ export const useStore = create<AnvilState>((set, get) => ({
       ...evictTaskEvents(),
       view: { kind: 'home' }
     }))
+    return project
   },
 
   removeProject: async (id) => {
@@ -431,15 +432,18 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  startTask: async ({ style, reviewPolicy, parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
+  startTask: async ({ projectId: requestedProjectId, style, reviewPolicy, checkoutMode, startBase, parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
     if (get().workspaceSwitching || !get().ready) throw new Error('Workspace is still loading')
     const generation = workspaceGeneration
-    const projectId = get().activeProjectId
+    const projectId = requestedProjectId ?? get().activeProjectId
     if (!projectId) throw new Error('Choose a project before starting a task')
+    if (get().activeProjectId !== projectId) throw new Error('The selected project changed. Review the task and try again.')
     const view = get().view
     const task = await window.anvil.tasks.start({
       workspaceId: get().activeWorkspaceId ?? undefined,
       projectId, style, reviewPolicy, parentTaskId, agentId, prompt, model,
+      ...(checkoutMode ? { checkoutMode } : {}),
+      ...(startBase ? { startBase } : {}),
       ...(images?.length ? { images } : {}),
       ...(fileReferences?.length ? { fileReferences } : {}),
       ...(reasoningEffort !== undefined ? { reasoningEffort } : {})

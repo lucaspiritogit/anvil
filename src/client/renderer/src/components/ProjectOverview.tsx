@@ -6,7 +6,7 @@ import { cn } from '../ui'
 import type { Project } from '@shared/types'
 
 interface Props {
-  project: Project
+  project?: Project
 }
 
 const SPREAD = 'w-full max-w-[1040px] mx-auto'
@@ -65,8 +65,8 @@ export function ProjectOverview({ project }: Props): JSX.Element {
       className="relative flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto px-8 py-8 max-[980px]:px-[22px] max-[700px]:px-3 max-[700px]:py-2"
     >
       <div className={cn(SPREAD, 'my-auto')}>
-        <GitAlert project={project} />
-        <TaskComposer key={project.id} />
+        {project && <GitAlert project={project} />}
+        <TaskComposer key={project?.id ?? 'no-project'} />
       </div>
     </div>
   )

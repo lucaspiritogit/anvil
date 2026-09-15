@@ -8,7 +8,6 @@ import { useStore } from '../state/store'
 import { cn } from '../ui'
 import { useSidebarIssueSnapshots } from '../hooks/use-task-issues'
 import { SidebarTaskList } from './SidebarTaskList'
-import { ProjectPicker } from './ProjectPicker'
 import { WorkspacePicker } from './WorkspacePicker'
 import { CaffeineToggle } from './CaffeineToggle'
 
@@ -33,8 +32,6 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   const tasks = useStore((state) => state.tasks)
   const activeProjectId = useStore((state) => state.activeProjectId)
   const view = useStore((state) => state.view)
-  const selectProject = useStore((state) => state.selectProject)
-  const addProject = useStore((state) => state.addProject)
   const settingsOpen = useStore((state) => state.settingsOpen)
   const settingsSection = useStore((state) => state.settingsSection)
   const setSettingsSection = useStore((state) => state.setSettingsSection)
@@ -42,7 +39,6 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   const focusTaskComposer = useStore((state) => state.focusTaskComposer)
   const sidebarCollapsed = useStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useStore((state) => state.toggleSidebar)
-  const [projectFilter, setProjectFilter] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [settledOpen, setSettledOpen] = useState(false)
   const [now, setNow] = useState(Date.now())
@@ -53,11 +49,6 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   }, [])
 
   useEffect(() => {
-    if (projectFilter && !projects.some((project) => project.id === projectFilter)) setProjectFilter(null)
-  }, [projectFilter, projects])
-
-  useEffect(() => {
-    setProjectFilter(null)
     setSearch('')
     setSettledOpen(false)
   }, [workspaceId])
@@ -68,7 +59,6 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   const { activeTasks, settledTasks } = useMemo(() => {
     const query = search.trim().toLowerCase()
     const matching = tasks.filter((task) => {
-      if (projectFilter && task.projectId !== projectFilter) return false
       return !query || [task.title, task.branchName, projectById.get(task.projectId)?.name,
         ...(snapshots.get(task.id)?.children.map((issue) => issue.title) ?? [])]
         .some((text) => text?.toLowerCase().includes(query))
@@ -78,8 +68,8 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
       settledTasks: matching.filter((task) => task.settledAt !== undefined)
         .sort((first, second) => second.settledAt! - first.settledAt!)
     }
-  }, [tasks, projectFilter, search, projectById, snapshots])
-  const listKey = JSON.stringify([workspaceId, projectFilter, search])
+  }, [tasks, search, projectById, snapshots])
+  const listKey = JSON.stringify([workspaceId, search])
   const matchingCount = activeTasks.length + settledTasks.length
   const showSettled = settledOpen || Boolean(query)
   const sidebarHidden = mobileNavigation ? !mobileNavigationOpen : sidebarCollapsed
@@ -172,22 +162,6 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
             </button>
           )}
         </div>
-      </div>
-
-      <div className="flex shrink-0 items-end gap-1.5 px-2.5 pb-3">
-        <ProjectPicker
-          key={JSON.stringify([workspaceId, projects.map((project) => project.id)])}
-          projects={projects}
-          value={projectFilter}
-          onChange={(id) => { setProjectFilter(id); if (id) selectProject(id); if (mobileNavigation) onNavigate() }}
-        />
-        <button className={ICON_BUTTON} aria-label="Add project" title="Add project" onClick={() => void addProject().then(() => {
-          if (useStore.getState().activeWorkspaceId !== workspaceId) return
-          const nextProjectId = useStore.getState().activeProjectId
-          if (nextProjectId !== activeProjectId) setProjectFilter(nextProjectId)
-        })}>
-          <Icon icon="folder-plus" size={18} aria-hidden="true" />
-        </button>
       </div>
 
       <nav aria-label="Active tasks" className="flex flex-1 min-h-0 flex-col px-2.5 pb-2">

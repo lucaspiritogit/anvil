@@ -155,3 +155,37 @@ test('branch loading and discovery errors recover on refresh', async ({ page }) 
   await expect(branch).toBeEnabled()
   await expect(composer.getByRole('alert')).toHaveCount(0)
 })
+
+test('project and worktree selectors route the task without switching the local checkout', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/')
+  const project = page.getByRole('button', { name: 'Project', exact: true })
+  await expect(project).toHaveAccessibleDescription('Anvil, /tmp/anvil')
+  await project.click()
+  const projects = page.getByRole('dialog', { name: 'Choose project' })
+  await projects.getByRole('searchbox').fill('workbench')
+  await projects.getByRole('button', { name: 'Workbench', exact: true }).click()
+  await expect(project).toHaveAccessibleDescription('Workbench, /tmp/workbench')
+  await expect(project).toBeFocused()
+
+  const location = page.getByRole('button', { name: 'Execution location', exact: true })
+  await expect(location).toHaveAccessibleDescription('Local checkout')
+  await location.click()
+  await page.getByRole('dialog', { name: 'Choose execution location' })
+    .getByRole('button', { name: 'New worktree', exact: true }).click()
+  await expect(location).toHaveAccessibleDescription('New worktree')
+
+  const branch = page.getByRole('button', { name: 'Project branch', exact: true })
+  await expect(branch).toHaveAccessibleDescription('Branch from origin/main')
+  await branch.click()
+  await page.getByRole('dialog', { name: 'Choose worktree base' })
+    .getByRole('button', { name: 'main', exact: true }).click()
+  await expect(branch).toHaveAccessibleDescription('Branch from main')
+
+  const composer = page.getByRole('form', { name: 'Start a task' })
+  await composer.getByRole('textbox', { name: 'Task prompt' }).fill('Use an isolated checkout')
+  await composer.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.composerTest.starts[0])).toMatchObject({
+    projectId: 'project-1', checkoutMode: 'worktree', startBase: 'refs/heads/main'
+  })
+  expect((await page.evaluate(() => window.anvil.projects.branches('project-1'))).currentBranch).toBe('main')
+})

@@ -354,7 +354,11 @@ window.anvil = {
       { name: 'main', checkedOut: (projectBranches[projectId] ?? 'main') === 'main' },
       { name: 'feature/composer', checkedOut: projectBranches[projectId] === 'feature/composer' },
       { name: 'task-running', checkedOut: true }
-    ] }),
+    ], worktreeBases: [
+      { name: 'main', ref: 'refs/heads/main', remote: false },
+      { name: 'feature/composer', ref: 'refs/heads/feature/composer', remote: false },
+      { name: 'origin/main', ref: 'refs/remotes/origin/main', remote: true }
+    ], defaultWorktreeBase: { name: 'origin/main', ref: 'refs/remotes/origin/main', remote: true } }),
     checkout: async ({ projectId, branchName }) => {
       projectBranches[projectId] = branchName
       return window.anvil.projects.branches(projectId)
