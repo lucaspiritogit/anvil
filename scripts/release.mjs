@@ -39,14 +39,15 @@ try {
   const tag = `v${version}`
   git(['add', 'package.json', 'package-lock.json'])
   git(['commit', '-m', `chore: release ${version}`])
+  git(['tag', '-a', tag, '-m', `Anvil ${tag}`])
   try {
-    git(['push', 'origin', `HEAD:refs/heads/${branch}`])
+    git(['push', '--atomic', 'origin', `HEAD:refs/heads/${branch}`, `refs/tags/${tag}`])
   } catch (error) {
     console.error(`Release request ${tag} exists locally. After fixing the push failure, retry:`)
-    console.error(`git push origin HEAD:refs/heads/${branch}`)
+    console.error(`git push --atomic origin HEAD:refs/heads/${branch} refs/tags/${tag}`)
     throw error
   }
-  console.log(`Pushed release request ${tag}. GitHub Actions will create the tag after the build passes.`)
+  console.log(`Pushed release request ${tag}. GitHub Actions will publish the release after the build passes.`)
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1

@@ -1,8 +1,9 @@
 name: CI and release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
@@ -19,38 +20,33 @@ jobs:
     outputs:
       release_commit: ${{ steps.release.outputs.commit }}
       release_tag: ${{ steps.release.outputs.tag }}
-      should_release: ${{ steps.release.outputs.should_release }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24.20.0'
           cache: npm
       - run: npm ci
-      - name: Read release version
+      - name: Verify release version
         id: release
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           version=$(node --input-type=module -e "import { readFileSync } from 'node:fs'; const { version } = JSON.parse(readFileSync('package.json', 'utf8')); process.stdout.write(version)")
           tag="v${version}"
-          should_release=true
-          if [[ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]] || git show-ref --verify --quiet "refs/tags/${tag}"; then
-            should_release=false
+          if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "Release tag $GITHUB_REF_NAME does not match package version $tag" >&2
+            exit 1
           fi
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "should_release=${should_release}" >> "$GITHUB_OUTPUT"
       - run: npm run typecheck
       - run: npm test
 
   build:
     name: Build ${{ matrix.name }}
     needs: check
-    if: needs.check.outputs.should_release == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -125,7 +121,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_COMMIT: ${{ needs.check.outputs.release_commit }}
           RELEASE_TAG: ${{ needs.check.outputs.release_tag }}
         run: |
           cat > release-notes.md <<'NOTES'
@@ -144,5 +139,5 @@ jobs:
             prerelease+=(--prerelease)
           fi
           gh release create "$RELEASE_TAG" release/* \
-            --target "$RELEASE_COMMIT" --title "Anvil $RELEASE_TAG" \
+            --verify-tag --title "Anvil $RELEASE_TAG" \
             --generate-notes --notes-file release-notes.md "${prerelease[@]}"
