@@ -27,11 +27,34 @@ test('attaches to an explicit server without spawning or stopping it', async () 
   vi.mocked(spawn).mockClear()
   const health = vi.fn(async () => Response.json({ ok: true, service: 'anvil', version: 'test', ready: true }))
   vi.stubGlobal('fetch', health)
-  const connection = await connectToServer({ ...options, environment: { ANVIL_SERVER_URL: 'http://127.0.0.1:4781' } })
+  const connection = await connectToServer({ ...options, target: { mode: 'remote', url: 'https://anvil.example/' } })
   await connection.close()
-  expect(connection.url).toBe('http://127.0.0.1:4781')
+  expect(connection.url).toBe('https://anvil.example')
   expect(spawn).not.toHaveBeenCalled()
-  expect(health).toHaveBeenCalledWith('http://127.0.0.1:4781/health', expect.anything())
+  expect(health).toHaveBeenCalledWith('https://anvil.example/health', expect.anything())
+})
+
+test('uses ANVIL_SERVER_URL as an attach-only bootstrap target', async () => {
+  vi.mocked(spawn).mockClear()
+  const health = vi.fn(async () => Response.json({ ok: true, service: 'anvil', version: 'test', ready: true }))
+  vi.stubGlobal('fetch', health)
+  const connection = await connectToServer({ ...options, environment: { ANVIL_SERVER_URL: 'http://remote.example:4781/' } })
+  expect(connection.url).toBe('http://remote.example:4781')
+  expect(spawn).not.toHaveBeenCalled()
+})
+
+test('an explicit local target overrides ANVIL_SERVER_URL and retains local ownership rules', async () => {
+  vi.mocked(spawn).mockClear()
+  const health = vi.fn(async () => Response.json({ ok: true, service: 'anvil', version: 'test', ready: true }))
+  vi.stubGlobal('fetch', health)
+  const connection = await connectToServer({
+    ...options,
+    target: { mode: 'local' },
+    environment: { ANVIL_SERVER_URL: 'https://remote.example', ANVIL_SERVER_PORT: '4790' }
+  })
+  expect(connection.url).toBe('http://127.0.0.1:4790')
+  expect(health).toHaveBeenCalledWith('http://127.0.0.1:4790/health', expect.anything())
+  expect(spawn).not.toHaveBeenCalled()
 })
 
 test('routes scoped browser requests between the server child and Electron host', async () => {
@@ -138,10 +161,11 @@ test('attaches without ownership when another Anvil server wins the startup race
   expect(health).toHaveBeenCalledTimes(2)
 })
 
-test('server addresses cannot select a remote machine or inject URL components', () => {
+test('server addresses normalize origins without allowing scoped URL components', () => {
   expect(serverAddress('http://127.0.0.1:4780/')).toBe('http://127.0.0.1:4780')
-  for (const url of ['https://127.0.0.1:4780', 'http://localhost:4780', 'http://192.168.1.2:4780',
-    'http://user@127.0.0.1:4780', 'http://127.0.0.1:4780/rpc', 'http://127.0.0.1:4780/?q=1']) {
+  expect(serverAddress('https://anvil.example/')).toBe('https://anvil.example')
+  for (const url of ['file:///tmp/anvil', 'http://user@127.0.0.1:4780',
+    'http://127.0.0.1:4780/rpc', 'http://127.0.0.1:4780/?q=1']) {
     expect(() => serverAddress(url)).toThrow()
   }
 })

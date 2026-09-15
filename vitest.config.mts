@@ -12,6 +12,7 @@ const unitSuites = [
   'tests/model-options.test.ts',
   'tests/notification-delivery.test.ts',
   'tests/sidebar-task-stacks.test.ts',
+  'tests/server-connection-settings.test.ts',
   'tests/server-process.test.ts',
   'tests/http-client.test.ts',
   'tests/task-duration.test.ts',

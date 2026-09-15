@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
-import { serverAddress } from '../../shared/server-address'
+import { serverAddress, type ServerTarget } from '../../shared/server-address'
 import { isBrowserHostRequest, type BrowserHostResponse } from '../../shared/browser-host'
+import { resolveServerTarget } from './server-connection-settings'
 
 export interface BrowserHost {
   open(taskId: string, title: string): Promise<{ url: string; headers: Record<string, string> }>
@@ -51,10 +52,12 @@ export async function connectToServer(options: {
   packaged: boolean
   environment?: NodeJS.ProcessEnv
   browserHost?: BrowserHost
+  target?: ServerTarget
 }): Promise<ServerConnection> {
   const environment = options.environment ?? process.env
-  if (environment.ANVIL_SERVER_URL) {
-    const url = serverAddress(environment.ANVIL_SERVER_URL)
+  const target = resolveServerTarget(options.target, environment)
+  if (target.mode === 'remote') {
+    const url = target.url
     const existing = await existingServer(url)
     if (!existing) throw new Error(`No Anvil server is running at ${url}.`)
     return existing
