@@ -82,6 +82,23 @@ test('parallel tasks use independent branches and worktrees through nested and s
   expect(git(repo, 'worktree', 'list', '--porcelain').match(/^worktree /gm)).toHaveLength(3)
 })
 
+test('working tree reviews include only reported task paths', async () => {
+  const { repo, manager } = await fixture()
+  await writeFile(join(repo, 'app', 'unrelated.ts'), 'base unrelated\n')
+  git(repo, 'add', '.')
+  git(repo, 'commit', '-m', 'Add unrelated file')
+  await writeFile(join(repo, 'app', 'source.ts'), 'quick change\n')
+  await writeFile(join(repo, 'app', 'unrelated.ts'), 'other quick change\n')
+  await writeFile(join(repo, 'quick-new.ts'), 'new quick file\n')
+
+  const diff = await manager.getWorkingTreeDiff(repo, [join(repo, 'app', 'source.ts'), 'quick-new.ts', '../outside.ts'])
+
+  expect(diff.patch).toContain('app/source.ts')
+  expect(diff.patch).toContain('quick-new.ts')
+  expect(diff.patch).not.toContain('app/unrelated.ts')
+  expect(diff).toMatchObject({ filesChanged: 2, additions: 2, deletions: 1, commits: [] })
+})
+
 test('discovers local and remote worktree bases and resolves the origin default without switching checkout', async () => {
   const { repo, manager } = await fixture()
   const remoteBase = git(repo, 'rev-parse', 'HEAD')

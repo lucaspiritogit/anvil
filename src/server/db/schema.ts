@@ -132,6 +132,7 @@ export const tasks = sqliteTable(
     mergeConflict: text('merge_conflict', { mode: 'json' }).$type<import('../../shared/types').TaskMergeConflict>(),
     parentTaskId: text('parent_task_id').references((): AnySQLiteColumn => tasks.id, { onDelete: 'set null' }),
     expectedFiles: text('expected_files', { mode: 'json' }).$type<string[]>(),
+    reviewPaths: text('review_paths', { mode: 'json' }).$type<string[]>(),
     restackState: text('restack_state').$type<'pending' | 'conflict'>(),
     restackTarget: text('restack_target', { mode: 'json' }).$type<import('../../shared/types').TaskStackTarget>(),
     stackSuggestion: text('stack_suggestion', { mode: 'json' }).$type<{ parentTaskId: string; paths: string[] }>(),

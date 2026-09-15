@@ -1,4 +1,4 @@
-import { TerminalDrawer } from './components/TerminalDrawer'
+import { RightSidePanel } from './components/RightSidePanel'
 import type { JSX } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AppSkeleton } from './components/AppSkeleton'
@@ -310,11 +310,11 @@ export function App(): JSX.Element {
           }} />
         </div>
         <div ref={workspaceRef} tabIndex={-1} aria-hidden={mobileNavigation && mobileNavigationOpen || undefined}
-          className={cn('flex flex-col min-w-0 min-h-0 outline-none', settingsOpen && 'hidden')}
+          className={cn('relative flex min-w-0 min-h-0 outline-none', settingsOpen && 'hidden')}
           inert={settingsOpen || switching || (mobileNavigation && mobileNavigationOpen)}>
-          <div className="min-h-0 flex-1"><Workspace key={workspaceId} mobileNavigation={mobileNavigation}
+          <div className="min-h-0 min-w-0 flex-1"><Workspace key={workspaceId} mobileNavigation={mobileNavigation}
             mobileNavigationOpen={mobileNavigationOpen} navigationButtonRef={mobileNavigationButtonRef} onToggleNavigation={toggleNavigation} /></div>
-          {!settingsOpen && terminalCreated && projectId && <TerminalDrawer key={`${workspaceId}:${projectId}`} projectId={projectId} visible={terminalOpen} onClose={() => setTerminalOpen(false)} />}
+          {!settingsOpen && terminalCreated && projectId && <RightSidePanel key={`${workspaceId}:${projectId}`} projectId={projectId} visible={terminalOpen} onClose={() => setTerminalOpen(false)} />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
         {settingsOpen && <div className="contents" inert={switching}><Suspense fallback={<p role="status" className="p-5 text-sm text-dim">Loading settings…</p>}><SettingsPage key={workspaceId} /></Suspense></div>}

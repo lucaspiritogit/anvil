@@ -489,6 +489,7 @@ test('updates projects, validates task references and selects supported agents a
 test('runs local Quick tasks directly without issue plans', async () => {
   const { store, project, agentProcesses, delivery, call, tick } = setupIpc()
   const prepareBranch = vi.spyOn(delivery, 'prepareBranch')
+  const getWorkingTreeDiff = vi.spyOn(delivery, 'getWorkingTreeDiff')
 
   const quick: Task = await call('tasks:start', {
     style: 'quick', projectId: project.id, agentId: 'codex', prompt: 'Explain the current architecture or make a focused change'
@@ -507,6 +508,7 @@ test('runs local Quick tasks directly without issue plans', async () => {
   agentProcesses.finishTurn(quick.id, 'Architecture answer')
   await tick()
   expect(store.getTask(quick.id)?.status).toBe('succeeded')
+  expect(store.getTask(quick.id)?.deliveryStatus).toBe('no_changes')
   expect(store.getTaskExecution(quick.id)?.phase).toBe('complete')
 
   await call('tasks:steer', { taskId: quick.id, message: 'Make the focused change' })
@@ -523,9 +525,14 @@ test('runs local Quick tasks directly without issue plans', async () => {
   await expect(call('tasks:start', {
     style: 'quick', parentTaskId: quick.id, projectId: project.id, agentId: 'codex', prompt: 'Stack this'
   })).rejects.toThrow('Only Work tasks can be stacked')
-  agentProcesses.finishTurn(quick.id, 'Focused change complete')
+  agentProcesses.finishTurn(quick.id, 'Focused change complete', 0, ['src/quick.ts'])
   await tick()
-  expect(store.getTask(quick.id)?.status).toBe('succeeded')
+  expect(store.getTask(quick.id)).toMatchObject({
+    status: 'succeeded', deliveryStatus: 'reviewable', reviewPaths: ['src/quick.ts'],
+    filesChanged: 1, additions: 1, deletions: 1
+  })
+  expect(getWorkingTreeDiff).toHaveBeenLastCalledWith(project.path, ['src/quick.ts'])
+  expect((await call('tasks:diff', quick.id)).patch).toContain('src/quick.ts')
   expect(prepareBranch).not.toHaveBeenCalled()
   call('tasks:settle', quick.id)
   expect(store.getTask(quick.id)?.settledAt).toBeTypeOf('number')

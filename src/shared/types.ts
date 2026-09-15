@@ -439,6 +439,7 @@ export interface Task {
   startBase?: string
   parentTaskId?: string
   expectedFiles?: string[]
+  reviewPaths?: string[]
   restackState?: 'pending' | 'conflict'
   restackTarget?: TaskStackTarget
   stackSuggestion?: { parentTaskId: string; paths: string[] }

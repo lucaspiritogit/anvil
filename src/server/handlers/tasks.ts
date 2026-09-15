@@ -172,9 +172,15 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
   ipc.handle('tasks:events-page', (input): TaskEventsPage => store.readEventsPage(input))
   ipc.handle('tasks:diff', async (taskId: string): Promise<TaskDiff> => {
     const task = store.getTask(taskId)
-    if (!task?.baseCommit || !task.headCommit) throw new Error('This task has no delivered code')
+    if (!task) throw new Error('Task not found')
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
+    if (taskStyle(task) === 'quick' && !usesManagedWorktree(task)) {
+      if (!task.reviewPaths?.length) throw new Error('This task has no delivered code')
+      const { patch, commits } = await gitDelivery.getWorkingTreeDiff(project.path, task.reviewPaths)
+      return { patch, commits }
+    }
+    if (!task.baseCommit || !task.headCommit) throw new Error('This task has no delivered code')
     return gitDelivery.getDiff(project.path, task.baseCommit, task.headCommit)
   })
 

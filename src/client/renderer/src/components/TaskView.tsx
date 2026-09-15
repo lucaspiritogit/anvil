@@ -611,8 +611,8 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   }
 
   useEffect(() => {
-    if (work && !comments) void loadComments(task.id)
-  }, [comments, loadComments, task.id, work])
+    if ((work || reviewable) && !comments) void loadComments(task.id)
+  }, [comments, loadComments, reviewable, task.id, work])
 
   const pending = (comments ?? []).filter((comment) => comment.sentAt === null)
   // Submission is visible immediately, even while the turn is still stopping.
@@ -675,11 +675,11 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                 </span></>}
                 </>}
               </span>
-              {reviewable && <span className="ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
+              {reviewable && (work || !approved && pending.length > 0) && <span className="ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
                 {!approved && pending.length > 0 && <button className={btn.ghost} disabled={sending} onClick={() => void sendComments(task.id)}>
                   {sending ? 'Sending…' : `Send ${pending.length} comment${pending.length === 1 ? '' : 's'}`}
                 </button>}
-                <button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
+                {work && <><button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
                   Open PR
                 </button>
                 {!approved
@@ -695,7 +695,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                     onClick={() => setDeliveryRequest({ taskId: task.id, action: 'push' })}
                   >
                     Push
-                  </button>}
+                  </button>}</>}
               </span>}
             </>}
           </div>
@@ -798,7 +798,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                 draft={draft}
                 trailing={<>
                   {!approved && <span>{pending.length ? `${pending.length} comment${pending.length === 1 ? '' : 's'} pending` : 'Select a line to comment'}</span>}
-                  <CommitsMenu diff={diff} disabled={approved} rebasing={rebasing} onRebase={rebase} />
+                  {work && <CommitsMenu diff={diff} disabled={approved} rebasing={rebasing} onRebase={rebase} />}
                 </>}
                 onSelectLine={approved ? () => {} : setDraft}
                 onSubmit={(target, body) => {

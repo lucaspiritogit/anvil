@@ -25,7 +25,7 @@ import { renameTaskBranch, restackBranch, finalizeBranch } from './task-branches
 import { rebase } from './rebase'
 import { getPullRequestPreview, pushPullRequestBranch } from './pull-requests'
 import { abortMergeConflict, completeMergeConflict, getMergeConflict, getMergePreview, getPushPreview, merge, push, saveMergeConflictFile, validateMergeConflict } from './merge'
-import { changedFiles, getDiff, getIssueDiff } from './diff'
+import { changedFiles, getDiff, getIssueDiff, getWorkingTreeDiff } from './diff'
 
 export type { PreparedCheckout, RebasedBranch, FinalizeOptions, FinalizedCheckout, IssueDiffSource, MergeResult } from './types'
 
@@ -222,6 +222,10 @@ export class GitDeliveryManager {
 
   getDiff(repoPath: string, baseCommit: string, headCommit: string): Promise<TaskDiff> {
     return getDiff(repoPath, baseCommit, headCommit)
+  }
+
+  getWorkingTreeDiff(repoPath: string, paths: string[]) {
+    return getWorkingTreeDiff(repoPath, paths)
   }
 
   worktreeHead(taskId: string): string | null {

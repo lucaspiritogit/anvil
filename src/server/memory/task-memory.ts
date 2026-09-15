@@ -43,6 +43,8 @@ export function createTaskMemory(
       const diff =
         task.baseCommit && task.headCommit
           ? await gitDelivery.getDiff(projectPath, task.baseCommit, task.headCommit)
+          : task.reviewPaths?.length
+            ? await gitDelivery.getWorkingTreeDiff(projectPath, task.reviewPaths)
           : undefined
       if (!store.getSettings(task.workspaceId).memoryEnabled) return
       await memory.rememberCompletedTask({

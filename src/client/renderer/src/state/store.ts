@@ -76,7 +76,7 @@ let workspaceGeneration = 0
 const taskDiffRequests = new Map<string, { view: CenterView; revision: string; generation: number }>()
 const taskDiffRevision = (task?: Task): string => JSON.stringify(task ? [
   task.workspaceId, task.status, task.deliveryStatus, task.branchName, task.baseCommit, task.headCommit,
-  task.filesChanged, task.additions, task.deletions
+  task.reviewPaths, task.filesChanged, task.additions, task.deletions
 ] : null)
 type CaffeineSave = { value: boolean; status: 'pending' | 'error' }
 type TaskResultNoticeError = { workspaceId: string; projectId: string; message: string }

@@ -40,7 +40,28 @@ export function createTaskCompletion(
     }
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task?.projectId)
     if (!project || !task) return
-    if (taskStyle(task) !== 'work' && !managed) return
+    if (taskStyle(task) !== 'work' && !managed) {
+      if (status !== 'succeeded') return
+      const reviewPaths = [...new Set([...(task.reviewPaths ?? []), ...(info.result?.changedFiles ?? [])])]
+      try {
+        const diff = await gitDelivery.getWorkingTreeDiff(project.path, reviewPaths)
+        task = store.updateTask(task.id, {
+          reviewPaths: diff.paths,
+          deliveryStatus: diff.patch ? 'reviewable' : 'no_changes',
+          filesChanged: diff.filesChanged,
+          additions: diff.additions,
+          deletions: diff.deletions
+        })
+        if (task) send('task:updated', task)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        task = store.updateTask(info.taskId, { reviewPaths, deliveryStatus: 'failed', deliveryError: message })
+        recordSystemEvent(info.taskId, `Git diff failed: ${message}`, 'delivery', 'error')
+        if (task) send('task:updated', task)
+      }
+      if (task) await rememberCompletedTask(task, project.path)
+      return
+    }
     if (!managed || !task.baseCommit || options?.finalize === false) {
       if (options?.waitForMemory === false) {
         const completedTask = task

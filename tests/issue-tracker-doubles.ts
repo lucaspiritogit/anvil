@@ -95,10 +95,15 @@ export class AgentProcessManager extends EventEmitter {
     }
     this.finishTurn(taskId, 'Completed through the issue tool.')
   }
-  finishTurn(taskId: string, text = 'Done.', code = 0): void {
+  finishTurn(taskId: string, text = 'Done.', code = 0, changedFiles: string[] = []): void {
     this.emit('event', { id: randomUUID(), taskId, ts: Date.now(), stream: 'stdout', kind: 'output', category: 'message', text })
     this.active.delete(taskId)
-    this.emit('exit', { taskId, code, cancelled: false })
+    this.emit('exit', {
+      taskId,
+      code,
+      cancelled: false,
+      result: { taskId, status: code === 0 ? 'succeeded' : 'pending', output: text, changedFiles }
+    })
   }
   async startResumed(opts: any): Promise<void> {
     opts.beforeDispatch?.()
@@ -137,6 +142,12 @@ export class GitDeliveryManager {
   }
   async merge(): Promise<any> { return { status: 'merged', commit: 'd'.repeat(40) } }
   async getDiff(_path: string, base: string, head: string): Promise<any> { return { patch: `${base}..${head}`, commits: [] } }
+  async getWorkingTreeDiff(_path: string, paths: string[]): Promise<any> {
+    return {
+      patch: paths.map((path) => `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+new\n`).join(''),
+      commits: [], paths, filesChanged: paths.length, additions: paths.length, deletions: paths.length
+    }
+  }
   static worktreeHeadValue: string | null = null
   static currentHeadCommit(): string {
     if (GitDeliveryManager.worktreeHeadValue) return GitDeliveryManager.worktreeHeadValue
