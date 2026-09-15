@@ -45,6 +45,7 @@ export function App(): JSX.Element {
   const load = useStore((s) => s.load)
   const applyEvent = useStore((s) => s.applyEvent)
   const applyTaskUpdate = useStore((s) => s.applyTaskUpdate)
+  const applyTaskResultNoticeChange = useStore((s) => s.applyTaskResultNoticeChange)
   const settingsOpen = useStore((s) => s.settingsOpen)
   const taskMenu = useStore((s) => s.taskMenu)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
@@ -152,6 +153,7 @@ export function App(): JSX.Element {
         return {
           projects,
           tasks,
+          taskResultNotices: state.taskResultNotices.filter((notice) => projects.some((project) => project.id === notice.projectId)),
           activeProjectId: projects.some((project) => project.id === state.activeProjectId) ? state.activeProjectId : projects[0]?.id ?? null,
           view: view.kind === 'task' && !tasks.some((task) => task.id === view.taskId) ? { kind: 'home' } : view
         }
@@ -258,11 +260,13 @@ export function App(): JSX.Element {
   useEffect(() => {
     const offEvent = window.anvil.tasks.onEvent(applyEvent)
     const offUpdate = window.anvil.tasks.onUpdated(applyTaskUpdate)
+    const offResultNotice = window.anvil.taskResultNotices.onChanged(applyTaskResultNoticeChange)
     return () => {
       offEvent()
       offUpdate()
+      offResultNotice()
     }
-  }, [applyEvent, applyTaskUpdate])
+  }, [applyEvent, applyTaskUpdate, applyTaskResultNoticeChange])
 
   if (!ready) {
     if (!workspaceError) return <AppSkeleton />

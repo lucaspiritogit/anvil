@@ -3,7 +3,7 @@ import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
 import { useTaskIssues } from '../../../src/client/renderer/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
-import type { Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure } from '../../../src/shared/types'
+import type { Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure, TaskResultNotice, TaskResultNoticeChange } from '../../../src/shared/types'
 import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import type { IpcRequests } from '../../../src/shared/ipc-requests'
@@ -202,6 +202,13 @@ declare global {
       attaches: string[]
       disposes: string[]
     }
+    morningBriefTest: {
+      calls: Array<{ operation: 'seen' | 'dismiss'; workspaceId: string; noticeId: string }>
+      delay: number
+      failNext: boolean
+      emit: (notice: TaskResultNotice) => void
+      resolve: (noticeId: string) => void
+    }
   }
 }
 
@@ -259,6 +266,14 @@ let selectedWorkspace = localStorage.getItem('fixture:workspace') ?? 'default'
 const workspaceRows: Workspace[] = JSON.parse(localStorage.getItem('fixture:workspaces') ?? 'null') ?? [{ id: 'default', name: 'Default', createdAt: 0 }]
 const workspacePreferences: Record<string, WorkspacePreferences> = JSON.parse(localStorage.getItem('fixture:preferences') ?? '{}')
 const workspaceSettings: Record<string, Settings> = JSON.parse(localStorage.getItem('fixture:settings') ?? '{}')
+const seededTaskResultNotices: TaskResultNotice[] = query.has('morningBrief') ? [
+  { id: 'notice-review', workspaceId: 'default', projectId: 'project-0', taskId: 'review', resultVersion: 2, kind: 'reviewable', headCommit: '1234567890abcdef', createdAt: now - 60_000 },
+  { id: 'notice-empty', workspaceId: 'default', projectId: 'project-0', taskId: 'settled', resultVersion: 1, kind: 'no_changes', createdAt: now - 2 * 60_000 },
+  { id: 'notice-complete', workspaceId: 'default', projectId: 'project-0', taskId: 'approved', resultVersion: 1, kind: 'completed', createdAt: now - 3 * 60_000 },
+  { id: 'notice-other-project', workspaceId: 'default', projectId: 'project-1', taskId: 'output', resultVersion: 1, kind: 'no_changes', createdAt: now - 30_000 },
+  { id: 'notice-old-version', workspaceId: 'default', projectId: 'project-0', taskId: 'review', resultVersion: 1, kind: 'reviewable', headCommit: 'older', createdAt: now - 4 * 60_000, seenAt: now - 3 * 60_000, dismissedAt: now - 2 * 60_000 }
+] : []
+let taskResultNotices: TaskResultNotice[] = JSON.parse(localStorage.getItem('fixture:task-result-notices') ?? 'null') ?? seededTaskResultNotices
 workspaceSettings.default ??= settings
 settings = workspaceSettings[selectedWorkspace] ?? settings
 const preferencesFor = (id: string): WorkspacePreferences => workspacePreferences[id] ??= { composer: { agentId: '', modelsByAgent: {}, reasoningByAgentModel: {} }, lastProjectId: null }
@@ -267,13 +282,40 @@ const persistWorkspaces = (): void => {
   localStorage.setItem('fixture:workspace', selectedWorkspace)
   localStorage.setItem('fixture:preferences', JSON.stringify(workspacePreferences))
   localStorage.setItem('fixture:settings', JSON.stringify(workspaceSettings))
+  localStorage.setItem('fixture:task-result-notices', JSON.stringify(taskResultNotices))
 }
 const snapshot = (): WorkspaceSnapshot => ({
   workspaces: structuredClone(workspaceRows), workspace: workspaceRows.find((row) => row.id === selectedWorkspace)!,
   preferences: structuredClone(preferencesFor(selectedWorkspace)), settings: structuredClone(settings),
-  projects, tasks: tasks.filter((task) => task.workspaceId === selectedWorkspace), taskResultNotices: []
+  projects, tasks: tasks.filter((task) => task.workspaceId === selectedWorkspace),
+  taskResultNotices: structuredClone(taskResultNotices.filter((notice) => notice.workspaceId === selectedWorkspace))
 })
 window.workspaceTest = { select: (id) => useStore.getState().selectWorkspace(id), create: (name) => useStore.getState().createWorkspace(name) }
+
+const taskResultNoticeListeners = new Set<(change: TaskResultNoticeChange) => void>()
+const publishTaskResultNotice = (change: TaskResultNoticeChange): void => {
+  for (const listener of taskResultNoticeListeners) listener(structuredClone(change))
+}
+window.morningBriefTest = {
+  calls: [],
+  delay: 0,
+  failNext: false,
+  emit: (notice) => {
+    taskResultNotices = [structuredClone(notice), ...taskResultNotices.filter((item) => item.id !== notice.id)]
+    persistWorkspaces()
+    publishTaskResultNotice({ workspaceId: notice.workspaceId, projectId: notice.projectId, noticeId: notice.id, notice })
+  },
+  resolve: (noticeId) => {
+    const notice = taskResultNotices.find((item) => item.id === noticeId)
+    if (!notice) return
+    const resolved = { ...notice, dismissedAt: Date.now() }
+    taskResultNotices = taskResultNotices.map((item) => item.id === noticeId ? resolved : item)
+    const task = tasks.find((item) => item.id === notice.taskId)
+    if (task) update({ ...task, deliveryStatus: 'approved', reviewedAt: Date.now() })
+    persistWorkspaces()
+    publishTaskResultNotice({ workspaceId: resolved.workspaceId, projectId: resolved.projectId, noticeId, notice: resolved })
+  }
+}
 
 const projectBranches: Record<string, string> = Object.fromEntries(projects.map((project) => [project.id, 'main']))
 
@@ -696,10 +738,43 @@ window.anvil = {
     }
   },
   taskResultNotices: {
-    list: async () => [],
-    markSeen: async () => { throw new Error('Task result notice not found') },
-    dismiss: async () => { throw new Error('Task result notice not found') },
-    onChanged: () => noop
+    list: async ({ workspaceId, projectId }) => structuredClone(taskResultNotices.filter((notice) =>
+      notice.workspaceId === workspaceId && (projectId === undefined || notice.projectId === projectId)
+    )),
+    markSeen: async ({ workspaceId, noticeId }) => {
+      window.morningBriefTest.calls.push({ operation: 'seen', workspaceId, noticeId })
+      if (window.morningBriefTest.delay) await new Promise((resolve) => setTimeout(resolve, window.morningBriefTest.delay))
+      if (window.morningBriefTest.failNext) {
+        window.morningBriefTest.failNext = false
+        throw new Error('Could not update the morning brief')
+      }
+      const notice = taskResultNotices.find((item) => item.workspaceId === workspaceId && item.id === noticeId)
+      if (!notice) throw new Error('Task result notice not found')
+      const seen = notice.seenAt === undefined ? { ...notice, seenAt: Date.now() } : notice
+      taskResultNotices = taskResultNotices.map((item) => item.id === noticeId ? seen : item)
+      persistWorkspaces()
+      publishTaskResultNotice({ workspaceId, projectId: seen.projectId, noticeId, notice: seen })
+      return structuredClone(seen)
+    },
+    dismiss: async ({ workspaceId, noticeId }) => {
+      window.morningBriefTest.calls.push({ operation: 'dismiss', workspaceId, noticeId })
+      if (window.morningBriefTest.delay) await new Promise((resolve) => setTimeout(resolve, window.morningBriefTest.delay))
+      if (window.morningBriefTest.failNext) {
+        window.morningBriefTest.failNext = false
+        throw new Error('Could not update the morning brief')
+      }
+      const notice = taskResultNotices.find((item) => item.workspaceId === workspaceId && item.id === noticeId)
+      if (!notice) throw new Error('Task result notice not found')
+      const dismissed = notice.dismissedAt === undefined ? { ...notice, dismissedAt: Date.now() } : notice
+      taskResultNotices = taskResultNotices.map((item) => item.id === noticeId ? dismissed : item)
+      persistWorkspaces()
+      publishTaskResultNotice({ workspaceId, projectId: dismissed.projectId, noticeId, notice: dismissed })
+      return structuredClone(dismissed)
+    },
+    onChanged: (listener) => {
+      taskResultNoticeListeners.add(listener)
+      return () => taskResultNoticeListeners.delete(listener)
+    }
   },
   comments: {
     send: async (taskId) => {

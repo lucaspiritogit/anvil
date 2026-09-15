@@ -4,6 +4,7 @@ import { useStore } from '../state/store'
 import { TaskComposer } from './TaskComposer'
 import { cn } from '../ui'
 import type { Project } from '@shared/types'
+import { TaskResultBrief } from './TaskResultBrief'
 
 interface Props {
   project?: Project
@@ -66,6 +67,7 @@ export function ProjectOverview({ project }: Props): JSX.Element {
     >
       <div className={cn(SPREAD, 'my-auto')}>
         {project && <GitAlert project={project} />}
+        {project && <TaskResultBrief key={`brief-${project.id}`} project={project} />}
         <TaskComposer key={project?.id ?? 'no-project'} />
       </div>
     </div>
