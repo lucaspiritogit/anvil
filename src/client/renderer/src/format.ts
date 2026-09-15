@@ -8,7 +8,11 @@ import { taskWorkingTimeMs, type TaskWorkingTime } from '../../../shared/task-ti
 
 /** Measured work so far: `now` advances only an open working interval. */
 export function formatDuration(task: TaskWorkingTime, now: number): string {
-  const seconds = Math.floor(taskWorkingTimeMs(task, now) / 1000)
+  return formatDurationMs(taskWorkingTimeMs(task, now))
+}
+
+export function formatDurationMs(durationMs: number): string {
+  const seconds = Math.floor(durationMs / 1000)
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`

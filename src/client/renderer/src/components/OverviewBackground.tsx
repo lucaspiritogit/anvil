@@ -48,7 +48,8 @@ function OverviewBackgroundImpl(): JSX.Element | null {
     if (!s.projects.some((project) => project.id === s.activeProjectId)) return false
     if (s.settingsOpen) return false
     const view = s.view
-    if (view.kind !== 'task') return true
+    if (view.kind === 'home') return true
+    if (view.kind !== 'task') return false
     return !s.tasks.some((task) => task.id === view.taskId)
   })
   const color = useStore((s) => s.settings?.overviewBackgroundColor ?? DEFAULT_OVERVIEW_COLOR)

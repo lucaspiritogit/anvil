@@ -76,7 +76,7 @@ const taskDiffRevision = (task?: Task): string => JSON.stringify(task ? [
 ] : null)
 type CaffeineSave = { value: boolean; status: 'pending' | 'error' }
 
-export type CenterView = { kind: 'home' } | { kind: 'task'; taskId: string }
+export type CenterView = { kind: 'home' } | { kind: 'analytics' } | { kind: 'task'; taskId: string }
 
 interface AnvilState {
   workspaces: Workspace[]
@@ -173,6 +173,7 @@ interface AnvilState {
   loadTaskDiff: (taskId: string) => Promise<void>
   loadIssueDiff: (taskId: string, issueId: string) => Promise<void>
   showHome: () => void
+  showAnalytics: () => void
   focusTaskComposer: () => void
   setTaskComposerStyle: (style: TaskStyle) => void
   cycleTaskComposerStyle: () => void
@@ -197,14 +198,15 @@ export const useStore = create<AnvilState>((set, get) => ({
     const changed = get().activeWorkspaceId !== snapshot.workspace.id
     const view = get().view
     const removed = view.kind === 'task' && !snapshot.tasks.some((task) => task.id === view.taskId)
+    const workspaceView = view.kind === 'analytics' ? view : { kind: 'home' as const }
     set({
       workspaces: snapshot.workspaces, activeWorkspaceId: snapshot.workspace.id,
       settings: snapshot.settings, projects: snapshot.projects, tasks: snapshot.tasks,
       activeProjectId: snapshot.projects.find((project) => project.id === snapshot.preferences.lastProjectId)?.id ?? snapshot.projects[0]?.id ?? null,
       ready: true,
-      ...(changed || removed ? { ...evictTaskEvents(), view: { kind: 'home' as const } } : {}),
+      ...(changed || removed ? { ...evictTaskEvents(), view: changed ? workspaceView : { kind: 'home' as const } } : {}),
       ...(changed ? {
-        view: { kind: 'home' }, taskMenu: null, rebaseTaskId: null,
+        view: workspaceView, taskMenu: null, rebaseTaskId: null,
         taskComposerStyle: 'work',
         settingsProjectId: null, settingsSection: 'general', caffeineSave: null,
         modelsByAgent: get().modelsByWorkspace[snapshot.workspace.id] ?? {}, loadingModelsAgentId: null,
@@ -219,7 +221,8 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
   selectWorkspace: async (workspaceId) => {
     const generation = ++workspaceGeneration
-    set({ ...evictTaskEvents(), view: { kind: 'home' }, workspaceSwitching: true, workspaceError: null })
+    const view = get().view
+    set({ ...evictTaskEvents(), view: view.kind === 'analytics' ? view : { kind: 'home' }, workspaceSwitching: true, workspaceError: null })
     try {
       await enqueueWorkspaceRequest(async () => {
         const snapshot = await window.anvil.workspaces.select(workspaceId)
@@ -775,6 +778,7 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
 
   showHome: () => set({ ...evictTaskEvents(), view: { kind: 'home' } }),
+  showAnalytics: () => set({ ...evictTaskEvents(), view: { kind: 'analytics' } }),
   focusTaskComposer: () => set((state) => {
     if (!state.activeProjectId || state.settingsOpen || state.taskMenu || state.rebaseTaskId) return state
     return {

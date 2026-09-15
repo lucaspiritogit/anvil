@@ -36,6 +36,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   const settingsSection = useStore((state) => state.settingsSection)
   const setSettingsSection = useStore((state) => state.setSettingsSection)
   const setSettingsOpen = useStore((state) => state.setSettingsOpen)
+  const showAnalytics = useStore((state) => state.showAnalytics)
   const focusTaskComposer = useStore((state) => state.focusTaskComposer)
   const sidebarCollapsed = useStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useStore((state) => state.toggleSidebar)
@@ -192,11 +193,20 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
       <CaffeineToggle />
 
       <button
-        className="flex shrink-0 items-center gap-2.5 mx-2.5 my-2 px-2 py-2 text-left text-xs text-dim hover:bg-hover/60 hover:text-fg focus-visible:outline focus-visible:outline-accent"
+        className="flex shrink-0 items-center gap-2.5 mx-2.5 mt-2 px-2 py-2 text-left text-xs text-dim hover:bg-hover/60 hover:text-fg focus-visible:outline focus-visible:outline-accent"
         onClick={() => { if (mobileNavigation) onNavigate(); setSettingsOpen(true) }}
       >
         <Icon icon="settings" size={18} aria-hidden="true" />
         Settings
+      </button>
+      <button
+        aria-current={view.kind === 'analytics' ? 'page' : undefined}
+        className={cn('flex shrink-0 items-center gap-2.5 mx-2.5 mb-2 px-2 py-2 text-left text-xs hover:bg-hover/60 focus-visible:outline focus-visible:outline-accent',
+          view.kind === 'analytics' ? 'bg-accent/10 text-accent' : 'text-dim hover:text-fg')}
+        onClick={() => { showAnalytics(); if (mobileNavigation) onNavigate() }}
+      >
+        <Icon icon="chart-no-axes-combined" size={18} aria-hidden="true" />
+        Analytics
       </button>
       <div className="shrink-0 px-2.5 pb-3">
         <WorkspacePicker />

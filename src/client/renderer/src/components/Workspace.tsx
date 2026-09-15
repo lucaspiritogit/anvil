@@ -6,6 +6,7 @@ import { useStore } from '../state/store'
 import { cn } from '../ui'
 import { TaskView } from './TaskView'
 import { ProjectOverview } from './ProjectOverview'
+import { AnalyticsPage } from './AnalyticsPage'
 
 export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationButtonRef, onToggleNavigation }: {
   mobileNavigation: boolean
@@ -25,15 +26,16 @@ export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationBu
 
   const activeTask = view.kind === 'task' ? tasks.find((r) => r.id === view.taskId) : undefined
 
-  const overview = view.kind === 'home' || !activeTask
+  const overview = view.kind === 'home' || view.kind === 'task' && !activeTask
+  const page = view.kind !== 'task' || !activeTask
 
   return (
     <main className={cn('relative flex flex-col min-w-0 min-h-0 h-full overflow-hidden',
       // Keep the overview centered in the full window, with fixed clearance for
       // traffic lights even when its content needs to scroll in a short window.
-      (IS_MAC || sidebarCollapsed || mobileNavigation) && overview && 'py-11'
+      (IS_MAC || sidebarCollapsed || mobileNavigation) && page && 'py-11'
     )}>
-      {(mobileNavigation || sidebarCollapsed) && (overview
+      {(mobileNavigation || sidebarCollapsed) && (page
         ? <div className="absolute inset-x-0 top-0"><NavigationHeader scale={scale} expanded={mobileNavigationOpen}
           mobileNavigation={mobileNavigation} buttonRef={navigationButtonRef} onToggle={onToggleNavigation} /></div>
         : <NavigationHeader scale={scale} expanded={mobileNavigationOpen} mobileNavigation={mobileNavigation}
@@ -42,6 +44,7 @@ export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationBu
         {overview && (
           <ProjectOverview project={project} />
         )}
+        {view.kind === 'analytics' && <AnalyticsPage />}
         {activeTask && <TaskView key={activeTask.id} task={activeTask} />}
       </section>
     </main>

@@ -29,6 +29,7 @@ import pencil from './icons/pencil.svg?raw'
 import rabbit from './icons/rabbit.svg?raw'
 import search from './icons/search.svg?raw'
 import settings from './icons/settings.svg?raw'
+import chartNoAxesCombined from './icons/chart-no-axes-combined.svg?raw'
 import sparkles from './icons/sparkles.svg?raw'
 import terminal from './icons/terminal.svg?raw'
 import tableOfContents from './icons/table-of-contents.svg?raw'
@@ -78,6 +79,7 @@ const artwork = {
   rabbit: body(rabbit),
   search: body(search),
   settings: body(settings),
+  'chart-no-axes-combined': body(chartNoAxesCombined),
   sparkles: body(sparkles),
   terminal: body(terminal),
   'table-of-contents': body(tableOfContents),

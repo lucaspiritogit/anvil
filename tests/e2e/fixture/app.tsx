@@ -3,7 +3,7 @@ import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
 import { useTaskIssues } from '../../../src/client/renderer/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
-import type { Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure } from '../../../src/shared/types'
+import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure } from '../../../src/shared/types'
 import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
 import { canSettleTask } from '../../../src/shared/task-settlement'
 import type { IpcRequests } from '../../../src/shared/ipc-requests'
@@ -192,6 +192,11 @@ declare global {
       release: (reject?: boolean) => void
       finishLoading: () => void
     }
+    analyticsTest: {
+      requests: AnalyticsRange[]
+      response: WorkspaceAnalytics
+      failNext: boolean
+    }
     connectionsTest: {
       calls: Array<{ allowOtherDevices: boolean; tailscaleHttps?: boolean; passwordProvided: boolean }>
       failNextRequest: boolean
@@ -241,6 +246,48 @@ window.settingsTest = {
   },
   finishLoading
 }
+const analyticsResponse: WorkspaceAnalytics = {
+  range: { startAt: 0, endAt: 0 },
+  tokens: { input: 100_000, output: 25_000, cached: 40_000, total: 125_000 },
+  cost: { reportedUsd: 4.25, reportedTaskCount: 5, unreportedTaskCount: 1 },
+  tasks: {
+    total: 6,
+    completed: 5,
+    successful: 4,
+    successRate: 0.8,
+    statusCounts: { pending: 0, running: 1, succeeded: 4, failed: 1, cancelled: 0 }
+  },
+  favoriteModel: { key: 'openai/gpt-5.2', label: 'openai/gpt-5.2', taskCount: 3 },
+  favoriteProvider: { key: 'codex', label: 'Codex', taskCount: 4 },
+  timing: { workingTimeMs: 900_000, averageWorkingTimeMs: 150_000 },
+  codeChanges: { filesChanged: 12, additions: 350, deletions: 90 },
+  breakdowns: {
+    providers: [
+      { key: 'codex', label: 'Codex', taskCount: 4, totalTokens: 100_000, reportedCostUsd: 3.5 },
+      { key: 'opencode', label: 'OpenCode', taskCount: 2, totalTokens: 25_000, reportedCostUsd: 0.75 }
+    ],
+    models: [
+      { key: 'openai/gpt-5.2', label: 'openai/gpt-5.2', taskCount: 3, totalTokens: 80_000, reportedCostUsd: 3 },
+      { key: 'anthropic/claude-sonnet-4-6', label: 'anthropic/claude-sonnet-4-6', taskCount: 2, totalTokens: 35_000, reportedCostUsd: 1.25 }
+    ],
+    statuses: [],
+    projects: [
+      { key: 'project-0', label: 'Anvil', taskCount: 4, totalTokens: 90_000, reportedCostUsd: 3.25 },
+      { key: 'project-1', label: 'Workbench', taskCount: 2, totalTokens: 35_000, reportedCostUsd: 1 }
+    ]
+  }
+}
+if (query.has('analyticsEmpty')) {
+  analyticsResponse.tokens = { input: 0, output: 0, cached: 0, total: 0 }
+  analyticsResponse.cost = { reportedUsd: 0, reportedTaskCount: 0, unreportedTaskCount: 0 }
+  analyticsResponse.tasks = { total: 0, completed: 0, successful: 0, successRate: null, statusCounts: { pending: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 } }
+  analyticsResponse.favoriteModel = null
+  analyticsResponse.favoriteProvider = null
+  analyticsResponse.timing = { workingTimeMs: 0, averageWorkingTimeMs: 0 }
+  analyticsResponse.codeChanges = { filesChanged: 0, additions: 0, deletions: 0 }
+  analyticsResponse.breakdowns = { providers: [], models: [], statuses: [], projects: [] }
+}
+window.analyticsTest = { requests: [], response: analyticsResponse, failNext: query.has('analyticsError') }
 let connectionStatus: ConnectionsStatus = {
   allowOtherDevices: false,
   tailscaleHttps: false,
@@ -320,23 +367,14 @@ window.anvil = {
     onChanged: () => noop
   },
   analytics: {
-    get: async (range) => ({
-      range,
-      tokens: { input: 0, output: 0, cached: 0, total: 0 },
-      cost: { reportedUsd: 0, reportedTaskCount: 0, unreportedTaskCount: 0 },
-      tasks: {
-        total: 0,
-        completed: 0,
-        successful: 0,
-        successRate: null,
-        statusCounts: { pending: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 }
-      },
-      favoriteModel: null,
-      favoriteProvider: null,
-      timing: { workingTimeMs: 0, averageWorkingTimeMs: 0 },
-      codeChanges: { filesChanged: 0, additions: 0, deletions: 0 },
-      breakdowns: { providers: [], models: [], statuses: [], projects: [] }
-    })
+    get: async (range) => {
+      window.analyticsTest.requests.push(range)
+      if (window.analyticsTest.failNext) {
+        window.analyticsTest.failNext = false
+        throw new Error('Analytics fixture unavailable')
+      }
+      return { ...window.analyticsTest.response, range }
+    }
   },
   projects: {
     files: async ({ projectId }: { projectId: string }) => {
