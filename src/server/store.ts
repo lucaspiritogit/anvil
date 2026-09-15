@@ -18,7 +18,7 @@ import { canSettleTask, settlementDeadline } from '../shared/task-settlement'
 import { advanceTaskWorkingTime, isTaskWorking, type TaskWorkingTime } from '../shared/task-timing'
 import { isQueuedStackTask } from '../shared/task-stacks'
 import { DEFAULT_KEYBINDINGS, normalizeKeybindings } from '../shared/keybindings'
-import type { Project, Task, TaskComment, TaskEvent, Settings, TaskExecutionState, Workspace, WorkspacePreferences, ComposerPreferences } from '../shared/types'
+import type { Project, Task, TaskComment, TaskEvent, Settings, TaskExecutionState, Workspace, WorkspacePreferences, ComposerPreferences, TaskResultNotice, TaskResultNoticeChange, TaskResultNoticeKind } from '../shared/types'
 import { DEFAULT_FONT_SIZE, normalizeFontSize, DEFAULT_OVERVIEW_COLOR, OVERVIEW_COLOR_PATTERN, isWallpaperId } from '../shared/appearance'
 import { DEFAULT_OLLAMA_BASE_URL, DEFAULT_EMBEDDING_MODEL, isOllamaBaseUrl } from '../shared/memory-settings'
 
@@ -78,13 +78,14 @@ function decodeKeybindings(value: string): Settings['keybindings'] {
   }
 }
 
-const { projects, taskComments, taskEvents, tasks, workspaceSettings: settings, workspacePreferences } = schema
+const { projects, taskComments, taskEvents, taskResultNotices, tasks, workspaceSettings: settings, workspacePreferences } = schema
 
 type ProjectRow = typeof projects.$inferSelect
 type TaskRow = typeof tasks.$inferSelect
 type TaskPullRequestRow = typeof schema.taskPullRequests.$inferSelect
 type TaskCommentRow = typeof taskComments.$inferSelect
 type TaskEventRow = typeof taskEvents.$inferSelect
+type TaskResultNoticeRow = typeof taskResultNotices.$inferSelect
 
 /**
  * Rows already arrive with the schema's field names, so mapping to the shared
@@ -152,6 +153,30 @@ function toTask(row: TaskRow): Task {
     ...(row.deliveryError === null ? {} : { deliveryError: row.deliveryError }),
     ...(row.sessionId === null ? {} : { sessionId: row.sessionId })
   }
+}
+
+function toTaskResultNotice(row: TaskResultNoticeRow): TaskResultNotice {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
+    taskId: row.taskId,
+    resultVersion: row.resultVersion,
+    kind: row.kind,
+    ...(row.headCommit === null ? {} : { headCommit: row.headCommit }),
+    createdAt: row.createdAt,
+    ...(row.seenAt === null ? {} : { seenAt: row.seenAt }),
+    ...(row.dismissedAt === null ? {} : { dismissedAt: row.dismissedAt })
+  }
+}
+
+function taskResult(task: Task): { kind: TaskResultNoticeKind; headCommit?: string } | undefined {
+  if (task.status !== 'succeeded') return undefined
+  if (task.deliveryStatus === 'reviewable' || task.deliveryStatus === 'no_changes') {
+    return { kind: task.deliveryStatus, ...(task.headCommit ? { headCommit: task.headCommit } : {}) }
+  }
+  if (task.deliveryStatus === 'unavailable') return { kind: 'completed' }
+  return undefined
 }
 
 function withCurrentPullRequest(task: Task, link: TaskPullRequestRow | undefined): Task {
@@ -248,6 +273,8 @@ export class Store {
   private activityDepth = 0
   private closed = false
   private readonly activityListeners = new Set<() => void>()
+  private readonly taskResultNoticeListeners = new Set<(change: TaskResultNoticeChange) => void>()
+  private readonly pendingTaskResultNoticeChanges: TaskResultNoticeChange[] = []
 
   /** Observe committed task/issue state and settings that control task activity. */
   subscribeActivity(listener: () => void): () => void {
@@ -261,6 +288,26 @@ export class Store {
     for (const listener of this.activityListeners) {
       try { listener() } catch (error) { console.warn('Store activity listener failed:', error) }
     }
+  }
+
+  subscribeTaskResultNotices(listener: (change: TaskResultNoticeChange) => void): () => void {
+    this.taskResultNoticeListeners.add(listener)
+    return () => { this.taskResultNoticeListeners.delete(listener) }
+  }
+
+  private taskResultNoticeChanged(change: TaskResultNoticeChange): void {
+    if (this.activityDepth) {
+      this.pendingTaskResultNoticeChanges.push(change)
+      return
+    }
+    for (const listener of this.taskResultNoticeListeners) {
+      try { listener(change) } catch (error) { console.warn('Task result notice listener failed:', error) }
+    }
+  }
+
+  private flushTaskResultNoticeChanges(): void {
+    const changes = this.pendingTaskResultNoticeChanges.splice(0)
+    for (const change of changes) this.taskResultNoticeChanged(change)
   }
 
   hasRunningTasks(workspaceId?: string): boolean {
@@ -553,8 +600,12 @@ export class Store {
 
   removeProject(id: string, workspaceId = this.getActiveWorkspace().id): void {
     const db = this.workspaceConnection(workspaceId).db
+    const notices = db.select().from(taskResultNotices).where(eq(taskResultNotices.projectId, id)).all().map(toTaskResultNotice)
     for (const task of this.getTasks(workspaceId)) if (task.projectId === id) this.taskImages.remove(task.id)
     db.delete(projects).where(eq(projects.id, id)).run()
+    for (const notice of notices) this.taskResultNoticeChanged({
+      workspaceId: notice.workspaceId, projectId: notice.projectId, noticeId: notice.id
+    })
     this.activityChanged()
   }
 
@@ -586,6 +637,49 @@ export class Store {
       .map((row) => withCurrentPullRequest(toTask(row), pullRequests.get(row.id)))
   }
 
+  getTaskResultNotices(workspaceId = this.getActiveWorkspace().id): TaskResultNotice[] {
+    const db = this.workspaceConnection(workspaceId).db
+    return db.select().from(taskResultNotices).where(eq(taskResultNotices.workspaceId, workspaceId))
+      .orderBy(desc(taskResultNotices.createdAt), desc(taskResultNotices.resultVersion)).all().map(toTaskResultNotice)
+  }
+
+  getProjectTaskResultNotices(projectId: string, workspaceId = this.getActiveWorkspace().id): TaskResultNotice[] {
+    const db = this.workspaceConnection(workspaceId).db
+    return db.select().from(taskResultNotices).where(and(
+      eq(taskResultNotices.workspaceId, workspaceId), eq(taskResultNotices.projectId, projectId)
+    )).orderBy(desc(taskResultNotices.createdAt), desc(taskResultNotices.resultVersion)).all().map(toTaskResultNotice)
+  }
+
+  markTaskResultNoticeSeen(id: string, workspaceId = this.getActiveWorkspace().id, now = Date.now()): TaskResultNotice {
+    const db = this.workspaceConnection(workspaceId).db
+    const row = db.select().from(taskResultNotices).where(and(
+      eq(taskResultNotices.id, id), eq(taskResultNotices.workspaceId, workspaceId)
+    )).get()
+    if (!row) throw new Error('Task result notice not found')
+    if (row.seenAt !== null) return toTaskResultNotice(row)
+    db.update(taskResultNotices).set({ seenAt: now }).where(and(
+      eq(taskResultNotices.id, id), eq(taskResultNotices.workspaceId, workspaceId)
+    )).run()
+    const notice = toTaskResultNotice({ ...row, seenAt: now })
+    this.taskResultNoticeChanged({ workspaceId, projectId: notice.projectId, noticeId: id, notice })
+    return notice
+  }
+
+  dismissTaskResultNotice(id: string, workspaceId = this.getActiveWorkspace().id, now = Date.now()): TaskResultNotice {
+    const db = this.workspaceConnection(workspaceId).db
+    const row = db.select().from(taskResultNotices).where(and(
+      eq(taskResultNotices.id, id), eq(taskResultNotices.workspaceId, workspaceId)
+    )).get()
+    if (!row) throw new Error('Task result notice not found')
+    if (row.dismissedAt !== null) return toTaskResultNotice(row)
+    db.update(taskResultNotices).set({ dismissedAt: now }).where(and(
+      eq(taskResultNotices.id, id), eq(taskResultNotices.workspaceId, workspaceId)
+    )).run()
+    const notice = toTaskResultNotice({ ...row, dismissedAt: now })
+    this.taskResultNoticeChanged({ workspaceId, projectId: notice.projectId, noticeId: id, notice })
+    return notice
+  }
+
   addTask(task: Omit<Task, 'workspaceId'> & { workspaceId?: string }): Task {
     const ownedTask: Task = {
       ...task,
@@ -605,10 +699,15 @@ export class Store {
 
   /** Foreign keys cascade to task-owned Valence plans, execution metadata, output, and comments. */
   deleteTaskCascade(taskId: string): void {
-    if (!this.getTask(taskId)) return
+    const task = this.getTask(taskId)
+    if (!task) return
     const db = this.taskConnection(taskId).db
+    const notices = db.select().from(taskResultNotices).where(eq(taskResultNotices.taskId, taskId)).all().map(toTaskResultNotice)
     this.taskImages.remove(taskId)
     db.delete(tasks).where(eq(tasks.id, taskId)).run()
+    for (const notice of notices) this.taskResultNoticeChanged({
+      workspaceId: notice.workspaceId, projectId: notice.projectId, noticeId: notice.id
+    })
     this.activityChanged()
   }
 
@@ -626,7 +725,46 @@ export class Store {
     // Full task snapshots are used by callers; only explicit dispatch rollback
     // may restore a timing snapshot instead of advancing the current measurement.
     Object.assign(next, advanceTaskWorkingTime(restoreTiming ?? current, isTaskWorking(next, this.getTaskExecution(id)), Date.now()))
-    db.update(tasks).set(toTaskRow(next)).where(eq(tasks.id, id)).run()
+    const noticeChanges = sqliteTransaction(db.$client, () => {
+      db.update(tasks).set(toTaskRow(next)).where(eq(tasks.id, id)).run()
+      const changes: TaskResultNoticeChange[] = []
+      const previousResult = taskResult(current)
+      const result = taskResult(next)
+      const sameReviewableResult = previousResult?.kind === 'reviewable' && result?.kind === 'reviewable' &&
+        previousResult.headCommit === result.headCommit && next.settledAt === undefined
+      if (!sameReviewableResult) {
+        const stale = db.select().from(taskResultNotices).where(and(
+          eq(taskResultNotices.taskId, id), eq(taskResultNotices.kind, 'reviewable'), isNull(taskResultNotices.dismissedAt)
+        )).all()
+        if (stale.length) {
+          const dismissedAt = Date.now()
+          db.update(taskResultNotices).set({ dismissedAt }).where(and(
+            eq(taskResultNotices.taskId, id), eq(taskResultNotices.kind, 'reviewable'), isNull(taskResultNotices.dismissedAt)
+          )).run()
+          for (const row of stale) {
+            const notice = toTaskResultNotice({ ...row, dismissedAt })
+            changes.push({ workspaceId: notice.workspaceId, projectId: notice.projectId, noticeId: notice.id, notice })
+          }
+        }
+      }
+      const sameResult = previousResult?.kind === result?.kind && previousResult?.headCommit === result?.headCommit
+      if (result && !sameResult) {
+        const latest = db.select({ resultVersion: taskResultNotices.resultVersion }).from(taskResultNotices)
+          .where(eq(taskResultNotices.taskId, id)).orderBy(desc(taskResultNotices.resultVersion)).limit(1).get()
+        const createdAt = Date.now()
+        const row: TaskResultNoticeRow = {
+          id: randomUUID(), workspaceId: next.workspaceId, projectId: next.projectId, taskId: next.id,
+          resultVersion: (latest?.resultVersion ?? 0) + 1, kind: result.kind,
+          headCommit: result.headCommit ?? null, createdAt, seenAt: null,
+          dismissedAt: result.kind === 'reviewable' && next.settledAt !== undefined ? createdAt : null
+        }
+        db.insert(taskResultNotices).values(row).run()
+        const notice = toTaskResultNotice(row)
+        changes.push({ workspaceId: notice.workspaceId, projectId: notice.projectId, noticeId: notice.id, notice })
+      }
+      return changes
+    }, 'immediate')
+    for (const change of noticeChanges) this.taskResultNoticeChanged(change)
     if (current.status !== next.status || current.deliveryStatus !== next.deliveryStatus) this.activityChanged()
     const link = db.select().from(schema.taskPullRequests).where(eq(schema.taskPullRequests.taskId, id)).get()
     return withCurrentPullRequest(next, link)
@@ -787,6 +925,7 @@ export class Store {
     const connection = this.workspaceConnection(workspaceId)
     const changes = () => (connection.sqlite.prepare('SELECT total_changes() AS count').get() as { count: number }).count
     const before = changes()
+    const pendingNoticesBefore = this.pendingTaskResultNoticeChanges.length
     this.activityDepth++
     let committed = false
     try {
@@ -794,7 +933,9 @@ export class Store {
       committed = true
       return result
     } finally {
+      if (!committed) this.pendingTaskResultNoticeChanges.splice(pendingNoticesBefore)
       this.activityDepth--
+      if (committed && this.activityDepth === 0) this.flushTaskResultNoticeChanges()
       // Nested changes are observed only after the outer transaction commits.
       if (committed && changes() !== before) this.activityChanged()
     }

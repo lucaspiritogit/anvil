@@ -2,7 +2,7 @@ import { sql, type SQL } from 'drizzle-orm'
 import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH } from '../../shared/types'
 import type { ComposerPreferences, TaskCheckoutMode, TaskReviewPolicy } from '../../shared/types'
 import type { Issue } from '../../shared/valence'
-import { type AnySQLiteColumn, check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { type AnySQLiteColumn, check, foreignKey, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
 import type {
   DeliveryStatus,
@@ -14,6 +14,7 @@ import type {
   StreamName,
   TaskExecutionState
 } from '../../shared/types'
+import type { TaskResultNoticeKind } from '../../shared/types'
 
 /**
  * Renders a TypeScript union as a SQL `IN (...)` list for a CHECK constraint.
@@ -52,6 +53,7 @@ const EVENT_CATEGORIES: TaskEventCategory[] = [
   'error'
 ]
 const COMMENT_SIDES: TaskComment['side'][] = ['additions', 'deletions']
+const TASK_RESULT_NOTICE_KINDS: TaskResultNoticeKind[] = ['reviewable', 'no_changes', 'completed']
 
 export const workspaces = sqliteTable('workspaces', {
   id: text('id').primaryKey(),
@@ -152,12 +154,43 @@ export const tasks = sqliteTable(
     index('tasks_workspace_started_idx').on(table.workspaceId, table.startedAt),
     index('tasks_project_started_idx').on(table.projectId, table.startedAt),
     index('tasks_parent_idx').on(table.parentTaskId),
+    uniqueIndex('tasks_ownership_unique').on(table.workspaceId, table.projectId, table.id),
     check('tasks_restack_state_valid', oneOf(table.restackState, ['pending', 'conflict'])),
     check('tasks_style_valid', oneOf(table.style, TASK_STYLES)),
     check('tasks_review_policy_valid', oneOf(table.reviewPolicy, TASK_REVIEW_POLICIES)),
     check('tasks_checkout_mode_valid', oneOf(table.checkoutMode, TASK_CHECKOUT_MODES)),
     check('tasks_status_valid', oneOf(table.status, TASK_STATUSES)),
     check('tasks_delivery_status_valid', oneOf(table.deliveryStatus, DELIVERY_STATUSES))
+  ]
+)
+
+export const taskResultNotices = sqliteTable(
+  'task_result_notices',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    projectId: text('project_id').notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').notNull(),
+    resultVersion: integer('result_version').notNull(),
+    kind: text('kind').$type<TaskResultNoticeKind>().notNull(),
+    headCommit: text('head_commit'),
+    createdAt: integer('created_at').notNull(),
+    seenAt: integer('seen_at'),
+    dismissedAt: integer('dismissed_at')
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.workspaceId, table.projectId, table.taskId],
+      foreignColumns: [tasks.workspaceId, tasks.projectId, tasks.id],
+      name: 'task_result_notices_task_ownership_fk'
+    }).onDelete('cascade'),
+    uniqueIndex('task_result_notices_task_version_unique').on(table.taskId, table.resultVersion),
+    index('task_result_notices_workspace_created_idx').on(table.workspaceId, table.createdAt),
+    index('task_result_notices_project_created_idx').on(table.projectId, table.createdAt),
+    check('task_result_notices_version_positive', sql`${table.resultVersion} > 0`),
+    check('task_result_notices_kind_valid', oneOf(table.kind, TASK_RESULT_NOTICE_KINDS))
   ]
 )
 

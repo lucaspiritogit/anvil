@@ -271,7 +271,7 @@ const persistWorkspaces = (): void => {
 const snapshot = (): WorkspaceSnapshot => ({
   workspaces: structuredClone(workspaceRows), workspace: workspaceRows.find((row) => row.id === selectedWorkspace)!,
   preferences: structuredClone(preferencesFor(selectedWorkspace)), settings: structuredClone(settings),
-  projects, tasks: tasks.filter((task) => task.workspaceId === selectedWorkspace)
+  projects, tasks: tasks.filter((task) => task.workspaceId === selectedWorkspace), taskResultNotices: []
 })
 window.workspaceTest = { select: (id) => useStore.getState().selectWorkspace(id), create: (name) => useStore.getState().createWorkspace(name) }
 
@@ -694,6 +694,12 @@ window.anvil = {
       if (!canSettleTask(task)) throw new Error('Task is not eligible to settle')
       return update({ ...task, settledAt: Date.now() })
     }
+  },
+  taskResultNotices: {
+    list: async () => [],
+    markSeen: async () => { throw new Error('Task result notice not found') },
+    dismiss: async () => { throw new Error('Task result notice not found') },
+    onChanged: () => noop
   },
   comments: {
     send: async (taskId) => {

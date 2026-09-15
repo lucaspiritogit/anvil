@@ -9,7 +9,8 @@ export function workspaceSnapshot(store: Store): WorkspaceSnapshot {
     workspaces: store.getWorkspaces(), workspace,
     settings: availableSettings(store.getSettings(workspace.id)),
     preferences: store.getWorkspacePreferences(workspace.id),
-    projects: store.getProjects(), tasks: store.getTasks(workspace.id)
+    projects: store.getProjects(), tasks: store.getTasks(workspace.id),
+    taskResultNotices: store.getTaskResultNotices(workspace.id)
   }
 }
 
