@@ -40,6 +40,23 @@ test('switching to another task resets the active tab to Output', async ({ page 
   await expect(page.getByText('The final task diff will appear here when it is ready for review.')).toBeVisible()
 })
 
+test('quick tasks keep the Changes panel available', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=output')
+  await page.evaluate(async () => {
+    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    useStore.setState((state) => ({
+      tasks: state.tasks.map((task) => task.id === 'output' ? { ...task, style: 'quick' } : task)
+    }))
+  })
+
+  await expect(page.getByRole('tab', { name: 'Output', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /^Changes/ })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Issues', exact: true })).toHaveCount(0)
+
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
+})
+
 test('long task titles truncate to one line and the composer persists across panels', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 900, height: 500 })
   await page.goto('/tests/e2e/fixture/?scenario=output&steering=1')

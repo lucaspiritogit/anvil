@@ -205,6 +205,19 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 ))}
               </span>
             </label>
+            {style === 'work' && <label className="relative flex shrink-0 items-center" title={`${reviewPolicy === 'review_at_task_end' ? 'Run through issue reviews and stop at the final task review' : 'Pause after every issue for review'} · ${formatAccelerator(reviewPolicyShortcut, IS_MAC)}`}>
+              <Icon icon={reviewPolicy === 'review_at_task_end' ? 'moon-star' : 'table-of-contents'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
+              <select
+                aria-label="Review policy"
+                className={cn(compactSelect, 'pl-8')}
+                value={reviewPolicy}
+                onChange={(event) => preferences.setReviewPolicy(event.target.value as TaskReviewPolicy)}
+              >
+                <option className="bg-raised text-fg" value="review_each_issue">Review each step</option>
+                <option className="bg-raised text-fg" value="review_at_task_end">Run unattended</option>
+              </select>
+              <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
+            </label>}
             <ComposerModelPicker
               agentId={agentId}
               agents={agents}
@@ -213,19 +226,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
               onChange={preferences.setSelection}
             />
             <ComposerOverflowOptions containerRef={composerRef}>
-              {style === 'work' && <label className="relative flex items-center" title={`${reviewPolicy === 'review_at_task_end' ? 'Run through issue reviews and stop at the final task review' : 'Pause after every issue for review'} · ${formatAccelerator(reviewPolicyShortcut, IS_MAC)}`}>
-                <Icon icon={reviewPolicy === 'review_at_task_end' ? 'moon-star' : 'table-of-contents'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
-                <select
-                  aria-label="Review policy"
-                  className={cn(compactSelect, 'pl-8')}
-                  value={reviewPolicy}
-                  onChange={(event) => preferences.setReviewPolicy(event.target.value as TaskReviewPolicy)}
-                >
-                  <option className="bg-raised text-fg" value="review_each_issue">Review each step</option>
-                  <option className="bg-raised text-fg" value="review_at_task_end">Run unattended</option>
-                </select>
-                <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
-              </label>}
               <label className="relative flex items-center" title="Reasoning effort">
                 <Icon icon="brain" size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
                 <select

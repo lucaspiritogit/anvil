@@ -613,7 +613,7 @@ export function TaskView({ task }: Props): JSX.Element {
   // Submission is visible immediately, even while the turn is still stopping.
   const presentation = taskIssuePresentation(task, snapshot)
 
-  const panels: readonly TaskPanel[] = work ? ['output', 'changes', 'issues'] : ['output']
+  const panels: readonly TaskPanel[] = work ? ['output', 'changes', 'issues'] : ['output', 'changes']
 
   return (
     <div className="@container relative flex flex-col h-full min-w-0 min-h-0 overflow-hidden">
@@ -774,7 +774,7 @@ export function TaskView({ task }: Props): JSX.Element {
           </>
         </section>}
 
-        {work && !issue && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
+        {!issue && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
           {reviewable ? <>
             {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {diffError && <div role="alert" className="p-5 text-sm text-danger">
