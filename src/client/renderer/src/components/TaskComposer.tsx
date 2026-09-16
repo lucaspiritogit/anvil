@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { canStackOnTask } from '@shared/task-stacks'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { hasTaskContent } from '@shared/task-images'
 import { useStore } from '../state/store'
@@ -83,8 +83,11 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     if (parentTaskId && !tasks.some((task) => task.id === parentTaskId && canStackOnTask(task))) setParentTaskId('')
   }, [tasks, parentTaskId])
 
-  useEffect(() => {
-    promptRef.current?.focus()
+  useLayoutEffect(() => {
+    const prompt = promptRef.current
+    if (!prompt) return
+    prompt.focus()
+    prompt.setSelectionRange(prompt.value.length, prompt.value.length)
   }, [taskComposerFocusRequest])
 
   const submit = async (): Promise<void> => {

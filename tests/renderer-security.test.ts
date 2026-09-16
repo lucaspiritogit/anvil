@@ -36,7 +36,6 @@ test('desktop IPC rejects secondary renderers and malformed shell inputs', async
   let trustedUrl = rendererUrl
   const ipc = createDesktopIpc(() => [{ window: rendererWindow, url: trustedUrl }])
   ipc.handle('desktop:open-path', (path) => path)
-  ipc.handle('desktop:pick-project', () => '/project')
   ipc.handle('desktop:browser-state', (taskId) => ({ taskId, open: true, viewport: 'desktop' }))
   ipc.handle('desktop:browser-layout', (layout) => layout)
   ipc.handle('desktop:browser-viewport', (input) => input)
@@ -46,7 +45,6 @@ test('desktop IPC rejects secondary renderers and malformed shell inputs', async
   expect(open(rendererEvent, '/project')).toBe('/project')
   expect(() => open({ ...rendererEvent, senderFrame: null }, '/project')).toThrow('Unauthorized IPC sender')
   expect(() => open(rendererEvent, { path: '/project' })).toThrow('Invalid desktop request')
-  expect(() => handlers.get('desktop:pick-project')!(rendererEvent, '/injected')).toThrow('Invalid desktop request')
   expect(handlers.get('desktop:browser-state')!(rendererEvent, 'task-a')).toEqual({ taskId: 'task-a', open: true, viewport: 'desktop' })
   const layout = { taskId: 'task-a', visible: true, bounds: { x: 500, y: 100, width: 600, height: 700 } }
   expect(handlers.get('desktop:browser-layout')!(rendererEvent, layout)).toEqual(layout)

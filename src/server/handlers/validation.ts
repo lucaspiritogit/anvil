@@ -147,6 +147,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'connections:status': optional(workspaceId),
   'connections:configure': object({ workspaceId, allowOtherDevices: boolean, tailscaleHttps: optional(boolean), password: optional(text(1024)) }),
   'accounts:status': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
+  'accounts:rate-limits': object({ workspaceId, agentId: oneOf('codex') }),
   'accounts:disconnect': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
   'accounts:cancel': object({ workspaceId, agentId: oneOf('codex', 'opencode'), sessionId: id }),
   'accounts:connect': (value, field) => {
@@ -168,7 +169,9 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
     return range
   },
   'projects:list': none,
-  'projects:add': object({ path: text(4096) }),
+  'projects:browse': object({ path: optional(text(4096)) }),
+  'projects:add': object({ path: text(4096), workspaceId: optional(workspaceId) }),
+  'projects:clone': object({ url: text(2048), workspaceId: optional(workspaceId) }),
   'projects:update': object({ id, workspaceId: optional(workspaceId), monthlyTokenLimit: optional(nullable(number(0))), monthlyCostLimitUsd: optional(nullable(number(0, Number.MAX_SAFE_INTEGER, false))), finishOnPush: optional(boolean) }),
   'projects:remove': id,
   'projects:reveal': id,

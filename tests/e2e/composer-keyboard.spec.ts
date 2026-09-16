@@ -24,6 +24,7 @@ test.describe(() => {
       else await page.keyboard.press('Control+n')
       await expect(prompt(page)).toHaveValue(text)
       await expect(prompt(page)).toBeFocused()
+      await expect.poll(() => prompt(page).evaluate((element) => [element.selectionStart, element.selectionEnd])).toEqual([text.length, text.length])
     }
     for (let i = 0; i < 3; i++) {
       await page.keyboard.press('Control+n')

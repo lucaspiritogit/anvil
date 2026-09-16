@@ -26,6 +26,7 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
   const project = projects.find((project) => project.id === projectId)
   const selectProject = useStore((state) => state.selectProject)
   const addProject = useStore((state) => state.addProject)
+  const cloneProject = useStore((state) => state.cloneProject)
   const isRepository = useStore((state) => projectId ? state.gitStatusByProject[projectId]?.isRepository : false)
   const loadGitStatus = useStore((state) => state.loadGitStatus)
   const [open, setOpen] = useState<OpenPicker>(null)
@@ -127,8 +128,14 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
     focusProjectTrigger()
   }
 
-  const add = async () => {
-    const added = await addProject()
+  const add = async (path: string) => {
+    const added = await addProject(path)
+    if (added) focusProjectTrigger()
+    return added
+  }
+
+  const clone = async (url: string) => {
+    const added = await cloneProject(url)
     if (added) focusProjectTrigger()
     return added
   }
@@ -208,6 +215,7 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
         value={projectId}
         onChange={chooseProject}
         onAdd={add}
+        onClone={clone}
         onBusyChange={setTransition}
         onClose={() => setOpen(null)}
       />}

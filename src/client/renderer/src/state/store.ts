@@ -166,7 +166,8 @@ interface AnvilState {
   settleTask: (taskId: string) => Promise<void>
 
   load: () => Promise<void>
-  addProject: () => Promise<Project | null>
+  addProject: (path: string) => Promise<Project | null>
+  cloneProject: (url: string) => Promise<Project | null>
   removeProject: (id: string) => Promise<void>
   updateProject: (
     id: string,
@@ -432,11 +433,26 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  addProject: async () => {
+  addProject: async (path) => {
     const workspaceId = get().activeWorkspaceId
     const generation = workspaceGeneration
-    const project = await window.anvil.projects.add()
-    if (!project) return null
+    const project = await window.anvil.projects.add(path, workspaceId ?? undefined)
+    if (workspaceId) await enqueueWorkspaceRequest(() => window.anvil.workspaces.setPreferences(workspaceId, { lastProjectId: project.id }))
+    if (generation !== workspaceGeneration) return null
+    set((s) => ({
+      projects: s.projects.some((p) => p.id === project.id) ? s.projects : [...s.projects, project],
+      activeProjectId: project.id,
+      taskComposerStyle: 'work',
+      ...evictTaskEvents(),
+      view: { kind: 'home' }
+    }))
+    return project
+  },
+
+  cloneProject: async (url) => {
+    const workspaceId = get().activeWorkspaceId
+    const generation = workspaceGeneration
+    const project = await window.anvil.projects.clone(url, workspaceId ?? undefined)
     if (workspaceId) await enqueueWorkspaceRequest(() => window.anvil.workspaces.setPreferences(workspaceId, { lastProjectId: project.id }))
     if (generation !== workspaceGeneration) return null
     set((s) => ({

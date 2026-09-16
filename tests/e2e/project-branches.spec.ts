@@ -182,7 +182,7 @@ test('branch loading and discovery errors recover on refresh', async ({ page }) 
   await expect(surface.getByRole('alert')).toHaveCount(0)
 })
 
-test('project picker adds projects and retains the draft when adding fails', async ({ page }) => {
+test('project picker browses server folders, clones repositories and retains the draft when adding fails', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/')
   const composer = page.getByRole('form', { name: 'Start a task' })
   const prompt = composer.getByRole('textbox')
@@ -195,12 +195,25 @@ test('project picker adds projects and retains the draft when adding fails', asy
   })
   await project.click()
   await page.getByRole('dialog', { name: 'Choose project' }).getByRole('button', { name: 'Add project', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Choose project' }).getByRole('alert')).toHaveText('Folder picker unavailable')
+  const addProject = page.getByRole('dialog', { name: 'Add project' })
+  await expect(addProject.getByRole('textbox', { name: 'Server folder path' })).toHaveValue('/srv/projects')
+  await addProject.getByRole('button', { name: 'Add this folder' }).click()
+  await expect(addProject.getByRole('alert')).toHaveText('Folder picker unavailable')
   await expect(prompt).toHaveValue('Keep this project draft')
   await page.evaluate(() => window.dispatchEvent(new Event('fixture:restore-add')))
-  await page.getByRole('dialog', { name: 'Choose project' }).getByRole('button', { name: 'Add project', exact: true }).click()
-  await expect(project).toHaveAccessibleDescription('New project, /tmp/new-project')
+  await addProject.getByRole('button', { name: 'treq' }).click()
+  await expect(addProject.getByRole('textbox', { name: 'Server folder path' })).toHaveValue('/srv/projects/treq')
+  await addProject.getByRole('button', { name: 'Add this folder' }).click()
+  await expect(project).toHaveAccessibleDescription('treq, /srv/projects/treq')
   await expect(project).toBeFocused()
+
+  await project.click()
+  await page.getByRole('dialog', { name: 'Choose project' }).getByRole('button', { name: 'Add project', exact: true }).click()
+  const cloneProject = page.getByRole('dialog', { name: 'Add project' })
+  await cloneProject.getByRole('button', { name: 'Clone Git repository' }).click()
+  await cloneProject.getByRole('textbox', { name: 'HTTPS repository URL' }).fill('https://github.com/acme/remote-app.git')
+  await cloneProject.getByRole('button', { name: 'Clone repository', exact: true }).click()
+  await expect(project).toHaveAccessibleDescription('remote-app, /fixture/workspaces/default/projects/remote-app')
 })
 
 test('new worktrees use the selected base without switching the local checkout', async ({ page }) => {

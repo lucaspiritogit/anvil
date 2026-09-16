@@ -244,10 +244,6 @@ if (ownsInstance) app.whenReady().then(async () => {
       ...(mainWindow ? [{ window: mainWindow, url: rendererUrl }] : []),
       ...(pendingWindow ? [{ window: pendingWindow, url: pendingRendererUrl }] : [])
     ])
-    desktop.handle('desktop:pick-project', async () => {
-      const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
-      return result.canceled ? null : result.filePaths[0] ?? null
-    })
     desktop.handle('desktop:pick-wallpaper', async () => {
       const result = await dialog.showOpenDialog({ title: 'Add wallpaper', properties: ['openFile'],
         filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })

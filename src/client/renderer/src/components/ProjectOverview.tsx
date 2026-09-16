@@ -1,15 +1,75 @@
 import type { JSX } from 'react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../state/store'
 import { TaskComposer } from './TaskComposer'
 import { cn } from '../ui'
-import type { Project } from '@shared/types'
+import type { CodexRateLimitWindow, CodexRateLimits, Project } from '@shared/types'
+import { ProviderIcon } from './ProviderIcon'
+import { AsciiMeter } from './AsciiMeter'
 
 interface Props {
   project?: Project
 }
 
 const SPREAD = 'w-full max-w-[1040px] mx-auto'
+
+function weeklyLimit(limits: CodexRateLimits): CodexRateLimitWindow | null {
+  const codex = limits.rateLimitsByLimitId?.codex ?? limits.rateLimits
+  return codex?.secondary ?? codex?.primary ?? null
+}
+
+function resetLabel(timestamp: number): string {
+  return `Resets ${new Intl.DateTimeFormat(undefined, {
+    weekday: 'short', hour: 'numeric', minute: '2-digit'
+  }).format(new Date(timestamp * 1000))}`
+}
+
+function CodexLimits(): JSX.Element | null {
+  const workspaceId = useStore((state) => state.activeWorkspaceId)
+  const [limitWindow, setLimitWindow] = useState<CodexRateLimitWindow | null>(null)
+
+  useEffect(() => {
+    let active = true
+    const load = async (): Promise<void> => {
+      if (!workspaceId) return
+      try {
+        const limits = await window.anvil.accounts.rateLimits({ workspaceId, agentId: 'codex' })
+        if (active) setLimitWindow(weeklyLimit(limits))
+      } catch {
+        if (active) setLimitWindow(null)
+      }
+    }
+    setLimitWindow(null)
+    void load()
+    const timer = window.setInterval(() => { void load() }, 60_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [workspaceId])
+
+  if (!limitWindow) return null
+  const remaining = Math.max(0, Math.min(100, 100 - limitWindow.usedPercent))
+  return (
+    <section
+      aria-label="Codex usage limits"
+      className={cn(SPREAD, 'mt-8 flex shrink-0 items-center gap-4 border-t border-dashed border-line/70 px-1 pt-4 max-[700px]:mt-5 max-[700px]:gap-3')}
+    >
+      <div className="flex shrink-0 items-center gap-2 text-xs font-medium text-foreground">
+        <ProviderIcon company="OpenAI" size={18} />
+        <span>ChatGPT</span>
+      </div>
+      <AsciiMeter
+        className="min-w-0 flex-1"
+        label="Weekly"
+        value={resetLabel(limitWindow.resetsAt)}
+        ratio={remaining / 100}
+        width={24}
+        percentLabel={`${Math.round(remaining)}% left`}
+      />
+    </section>
+  )
+}
 
 function GitAlert({ project }: { project: Project }): JSX.Element | null {
   const status = useStore((s) => s.gitStatusByProject[project.id])
@@ -68,6 +128,7 @@ export function ProjectOverview({ project }: Props): JSX.Element {
         {project && <GitAlert project={project} />}
         <TaskComposer key={project?.id ?? 'no-project'} />
       </div>
+      <CodexLimits />
     </div>
   )
 }

@@ -23,7 +23,6 @@ const api = createAnvilApi(url, {
     }
     return () => { if (settingsOpenHandler === handler) settingsOpenHandler = undefined }
   },
-  pickProject: () => ipcRenderer.invoke('desktop:pick-project'),
   pickWallpaper: () => ipcRenderer.invoke('desktop:pick-wallpaper'),
   openPath: (path) => ipcRenderer.invoke('desktop:open-path', path),
   openPullRequest: (value) => ipcRenderer.invoke('desktop:open-pr-url', value),

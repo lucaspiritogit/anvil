@@ -4,9 +4,9 @@ import type { Store } from '../store'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { TerminalSessionManager } from '../terminal-sessions'
-import type { AgentAccountTarget, AgentAccountConnect, WorkspaceAgentAccount } from '../../shared/types'
+import type { AgentAccountTarget, AgentAccountConnect, CodexRateLimits, WorkspaceAgentAccount } from '../../shared/types'
 import { CodexAppServerConnection, type ConnectionHandlers } from './codex-app-server-connection'
-import type { CodexAppServerProtocol, CodexObject } from './codex-app-server-protocol'
+import { codexRateLimits, type CodexAppServerProtocol, type CodexObject } from './codex-app-server-protocol'
 import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from './workspace-execution'
 import { openCodeWorkspaceCommand } from './opencode-workspace'
 import { resolveCommand } from './resolve'
@@ -83,11 +83,13 @@ export class WorkspaceAccounts {
   private closed = false
   private closing?: Promise<void>
   private readonly reads = new Map<string, Promise<WorkspaceAgentAccount>>()
+  private readonly rateLimitReads = new Map<string, Promise<CodexRateLimits>>()
   private readonly paused = new Set<string>()
 
   async pauseWorkspace(workspaceId: string): Promise<() => void> {
     this.paused.add(workspaceId)
-    const reads = [...this.reads].filter(([key]) => JSON.parse(key)[0] === workspaceId).map(([, read]) => read)
+    const reads = [...this.reads, ...this.rateLimitReads]
+      .filter(([key]) => JSON.parse(key)[0] === workspaceId).map(([, read]) => read)
     await Promise.allSettled(reads)
     return () => { this.paused.delete(workspaceId) }
   }
@@ -140,6 +142,29 @@ export class WorkspaceAccounts {
         ? [`ChatGPT${account.email ? `: ${account.email}` : ''} (${account.planType})`] : ['Amazon Bedrock']
       return this.state(target, { status: account ? 'connected' : 'signed-out', accounts })
     } finally { await connection.close() }
+  }
+
+  async rateLimits(target: AgentAccountTarget): Promise<CodexRateLimits> {
+    if (target.agentId !== 'codex') throw new Error('Rate limits are only available for Codex')
+    this.workspace(target)
+    const key = this.key(target)
+    const existing = this.rateLimitReads.get(key)
+    if (existing) return existing
+    const read = this.readRateLimits(target).finally(() => this.rateLimitReads.delete(key))
+    this.rateLimitReads.set(key, read)
+    return read
+  }
+
+  private async readRateLimits(target: AgentAccountTarget): Promise<CodexRateLimits> {
+    const connection = this.connectCodex(this.workspace(target))
+    try {
+      await this.initialize(connection)
+      const { account } = await connection.request('account/read', { refreshToken: false })
+      if (account?.type !== 'chatgpt') throw new Error('Codex rate limits require a ChatGPT account')
+      return codexRateLimits(await connection.request('account/rateLimits/read', {}))
+    } finally {
+      await connection.close()
+    }
   }
 
   status(target: AgentAccountTarget): Promise<WorkspaceAgentAccount> {
@@ -359,7 +384,7 @@ export class WorkspaceAccounts {
     this.closing = Promise.resolve().then(async () => {
       const operations = [...this.pending.values()].map((operation) => this.finish(operation, 'Connection cancelled.'))
       await Promise.allSettled(operations)
-      await Promise.allSettled(this.reads.values())
+      await Promise.allSettled([...this.reads.values(), ...this.rateLimitReads.values()])
     })
     return this.closing
   }

@@ -67,7 +67,7 @@ const exits: [string, () => void | Promise<void>][] = [
   ['task switch', () => state().openTask('b')],
   ['project selection', () => state().selectProject('other')],
   ['project removal', () => state().removeProject('project')],
-  ['project addition', () => state().addProject()],
+  ['project addition', () => state().addProject('/tmp/added')],
   ['task deletion', () => state().deleteTask('a')],
   ['task creation navigation', () => state().startTask({ agentId: 'codex', prompt: 'new' })],
   ['workspace switch', () => state().selectWorkspace('other')],

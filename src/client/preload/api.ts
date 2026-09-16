@@ -14,6 +14,7 @@ import type {
   WorkspaceSettingsChange,
   AgentDefinition,
   AnalyticsRange,
+  CodexRateLimits,
   GitHubCredentialStatus,
   ConnectionsStatus,
   ConnectionsStatusChange,
@@ -21,6 +22,7 @@ import type {
   PullRequestPreview,
   ProviderModelList,
   Project,
+  ProjectDirectoryListing,
   ProjectGitStatus,
   ProjectBranches,
   ProjectFileList,
@@ -46,7 +48,6 @@ import type {
 export interface ClientHost {
   platform: string
   onSettingsOpen(handler: () => void): () => void
-  pickProject(): Promise<string | null>
   pickWallpaper(): Promise<string | null>
   openPath(path: string): Promise<string>
   openPullRequest(url: string): Promise<void>
@@ -147,6 +148,7 @@ export function createAnvilApi(url: string, host: ClientHost) {
     },
     accounts: {
       status: (input: IpcRequests['accounts:status']): Promise<WorkspaceAgentAccount> => invoke('accounts:status', input),
+      rateLimits: (input: IpcRequests['accounts:rate-limits']): Promise<CodexRateLimits> => invoke('accounts:rate-limits', input),
       connect: (input: IpcRequests['accounts:connect']): Promise<WorkspaceAgentAccount> => invoke('accounts:connect', input),
       disconnect: (input: IpcRequests['accounts:disconnect']): Promise<WorkspaceAgentAccount> => invoke('accounts:disconnect', input),
       cancel: (input: IpcRequests['accounts:cancel']): Promise<WorkspaceAgentAccount> => invoke('accounts:cancel', input),
@@ -164,10 +166,9 @@ export function createAnvilApi(url: string, host: ClientHost) {
     projects: {
       onChanged: (handler: (projects: Project[]) => void): (() => void) => subscribe('projects:changed', handler),
       list: (): Promise<Project[]> => invoke('projects:list'),
-      add: async (): Promise<Project | null> => {
-        const path: string | null = await host.pickProject()
-        return path ? invoke('projects:add', { path }) : null
-      },
+      browse: (path?: string): Promise<ProjectDirectoryListing> => invoke('projects:browse', path ? { path } : {}),
+      add: (path: string, workspaceId?: string): Promise<Project> => invoke('projects:add', { path, ...(workspaceId ? { workspaceId } : {}) }),
+      clone: (url: string, workspaceId?: string): Promise<Project> => invoke('projects:clone', { url, ...(workspaceId ? { workspaceId } : {}) }),
       update: (input: IpcRequests['projects:update']): Promise<Project | undefined> => invoke('projects:update', input),
       remove: (id: string): Promise<Project[]> => invoke('projects:remove', id),
       reveal: async (projectId: string): Promise<string> => {

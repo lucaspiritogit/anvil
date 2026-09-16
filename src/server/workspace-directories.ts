@@ -38,6 +38,9 @@ export function moveWorkspaceDirectory(source: string, destination: string): voi
 export function relocateTaskPaths(sqlite: DatabaseSync, previous: string, directory: string): void {
   if (previous === directory) return
   const prefix = previous + sep
+  sqlite.prepare(`UPDATE projects SET path = ? || substr(path, length(?) + 1)
+    WHERE path = ? OR substr(path, 1, length(?)) = ?`)
+    .run(directory, previous, previous, prefix, prefix)
   sqlite.prepare(`UPDATE tasks SET cwd = ? || substr(cwd, length(?) + 1)
     WHERE cwd = ? OR substr(cwd, 1, length(?)) = ?`)
     .run(directory, previous, previous, prefix, prefix)

@@ -22,6 +22,14 @@ export function fixtureAccounts(name: (id: string) => string, busy: boolean): An
   })
   return {
     status: async (target) => current(target),
+    rateLimits: async () => ({
+      rateLimits: {
+        limitId: 'codex', limitName: null,
+        primary: { usedPercent: 18, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+        secondary: { usedPercent: 26, windowDurationMins: 10_080, resetsAt: Math.floor(Date.now() / 1000) + 86_400 },
+        rateLimitReachedType: null
+      }
+    }),
     onChanged: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     connect: async (input) => {
       const state = current(input)

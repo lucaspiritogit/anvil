@@ -7,7 +7,6 @@ export interface DesktopServerConnectionState {
 }
 
 export interface DesktopRequests {
-  'desktop:pick-project': undefined
   'desktop:pick-wallpaper': undefined
   'desktop:open-path': string
   'desktop:open-pr-url': string
@@ -55,7 +54,6 @@ function serverTarget(value: unknown): value is ServerTarget {
 
 export function isDesktopRequest<C extends keyof DesktopRequests>(channel: C, value: unknown): value is DesktopRequests[C] {
   switch (channel) {
-    case 'desktop:pick-project':
     case 'desktop:pick-wallpaper':
     case 'desktop:server-target': return value === undefined
     case 'desktop:browser-layout': return browserLayout(value)

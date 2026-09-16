@@ -74,6 +74,14 @@ function fixture() {
             if (readGate) await readGate
             result = { account: profiles.get(workspace.workspaceId) ?? null, requiresOpenaiAuth: true, secret: 'never-return-this' }
           }
+          if (method === 'account/rateLimits/read') result = {
+            rateLimits: {
+              limitId: 'codex', limitName: null,
+              primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1_730_947_200 },
+              secondary: { usedPercent: 25, windowDurationMins: 10_080, resetsAt: 1_731_542_400 },
+              rateLimitReachedType: null
+            }
+          }
           if (method === 'account/login/start') {
             const login = params as CodexAppServerRequests['account/login/start']['params']
             if (login.type === 'apiKey') {
@@ -99,6 +107,24 @@ function fixture() {
   return { accounts, profiles, connections, locked, active, changed, invalidate, openBrowser, createOpenCodeAuth, createCodexAuth, dispose, readOpenCode, requests,
     rejectKey: () => { rejectKey = true }, early: () => { early = true }, setReadGate: (gate?: Promise<void>) => { readGate = gate } }
 }
+
+test('reads workspace-isolated Codex rate limits for ChatGPT accounts', async () => {
+  const f = fixture()
+  f.profiles.set('work', { type: 'chatgpt', email: 'work@example.test', planType: 'plus' })
+  await expect(f.accounts.rateLimits(work)).resolves.toMatchObject({
+    rateLimits: { secondary: { usedPercent: 25, windowDurationMins: 10_080 } }
+  })
+  expect(f.requests.slice(-4)).toEqual(['initialize', 'config/read', 'account/read', 'account/rateLimits/read'])
+  expect(f.connections.at(-1)?.close).toHaveBeenCalledOnce()
+})
+
+test('does not expose Codex rate limits for non-ChatGPT accounts', async () => {
+  const f = fixture()
+  f.profiles.set('work', { type: 'apiKey' })
+  await expect(f.accounts.rateLimits(work)).rejects.toThrow('require a ChatGPT account')
+  expect(f.requests).not.toContain('account/rateLimits/read')
+  expect(f.connections.at(-1)?.close).toHaveBeenCalledOnce()
+})
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
   let resolve!: () => void

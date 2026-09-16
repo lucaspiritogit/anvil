@@ -1,7 +1,8 @@
 import type { HandlerRegistry } from '../handler-registry'
 import { randomUUID } from 'node:crypto'
-import { basename, isAbsolute } from 'node:path'
-import { stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { mkdir, readdir, rm, stat } from 'node:fs/promises'
 import type { ProjectMemory } from '../memory/project-memory'
 import type { TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
@@ -9,6 +10,7 @@ import type { Project } from '../../shared/types'
 import { listProjectFiles, projectFileError } from '../project-files'
 import { usesManagedWorktree, usesProjectCheckout } from '../tasks/checkout'
 import { taskOperationKind } from '../tasks/operations'
+import { git } from '../git/command'
 
 interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDelivery' | 'agentProcesses'> {
   stopTask: TaskExecution['stopTask']
@@ -16,10 +18,42 @@ interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDel
   skipTaskCleanup: TaskExecution['skipTaskCleanup']
   projectMemory?: ProjectMemory
   projectsChanged?(workspaceId: string): void
+  cloneRepository?(url: string, destination: string): Promise<void>
+}
+
+function cloneUrl(value: string): { url: string; name: string } {
+  let parsed: URL
+  try {
+    parsed = new URL(value.trim())
+  } catch {
+    throw new Error('Enter a valid HTTPS Git repository URL')
+  }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error('Enter an HTTPS Git repository URL without credentials, a query, or a fragment')
+  }
+  const encodedName = parsed.pathname.replace(/\/+$/, '').split('/').at(-1) ?? ''
+  let name: string
+  try {
+    name = decodeURIComponent(encodedName).replace(/\.git$/i, '')
+  } catch {
+    throw new Error('The Git repository URL contains an invalid repository name')
+  }
+  if (!name || name === '.' || name === '..' || name.length > 255 || /[<>:"/\\|?*\x00-\x1f]/.test(name) || /[. ]$/.test(name)) {
+    throw new Error('The Git repository URL contains an invalid repository name')
+  }
+  return { url: parsed.href, name }
+}
+
+async function cloneHttpsRepository(url: string, destination: string): Promise<void> {
+  await git(dirname(destination), ['clone', '--', url, destination], [0], {
+    GIT_TERMINAL_PROMPT: '0',
+    GCM_INTERACTIVE: 'Never'
+  })
 }
 
 export function registerProjectHandlers(ipc: HandlerRegistry, {
-  store, gitDelivery, agentProcesses, stopTask, deferTaskCleanup, skipTaskCleanup, projectMemory, projectsChanged
+  store, gitDelivery, agentProcesses, stopTask, deferTaskCleanup, skipTaskCleanup, projectMemory, projectsChanged,
+  cloneRepository = cloneHttpsRepository
 }: ProjectHandlerDependencies): void {
   const requireCheckoutAvailable = (projectId: string): void => {
     if (store.getTasks().some((task) => task.projectId === projectId &&
@@ -31,6 +65,25 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     throw new Error('Wait for the active task using this project checkout to finish')
   }
   ipc.handle('projects:list', () => store.getProjects())
+  ipc.handle('projects:browse', async ({ path }) => {
+    if (path && !isAbsolute(path)) throw new Error('Project browser paths must be absolute')
+    const directory = resolve(path?.trim() || homedir())
+    if (!(await stat(directory)).isDirectory()) throw new Error('Project browser path must be a directory')
+    const entries = await readdir(directory, { withFileTypes: true })
+    const directories = (await Promise.all(entries.map(async (entry) => {
+      const entryPath = join(directory, entry.name)
+      if (entry.isDirectory()) return { name: entry.name, path: entryPath }
+      if (!entry.isSymbolicLink()) return null
+      try {
+        return (await stat(entryPath)).isDirectory() ? { name: entry.name, path: entryPath } : null
+      } catch {
+        return null
+      }
+    }))).filter((entry): entry is { name: string; path: string } => entry !== null)
+      .sort((left, right) => left.name.localeCompare(right.name))
+    const parent = dirname(directory)
+    return { path: directory, parentPath: parent === directory ? null : parent, directories }
+  })
   ipc.handle('projects:files', async ({ projectId }) => {
     const project = store.getProjects().find((item) => item.id === projectId)
     if (!project) return projectFileError(projectId, 'project-not-found', 'Project not found.')
@@ -42,8 +95,7 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     return result
   })
 
-  ipc.handle('projects:add', async ({ path }) => {
-    const workspaceId = store.getActiveWorkspace().id
+  ipc.handle('projects:add', async ({ path, workspaceId = store.getActiveWorkspace().id }) => {
     if (!isAbsolute(path) || !(await stat(path)).isDirectory()) throw new Error('Project path must be an absolute directory')
     const project: Project = {
       id: randomUUID(),
@@ -58,6 +110,40 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     const added = store.addProject(project, workspaceId)
     projectsChanged?.(workspaceId)
     return added
+  })
+
+  ipc.handle('projects:clone', async ({ url, workspaceId = store.getActiveWorkspace().id }) => {
+    const repository = cloneUrl(url)
+    const root = join(store.getWorkspaceDirectory(workspaceId), 'projects')
+    const destination = join(root, repository.name)
+    await mkdir(root, { recursive: true, mode: 0o700 })
+    try {
+      await mkdir(destination, { mode: 0o700 })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        throw new Error(`A project folder named ${repository.name} already exists in this workspace`)
+      }
+      throw error
+    }
+    try {
+      await cloneRepository(repository.url, destination)
+      const project: Project = {
+        id: randomUUID(),
+        name: repository.name,
+        path: destination,
+        createdAt: Date.now(),
+        monthlyTokenLimit: null,
+        monthlyCostLimitUsd: null,
+        finishOnPush: false,
+        gitPlatform: 'github'
+      }
+      const added = store.addProject(project, workspaceId)
+      projectsChanged?.(workspaceId)
+      return added
+    } catch (error) {
+      await rm(destination, { recursive: true, force: true })
+      throw error
+    }
   })
 
   ipc.handle('projects:remove', async (id: string) => {

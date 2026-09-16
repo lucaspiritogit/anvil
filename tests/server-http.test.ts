@@ -33,6 +33,7 @@ test('HTTP exposes health, snapshots and validated domain handlers on loopback',
   expect(await invalid.json()).toMatchObject({ error: expect.stringContaining('Invalid IPC request') })
   expect((await rpc('__proto__')).status).toBe(400)
   const path = mkdtempSync(join(testHome, 'http-project-'))
+  expect(await (await rpc('projects:browse', { path })).json()).toMatchObject({ path, directories: [] })
   const project = await (await rpc('projects:add', { path })).json() as { id: string; path: string }
   expect(project.path).toBe(path)
   expect(await (await rpc('projects:reveal', project.id)).json()).toBe(path)

@@ -7,7 +7,7 @@ import { TaskImageStorage } from '../src/server/task-image-storage'
 import { taskImages } from './task-image-fixture'
 import { MERGE_CONFLICT_MAX_FILE_BYTES, TASK_IMAGE_LIMITS } from '../src/shared/types'
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { taskState } from './task-state'
 import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
@@ -36,7 +36,10 @@ import { TaskIssues } from '../src/server/tasks/task-issues'
 import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent } from '../src/shared/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome, shell, dialog } from './issue-tracker-doubles'
 
-function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise<string>) {
+function setupIpc(
+  preparePrompt?: (projectId: string, prompt: string) => Promise<string>,
+  cloneRepository?: (url: string, destination: string) => Promise<void>
+) {
   const databaseFile = join(testHome, `ipc-${randomUUID()}`, 'config.json')
   const store = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
   onTestCleanup(() => store.close())
@@ -158,7 +161,8 @@ function setupIpc(preparePrompt?: (projectId: string, prompt: string) => Promise
   registerWorkspaceHandlers(rendererIpc, store, context.send)
   registerSettingsHandlers(rendererIpc, context.store, new WallpaperLibrary(testHome))
   registerAgentHandlers(rendererIpc, store)
-  registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, deferTaskCleanup: execution.deferTaskCleanup, skipTaskCleanup: execution.skipTaskCleanup })
+  registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, deferTaskCleanup: execution.deferTaskCleanup, skipTaskCleanup: execution.skipTaskCleanup,
+    ...(cloneRepository ? { cloneRepository } : {}) })
   const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, name === 'settings:set' ? { workspaceId: 'default', patch: input } : input)
   const tick = async (): Promise<void> => {
     for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve))
@@ -484,6 +488,56 @@ test('updates projects, validates task references and selects supported agents a
   const codexSettings = call('settings:set', { defaultAgentId: 'codex', defaultModel: 'selected-model' })
   expect(codexSettings.defaultAgentId).toBe('codex')
   expect(codexSettings.defaultModel).toBe('selected-model')
+})
+
+test('browses server folders and clones HTTPS repositories into the selected workspace', async () => {
+  const clones: { url: string; destination: string }[] = []
+  const { store, call } = setupIpc(undefined, async (url, destination) => {
+    clones.push({ url, destination })
+    writeFileSync(join(destination, 'README.md'), '# Cloned')
+  })
+  const browseRoot = mkdtempSync(join(testHome, 'project-browser-'))
+  mkdirSync(join(browseRoot, 'Zulu'))
+  mkdirSync(join(browseRoot, 'alpha'))
+  writeFileSync(join(browseRoot, 'file.txt'), 'not a directory')
+  await expect(call('projects:browse', { path: 'relative/path' })).rejects.toThrow(/must be absolute/)
+  await expect(call('projects:browse', { path: join(browseRoot, 'file.txt') })).rejects.toThrow(/must be a directory/)
+  await expect(call('projects:browse', { path: browseRoot })).resolves.toMatchObject({
+    path: browseRoot,
+    parentPath: join(browseRoot, '..'),
+    directories: [{ name: 'alpha', path: join(browseRoot, 'alpha') }, { name: 'Zulu', path: join(browseRoot, 'Zulu') }]
+  })
+
+  const workspace = await call('workspaces:create', 'Remote projects')
+  await call('workspaces:select', workspace.id)
+  const project: Project = await call('projects:clone', { url: 'https://github.com/acme/remote-app.git' })
+  const destination = join(store.getWorkspaceDirectory(workspace.id), 'projects', 'remote-app')
+  expect(project).toMatchObject({ name: 'remote-app', path: destination })
+  expect(clones).toEqual([{ url: 'https://github.com/acme/remote-app.git', destination }])
+  expect(readFileSync(join(destination, 'README.md'), 'utf8')).toBe('# Cloned')
+  expect(store.getProjects(workspace.id)).toContainEqual(project)
+})
+
+test('rejects unsafe clone URLs and removes failed clone destinations', async () => {
+  const calls: string[] = []
+  const { store, call } = setupIpc(undefined, async (_url, destination) => {
+    calls.push(destination)
+    writeFileSync(join(destination, 'partial'), 'partial clone')
+    throw new Error('Clone unavailable')
+  })
+  for (const url of [
+    'http://github.com/acme/repo.git',
+    'https://token@github.com/acme/repo.git',
+    'https://github.com/acme/repo.git?ref=main',
+    'file:///tmp/repo',
+    'not a URL'
+  ]) await expect(call('projects:clone', { url })).rejects.toThrow(/HTTPS Git repository URL/)
+  expect(calls).toEqual([])
+  const destination = join(store.getWorkspaceDirectory('default'), 'projects', 'repo')
+  await expect(call('projects:clone', { url: 'https://github.com/acme/repo.git' })).rejects.toThrow('Clone unavailable')
+  expect(calls).toEqual([destination])
+  expect(existsSync(destination)).toBe(false)
+  expect(store.getProjects()).toStrictEqual([expect.objectContaining({ id: 'project' })])
 })
 
 test('runs local Quick tasks directly without issue plans', async () => {

@@ -15,7 +15,6 @@ if (!window.anvil) {
   window.anvil = createAnvilApi(window.location.origin, {
     platform: /Mac|iPhone|iPad/.test(navigator.platform) ? 'darwin' : 'linux',
     onSettingsOpen: () => () => {},
-    pickProject: async () => window.prompt('Project folder on the computer running Anvil:')?.trim() || null,
     pickWallpaper: async () => window.prompt('Image path on the computer running Anvil:')?.trim() || null,
     openPath: async (path) => {
       window.prompt('Folder on the computer running Anvil:', path)

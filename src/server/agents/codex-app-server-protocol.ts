@@ -5,6 +5,8 @@
  * Extra response fields and unknown notifications are allowed for forward compatibility.
  */
 
+import type { CodexRateLimit, CodexRateLimits } from '../../shared/types'
+
 export type CodexRequestId = number | string
 export type CodexObject = Record<string, unknown>
 export type CodexTurnStatus = 'inProgress' | 'completed' | 'interrupted' | 'failed'
@@ -47,6 +49,10 @@ export interface CodexAppServerRequests {
   'account/read': {
     params: { refreshToken: boolean }
     result: { account: CodexAccount | null; requiresOpenaiAuth: boolean }
+  }
+  'account/rateLimits/read': {
+    params: Record<string, never>
+    result: CodexRateLimits
   }
   'model/list': {
     params: { cursor?: string | null; limit?: number | null; includeHidden?: boolean | null }
@@ -126,6 +132,44 @@ export function codexId(value: unknown): string {
   return id
 }
 
+function codexNumber(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Expected a number in Codex protocol data')
+  return value
+}
+
+function codexRateLimit(value: unknown): CodexRateLimit {
+  const limit = codexObject(value)
+  const window = (value: unknown): CodexRateLimit['primary'] => {
+    if (value === null) return null
+    const entry = codexObject(value)
+    return {
+      usedPercent: codexNumber(entry.usedPercent),
+      windowDurationMins: codexNumber(entry.windowDurationMins),
+      resetsAt: codexNumber(entry.resetsAt)
+    }
+  }
+  return {
+    limitId: codexString(limit.limitId),
+    limitName: limit.limitName === null ? null : codexString(limit.limitName),
+    primary: window(limit.primary),
+    secondary: window(limit.secondary),
+    rateLimitReachedType: limit.rateLimitReachedType === null ? null : codexString(limit.rateLimitReachedType)
+  }
+}
+
+export function codexRateLimits(value: unknown): CodexRateLimits {
+  const result = codexObject(value)
+  const rateLimits = result.rateLimits === null ? null : codexRateLimit(result.rateLimits)
+  if (result.rateLimitsByLimitId === undefined) return { rateLimits }
+  const limits = codexObject(result.rateLimitsByLimitId)
+  return {
+    rateLimits,
+    rateLimitsByLimitId: Object.fromEntries(
+      Object.entries(limits).map(([id, limit]) => [id, codexRateLimit(limit)])
+    )
+  }
+}
+
 export function codexTurn(value: unknown): CodexTurn {
   const turn = codexObject(value)
   if (!['inProgress', 'completed', 'interrupted', 'failed'].includes(String(turn.status))) {
@@ -164,6 +208,7 @@ export function validateCodexResponse(method: keyof CodexAppServerRequests, valu
       }
     }
   }
+  if (method === 'account/rateLimits/read') codexRateLimits(result)
   if (method === 'model/list') {
     if (!Array.isArray(result.data)) throw new Error('Expected Codex model list')
     if (result.nextCursor !== null) codexString(result.nextCursor)

@@ -20,6 +20,7 @@ export interface IpcRequests {
   'workspaces:preferences:get': string
   'workspaces:preferences:set': { workspaceId: string; patch: Partial<WorkspacePreferences> }
   'accounts:status': AgentAccountTarget
+  'accounts:rate-limits': AgentAccountTarget
   'accounts:connect': AgentAccountConnect
   'accounts:disconnect': AgentAccountTarget
   'accounts:cancel': AgentAccountTarget & { sessionId: string }
@@ -27,7 +28,9 @@ export interface IpcRequests {
   'agents:models': { agentId: string; workspaceId?: string }
   'analytics:get': AnalyticsRange
   'projects:list': undefined
-  'projects:add': { path: string }
+  'projects:browse': { path?: string }
+  'projects:add': { path: string; workspaceId?: string }
+  'projects:clone': { url: string; workspaceId?: string }
   'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean }
   'projects:remove': string
   'projects:reveal': string

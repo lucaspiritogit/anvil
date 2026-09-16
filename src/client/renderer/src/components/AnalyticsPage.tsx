@@ -23,17 +23,8 @@ import { formatCost, formatDurationMs, formatTokens } from '../format'
 import { describeModel, humanizeModelName } from '../model-options'
 import { useStore } from '../state/store'
 import { cn } from '../ui'
+import { AsciiMeter, ASCII_METER_TONE, asciiBar } from './AsciiMeter'
 import { ProviderIcon } from './ProviderIcon'
-
-const TONE = {
-  blue: 'text-accent',
-  green: 'text-ok',
-  purple: 'text-violet',
-  pink: 'text-violet',
-  red: 'text-danger',
-  orange: 'text-warn',
-  grey: 'text-dim'
-} satisfies Record<DitherColor, string>
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; color: DitherColor }> = {
   pending: { label: 'Pending', color: 'orange' },
@@ -86,12 +77,6 @@ function dayTick(value: unknown): string {
   return typeof value === 'string' ? value.slice(5).replace('-', '/') : ''
 }
 
-function asciiBar(ratio: number, width: number): string {
-  const bounded = Math.max(0, Math.min(1, ratio))
-  const filled = Math.round(bounded * width)
-  return `${'█'.repeat(filled)}${'░'.repeat(width - filled)}`
-}
-
 export function Panel({
   title,
   aside,
@@ -123,45 +108,6 @@ export function Panel({
       </header>
       <div className={cn('flex min-w-0 flex-1 flex-col p-4', bodyClassName)}>{children}</div>
     </section>
-  )
-}
-
-export function AsciiMeter({
-  label,
-  value,
-  ratio,
-  tone = 'blue',
-  width = 24,
-  className
-}: {
-  label: string
-  value: string
-  ratio: number
-  tone?: keyof typeof TONE
-  width?: number
-  className?: string
-}): JSX.Element {
-  const pct = Math.round(Math.max(0, Math.min(1, ratio)) * 100)
-  return (
-    <div className={cn('grid gap-1', className)}>
-      <div className="flex items-baseline justify-between gap-3 text-xs">
-        <span className="truncate text-muted-foreground">{label}</span>
-        <span className="tabular-nums">{value}</span>
-      </div>
-      <div
-        className="flex items-center gap-2"
-        role="meter"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={pct}
-        aria-label={label}
-      >
-        <span className={cn('truncate text-[11px] leading-none tracking-[-0.04em] select-none', TONE[tone])}>
-          {asciiBar(ratio, width)}
-        </span>
-        <span className="w-9 shrink-0 text-right text-[10px] text-muted-foreground tabular-nums">{pct}%</span>
-      </div>
-    </div>
   )
 }
 
@@ -226,7 +172,7 @@ export function TokenMixChart({ daily }: { daily: AnalyticsDailyPoint[] }): JSX.
       <ul aria-label="Token colors" className="mb-2 flex justify-end gap-4 text-[11px] text-dim">
         {Object.entries(TOKEN_MIX_CONFIG).map(([key, entry]) => (
           <li key={key} className="flex items-center gap-1.5">
-            <span className={cn('text-sm leading-none', TONE[entry.color])} aria-hidden="true">■</span>
+            <span className={cn('text-sm leading-none', ASCII_METER_TONE[entry.color])} aria-hidden="true">■</span>
             <span>{entry.label}</span>
           </li>
         ))}

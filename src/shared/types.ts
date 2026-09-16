@@ -99,6 +99,12 @@ export interface Project {
   gitPlatform: 'github'
 }
 
+export interface ProjectDirectoryListing {
+  path: string
+  parentPath: string | null
+  directories: { name: string; path: string }[]
+}
+
 /** A fresh, bounded snapshot for client-side fuzzy matching. No file contents. */
 export interface ProjectFileList {
   projectId: string
@@ -670,4 +676,23 @@ export interface WorkspaceAgentAccount extends AgentAccountTarget {
   busy: boolean
   message?: string
   sessionId?: string
+}
+
+export interface CodexRateLimitWindow {
+  usedPercent: number
+  windowDurationMins: number
+  resetsAt: number
+}
+
+export interface CodexRateLimit {
+  limitId: string
+  limitName: string | null
+  primary: CodexRateLimitWindow | null
+  secondary: CodexRateLimitWindow | null
+  rateLimitReachedType: string | null
+}
+
+export interface CodexRateLimits {
+  rateLimits: CodexRateLimit | null
+  rateLimitsByLimitId?: Record<string, CodexRateLimit>
 }

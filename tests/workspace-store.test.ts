@@ -199,7 +199,14 @@ test('renaming moves credentials to the named folder and keeps workspace identit
   const directory = store.getWorkspaceDirectory(initial.id)
   mkdirSync(directory, { recursive: true })
   writeFileSync(join(directory, 'auth.json'), 'test credential marker')
+  const projectPath = join(directory, 'projects', 'cloned')
+  mkdirSync(projectPath, { recursive: true })
+  store.addProject({
+    id: 'cloned', name: 'cloned', path: projectPath, createdAt: 0,
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+  })
   store.renameWorkspace(initial.id, 'Personal')
+  expect(store.getProjects(initial.id)[0].path).toBe(join(directory, '..', 'Personal', 'projects', 'cloned'))
   const replacement = store.createWorkspace('Default')
   store.selectWorkspace(replacement.id)
   expect(store.getWorkspaceDirectory(initial.id)).toBe(join(directory, '..', 'Personal'))
