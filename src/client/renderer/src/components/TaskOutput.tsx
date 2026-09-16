@@ -602,12 +602,6 @@ const LINE_CLAMP: Record<number, string> = {
   15: 'line-clamp-15'
 }
 
-/* Measuring every row would cost a layout pass per event; long lines wrap, so
- * a character budget per line is close enough to decide "can this clamp". */
-function clampable(text: string, lines: number): boolean {
-  return text.split('\n').length > lines || text.length > lines * 80
-}
-
 function ExpandButton({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }): JSX.Element {
   return (
     <button type="button" aria-label={expanded ? 'Collapse event' : 'Expand event'} aria-expanded={expanded}
@@ -657,22 +651,35 @@ function Gutter({ event, label, tone, expandable, expanded, onToggle }: {
   )
 }
 
-function ClampedText({ text, lines, expanded, className, showMoreLink, onToggle }: {
+/* The clamp class is always applied while collapsed and the row measures whether
+ * it actually bites, so the fade and expand affordances only appear on genuinely
+ * truncated text — never on a single line that merely could wrap. */
+function ClampedText({ text, lines, expanded, className, showMoreLink, onToggle, onTruncated }: {
   text: string
   lines: number
   expanded: boolean
   className?: string
   showMoreLink?: boolean
   onToggle?: () => void
+  onTruncated?: (truncated: boolean) => void
 }): JSX.Element {
-  const truncatable = clampable(text, lines)
+  const textRef = useRef<HTMLSpanElement>(null)
+  const [truncated, setTruncated] = useState(false)
+  useLayoutEffect(() => {
+    if (expanded) return
+    const element = textRef.current
+    if (!element) return
+    const clamped = element.scrollHeight > element.clientHeight + 1
+    setTruncated(clamped)
+    onTruncated?.(clamped)
+  }, [expanded, text, lines, onTruncated])
   return (
     <span className="relative block min-w-0">
-      <span className={cn('whitespace-pre-wrap break-words [overflow-wrap:anywhere]', expanded ? 'block' : truncatable && LINE_CLAMP[lines], className)}>
+      <span ref={textRef} className={cn('whitespace-pre-wrap break-words [overflow-wrap:anywhere]', expanded ? 'block' : LINE_CLAMP[lines], className)}>
         {text || ' '}
       </span>
-      {!expanded && truncatable && <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-canvas to-transparent" />}
-      {truncatable && showMoreLink && onToggle && <button type="button" aria-expanded={expanded}
+      {!expanded && truncated && <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-canvas to-transparent" />}
+      {showMoreLink && (truncated || expanded) && onToggle && <button type="button" aria-expanded={expanded}
         onClick={(event) => {
           event.stopPropagation()
           onToggle()
@@ -769,7 +776,9 @@ const EventRow = memo(function EventRow({ event, expanded, hidden, copied, anima
   const toolResult = event.category === 'tool_result' || event.id.startsWith('tool-result:')
   const lines = toolResult ? CLAMP_LINES.tool_result : CLAMP_LINES[event.category]
   const prose = PROSE[event.category]
-  const expandable = tool || toolResult || clampable(event.text, lines)
+  const [truncated, setTruncated] = useState(false)
+  const onTruncated = useCallback((value: boolean): void => setTruncated(value), [])
+  const expandable = tool || toolResult || truncated
   return (
     <div data-output-category={mcpTool ? 'mcp_tool' : event.category} data-event-id={event.id} aria-expanded={expanded}
       className={cn('group relative grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
@@ -782,7 +791,7 @@ const EventRow = memo(function EventRow({ event, expanded, hidden, copied, anima
           <ClampedText text={event.text} lines={lines} expanded={expanded}
             className={cn(prose, uncommitted ? 'text-warn' : TEXT_TONE[event.category])}
             showMoreLink={event.category === 'message' || event.category === 'thinking'}
-            onToggle={() => onToggle(event.id)} />
+            onToggle={() => onToggle(event.id)} onTruncated={onTruncated} />
         </span>}
       <CopyButton copied={copied} onCopy={() => onCopy(event.id, event.text)} />
     </div>
