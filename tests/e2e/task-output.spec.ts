@@ -5,6 +5,7 @@ const rows = (page: Page) => output(page).locator('[data-event-id]')
 const history = (page: Page) => page.getByRole('navigation', { name: 'Output history' })
 const atBottom = (page: Page) => output(page).evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 2)
 const settled = (page: Page) => expect(output(page)).toHaveAttribute('aria-busy', 'false')
+const eventTotal = (page: Page, count: number) => expect(history(page)).toContainText(`${count} events`)
 
 async function emit(page: Page, id: string, text: string, taskId = 'output', category = 'message'): Promise<void> {
   await page.evaluate(({ id, text, taskId, category }) => {
@@ -38,31 +39,31 @@ async function expectAnchor(page: Page, before: { id: string; offset: number }):
 
 test('loads earlier events on demand and preserves the reader position', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&historySize=4500')
-  await expect(rows(page)).toHaveCount(500)
-  await expect(rows(page).first()).toHaveAttribute('data-event-id', 'history-4001')
-  await expect(rows(page).last()).toHaveAttribute('data-event-id', 'history-4500')
+  await eventTotal(page, 500)
+  expect(await rows(page).count()).toBeLessThan(100)
   await expect.poll(() => atBottom(page)).toBe(true)
   await scrollTo(page, 0)
-  const rowTop = async () => output(page).locator('[data-event-id="history-4001"]').evaluate((el) => el.getBoundingClientRect().top)
+  const first = output(page).locator('[data-event-id="history-4001"]')
+  await expect(first).toBeVisible()
+  const rowTop = async () => first.evaluate((el) => el.getBoundingClientRect().top)
   const before = await rowTop()
   await page.getByRole('button', { name: 'Load earlier events' }).click()
-  await expect(rows(page)).toHaveCount(1000)
-  await expect(rows(page).first()).toHaveAttribute('data-event-id', 'history-3501')
+  await eventTotal(page, 1000)
+  expect(await rows(page).count()).toBeLessThan(100)
   // scrollTop rounds fractional CSS pixels in Chromium.
   await expect.poll(async () => Math.abs((await rowTop()) - before)).toBeLessThanOrEqual(1)
 })
 
 test('follows the live tail, preserves a reader through snapshots and hidden panels, and reloads latest', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&historySize=600&steering=1&running=1')
-  await expect(rows(page)).toHaveCount(500)
+  await eventTotal(page, 500)
   await emit(page, 'live', 'Live tail')
-  await expect(rows(page).last()).toHaveText(/Live tail/)
+  await expect(output(page).locator('[data-event-id="live"]')).toHaveText(/Live tail/)
   await expect.poll(() => atBottom(page)).toBe(true)
   await scrollTo(page, 700)
   const before = await anchor(page)
   await emit(page, 'history-101', 'Updated snapshot\nsecond line\nthird line')
-  await expect(rows(page).first()).toContainText('Updated snapshot')
-  await expect(rows(page)).toHaveCount(501)
+  await eventTotal(page, 501)
   await expectAnchor(page, before)
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('form', { name: 'Steer task' })).toBeVisible()
@@ -70,9 +71,9 @@ test('follows the live tail, preserves a reader through snapshots and hidden pan
   await page.getByRole('tab', { name: 'Output', exact: true }).click()
   await expectAnchor(page, before)
   await emit(page, 'live-3', 'Persisted while browsing history')
-  await expect(rows(page).last()).toContainText('Persisted while browsing history')
+  await eventTotal(page, 503)
   await page.getByRole('button', { name: /new events/ }).click()
-  await expect(rows(page).last()).toContainText('Persisted while browsing history')
+  await expect(output(page).locator('[data-event-id="live-3"]')).toContainText('Persisted while browsing history')
   await expect.poll(() => atBottom(page)).toBe(true)
   await expect(page.getByRole('status', { name: 'Agent activity' })).toContainText('Writing a response')
 })
@@ -82,16 +83,19 @@ test('initial and latest loading failures retain output and retry the failed req
   await expect(page.getByRole('alert')).toContainText('Output history unavailable')
   await expect(output(page)).not.toContainText('No output recorded.')
   await page.getByRole('button', { name: 'Retry output' }).click()
-  await expect(rows(page)).toHaveCount(500)
+  await eventTotal(page, 500)
   await scrollTo(page, 0)
-  const count = await rows(page).count()
+  const count = await page.evaluate(async () => {
+    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    return useStore.getState().eventsByTask.output.length
+  })
   await page.evaluate(() => { window.outputTest.hold = true })
   await page.getByRole('button', { name: 'Jump to latest', exact: true }).click()
   await expect(output(page)).toHaveAttribute('aria-busy', 'true')
   await expect(history(page)).toContainText('Loading output…')
   await page.evaluate(() => { window.outputTest.hold = false; window.outputTest.release(true) })
   await expect(page.getByRole('alert')).toContainText('Output history unavailable')
-  await expect(rows(page)).toHaveCount(count)
+  await eventTotal(page, count)
   const failed = await page.evaluate(() => window.outputTest.requests.at(-1))
   await page.getByRole('button', { name: 'Retry output' }).click()
   await settled(page)
@@ -102,13 +106,13 @@ test('initial and latest loading failures retain output and retry the failed req
 
 test('task, Home and project navigation evict history and reopen fresh at the tail', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&historySize=4500&steering=1&running=1')
-  await expect(rows(page)).toHaveCount(500)
+  await eventTotal(page, 500)
   await page.evaluate(async () => {
     const { useStore } = await import('/src/client/renderer/src/state/store.ts')
     await useStore.getState().openTask('running')
   })
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Build streaming support')
-  await expect(rows(page)).toHaveCount(500)
+  await eventTotal(page, 500)
   await expect.poll(() => atBottom(page)).toBe(true)
   await emit(page, 'background', 'Background task persisted', 'output')
   expect(await page.evaluate(async () => {
@@ -130,15 +134,15 @@ test('task, Home and project navigation evict history and reopen fresh at the ta
       const { useStore } = await import('/src/client/renderer/src/state/store.ts')
       await useStore.getState().openTask('output')
     })
-    await expect(rows(page)).toHaveCount(500)
-    await expect(rows(page).last()).toContainText('Background task persisted')
+    await eventTotal(page, 500)
+    await expect(output(page).locator('[data-event-id="background"]')).toContainText('Background task persisted')
     await expect.poll(() => atBottom(page)).toBe(true)
   }
 })
 
 test('prompt, tool rows, delivery messages, empty output and activity retain accessible rendering', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&tools=1&longPrompt=1&steering=1&running=1')
-  await expect(rows(page)).toHaveCount(2)
+  await eventTotal(page, 2)
   await scrollTo(page, 0)
   const prompt = page.getByRole('region', { name: 'Task prompt' })
   await prompt.getByRole('button', { name: 'Show more' }).click()
@@ -161,7 +165,7 @@ test('prompt, tool rows, delivery messages, empty output and activity retain acc
 
 test('filters events by category chip and text query', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&tools=1&steering=1&running=1')
-  await expect(rows(page)).toHaveCount(2)
+  await eventTotal(page, 2)
   await emit(page, 'agent-message', 'A message from the agent')
   await emit(page, 'agent-error', 'Something failed', 'output', 'error')
   const filters = page.getByRole('toolbar', { name: 'Output filters' })
@@ -180,7 +184,7 @@ test('filters events by category chip and text query', async ({ page }) => {
 test('copies a single event from its row copy button', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.goto('/tests/e2e/fixture/?scenario=output&tools=1')
-  await expect(rows(page)).toHaveCount(2)
+  await eventTotal(page, 2)
   await emit(page, 'agent-message', 'A message from the agent')
   const message = output(page).locator('[data-event-id="agent-message"]')
   await message.hover()
@@ -195,7 +199,7 @@ test('copies a single event from its row copy button', async ({ page, context })
 
 test('reports new events in a pill while scrolled up and returns to the tail', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&historySize=600&steering=1&running=1')
-  await expect(rows(page)).toHaveCount(500)
+  await eventTotal(page, 500)
   await scrollTo(page, 0)
   await emit(page, 'live-1', 'First new event')
   await emit(page, 'live-2', 'Second new event')
@@ -204,7 +208,7 @@ test('reports new events in a pill while scrolled up and returns to the tail', a
   await pill.click()
   await expect.poll(() => atBottom(page)).toBe(true)
   await expect(pill).toHaveCount(0)
-  await expect(rows(page).last()).toContainText('Second new event')
+  await expect(output(page).locator('[data-event-id="live-2"]')).toContainText('Second new event')
 })
 
 test('event-only bursts commit output without TaskView, review/header owner, diff or composer commits', async ({ page }) => {
@@ -212,10 +216,16 @@ test('event-only bursts commit output without TaskView, review/header owner, dif
   // well so task/issue polling cannot enter the measurement window.
   await page.clock.install()
   await page.goto('/tests/e2e/fixture/?scenario=review&renderProbe=1')
-  await expect(rows(page)).toHaveCount(2)
+  await eventTotal(page, 2)
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
+  const hiddenBefore = await page.evaluate(() => ({ ...window.outputCommits }))
+  await emit(page, 'review-agent', 'Snapshot while output is hidden', 'review')
+  await page.waitForTimeout(50)
+  const hiddenAfter = await page.evaluate(() => ({ ...window.outputCommits }))
+  expect(hiddenAfter.TaskOutput).toBe(hiddenBefore.TaskOutput)
   await page.getByRole('tab', { name: 'Output', exact: true }).click()
+  await expect(output(page).locator('[data-event-id="review-agent"]')).toContainText('Snapshot while output is hidden')
   await expect(page.getByRole('form', { name: 'Steer task' })).toBeVisible()
   await page.clock.pauseAt(new Date(Date.now() + 1000))
   const before = await page.evaluate(() => ({ ...window.outputCommits }))

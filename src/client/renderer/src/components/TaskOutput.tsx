@@ -2,6 +2,7 @@ import type { JSX, PointerEvent as ReactPointerEvent } from 'react'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Task, TaskEvent, TaskEventCategory } from '@shared/types'
 import { TASK_EVENT_CATEGORIES } from '@shared/types'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { taskIssuePresentation } from '@shared/task-issue-presentation'
 import { BROWSER_VIEWPORTS, BROWSER_ZOOM_LEVELS, type BrowserViewport } from '@shared/browser-observation'
 import { taskStyle } from '@shared/task-style'
@@ -124,19 +125,25 @@ const MergeConflictOutput = lazy(async () => ({
   default: (await import('./TaskMergeConflictOutput')).TaskMergeConflictOutput
 }))
 
-export function TaskOutput({ task, visible, presentation }: {
+interface TaskOutputProps {
   task: Task
   visible: boolean
   presentation: ReturnType<typeof taskIssuePresentation>
-}): JSX.Element {
-  const events = useStore((state) => task.deliveryStatus === 'merge_conflict' ? undefined : state.eventsByTask[task.id])
+}
+
+export const TaskOutput = memo(function TaskOutput({ task, visible, presentation }: TaskOutputProps): JSX.Element {
+  const frozenEvents = useRef<TaskEvent[] | undefined>(undefined)
+  const events = useStore(useCallback((state) => visible ? state.eventsByTask[task.id] : frozenEvents.current, [task.id, visible]))
+  useLayoutEffect(() => {
+    if (visible) frozenEvents.current = events
+  }, [events, visible])
   if (task.deliveryStatus === 'merge_conflict' && task.mergeConflict) {
     return <Suspense fallback={<section id="task-panel-output" aria-label="Output" className={cn('grid flex-1 place-content-center text-sm text-dim', !visible && 'hidden')}>Loading conflict resolver…</section>}>
       <MergeConflictOutput task={task} conflict={task.mergeConflict} visible={visible} />
     </Suspense>
   }
   return <TaskOutputHistory task={task} visible={visible} presentation={presentation} events={events} />
-}
+}, (previous, next) => previous.task.id === next.task.id && !previous.visible && !next.visible)
 
 type Row =
   | { kind: 'event'; event: TaskEvent }
@@ -165,16 +172,33 @@ function buildRows(events: TaskEvent[] | undefined): Row[] {
   return rows
 }
 
+function rowId(row: Row): string {
+  return row.kind === 'tool' ? row.use.id : row.event.id
+}
+
+function rowContains(row: Row, id: string): boolean {
+  return row.kind === 'tool' ? row.use.id === id || row.result.id === id : row.event.id === id
+}
+
 function TaskOutputHistory({ task, visible, presentation, events }: {
   task: Task
   visible: boolean
   presentation: ReturnType<typeof taskIssuePresentation>
   events: TaskEvent[] | undefined
 }): JSX.Element {
-  const history = useStore((s) => s.taskEventHistory?.taskId === task.id ? s.taskEventHistory : null)
+  const frozenHistory = useRef<ReturnType<typeof useStore.getState>['taskEventHistory']>(null)
+  const history = useStore(useCallback((state) => {
+    const current = state.taskEventHistory?.taskId === task.id ? state.taskEventHistory : null
+    return visible ? current : frozenHistory.current
+  }, [task.id, visible]))
+  useLayoutEffect(() => {
+    if (visible) frozenHistory.current = history
+  }, [history, visible])
   const loadTaskEvents = useStore((s) => s.loadTaskEvents)
   const outputRef = useRef<HTMLDivElement>(null)
   const anchor = useRef<Anchor | null>(null)
+  const anchorFrame = useRef(0)
+  const restoringAnchor = useRef(false)
   const [follow, setFollow] = useState(true)
   const attempt = useRef<Direction>('initial')
   const pending = useRef<Direction | null>(null)
@@ -197,6 +221,36 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
     })
   }, [])
 
+  const rows = useMemo(() => buildRows(events), [events])
+  const normalizedQuery = query.trim().toLowerCase()
+  const filtering = silentCategories.size > 0 || normalizedQuery.length > 0
+  const eventHidden = useCallback((event: TaskEvent): boolean => {
+    if (silentCategories.has(event.category)) return true
+    return normalizedQuery.length > 0 && !event.text.toLowerCase().includes(normalizedQuery)
+  }, [silentCategories, normalizedQuery])
+  const displayedRows = useMemo(() => rows.filter((row) => !eventHidden(row.kind === 'tool' ? row.use : row.event)), [rows, eventHidden])
+  const visibleCount = useMemo(() =>
+    (events ?? []).reduce((count, event) => count + (eventHidden(event) ? 0 : 1), 0),
+  [events, eventHidden])
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<TaskEventCategory, number>()
+    for (const event of events ?? []) counts.set(event.category, (counts.get(event.category) ?? 0) + 1)
+    return counts
+  }, [events])
+  const getItemKey = useCallback((index: number) => {
+    if (index === 0) return 'output-header'
+    if (index === displayedRows.length + 1) return 'output-footer'
+    return rowId(displayedRows[index - 1])
+  }, [displayedRows])
+  const virtualizer = useVirtualizer({
+    count: displayedRows.length + 2,
+    enabled: visible,
+    getScrollElement: () => outputRef.current,
+    getItemKey,
+    estimateSize: (index) => index === 0 ? 150 : index === displayedRows.length + 1 ? 80 : 48,
+    overscan: 8
+  })
+
   const captureAnchor = (): void => {
     const output = outputRef.current
     if (!output || !visible) return
@@ -206,8 +260,13 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
     anchor.current = row ? { id: row.dataset.eventId!, offset: row.getBoundingClientRect().top - top } : null
   }
 
+  useEffect(() => () => {
+    window.cancelAnimationFrame(anchorFrame.current)
+    restoringAnchor.current = false
+  }, [])
+
   useEffect(() => {
-    if (!needsHistory) return
+    if (!visible || !needsHistory) return
     anchor.current = null
     pending.current = null
     attempt.current = 'initial'
@@ -216,9 +275,11 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
     setNewCount(0)
     setExpandedIds(new Set())
     void loadTaskEvents(task.id)
-  }, [loadTaskEvents, task.id, needsHistory])
+  }, [loadTaskEvents, task.id, needsHistory, visible])
 
   const load = (direction: Direction): void => {
+    window.cancelAnimationFrame(anchorFrame.current)
+    restoringAnchor.current = false
     captureAnchor()
     attempt.current = direction
     pending.current = direction
@@ -240,12 +301,47 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
       // Disable native anchoring below so it does not compete with this adjustment.
       const row = output.querySelector<HTMLElement>(`[data-event-id="${CSS.escape(anchor.current.id)}"]`)
       if (row) output.scrollTop += row.getBoundingClientRect().top - output.getBoundingClientRect().top - anchor.current.offset
-      else if (completed && !history?.error) output.scrollTop = output.scrollHeight
+      else if (completed && !history?.error) {
+        const index = displayedRows.findIndex((candidate) => rowContains(candidate, anchor.current!.id))
+        if (index >= 0) {
+          const saved = anchor.current
+          restoringAnchor.current = true
+          const offset = virtualizer.getOffsetForIndex(index + 1, 'start')?.[0]
+          if (offset !== undefined) output.scrollTop = Math.max(0, offset - saved.offset)
+          let attempts = 0
+          const settle = (): void => {
+            const current = outputRef.current
+            const target = current?.querySelector<HTMLElement>(`[data-event-id="${CSS.escape(saved.id)}"]`)
+            if (!current) {
+              restoringAnchor.current = false
+              pending.current = null
+              return
+            }
+            if (!target && attempts++ < 2) {
+              anchorFrame.current = window.requestAnimationFrame(settle)
+              return
+            }
+            if (target) {
+              current.scrollTop += target.getBoundingClientRect().top - current.getBoundingClientRect().top - saved.offset
+              if (attempts++ < 2) {
+                anchorFrame.current = window.requestAnimationFrame(settle)
+                return
+              }
+            }
+            restoringAnchor.current = false
+            pending.current = null
+            captureAnchor()
+          }
+          anchorFrame.current = window.requestAnimationFrame(settle)
+          return
+        }
+        output.scrollTop = output.scrollHeight
+      }
     }
     if (completed) pending.current = null
     if (jump || (follow && history?.followingLatest)) anchor.current = null
     else captureAnchor()
-  }, [events, history, follow, visible, task.status, task.deliveryStatus, presentation])
+  }, [events, history, follow, visible, task.status, task.deliveryStatus, presentation, displayedRows])
 
   // Rows animate in only when they arrive live at the tail; history pages and
   // in-place snapshot updates reuse existing IDs and stay still.
@@ -258,22 +354,6 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
       seen.current.add(event.id)
     }
   }
-
-  const rows = useMemo(() => buildRows(events), [events])
-  const normalizedQuery = query.trim().toLowerCase()
-  const filtering = silentCategories.size > 0 || normalizedQuery.length > 0
-  const eventHidden = useCallback((event: TaskEvent): boolean => {
-    if (silentCategories.has(event.category)) return true
-    return normalizedQuery.length > 0 && !event.text.toLowerCase().includes(normalizedQuery)
-  }, [silentCategories, normalizedQuery])
-  const visibleCount = useMemo(() =>
-    (events ?? []).reduce((count, event) => count + (eventHidden(event) ? 0 : 1), 0),
-  [events, eventHidden])
-  const categoryCounts = useMemo(() => {
-    const counts = new Map<TaskEventCategory, number>()
-    for (const event of events ?? []) counts.set(event.category, (counts.get(event.category) ?? 0) + 1)
-    return counts
-  }, [events])
 
   useEffect(() => {
     if (follow || !history?.followingLatest) {
@@ -303,7 +383,7 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
 
   return (
     <section id="task-panel-output" aria-label="Output" className={cn('relative flex flex-1 min-h-0 min-w-0', !visible && 'hidden')}>
-      <div className="flex flex-1 min-h-0 min-w-0 flex-col">
+      {visible && <div className="flex flex-1 min-h-0 min-w-0 flex-col">
         <nav aria-label="Output history" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-5 py-1.5 text-xs">
           <span role="status" className="text-dim">{history?.loading ? 'Loading output…' : history?.loaded ? `${filtering ? `${visibleCount} of ` : ''}${events?.length ?? 0} events · ${history.followingLatest ? 'Latest' : 'History'}` : ''}</span>
           <QuickCommitActions task={task} />
@@ -341,7 +421,7 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
           <div ref={outputRef} role="log" aria-label="Task output" aria-busy={!!history?.loading}
             className="flex-1 min-h-0 min-w-0 px-5 pb-3 overflow-y-auto overscroll-contain [overflow-anchor:none] font-mono text-[12.5px] leading-[1.55]"
             onScroll={(event) => {
-              if (!visible) return
+              if (!visible || restoringAnchor.current) return
               const output = event.currentTarget
               const atTail = history?.followingLatest === true && output.scrollHeight - output.scrollTop - output.clientHeight < 40
               if (atTail) {
@@ -354,29 +434,39 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
                 captureAnchor()
               }
             }}>
-            <PromptBlock label="Prompt" text={task.prompt} />
-            {!history?.loaded && !history?.error && <div role="status" aria-label="Loading output" className="space-y-2.5 py-6">
-              {[72, 88, 54, 80, 63].map((width) => (
-                <div key={width} className="h-3 bg-line/60 motion-safe:animate-breathe" style={{ width: `${width}%` }} />
-              ))}
-            </div>}
-            {history?.loaded && events?.length === 0 && task.status !== 'running' && <p className={PLACEHOLDER}>No output recorded.</p>}
-            {history?.loaded && history.hasOlder && <div className="flex justify-center py-1.5">
-              <button className={cn(btn.ghost, 'py-1 text-xs')} disabled={!!history.loading} onClick={() => load('older')}>
-                {history.loading === 'older' ? 'Loading earlier…' : 'Load earlier events'}
-              </button>
-            </div>}
-            {rows.map((row) => row.kind === 'tool'
-              ? <ToolRow key={row.use.id} use={row.use} result={row.result}
-                useExpanded={expandedIds.has(row.use.id)} resultExpanded={expandedIds.has(row.result.id)}
-                useHidden={eventHidden(row.use)} resultHidden={eventHidden(row.result)}
-                useCopied={copiedId === row.use.id} resultCopied={copiedId === row.result.id}
-                animate={fresh.has(row.use.id)} onToggle={toggleExpanded} onCopy={copyEvent} />
-              : <EventRow key={row.event.id} event={row.event} expanded={expandedIds.has(row.event.id)}
-                hidden={eventHidden(row.event)} copied={copiedId === row.event.id}
-                animate={fresh.has(row.event.id)} onToggle={toggleExpanded} onCopy={copyEvent} />)}
-            {filtering && visibleCount === 0 && (events?.length ?? 0) > 0 && <p className={PLACEHOLDER}>No events match the current filters.</p>}
-            <TaskActivity task={task} presentation={presentation} event={history?.followingLatest ? events?.at(-1) : undefined} />
+            <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
+              {virtualizer.getVirtualItems().map((item) => {
+                const row = item.index > 0 && item.index <= displayedRows.length ? displayedRows[item.index - 1] : null
+                return <div key={item.key} ref={virtualizer.measureElement} data-index={item.index}
+                  className="absolute left-0 top-0 w-full flow-root" style={{ transform: `translateY(${item.start}px)` }}>
+                  {item.index === 0 ? <>
+                    <PromptBlock label="Prompt" text={task.prompt} />
+                    {!history?.loaded && !history?.error && <div role="status" aria-label="Loading output" className="space-y-2.5 py-6">
+                      {[72, 88, 54, 80, 63].map((width) => (
+                        <div key={width} className="h-3 bg-line/60 motion-safe:animate-breathe" style={{ width: `${width}%` }} />
+                      ))}
+                    </div>}
+                    {history?.loaded && events?.length === 0 && task.status !== 'running' && <p className={PLACEHOLDER}>No output recorded.</p>}
+                    {history?.loaded && history.hasOlder && <div className="flex justify-center py-1.5">
+                      <button className={cn(btn.ghost, 'py-1 text-xs')} disabled={!!history.loading} onClick={() => load('older')}>
+                        {history.loading === 'older' ? 'Loading earlier…' : 'Load earlier events'}
+                      </button>
+                    </div>}
+                  </> : item.index === displayedRows.length + 1 ? <>
+                    {filtering && visibleCount === 0 && (events?.length ?? 0) > 0 && <p className={PLACEHOLDER}>No events match the current filters.</p>}
+                    <TaskActivity task={task} presentation={presentation} event={history?.followingLatest ? events?.at(-1) : undefined} />
+                  </> : row?.kind === 'tool'
+                    ? <ToolRow use={row.use} result={row.result}
+                      useExpanded={expandedIds.has(row.use.id)} resultExpanded={expandedIds.has(row.result.id)}
+                      useHidden={false} resultHidden={eventHidden(row.result)}
+                      useCopied={copiedId === row.use.id} resultCopied={copiedId === row.result.id}
+                      animate={fresh.has(row.use.id)} onToggle={toggleExpanded} onCopy={copyEvent} />
+                    : row && <EventRow event={row.event} expanded={expandedIds.has(row.event.id)}
+                      hidden={false} copied={copiedId === row.event.id}
+                      animate={fresh.has(row.event.id)} onToggle={toggleExpanded} onCopy={copyEvent} />}
+                </div>
+              })}
+            </div>
           </div>
           {newCount > 0 && !follow && history?.followingLatest === true ? <button
             className="absolute bottom-3 right-4 z-10 border border-line bg-raised px-3 py-1 text-xs text-fg shadow-[0_8px_32px_rgba(0,0,0,0.4)] hover:bg-hover motion-safe:animate-row-in"
@@ -392,7 +482,7 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
             <Icon icon="chevron-down" size={14} aria-hidden="true" />
           </button>}
         </div>
-      </div>
+      </div>}
       <BrowserObservationPane taskId={task.id} visible={visible} />
     </section>
   )

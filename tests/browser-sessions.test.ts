@@ -77,7 +77,8 @@ test('places isolated task browsers inside the renderer-provided output pane', a
   await fixture.manager.open('task-b', 'Second', 'http://[::1]:4173/')
 
   expect(fixture.views).toHaveLength(2)
-  expect(fixture.options[0]).toMatchObject({ sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, focusOnNavigation: false, webSecurity: true })
+  expect(fixture.options[0]).toMatchObject({ sandbox: true, contextIsolation: true, nodeIntegration: false, focusOnNavigation: false, webSecurity: true })
+  expect(fixture.options[0]).not.toHaveProperty('backgroundThrottling')
   expect(fixture.options[0].partition).not.toBe(fixture.options[1].partition)
   expect(fixture.views[0].setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 0, height: 0 })
   expect(fixture.views[0].setVisible).toHaveBeenCalledWith(false)

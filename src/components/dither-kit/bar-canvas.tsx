@@ -10,6 +10,7 @@ import {
   paintColumn,
   prefersReducedMotion,
 } from "./dither-paint"
+import { startCanvasFrames } from "./canvas-frames"
 
 type Bars = { top: number[]; base: number[] } // per data index, in backing rows
 
@@ -57,9 +58,11 @@ export function BarCanvas() {
   // mid-render tears under Strict Mode / concurrent rendering.
   const state = useRef(ctx)
   const targetsRef = useRef(targets)
+  const wake = useRef<() => void>(() => {})
   useEffect(() => {
     state.current = ctx
     targetsRef.current = targets
+    wake.current()
   })
 
   useEffect(() => {
@@ -127,7 +130,6 @@ export function BarCanvas() {
       })
     }
 
-    let raf = 0
     let animStart = 0
     let lastProg = -1
     let lastRevision = state.current.revision
@@ -136,20 +138,11 @@ export function BarCanvas() {
     let lastPaintSig = ""
     let lastSelected: string | null | undefined = Symbol() as never
     let lastHover: number | null | undefined = Symbol() as never
+    let lastBloomOn = false
 
     const draw = (now: number) => {
-      raf = requestAnimationFrame(draw)
       const s = state.current
-      if (!s.ready) return
-      if (bloomCtx) {
-        const on =
-          s.bloom !== "off" &&
-          (!s.bloomOnHover || s.isMouseInChart || s.hovered)
-        if (on) {
-          bloomCtx.clearRect(0, 0, cols, rows)
-          bloomCtx.drawImage(canvas, 0, 0)
-        }
-      }
+      if (!s.ready) return false
       if (s.revision !== lastRevision) {
         lastRevision = s.revision
         animStart = 0 // re-play the wave on data change / replay
@@ -172,9 +165,11 @@ export function BarCanvas() {
         needsFill = true
       }
       const itTarget = s.isMouseInChart || s.hovered ? 1 : 0
+      let easing = false
       if (Math.abs(intensity - itTarget) > 0.001) {
         intensity += (itTarget - intensity) * (reduce ? 1 : 0.16)
         needsFill = true
+        easing = true
       } else intensity = itTarget
 
       // Live tweak repaint (variant, stacking) without replaying the wave.
@@ -186,13 +181,27 @@ export function BarCanvas() {
         needsFill = true
       }
 
-      if (!needsFill) return
-      paint(prog)
-      needsFill = false
+      const bloomOn = s.bloom !== "off" && (!s.bloomOnHover || s.isMouseInChart || s.hovered)
+      const bloomChanged = bloomOn !== lastBloomOn
+      lastBloomOn = bloomOn
+      const painted = needsFill
+      if (needsFill) {
+        paint(prog)
+        needsFill = false
+      }
+      if (bloomCtx && bloomOn && (painted || bloomChanged)) {
+        bloomCtx.clearRect(0, 0, cols, rows)
+        bloomCtx.drawImage(canvas, 0, 0)
+      }
+      return prog < 1 || easing
     }
 
-    raf = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(raf)
+    const scheduler = startCanvasFrames(canvas, draw)
+    wake.current = scheduler.invalidate
+    return () => {
+      wake.current = () => {}
+      scheduler.stop()
+    }
   }, [cols, rows, width])
 
   const bloomActive = ctx.bloomOnHover

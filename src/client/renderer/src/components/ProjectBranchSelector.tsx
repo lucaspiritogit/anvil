@@ -19,6 +19,7 @@ interface Props {
 type OpenPicker = 'project' | 'branch' | null
 
 const triggerClass = 'inline-flex min-w-0 max-w-full items-center gap-1.5 px-2 py-1.5 text-sm text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-45 aria-disabled:cursor-wait aria-disabled:opacity-45'
+const BRANCH_RECOVERY_INTERVAL_MS = 60_000
 
 export function ProjectBranchSelector({ projectId, style, parentBranch, startBase, disabled,
   onStartBaseChange, onTransitioning }: Props): JSX.Element {
@@ -29,6 +30,10 @@ export function ProjectBranchSelector({ projectId, style, parentBranch, startBas
   const cloneProject = useStore((state) => state.cloneProject)
   const removeProject = useStore((state) => state.removeProject)
   const isRepository = useStore((state) => projectId ? state.gitStatusByProject[projectId]?.isRepository : false)
+  const taskRevision = useStore((state) => state.tasks
+    .filter((task) => task.projectId === projectId)
+    .map((task) => [task.id, task.branchName, task.status, task.deliveryStatus, task.settledAt, task.restackState].join(':'))
+    .join('|'))
   const loadGitStatus = useStore((state) => state.loadGitStatus)
   const [open, setOpen] = useState<OpenPicker>(null)
   const projectRef = useRef<HTMLButtonElement>(null)
@@ -74,14 +79,14 @@ export function ProjectBranchSelector({ projectId, style, parentBranch, startBas
     const update = (): void => { if (document.visibilityState === 'visible') void refresh() }
     window.addEventListener('focus', update)
     const unsubscribe = window.anvil.projects.onChanged(update)
-    const timer = window.setInterval(update, 5000)
+    const timer = window.setInterval(update, BRANCH_RECOVERY_INTERVAL_MS)
     return () => {
       ++request.current
       window.removeEventListener('focus', update)
       unsubscribe()
       window.clearInterval(timer)
     }
-  }, [projectId, isRepository])
+  }, [projectId, isRepository, taskRevision])
 
   useEffect(() => {
     if (style !== 'work' || parentBranch || startBase || !branches) return

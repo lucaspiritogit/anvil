@@ -11,6 +11,7 @@ import {
   resample,
 } from "./dither-paint"
 import { rgb } from "./palette"
+import { startCanvasFrames } from "./canvas-frames"
 
 type Star = { key: string; xi: number; depth: number; phase: number }
 type Surface = { top: number[]; floor: number[] }
@@ -23,12 +24,13 @@ type LoopArgs = {
   state: RefObject<ChartContextValue>
   targets: RefObject<Record<string, Surface>>
   stars: RefObject<Star[]>
+  wake: RefObject<() => void>
 }
 
 /**
  * The requestAnimationFrame paint loop — eases each series toward its target
  * surface, paints the dither fill (with the entrance reveal), then layers the
- * crosshair marker and winking stars on top. Lives outside the component so the
+ * crosshair marker and stars on top. Lives outside the component so the
  * component stays small and this hot closure isn't re-created on every render.
  * Returns a cleanup that cancels the loop.
  */
@@ -40,6 +42,7 @@ function startCartesianLoop({
   state,
   targets,
   stars,
+  wake,
 }: LoopArgs): (() => void) | undefined {
   const c = canvas.getContext("2d")
   if (!c || cols <= 0 || rows <= 0) return undefined
@@ -102,9 +105,6 @@ function startCartesianLoop({
     })
   }
 
-  let raf = 0
-  let tick = 0
-  let last = 0
   let animStart = 0
   let lastProg = -1
   let lastRevision = state.current.revision
@@ -113,20 +113,12 @@ function startCartesianLoop({
   let needsFill = true
   let lastPaintSig = ""
   let lastSelected: string | null | undefined = Symbol() as never
+  let lastMarker: number | null | undefined = Symbol() as never
+  let lastBloomOn = false
 
   const draw = (now: number) => {
-    raf = requestAnimationFrame(draw)
     const s = state.current
-    if (!s.ready) return
-    // Keep the bloom layer in sync with the crisp canvas while it's active.
-    if (bloomCtx) {
-      const on =
-        s.bloom !== "off" && (!s.bloomOnHover || s.isMouseInChart || s.hovered)
-      if (on) {
-        bloomCtx.clearRect(0, 0, cols, rows)
-        bloomCtx.drawImage(canvas, 0, 0)
-      }
-    }
+    if (!s.ready) return false
     const tgt = targets.current
     if (s.revision !== lastRevision) {
       lastRevision = s.revision
@@ -190,7 +182,8 @@ function startCartesianLoop({
     // Live hover wins; the controlled markerIndex (e.g. a committed point)
     // is the fallback shown when nothing is hovered.
     const marker = s.hoverIndex != null ? s.hoverIndex : s.markerIndex
-    const winkDue = !reduce && now - last >= 100
+    const markerChanged = marker !== lastMarker
+    lastMarker = marker
     // Repaint when a tweak-driven paint input changes (variant, stacking) so
     // the panel updates the fill live — without resetting the entrance reveal.
     const paintSig = `${s.stackType}|${s.configKeys
@@ -201,24 +194,24 @@ function startCartesianLoop({
       lastPaintSig = paintSig
       needsFill = true
     }
+    const bloomOn = s.bloom !== "off" && (!s.bloomOnHover || s.isMouseInChart || s.hovered)
+    const bloomChanged = bloomOn !== lastBloomOn
+    lastBloomOn = bloomOn
     if (
       !(
         moving ||
         settling ||
-        winkDue ||
-        marker != null ||
+        markerChanged ||
         progChanged ||
-        sigChanged
+        sigChanged ||
+        needsFill ||
+        bloomChanged
       )
     )
-      return
+      return false
     if (progChanged) {
       lastProg = prog
       needsFill = true
-    }
-    if (winkDue) {
-      last = now
-      tick += 1
     }
 
     // Reveal front (left-to-right) — stars + crosshair stay behind it so
@@ -262,7 +255,7 @@ function startCartesianLoop({
       const top = cur.top[sx] ?? 0
       const floor = cur.floor[sx] ?? rows - 1
       const sy = Math.round(top + star.depth * (floor - top))
-      const tw = reduce ? 0.85 : (Math.sin((tick + star.phase) * 0.35) + 1) / 2
+      const tw = reduce ? 0.85 : (Math.sin(star.phase * 0.35) + 1) / 2
       const lift = tw * (0.7 + 0.3 * intensity)
       if (lift < 0.55 || sy < 0 || sy >= rows) continue
       // Sparkles glint in the series colour via opacity (the `lift` wink)
@@ -280,18 +273,27 @@ function startCartesianLoop({
         c.fillRect(sx, sy + 1, 1, 1)
       }
     }
+    if (bloomCtx && bloomOn) {
+      bloomCtx.clearRect(0, 0, cols, rows)
+      bloomCtx.drawImage(canvas, 0, 0)
+    }
+    return moving || settling || prog < 1
   }
 
-  raf = requestAnimationFrame(draw)
-  return () => cancelAnimationFrame(raf)
+  const scheduler = startCanvasFrames(canvas, draw)
+  wake.current = scheduler.invalidate
+  return () => {
+    wake.current = () => {}
+    scheduler.stop()
+  }
 }
 
 /**
- * Continuous dither canvas for area and line charts. Each series is reduced to a
+ * Dither canvas for area and line charts. Each series is reduced to a
  * `[top, floor]` band per backing column: areas fill from their value line down
  * to their floor; lines fill only a thin glow band hugging the line. The shared
  * {@link paintColumn} renders the ordered-dither scatter, capped by the bright
- * series line, with winking stars + scrub crosshair on top.
+ * series line, with stars + scrub crosshair on top.
  */
 export function CartesianCanvas() {
   const ctx = useChart()
@@ -351,10 +353,12 @@ export function CartesianCanvas() {
   const stateRef = useRef(ctx)
   const targetsRef = useRef(targets)
   const starsRef = useRef(stars)
+  const wake = useRef<() => void>(() => {})
   useEffect(() => {
     stateRef.current = ctx
     targetsRef.current = targets
     starsRef.current = stars
+    wake.current()
   })
 
   useEffect(() => {
@@ -368,6 +372,7 @@ export function CartesianCanvas() {
       state: stateRef,
       targets: targetsRef,
       stars: starsRef,
+      wake,
     })
   }, [cols, rows])
 

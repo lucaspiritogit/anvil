@@ -9,6 +9,7 @@ import { onTestCleanup } from './test-cleanup'
 import { issuePresentation, taskIssuePresentation } from '../src/shared/task-issue-presentation'
 
 const snapshot = (id: string): TaskIssueSnapshot => ({ parent: { id, anvilTaskId: id, title: id, description: '' }, children: [] })
+const RECOVERY_INTERVAL_MS = 60_000
 
 function fixture(read = vi.fn<(id: string) => Promise<TaskIssueSnapshot | null>>().mockResolvedValue(snapshot('parent'))) {
   vi.useFakeTimers()
@@ -17,12 +18,14 @@ function fixture(read = vi.fn<(id: string) => Promise<TaskIssueSnapshot | null>>
   const deletes = new Set<(id: string) => void>()
   const focus = new Set<() => void>()
   const onMissing = vi.fn()
+  let visible = true
   const cache = createTaskIssuesCache({
     read,
     onMissing,
     onUpdated: (fn) => { updates.add(fn); return () => { updates.delete(fn) } },
     onDeleted: (fn) => { deletes.add(fn); return () => { deletes.delete(fn) } },
-    onFocus: (fn) => { focus.add(fn); return () => { focus.delete(fn) } }
+    onFocus: (fn) => { focus.add(fn); return () => { focus.delete(fn) } },
+    isVisible: () => visible
   })
   let selected = 'task'
   const loader = { getSnapshot: () => cache.getSnapshot(selected) }
@@ -32,7 +35,7 @@ function fixture(read = vi.fn<(id: string) => Promise<TaskIssueSnapshot | null>>
     onTestCleanup(stop)
     return stop
   }
-  return { cache, loader, start, read, updates, deletes, focus, onMissing }
+  return { cache, loader, start, read, updates, deletes, focus, onMissing, setVisible: (value: boolean) => { visible = value } }
 }
 
 const tick = () => vi.advanceTimersByTimeAsync(0)
@@ -102,7 +105,7 @@ test('polls stored issue changes without task events and derives current selecte
       writer.submitForReview(child.id, { checklist: [true], evidence: 'Test passed' })
     }
     if (status === 'complete') writer.approve(child.id)
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(RECOVERY_INTERVAL_MS)
     const current = loader.getSnapshot()
     expect(current.snapshot?.children[0].status).toBe(status)
     expect(selectedTaskIssue(current.snapshot, child.id)).toEqual(writer.get(child.id))
@@ -110,7 +113,7 @@ test('polls stored issue changes without task events and derives current selecte
     expect(current.snapshot?.children[0].title).toBe('Renamed')
   }
   writer.updateParent(parent.id, { description: 'Updated summary' })
-  await vi.advanceTimersByTimeAsync(500)
+  await vi.advanceTimersByTimeAsync(RECOVERY_INTERVAL_MS)
   expect(selectedTaskIssue(loader.getSnapshot().snapshot, parent.id)?.description).toBe('Updated summary')
   expect(updates.size).toBe(1) // No task event was emitted.
 })
@@ -127,11 +130,23 @@ test('shares reads and subscriptions across sidebar, task view and panel consume
   expect(cache.getSnapshot('task')).toBe(cache.getSnapshot('task'))
   panel()
   view()
-  await vi.advanceTimersByTimeAsync(500)
+  await vi.advanceTimersByTimeAsync(RECOVERY_INTERVAL_MS)
   expect(read).toHaveBeenCalledTimes(2)
   sidebar()
   expect(vi.getTimerCount()).toBe(0)
   expect(updates.size + deletes.size + focus.size).toBe(0)
+})
+
+test('recovery polling pauses while the window is hidden', async () => {
+  const { start, read, setVisible } = fixture()
+  start()
+  await tick()
+  setVisible(false)
+  await vi.advanceTimersByTimeAsync(RECOVERY_INTERVAL_MS)
+  expect(read).toHaveBeenCalledTimes(1)
+  setVisible(true)
+  await vi.advanceTimersByTimeAsync(RECOVERY_INTERVAL_MS)
+  expect(read).toHaveBeenCalledTimes(2)
 })
 
 test('deduplicates in-flight refreshes and rejects responses from a previous subscription', async () => {
@@ -178,7 +193,7 @@ test('retains successful data through errors and recovers on focus, updates and 
   start()
   await tick()
   expect(loader.getSnapshot()).toMatchObject({ loading: false, error: 'Unavailable', snapshot: null, empty: false })
-  await vi.advanceTimersByTimeAsync(500)
+  await vi.advanceTimersByTimeAsync(RECOVERY_INTERVAL_MS)
   const previous = loader.getSnapshot().snapshot
   read.mockRejectedValueOnce(new Error('Refresh failed'))
   updates.forEach((fn) => fn('other'))
@@ -190,7 +205,7 @@ test('retains successful data through errors and recovers on focus, updates and 
   await tick()
   expect(loader.getSnapshot().error).toBeNull()
   read.mockResolvedValueOnce(null)
-  await vi.advanceTimersByTimeAsync(500)
+  await vi.advanceTimersByTimeAsync(RECOVERY_INTERVAL_MS)
   expect(loader.getSnapshot()).toMatchObject({ snapshot: null, empty: false, missing: true, loading: false })
 })
 
@@ -225,7 +240,7 @@ test('deletion clears every consumer of its task while other visible tasks keep 
   expect(notified).toHaveBeenCalledTimes(1)
   expect(cache.getSnapshot('deleted').snapshot).toBeNull()
   read.mockClear()
-  await vi.advanceTimersByTimeAsync(500)
+  await vi.advanceTimersByTimeAsync(RECOVERY_INTERVAL_MS)
   expect(read.mock.calls).toEqual([['survivor']])
   expect(updates.size).toBe(1)
 })

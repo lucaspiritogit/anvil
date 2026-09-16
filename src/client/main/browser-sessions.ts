@@ -100,7 +100,6 @@ export class BrowserSessionManager {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      backgroundThrottling: false,
       focusOnNavigation: false,
       webSecurity: true
     })

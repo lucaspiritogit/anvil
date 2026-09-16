@@ -15,7 +15,10 @@ interface Source {
   onUpdated: (refresh: (taskId: string) => void) => () => void
   onDeleted: (remove: (taskId: string) => void) => () => void
   onFocus: (refresh: () => void) => () => void
+  isVisible?: () => boolean
 }
+
+const RECOVERY_INTERVAL_MS = 60_000
 
 const initial = (taskId: string): TaskIssuesState => ({
   taskId, snapshot: null, loading: true, empty: false, missing: false, error: null
@@ -106,7 +109,9 @@ export function createTaskIssuesCache(source: Source) {
       const first = entry.listeners.size === 0
       entry.listeners.add(notify)
       if (!cleanup) {
-        const timer = setInterval(() => refresh(undefined, false), 500)
+        const timer = setInterval(() => {
+          if (source.isVisible?.() !== false) refresh(undefined, false)
+        }, RECOVERY_INTERVAL_MS)
         const offUpdate = source.onUpdated(refresh)
         const offFocus = source.onFocus(() => refresh())
         const offDelete = source.onDeleted((id) => {

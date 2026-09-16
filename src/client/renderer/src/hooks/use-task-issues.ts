@@ -15,6 +15,7 @@ const taskIssues = createTaskIssuesCache({
     window.addEventListener('focus', refresh)
     return () => window.removeEventListener('focus', refresh)
   },
+  isVisible: () => document.visibilityState === 'visible',
   onDeleted: (remove) => useStore.subscribe((state, previous) => {
     if (state.tasks === previous.tasks) return
     const ids = new Set(state.tasks.map((task) => task.id))
@@ -39,14 +40,13 @@ export function useTaskIssues(taskId: string, enabled: boolean, selectedIssueId:
   return { ...state, selectedIssue: selectedTaskIssue(state.snapshot, selectedIssueId), refresh }
 }
 
-/** Observe every sidebar owner, including filtered and collapsed settled tasks. */
-export function useSidebarIssueSnapshots() {
+export function useSidebarIssueSnapshots(searchSettled: boolean) {
   const tasks = useStore((state) => state.tasks)
   const subscriptions = useRef(new Map<string, () => void>())
   const [snapshots, setSnapshots] = useState(new Map<string, TaskIssueSnapshot | null>())
 
   useEffect(() => {
-    const ids = new Set(tasks.map((task) => task.id))
+    const ids = new Set(tasks.filter((task) => task.settledAt === undefined || searchSettled).map((task) => task.id))
     for (const [id, unsubscribe] of subscriptions.current) {
       if (!ids.has(id)) {
         unsubscribe()
@@ -63,7 +63,7 @@ export function useSidebarIssueSnapshots() {
       subscriptions.current.set(id, taskIssues.subscribe(id, update))
       update()
     }
-  }, [tasks])
+  }, [tasks, searchSettled])
 
   useEffect(() => () => {
     subscriptions.current.forEach((unsubscribe) => unsubscribe())

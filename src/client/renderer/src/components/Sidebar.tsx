@@ -55,8 +55,8 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   }, [workspaceId])
 
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
-  const snapshots = useSidebarIssueSnapshots()
   const query = search.trim().toLowerCase()
+  const snapshots = useSidebarIssueSnapshots(Boolean(query))
   const { activeTasks, settledTasks } = useMemo(() => {
     const query = search.trim().toLowerCase()
     const matching = tasks.filter((task) => {
