@@ -36,7 +36,7 @@ export const SHORTCUTS: ShortcutDefinition[] = [
   {
     id: 'cycleReviewPolicy',
     label: 'Cycle review policy',
-    hint: 'Switches the composer between Review each step and Run unattended.',
+    hint: 'Switches the composer between Review each step and Review at the end.',
     defaultAccelerator: 'Mod+Shift+I'
   },
   {

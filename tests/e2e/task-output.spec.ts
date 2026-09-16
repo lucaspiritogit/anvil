@@ -176,13 +176,13 @@ test('event-only bursts commit output without TaskView, review/header owner, dif
   for (const name of ['TaskView', 'PatchFiles', 'TaskSteeringComposer']) expect(after[name]).toBe(before[name])
   // Header and review actions are owned by TaskView. A real status update must
   // still commit that owner and update both its status and available actions.
-  await expect(page.getByRole('button', { name: 'Merge', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Merge task', exact: true })).toBeVisible()
   await page.evaluate(async () => {
     const { useStore } = await import('/src/client/renderer/src/state/store.ts')
     const task = useStore.getState().tasks.find((task) => task.id === 'review')!
     window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'failed', deliveryStatus: 'agent_failed' } }))
   })
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Failed')
-  await expect(page.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Merge task', exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => window.outputCommits.TaskView)).toBeGreaterThan(after.TaskView)
 })

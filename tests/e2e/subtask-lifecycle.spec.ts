@@ -87,7 +87,7 @@ test('a newly created task discovers planning children and keeps execution and r
     await expect(review.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
     if (index === 0) {
       // Approving lets the agent continue with the next queued issue.
-      await page.getByRole('button', { name: 'Approve', exact: true }).click()
+      await page.getByRole('button', { name: 'Approve step', exact: true }).click()
       await expect.poll(reviewCalls).toEqual([{ kind: 'fixture:issue-approval', detail: { taskId: task.id } }])
     } else {
       await page.getByRole('button', { name: 'Request changes', exact: true }).click()
@@ -101,7 +101,7 @@ test('a newly created task discovers planning children and keeps execution and r
       child.status = 'review'
       await publish()
       await expect(page.getByLabel('Task status', { exact: true })).toHaveText(`Review: ${child.title}`)
-      await page.getByRole('button', { name: 'Approve', exact: true }).click()
+      await page.getByRole('button', { name: 'Approve step', exact: true }).click()
       await expect.poll(() => reviewCalls().then((calls) => calls.length)).toBe(3)
     }
     child.status = 'complete'
@@ -130,12 +130,12 @@ test('a newly created task discovers planning children and keeps execution and r
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Merge task', exact: true })).toBeEnabled()
 })
 
 test('merge waits for final issue approval to settle after an early reviewable update', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
-  const merge = page.getByRole('button', { name: 'Merge', exact: true })
+  const merge = page.getByRole('button', { name: 'Merge task', exact: true })
   // Load the task diff before entering issue review so only the pending approval gates Merge.
   await expect(merge).toBeEnabled()
 
@@ -186,7 +186,7 @@ test('merge waits for final issue approval to settle after an early reviewable u
   })
 
   await expect(page.getByLabel('Task status', { exact: true })).toHaveText('Review: Verify final changes')
-  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  await page.getByRole('button', { name: 'Approve step', exact: true }).click()
   await expect.poll(() => page.evaluate(() =>
     (window as unknown as { reviewTransition: { calls: () => { approval: number } } }).reviewTransition.calls().approval
   )).toBe(1)

@@ -1,7 +1,7 @@
 import { TaskStacks, stackParentIsReady } from './task-stacks'
 import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
-import { GIT_SYSTEM_PROMPT, LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
+import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { implementationPrompt, taskRecoveryPrompt } from '../agents/task-prompts'
 import { taskStyle } from '../../shared/task-style'
 import type { ExitInfo } from '../agents/process-manager'
@@ -10,7 +10,6 @@ import type { RecordSystemEvent } from './context'
 import { TaskIssues, type VerifiedNoChanges } from './task-issues'
 import type { TaskCompletion } from './completion'
 import type { TaskExecutionState } from '../../shared/types'
-import { taskCheckoutMode } from '../../shared/task-checkout'
 import { requireProjectCheckoutAvailable, usesManagedWorktree } from './checkout'
 
 const MAX_RECOVERY_ATTEMPTS = 3
@@ -130,16 +129,15 @@ export function registerTaskExecution(
       const agent = getAgent(task.agentId)
       if (!agent) throw new Error('Agent not found')
       const workspace = resolveTaskWorkspace(store, task.id)
+      if (!usesManagedWorktree(task) || !task.branchName) throw new Error('Work tasks require an isolated worktree')
       let cwd = task.cwd
       let baseCommit: string | undefined
-      if (usesManagedWorktree(task) && task.branchName) {
-        const checkout = await gitDelivery.checkoutBranch(project.path, taskId, task.branchName, task.baseBranch, () => {
-          if (store.getTask(taskId)?.status !== 'running') throw new Error('Task stopped before the next issue')
-          if (!parentIsReady(taskId)) throw new Error('Wait for the parent task to finish before continuing')
-        })
-        cwd = checkout.cwd
-        baseCommit = checkout.baseCommit
-      }
+      const checkout = await gitDelivery.checkoutBranch(project.path, taskId, task.branchName, task.baseBranch, () => {
+        if (store.getTask(taskId)?.status !== 'running') throw new Error('Task stopped before the next issue')
+        if (!parentIsReady(taskId)) throw new Error('Wait for the parent task to finish before continuing')
+      })
+      cwd = checkout.cwd
+      baseCommit = checkout.baseCommit
       if (store.getTask(taskId)?.status !== 'running') {
         if (!store.getTask(taskId)) {
           if (usesManagedWorktree(task)) {
@@ -160,7 +158,7 @@ export function registerTaskExecution(
       if (!issue) throw new Error('No task issue is ready in Valence. Inspect dependencies and work claimed by other clients.')
       const running = store.updateTask(taskId, {
         cwd, endedAt: undefined, error: undefined, exitCode: null,
-        deliveryStatus: usesManagedWorktree(task) && task.branchName ? 'working' : 'unavailable', deliveryError: undefined
+        deliveryStatus: 'working', deliveryError: undefined
       })!
       send('task:updated', running)
       agentProcesses.start({
@@ -175,11 +173,7 @@ export function registerTaskExecution(
           }
           requireProjectCheckoutAvailable(store, current)
         },
-        prompt: `${usesManagedWorktree(task) && task.branchName
-          ? GIT_SYSTEM_PROMPT
-          : taskCheckoutMode(task) === 'local' && (await gitDelivery.status(project.path)).isRepository
-            ? LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT
-            : ''}\n\n${implementationPrompt(task.prompt, issue, project.path)}`
+        prompt: `${GIT_SYSTEM_PROMPT}\n\n${implementationPrompt(task.prompt, issue, project.path)}`
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -253,11 +247,8 @@ export function registerTaskExecution(
           const agent = getAgent(task.agentId)
           if (!project || project.path !== state.projectPath || !agent) throw new Error('Task project or agent is unavailable')
           requireProjectCheckoutAvailable(store, task)
-          const guidance = !quick && usesManagedWorktree(task) && task.branchName
-            ? GIT_SYSTEM_PROMPT
-            : !quick && taskCheckoutMode(task) === 'local' && (await gitDelivery.status(project.path)).isRepository
-              ? LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT
-              : ''
+          if (!quick && (!usesManagedWorktree(task) || !task.branchName)) throw new Error('Work tasks require an isolated worktree')
+          const guidance = quick ? '' : GIT_SYSTEM_PROMPT
           recordSystemEvent(task.id, `Resuming the saved agent session, attempt ${attempt}/${MAX_RECOVERY_ATTEMPTS}.`)
           agentProcesses.start({
             taskId: task.id, issueId: state.currentIssueId ?? undefined,
@@ -293,7 +284,7 @@ export function registerTaskExecution(
     notify(taskId)
     recordSystemEvent(taskId, reviewer === 'developer'
       ? `Developer approved issue ${issueId}.`
-      : `Unattended review policy accepted issue ${issueId}.`)
+      : `End-of-task review policy accepted issue ${issueId}.`)
     if (state.phase === 'complete') {
       const task = store.getTask(taskId)
       const completedDeliveryStatus = task && usesManagedWorktree(task) && task.baseCommit && task.branchName
@@ -537,7 +528,7 @@ export function registerTaskExecution(
       const rejected = issues.rejectIssue(taskId)
       store.updateTask(taskId, {
         status: 'running', endedAt: undefined, exitCode: null, error: undefined,
-        deliveryStatus: task && usesManagedWorktree(task) && task.branchName ? 'working' : 'unavailable', deliveryError: undefined
+        deliveryStatus: 'working', deliveryError: undefined
       })
       return rejected
     }, task?.workspaceId)

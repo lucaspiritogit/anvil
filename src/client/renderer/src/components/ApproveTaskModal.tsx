@@ -14,7 +14,7 @@ type DeliveryPreview =
 const ACTION_LABEL: Record<TaskDeliveryAction, { title: string; button: string; busy: string; loading: string; loadingError: string }> = {
   merge: {
     title: 'Merge task?',
-    button: 'Merge',
+    button: 'Merge task',
     busy: 'Merging…',
     loading: 'Loading merge details…',
     loadingError: 'Could not load the merge details.'

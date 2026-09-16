@@ -21,8 +21,8 @@ test('collapsed owner surfaces every issue transition without becoming final-del
     await expect(parent).toContainText(`${label}: Implement navigation`)
     await expect(page.getByLabel('Task status', { exact: true })).toHaveText(`${label}: Implement navigation`)
     await expect(page.getByRole('list', { name: 'Subtasks of Layout test task' })).toHaveCount(0)
-    if (status === 'review') await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled()
-    else await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
+    if (status === 'review') await expect(page.getByRole('button', { name: 'Approve step', exact: true })).toBeDisabled()
+    else await expect(page.getByRole('button', { name: 'Approve step', exact: true })).toHaveCount(0)
     if (status === 'review') {
       await expect(page.getByLabel('Agent activity')).toHaveCount(0)
       await expect(parent.getByRole('img', { name: 'Review', exact: true })).toBeVisible()
@@ -31,7 +31,7 @@ test('collapsed owner surfaces every issue transition without becoming final-del
         const snapshot = await window.anvil.tasks.issues('output')
         window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'output', snapshot: { ...snapshot, reviewReady: true } } }))
       })
-      await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeEnabled()
+      await expect(page.getByRole('button', { name: 'Approve step', exact: true })).toBeEnabled()
     }
     await page.screenshot({ path: testInfo.outputPath(`parent-${status}.png`) })
   }

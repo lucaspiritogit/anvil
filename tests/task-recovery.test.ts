@@ -14,10 +14,10 @@ import { resumeTaskTurn } from '../src/server/tasks/resume'
 import { taskRecoveryPrompt } from '../src/server/agents/task-prompts'
 import { TaskIssues } from '../src/server/tasks/task-issues'
 
-async function resumedFixture(kind: 'temporary' | 'accepted' | 'legacy' | 'unprepared' | 'non-Git') {
+async function resumedFixture(kind: 'temporary' | 'accepted' | 'legacy' | 'unprepared') {
   const f = await taskBranchFixture()
   if (kind === 'accepted' || kind === 'legacy') await f.set(kind === 'accepted' ? 'feat/saved-name' : 'old-prompt-title-task-a')
-  if (kind === 'unprepared' || kind === 'non-Git') {
+  if (kind === 'unprepared') {
     await f.manager.releaseWorktree(f.task.id)
     branchGit(f.repo, 'branch', '-D', f.task.branchName!)
     f.store.updateTask(f.task.id, { branchName: undefined, baseBranch: undefined, baseCommit: undefined })
@@ -25,7 +25,7 @@ async function resumedFixture(kind: 'temporary' | 'accepted' | 'legacy' | 'unpre
   if (kind === 'temporary') await expect(f.set('invalid name')).rejects.toThrow()
   new TaskIssues(f.store).stop(f.task.id, 'Interrupted before dispatch or branch acceptance')
   f.store.updateTask(f.task.id, { status: 'pending', sessionId: 'saved-session', model: 'saved-model',
-    deliveryStatus: kind === 'non-Git' ? 'unavailable' : 'agent_failed' })
+    deliveryStatus: 'agent_failed' })
   f.store.close()
   const store = new Store(f.database, f.options)
   onTestCleanup(() => store.close())
@@ -77,17 +77,6 @@ test('failed resumed dispatch retains a new temporary checkout for a retry witho
   expect(taskBranchNaming(resumed).canNameBranch).toBe(true)
   await new TaskBranches(f.context).set(resumed.id, resumed.workspaceId, 'fix/resumed-checkout', () => {})
   expect(f.store.getTask(resumed.id)).toMatchObject({ branchName: 'fix/resumed-checkout', title: f.task.title })
-})
-
-test('non-Git delivery skips branch preparation and naming on resume', async () => {
-  const f = await resumedFixture('non-Git')
-  const prepare = vi.spyOn(f.gitDelivery, 'prepareBranch')
-  const resumed = await f.resume()
-  expect(prepare).not.toHaveBeenCalled()
-  expect(resumed.deliveryStatus).toBe('unavailable')
-  expect(taskBranchNaming(resumed)).toEqual({ branchName: null, canNameBranch: false })
-  await expect(new TaskBranches(f.context).set(resumed.id, resumed.workspaceId, 'feat/no-git', () => {})).rejects.toThrow('unavailable')
-  expect(f.agents.starts).toHaveLength(1)
 })
 
 test('migrates interrupted tasks while retaining sessions, output and execution state', () => {

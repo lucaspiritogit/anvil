@@ -855,9 +855,10 @@ window.anvil = {
       const localBranch = projectBranches[input.projectId] ?? 'main'
       const worktreeBase = ((await window.anvil.projects.branches(input.projectId)).worktreeBases ?? [])
         .find((candidate) => candidate.ref === input.startBase)?.name ?? 'origin/main'
-      const localCheckout = input.checkoutMode === 'local'
+      const localCheckout = input.style === 'quick'
       const task: Task = {
         ...base, ...input, workspaceId: input.workspaceId ?? selectedWorkspace, id, title: input.prompt || 'Image task',
+        checkoutMode: localCheckout ? 'local' : 'worktree',
         status: 'running', deliveryStatus: 'working', endedAt: undefined, reviewedAt: undefined,
         startedAt: Date.now(), workingStartedAt: Date.now(), filesChanged: 0, additions: 0, deletions: 0,
         branchName: localCheckout ? localBranch : `anvil/${id}`,

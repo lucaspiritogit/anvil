@@ -1,9 +1,8 @@
 import { requireStackParent, stackParentIsReady } from './task-stacks'
 import { shouldCompactContext } from '../../shared/task-context'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
-import { GIT_SYSTEM_PROMPT, LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
+import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { taskStyle } from '../../shared/task-style'
-import { taskCheckoutMode } from '../../shared/task-checkout'
 import type { Task, TaskExecutionState } from '../../shared/types'
 import type { TaskContext } from './context'
 import { requireProjectCheckoutAvailable, usesManagedWorktree } from './checkout'
@@ -58,10 +57,12 @@ export async function resumeTaskTurn(
   try {
     let location: Partial<Task> = { cwd: project.path }
     const git = await gitDelivery.status(project.path)
+    if (style === 'work' && !usesManagedWorktree(task)) throw new Error('Work tasks require an isolated worktree')
+    if (style === 'work' && !git.isRepository) throw new Error('Work requires a Git repository so it can run in an isolated branch and worktree')
     if (usesManagedWorktree(task) && task.branchName) {
       const checkout = await gitDelivery.checkoutBranch(project.path, task.id, task.branchName, task.baseBranch, guard)
       location = { cwd: checkout.cwd }
-    } else if (usesManagedWorktree(task) && task.deliveryStatus !== 'unavailable' && git.isRepository) {
+    } else if (usesManagedWorktree(task) && git.isRepository) {
       guard()
       const parent = task.parentTaskId ? requireStackParent(store, task, task.parentTaskId) : undefined
       const base = parent
@@ -87,11 +88,7 @@ export async function resumeTaskTurn(
       const state = resumeExecution ? resumeExecution(task.id) : previousState
       const message = prompt(current, state)
       const managed = usesManagedWorktree(current) && Boolean(location.branchName ?? current.branchName)
-      const guidance = managed
-        ? GIT_SYSTEM_PROMPT
-        : style === 'work' && taskCheckoutMode(current) === 'local' && git?.isRepository
-          ? LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT
-          : ''
+      const guidance = managed ? GIT_SYSTEM_PROMPT : ''
       const executionPrompt = guidance && gitInstructions ? `${guidance}\n\n${message}` : message
       guard()
       running = store.updateTask(task.id, {

@@ -1,5 +1,5 @@
 import type { Task } from '../../shared/types'
-import { getAgent, LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT } from '../agents/registry'
+import { getAgent } from '../agents/registry'
 import { resolveWorkspaceExecution } from '../agents/workspace-execution'
 import { planningPrompt } from '../agents/task-prompts'
 import { quickTaskPrompt } from '../agents/task-prompts'
@@ -50,10 +50,10 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         if (state.hasImages && !images) throw new Error('The original task images were cleared')
         const workspace = resolveWorkspaceExecution(store, task.workspaceId)
         const style = taskStyle(task)
-        // Without Git there is no task branch or diff. Run directly in the project folder.
         const git = await gitDelivery.status(project.path)
         requireRunningTask()
         if (taskCheckoutMode(task) === 'local') {
+          if (style === 'work') throw new Error('Work tasks require an isolated worktree')
           const localTask = store.updateTask(task.id, {
             cwd: project.path,
             deliveryStatus: 'unavailable'
@@ -61,8 +61,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
           send('task:updated', localTask)
           recordSystemEvent(task.id, `Using local checkout: ${project.path}`)
           const enrichedPrompt = await promptWithProjectMemory(project.id, task.prompt, task.workspaceId)
-          const taskPrompt = style === 'work' ? planningPrompt(enrichedPrompt, state) : quickTaskPrompt(style, enrichedPrompt)
-          const prompt = git.isRepository && style === 'work' ? `${LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT}\n\n${taskPrompt}` : taskPrompt
+          const prompt = quickTaskPrompt(style, enrichedPrompt)
           requireRunningTask()
           agentProcesses.start({
             workspace,
@@ -74,36 +73,13 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
             reasoningEffort: state.reasoningEffort,
             cwd: project.path,
             projectPath: project.path,
-            issueTracker: style === 'work',
+            issueTracker: false,
             beforeDispatch: requireRunningTask
           })
           return localTask
         }
         if (!git.isRepository) {
-          if (task.parentTaskId) throw new Error('Stacked tasks require a Git repository')
-          requireProjectCheckoutAvailable(store, task)
-          const unmanagedTask = store.updateTask(task.id, {
-            cwd: project.path,
-            deliveryStatus: 'unavailable'
-          })!
-          send('task:updated', unmanagedTask)
-          const enrichedPrompt = await promptWithProjectMemory(project.id, task.prompt, task.workspaceId)
-          const prompt = style === 'work' ? planningPrompt(enrichedPrompt, state) : quickTaskPrompt(style, enrichedPrompt)
-          requireRunningTask()
-          agentProcesses.start({
-            workspace,
-            taskId: task.id,
-            agent,
-            prompt,
-            images,
-            model: task.model,
-            reasoningEffort: state.reasoningEffort,
-            cwd: project.path,
-            projectPath: project.path,
-            issueTracker: style === 'work',
-            beforeDispatch: requireRunningTask
-          })
-          return unmanagedTask
+          throw new Error('Work requires a Git repository so it can run in an isolated branch and worktree')
         }
 
         const parentId = store.getTask(task.id)?.parentTaskId

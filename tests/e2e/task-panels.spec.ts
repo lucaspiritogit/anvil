@@ -69,7 +69,7 @@ test('completed quick tasks can commit their scoped changes or commit and push',
   })
 
   await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Merge task', exact: true })).toHaveCount(0)
   await page.evaluate(() => {
     window.addEventListener('fixture:quick-commit', (event) => {
       Object.assign(window, { lastQuickCommit: (event as CustomEvent).detail })
@@ -133,7 +133,7 @@ test('mobile header keeps review actions and every task panel usable without ove
   expect((await heading.boundingBox())!.height).toBeLessThan(40)
   await expect(main.getByLabel('Task status')).toBeVisible()
   await expect(main.getByRole('button', { name: 'Open PR', exact: true })).toBeVisible()
-  await expect(main.getByRole('button', { name: 'Merge', exact: true })).toBeVisible()
+  await expect(main.getByRole('button', { name: 'Merge task', exact: true })).toBeVisible()
 
   for (const name of ['Output', 'Changes', 'Issues']) {
     await expect(main.getByRole('tab', { name: new RegExp(`^${name}`) })).toBeVisible()

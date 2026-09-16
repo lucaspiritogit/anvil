@@ -3,18 +3,19 @@ import { chooseBranch, chooseProject, restoreComposerSelection } from './compose
 
 test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
-test('three checkout controls default to the local checkout and support keyboard operation', async ({ page }, testInfo) => {
+test('Quick defaults to the current checkout and supports keyboard branch switching', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/')
   const surface = page.getByTestId('project-overview')
   const project = surface.getByRole('button', { name: 'Project', exact: true })
-  const location = surface.getByRole('button', { name: 'Execution location', exact: true })
+  const location = surface.getByLabel('Execution location', { exact: true })
   const branch = surface.getByRole('button', { name: 'Project branch', exact: true })
   const composer = surface.getByRole('form', { name: 'Start a task' })
 
+  await expect(composer.getByRole('combobox', { name: 'Task style' })).toHaveValue('quick')
   await expect(project).toHaveAccessibleDescription('Anvil, /tmp/anvil')
-  await expect(location).toHaveAccessibleDescription('Local checkout')
+  await expect(location).toHaveText(/Current checkout/)
   await expect(branch).toHaveAccessibleDescription('main')
-  for (const control of [project, location, branch]) {
+  for (const control of [project, branch]) {
     await expect(control).toHaveAttribute('aria-haspopup', 'dialog')
     await expect(control).toHaveAttribute('aria-expanded', 'false')
     await expect(control.locator('svg').last()).toHaveAttribute('width', '12')
@@ -26,10 +27,7 @@ test('three checkout controls default to the local checkout and support keyboard
   await expect(page.getByRole('dialog', { name: 'Choose project' }).getByRole('searchbox')).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(project).toBeFocused()
-  await location.press('Enter')
-  await expect(location).toHaveAttribute('aria-expanded', 'true')
-  await page.keyboard.press('Escape')
-  await expect(location).toBeFocused()
+  await expect(location).not.toHaveAttribute('aria-haspopup')
   await branch.press('Enter')
   await expect(branch).toHaveAttribute('aria-expanded', 'true')
   const picker = page.getByRole('dialog', { name: 'Choose local branch' })
@@ -116,7 +114,7 @@ test('branch keyboard navigation skips in-use branches and truncates long labels
   }
 })
 
-test('detached HEAD and non-Git projects keep an explicit branch control', async ({ page }) => {
+test('detached HEAD stays explicit and non-Git projects explain that Work is unavailable', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/')
   await page.evaluate(() => {
     window.anvil.projects.branches = async () => ({ currentBranch: null, branches: [{ name: 'main', checkedOut: false }], worktreeBases: [], defaultWorktreeBase: null })
@@ -133,6 +131,11 @@ test('detached HEAD and non-Git projects keep an explicit branch control', async
   await expect(surface.getByTestId('composer-project-name')).toHaveText('Workbench')
   await expect(branch).toHaveAccessibleDescription('No Git branch')
   await expect(branch).toBeDisabled()
+  const composer = surface.getByRole('form', { name: 'Start a task' })
+  await composer.getByRole('combobox', { name: 'Task style' }).selectOption('work')
+  await expect(surface.getByRole('alert')).toHaveText(/Work requires a Git repository/)
+  await composer.getByRole('textbox').fill('Try isolated work')
+  await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
 })
 
 test('switching projects ignores a late checkout result and releases submission for the new project', async ({ page }) => {
@@ -220,22 +223,21 @@ test('new worktrees use the selected base without switching the local checkout',
   await page.goto('/tests/e2e/fixture/')
   const project = page.getByRole('button', { name: 'Project', exact: true })
   await chooseProject(project, 'workbench', 'Workbench')
-  const location = page.getByRole('button', { name: 'Execution location', exact: true })
-  await location.click()
-  await page.getByRole('dialog', { name: 'Choose execution location' })
-    .getByRole('button', { name: 'New worktree', exact: true }).click()
-  await expect(location).toHaveAccessibleDescription('New worktree')
+  const composer = page.getByRole('form', { name: 'Start a task' })
+  await composer.getByRole('combobox', { name: 'Task style' }).selectOption('work')
+  await expect(composer.getByRole('combobox', { name: 'Review policy' }).locator('option')).toHaveText(['Review each step', 'Review at the end'])
+  const location = page.getByLabel('Execution location', { exact: true })
+  await expect(location).toHaveText(/Isolated worktree/)
 
   const branch = page.getByRole('button', { name: 'Project branch', exact: true })
-  await expect(branch).toHaveAccessibleDescription('Branch from origin/main')
-  const composer = page.getByRole('form', { name: 'Start a task' })
+  await expect(branch).toHaveAccessibleDescription('starting from origin/main')
   const prompt = composer.getByRole('textbox', { name: 'Task prompt' })
   await prompt.fill('Use an isolated checkout')
   await page.evaluate(() => { window.composerTest.failNextStart = true })
   await composer.getByRole('button', { name: 'Send', exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.composerTest.starts[0])).toEqual({
     workspaceId: 'default', projectId: 'project-1', style: 'work', reviewPolicy: 'review_each_issue',
-    checkoutMode: 'worktree', startBase: 'refs/remotes/origin/main', agentId: 'codex', model: 'gpt-5',
+    startBase: 'refs/remotes/origin/main', agentId: 'codex', model: 'gpt-5',
     prompt: 'Use an isolated checkout', parentTaskId: undefined, reasoningEffort: 'high'
   })
   await expect(composer.getByRole('alert')).toHaveText('Task could not be started')
@@ -243,13 +245,13 @@ test('new worktrees use the selected base without switching the local checkout',
   await branch.click()
   await page.getByRole('dialog', { name: 'Choose worktree base' })
     .getByRole('button', { name: 'main', exact: true }).click()
-  await expect(branch).toHaveAccessibleDescription('Branch from main')
+  await expect(branch).toHaveAccessibleDescription('starting from main')
   expect((await page.evaluate(() => window.anvil.projects.branches('project-1'))).currentBranch).toBe('main')
 
   await composer.getByRole('button', { name: 'Send', exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.composerTest.starts[1])).toEqual({
     workspaceId: 'default', projectId: 'project-1', style: 'work', reviewPolicy: 'review_each_issue',
-    checkoutMode: 'worktree', startBase: 'refs/heads/main', agentId: 'codex', model: 'gpt-5',
+    startBase: 'refs/heads/main', agentId: 'codex', model: 'gpt-5',
     prompt: 'Use an isolated checkout', parentTaskId: undefined, reasoningEffort: 'high'
   })
   await expect.poll(async () => (await page.evaluate(() => window.anvil.tasks.list())).find((task) => task.id.startsWith('started-')))

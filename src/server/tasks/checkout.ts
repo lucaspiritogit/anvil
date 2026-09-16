@@ -3,8 +3,7 @@ import { taskCheckoutMode } from '../../shared/task-checkout'
 import type { Store } from '../store'
 
 export function usesProjectCheckout(task: Task): boolean {
-  return taskCheckoutMode(task) === 'local' ||
-    !task.branchName && task.deliveryStatus === 'unavailable'
+  return taskCheckoutMode(task) === 'local'
 }
 
 export function usesManagedWorktree(task: Task): boolean {

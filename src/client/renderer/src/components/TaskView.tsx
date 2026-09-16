@@ -442,10 +442,10 @@ function MergeActions({ disabled, title, onSelect }: {
       <button
         className={cn(btn.primary, 'bg-ok')}
         disabled={disabled}
-        title={title}
+        title={title ?? 'Integrate the finished task into the target branch'}
         onClick={() => select('merge')}
       >
-        Merge
+        Merge task
       </button>
       <button
         ref={toggleRef}
@@ -646,7 +646,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
           <div className="flex min-w-0 flex-1 items-center gap-2 @max-[760px]:w-full @max-[760px]:flex-none">
             <h1 className="min-w-0 truncate text-base font-medium leading-snug" title={task.title}>{task.title}</h1>
             <TaskStyleBadge style={style} />
-            {work && task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warn/30 bg-warn/10 px-2.5 py-0.5 text-[11px] font-medium leading-relaxed tracking-wide text-warn"><Icon icon="moon-star" size={12} aria-hidden="true" />Unattended</span>}
+            {work && task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warn/30 bg-warn/10 px-2.5 py-0.5 text-[11px] font-medium leading-relaxed tracking-wide text-warn"><Icon icon="moon-star" size={12} aria-hidden="true" />Review at the end</span>}
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
             {issue ? <>
@@ -655,8 +655,8 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                 <button className={cn(btn.ghost, 'ml-2')} disabled={reviewDisabled} onClick={() => void reviewIssue('reject')}>
                   {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
                 </button>
-                <button className={cn(btn.primary, 'bg-ok')} disabled={reviewDisabled} onClick={() => void reviewIssue('approve')}>
-                  {reviewBusy === 'approve' ? 'Approving…' : 'Approve'}
+                <button className={cn(btn.primary, 'bg-ok')} title="Accept this step and continue inside the task workspace" disabled={reviewDisabled} onClick={() => void reviewIssue('approve')}>
+                  {reviewBusy === 'approve' ? 'Approving…' : 'Approve step'}
                 </button>
               </>}
             </> : <>

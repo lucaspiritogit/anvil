@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { ProjectBranches, TaskCheckoutMode } from '@shared/types'
+import type { ProjectBranches, TaskStyle } from '@shared/types'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import { ChoicePickerDialog } from './ChoicePickerDialog'
@@ -8,20 +8,20 @@ import { ProjectPicker } from './ProjectPicker'
 
 interface Props {
   projectId: string | null
+  style: TaskStyle
   parentBranch?: string
-  checkoutMode: TaskCheckoutMode
   startBase?: string
   disabled: boolean
-  onCheckoutChange: (mode: TaskCheckoutMode, startBase?: string) => void
+  onStartBaseChange: (startBase?: string) => void
   onTransitioning: (transitioning: boolean) => void
 }
 
-type OpenPicker = 'project' | 'location' | 'branch' | null
+type OpenPicker = 'project' | 'branch' | null
 
 const triggerClass = 'inline-flex min-w-0 max-w-full items-center gap-1.5 px-2 py-1.5 text-sm text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-45 aria-disabled:cursor-wait aria-disabled:opacity-45'
 
-export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, startBase, disabled,
-  onCheckoutChange, onTransitioning }: Props): JSX.Element {
+export function ProjectBranchSelector({ projectId, style, parentBranch, startBase, disabled,
+  onStartBaseChange, onTransitioning }: Props): JSX.Element {
   const projects = useStore((state) => state.projects)
   const project = projects.find((project) => project.id === projectId)
   const selectProject = useStore((state) => state.selectProject)
@@ -31,7 +31,6 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
   const loadGitStatus = useStore((state) => state.loadGitStatus)
   const [open, setOpen] = useState<OpenPicker>(null)
   const projectRef = useRef<HTMLButtonElement>(null)
-  const locationRef = useRef<HTMLButtonElement>(null)
   const branchRef = useRef<HTMLButtonElement>(null)
   const [branches, setBranches] = useState<ProjectBranches | null>(null)
   const [branchError, setBranchError] = useState<string | null>(null)
@@ -84,14 +83,9 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
   }, [projectId, isRepository])
 
   useEffect(() => {
-    if (parentBranch && checkoutMode !== 'worktree') onCheckoutChange('worktree')
-    else if (isRepository === false && checkoutMode !== 'local' && !parentBranch) onCheckoutChange('local')
-  }, [parentBranch, isRepository, checkoutMode, onCheckoutChange])
-
-  useEffect(() => {
-    if (checkoutMode !== 'worktree' || parentBranch || startBase || !branches) return
-    onCheckoutChange('worktree', branches.defaultWorktreeBase?.ref)
-  }, [checkoutMode, parentBranch, startBase, branches, onCheckoutChange])
+    if (style !== 'work' || parentBranch || startBase || !branches) return
+    onStartBaseChange(branches.defaultWorktreeBase?.ref)
+  }, [style, parentBranch, startBase, branches, onStartBaseChange])
 
   const checkout = async (branchName: string): Promise<void> => {
     if (!projectId || changing.current || disabled || branchName === branches?.currentBranch || branches?.branches.find((branch) => branch.name === branchName)?.checkedOut) return
@@ -111,12 +105,6 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
         void refresh()
       }
     }
-  }
-
-  const chooseLocation = (mode: TaskCheckoutMode): void => {
-    setOpen(null)
-    if (mode === 'local') onCheckoutChange('local')
-    else onCheckoutChange('worktree', branches?.defaultWorktreeBase?.ref)
   }
 
   const focusProjectTrigger = (): void => {
@@ -146,10 +134,11 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
   const base = branches?.worktreeBases?.find((candidate) => candidate.ref === startBase)
     ?? (!startBase ? branches?.defaultWorktreeBase : null) ?? null
   const baseLabel = parentBranch ?? base?.name ?? (startBase ? 'unavailable branch' : branches ? 'default branch' : 'Loading base…')
-  const branchLabel = checkoutMode === 'local' ? localBranchLabel : `Branch from ${baseLabel}`
-  const locationLabel = checkoutMode === 'local' ? 'Local checkout' : 'New worktree'
+  const work = style === 'work'
+  const branchLabel = work ? `starting from ${baseLabel}` : localBranchLabel
+  const locationLabel = work ? 'Isolated worktree' : 'Current checkout'
   const controlsDisabled = disabled || transitioning
-  const branchDisabled = disabled || !projectId || !isRepository || !branches || Boolean(parentBranch)
+  const branchDisabled = disabled || !projectId || !isRepository || !branches || (work && Boolean(parentBranch))
 
   return (
     <div className="mb-3 min-w-0">
@@ -171,22 +160,11 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
           <span data-testid="composer-project-name" className="max-w-56 truncate font-medium text-fg">{project?.name ?? 'Choose project'}</span>
           <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
         </button>
-        <button
-          ref={locationRef}
-          type="button"
-          aria-label="Execution location"
-          aria-description={locationLabel}
-          aria-haspopup="dialog"
-          aria-expanded={open === 'location'}
-          title={locationLabel}
-          className={triggerClass}
-          disabled={controlsDisabled || !projectId}
-          onClick={() => setOpen('location')}
-        >
-          <Icon icon={checkoutMode === 'local' ? 'monitor' : 'layers'} size={15} className="shrink-0" aria-hidden="true" />
+        <span aria-label="Execution location" className="inline-flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-sm text-dim" title={work ? 'Work runs on a dedicated branch in an isolated worktree' : 'Quick runs in the project’s current checkout'}>
+          <Icon icon={work ? 'layers' : 'monitor'} size={15} className="shrink-0" aria-hidden="true" />
           <span className="truncate">{locationLabel}</span>
-          <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
-        </button>
+          <span aria-hidden="true">·</span>
+        </span>
         <button
           ref={branchRef}
           type="button"
@@ -194,7 +172,7 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
           aria-description={branchLabel}
           aria-haspopup="dialog"
           aria-expanded={open === 'branch'}
-          title={checkoutMode === 'local' ? `${branchLabel}. Local tasks use this checkout.` : `${branchLabel}. New worktrees start from this ref.`}
+          title={work ? `${branchLabel}. This selects the new worktree’s base; it does not switch your current checkout.` : `${branchLabel}. Choosing another branch switches the current checkout.`}
           className={triggerClass}
           disabled={branchDisabled}
           aria-disabled={transitioning}
@@ -219,25 +197,7 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
         onBusyChange={setTransition}
         onClose={() => setOpen(null)}
       />}
-      {open === 'location' && <ChoicePickerDialog
-        anchorRef={locationRef}
-        label="Choose execution location"
-        noun="execution locations"
-        value={checkoutMode}
-        choices={[
-          {
-            id: 'local', label: 'Local checkout', description: parentBranch ? 'Stacked tasks require a new worktree' : 'Work in the project’s current checkout',
-            icon: <Icon icon="monitor" size={16} className="shrink-0 text-dim" aria-hidden="true" />, disabled: Boolean(parentBranch)
-          },
-          {
-            id: 'worktree', label: 'New worktree', description: isRepository === false ? 'Requires a Git repository' : isRepository === undefined ? 'Checking repository…' : 'Create an isolated checkout for this task',
-            icon: <Icon icon="layers" size={16} className="shrink-0 text-dim" aria-hidden="true" />, disabled: isRepository !== true
-          }
-        ]}
-        onClose={() => setOpen(null)}
-        onSelect={(mode) => chooseLocation(mode as TaskCheckoutMode)}
-      />}
-      {open === 'branch' && checkoutMode === 'local' && <ChoicePickerDialog
+      {open === 'branch' && !work && <ChoicePickerDialog
         anchorRef={branchRef}
         label="Choose local branch"
         noun="branches"
@@ -254,7 +214,7 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
         onClose={() => setOpen(null)}
         onSelect={(name) => { setOpen(null); void checkout(name) }}
       />}
-      {open === 'branch' && checkoutMode === 'worktree' && <ChoicePickerDialog
+      {open === 'branch' && work && <ChoicePickerDialog
         anchorRef={branchRef}
         label="Choose worktree base"
         noun="base branches"
@@ -265,7 +225,7 @@ export function ProjectBranchSelector({ projectId, parentBranch, checkoutMode, s
           description: candidate.remote ? 'Remote branch' : 'Local branch'
         }))}
         onClose={() => setOpen(null)}
-        onSelect={(ref) => { setOpen(null); onCheckoutChange('worktree', ref) }}
+        onSelect={(ref) => { setOpen(null); onStartBaseChange(ref) }}
       />}
       {transitioning && <p role="status" className="px-2 pt-1 text-xs text-dim">Updating checkout…</p>}
       {error && <p role="alert" className="mx-2 mt-1 max-w-full rounded-md bg-black/85 px-3 py-2 text-xs text-white shadow-lg">{error}</p>}

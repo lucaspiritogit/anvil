@@ -6,7 +6,7 @@ test('Open PR previews the remote, drafts editable fields, and shows created PR 
   await page.goto(fixture)
   // Review actions live in the task header, so they are reachable from any panel.
   const open = page.getByRole('button', { name: 'Open PR', exact: true })
-  const merge = page.getByRole('button', { name: 'Merge', exact: true })
+  const merge = page.getByRole('button', { name: 'Merge task', exact: true })
   await expect(open).toBeEnabled()
   expect((await open.boundingBox())!.x).toBeLessThan((await merge.boundingBox())!.x)
   await open.click()
@@ -55,7 +55,7 @@ test('cancelling the PR dialog does not push or merge', async ({ page }) => {
   await page.getByRole('button', { name: 'Open PR', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByRole('dialog')).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Merge task', exact: true })).toBeEnabled()
   expect(errors).toEqual([])
 })
 

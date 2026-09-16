@@ -14,15 +14,6 @@ export const GIT_SYSTEM_PROMPT = [
   'Do not push; the branch stays local for review.'
 ].join('\n')
 
-export const LOCAL_CHECKOUT_GIT_SYSTEM_PROMPT = [
-  'Use Git normally as you work, and commit your own changes with a clear message.',
-  'Staging is not committing — run `git commit`, not just `git add`.',
-  'Prefix the subject with fix:, feat:, chore:, or docs: when the category is clear.',
-  'You are working in the project\'s existing checkout on its current branch.',
-  'Do not rename or switch branches, modify another checkout, or create a worktree.',
-  'Do not push; the current branch stays local for review.'
-].join('\n')
-
 export const BUILTIN_AGENTS: AgentDefinition[] = [
   {
     id: 'opencode',

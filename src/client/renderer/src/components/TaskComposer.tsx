@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { canStackOnTask } from '@shared/task-stacks'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { hasTaskContent } from '@shared/task-images'
 import { useStore } from '../state/store'
@@ -16,7 +16,7 @@ import { ComposerOverflowOptions } from './ComposerOverflowOptions'
 import { ProjectBranchSelector } from './ProjectBranchSelector'
 import { TaskStyleBadge } from './TaskStyleBadge'
 import { TASK_STYLES, TASK_STYLE_LABELS } from '@shared/task-style'
-import type { TaskCheckoutMode, TaskReviewPolicy } from '@shared/types'
+import type { TaskReviewPolicy } from '@shared/types'
 
 const compactSelect = 'min-w-0 field-sizing-content appearance-none bg-transparent py-1.5 pl-2 pr-6 text-sm text-dim outline-none hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45'
 export function TaskComposer(): JSX.Element {
@@ -36,6 +36,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const taskComposerFocusRequest = useStore((state) => state.taskComposerFocusRequest)
   const style = useStore((state) => state.taskComposerStyle)
   const setStyle = useStore((state) => state.setTaskComposerStyle)
+  const isRepository = useStore((state) => projectId ? state.gitStatusByProject[projectId]?.isRepository : false)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLFormElement>(null)
@@ -55,7 +56,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   }, [])
   const [busy, setBusy] = useState(false)
   const [switchingBranch, setSwitchingBranch] = useState(false)
-  const [selectedCheckoutMode, setSelectedCheckoutMode] = useState<TaskCheckoutMode>('local')
   const [startBase, setStartBase] = useState<string>()
   const [error, setError] = useState<string | null>(null)
   const submitting = useRef(false)
@@ -68,11 +68,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     ?? reasoningOptions.find((option) => option.id === capabilities?.default)?.id
     ?? reasoningOptions[0]?.id
   const setReasoningEffort = preferences.setReasoningEffort
-  const checkoutMode = parentTaskId ? 'worktree' : selectedCheckoutMode
-  const setCheckout = useCallback((mode: TaskCheckoutMode, base?: string): void => {
-    setSelectedCheckoutMode(mode)
-    setStartBase(mode === 'worktree' ? base : undefined)
-  }, [])
 
   useEffect(() => {
     if (reasoningEffort && savedEffort !== reasoningEffort) setReasoningEffort(agentId, model, reasoningEffort)
@@ -91,7 +86,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   }, [taskComposerFocusRequest])
 
   const submit = async (): Promise<void> => {
-    if (!projectId || useStore.getState().activeProjectId !== projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || switchingBranch || submitting.current) return
+    if (!projectId || useStore.getState().activeProjectId !== projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || switchingBranch || (style === 'work' && isRepository === false) || submitting.current) return
     submitting.current = true
     setBusy(true)
     setError(null)
@@ -102,8 +97,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         reviewPolicy: style === 'work' ? reviewPolicy : 'review_each_issue',
         agentId,
         parentTaskId: style === 'work' ? parentTaskId || undefined : undefined,
-        checkoutMode,
-        ...(checkoutMode === 'worktree' && !parentTaskId && startBase ? { startBase } : {}),
+        ...(style === 'work' && !parentTaskId && startBase ? { startBase } : {}),
         prompt: prompt.trim(),
         ...(mentions.references.length ? { fileReferences: mentions.references } : {}),
         model: model.trim() || undefined,
@@ -114,7 +108,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       if (mounted.current) {
         attachments.reset()
         setParentTaskId('')
-        setStyle('work')
+        setStyle('quick')
       }
     } catch (error) {
       if (mounted.current) setError(error instanceof Error ? error.message : String(error))
@@ -127,8 +121,10 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   return (
     <div>
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
-      {style === 'quick' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><TaskStyleBadge style="quick" /> Runs without a plan.</p>}
-      {style === 'work' && reviewPolicy === 'review_at_task_end' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><Icon icon="moon-star" size={14} /> Runs through issue reviews automatically. Final merge and push still wait for you.</p>}
+      {style === 'quick' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-dim"><TaskStyleBadge style="quick" /> Ask a question or make a focused change in the current checkout.</p>}
+      {style === 'work' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-dim"><TaskStyleBadge style="work" /> Delegate planned work on a task branch. Changes wait for you to merge them.</p>}
+      {style === 'work' && reviewPolicy === 'review_at_task_end' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><Icon icon="moon-star" size={14} /> Runs unattended until the final review. Merge and push still wait for you.</p>}
+      {style === 'work' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">Work requires a Git repository so Anvil can create an isolated branch and worktree.</p>}
       {style === 'work' && parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
         <Icon icon="layers" size={14} />
         Stack on task
@@ -140,11 +136,11 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       <ProjectBranchSelector
         key={projectId ?? 'no-project'}
         projectId={projectId}
+        style={style}
         parentBranch={parentBranch}
-        checkoutMode={checkoutMode}
         startBase={startBase}
         disabled={busy}
-        onCheckoutChange={setCheckout}
+        onStartBaseChange={setStartBase}
         onTransitioning={setSwitchingBranch}
       />
       <form
@@ -236,7 +232,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 onChange={(event) => preferences.setReviewPolicy(event.target.value as TaskReviewPolicy)}
               >
                 <option className="bg-raised text-fg" value="review_each_issue">Review each step</option>
-                <option className="bg-raised text-fg" value="review_at_task_end">Run unattended</option>
+                <option className="bg-raised text-fg" value="review_at_task_end">Review at the end</option>
               </select>
               <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
             </label>}
@@ -279,7 +275,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 aria-label={busy ? 'Starting…' : 'Send'}
                 title={busy ? 'Starting…' : 'Send'}
                 className="grid w-8 shrink-0 place-items-center bg-accent text-canvas transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
-                disabled={!projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || busy || switchingBranch}
+                disabled={!projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || busy || switchingBranch || (style === 'work' && isRepository === false)}
               >
                 <Icon icon="chevron-up" size={18} aria-hidden="true" />
               </button>
