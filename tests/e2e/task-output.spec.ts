@@ -71,7 +71,7 @@ test('follows the live tail, preserves a reader through snapshots and hidden pan
   await expectAnchor(page, before)
   await emit(page, 'live-3', 'Persisted while browsing history')
   await expect(rows(page).last()).toContainText('Persisted while browsing history')
-  await page.getByRole('button', { name: 'Jump to latest' }).click()
+  await page.getByRole('button', { name: /new events/ }).click()
   await expect(rows(page).last()).toContainText('Persisted while browsing history')
   await expect.poll(() => atBottom(page)).toBe(true)
   await expect(page.getByRole('status', { name: 'Agent activity' })).toContainText('Writing a response')
@@ -175,6 +175,22 @@ test('filters events by category chip and text query', async ({ page }) => {
   await expect(output(page).locator('[data-event-id="agent-error"]')).toBeVisible()
   await filters.getByRole('textbox', { name: 'Filter output' }).fill('')
   await expect(output(page).locator('[data-event-id="agent-message"]')).toBeVisible()
+})
+
+test('copies a single event from its row copy button', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.goto('/tests/e2e/fixture/?scenario=output&tools=1')
+  await expect(rows(page)).toHaveCount(2)
+  await emit(page, 'agent-message', 'A message from the agent')
+  const message = output(page).locator('[data-event-id="agent-message"]')
+  await message.hover()
+  await message.getByRole('button', { name: 'Copy event' }).click()
+  await expect(message.getByRole('button', { name: 'Copied' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('A message from the agent')
+  const result = output(page).locator('[data-output-category="tool_result"]')
+  await result.hover()
+  await result.getByRole('button', { name: 'Copy event' }).click()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('/tmp/project\nfirst.ts\nsecond.ts')
 })
 
 test('reports new events in a pill while scrolled up and returns to the tail', async ({ page }) => {

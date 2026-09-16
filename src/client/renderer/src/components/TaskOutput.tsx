@@ -170,7 +170,8 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
   const [query, setQuery] = useState('')
   const [newCount, setNewCount] = useState(0)
   const tailBaseline = useRef(0)
-  const [copied, setCopied] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const copyTimer = useRef(0)
   const seen = useRef<Set<string> | null>(null)
 
   const toggleExpanded = useCallback((id: string): void => {
@@ -276,30 +277,22 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
     setNewCount(0)
   }
 
-  const copyOutput = async (): Promise<void> => {
-    if (!events) return
-    const lines = events.filter((event) => !eventHidden(event)).map((event) =>
-      `[${timeFormat.format(event.ts)}] ${CATEGORY_LABEL[event.category]}: ${event.text}`)
-    try {
-      await navigator.clipboard.writeText(lines.join('\n'))
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    } catch {
+  const copyEvent = useCallback((id: string, text: string): void => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id)
+      window.clearTimeout(copyTimer.current)
+      copyTimer.current = window.setTimeout(() => setCopiedId(null), 1200)
+    }).catch(() => {
       // Clipboard unavailable (permissions); the button simply stays idle.
-    }
-  }
+    })
+  }, [])
 
   return (
     <section id="task-panel-output" aria-label="Output" className={cn('flex flex-1 min-h-0 min-w-0', !visible && 'hidden')}>
       <div className="flex flex-1 min-h-0 min-w-0 flex-col">
         <nav aria-label="Output history" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-5 py-1.5 text-xs">
           <span role="status" className="text-dim">{history?.loading ? 'Loading output…' : history?.loaded ? `${filtering ? `${visibleCount} of ` : ''}${events?.length ?? 0} events · ${history.followingLatest ? 'Latest' : 'History'}` : ''}</span>
-          {history?.loaded && (events?.length ?? 0) > 0 && <button className={cn(btn.ghost, 'flex items-center gap-1.5 py-1 text-xs')} onClick={() => void copyOutput()}>
-            <Icon icon={copied ? 'check' : 'copy'} size={12} aria-hidden="true" />
-            {copied ? 'Copied' : 'Copy output'}
-          </button>}
           <QuickCommitActions task={task} />
-          {(!follow || history?.hasNewer || history?.followingLatest === false) && <button className={cn(btn.ghost, 'ml-auto py-1 text-xs')} disabled={!!history?.loading} onClick={() => load('latest')}>Jump to latest</button>}
         </nav>
         <div role="toolbar" aria-label="Output filters" className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-5 py-1.5">
           {TASK_EVENT_CATEGORIES.map((category) => {
@@ -363,16 +356,26 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
               ? <ToolRow key={row.use.id} use={row.use} result={row.result}
                 useExpanded={expandedIds.has(row.use.id)} resultExpanded={expandedIds.has(row.result.id)}
                 useHidden={eventHidden(row.use)} resultHidden={eventHidden(row.result)}
-                animate={fresh.has(row.use.id)} onToggle={toggleExpanded} />
+                useCopied={copiedId === row.use.id} resultCopied={copiedId === row.result.id}
+                animate={fresh.has(row.use.id)} onToggle={toggleExpanded} onCopy={copyEvent} />
               : <EventRow key={row.event.id} event={row.event} expanded={expandedIds.has(row.event.id)}
-                hidden={eventHidden(row.event)} animate={fresh.has(row.event.id)} onToggle={toggleExpanded} />)}
+                hidden={eventHidden(row.event)} copied={copiedId === row.event.id}
+                animate={fresh.has(row.event.id)} onToggle={toggleExpanded} onCopy={copyEvent} />)}
             {filtering && visibleCount === 0 && (events?.length ?? 0) > 0 && <p className={PLACEHOLDER}>No events match the current filters.</p>}
             <TaskActivity task={task} presentation={presentation} event={history?.followingLatest ? events?.at(-1) : undefined} />
           </div>
-          {newCount > 0 && !follow && history?.followingLatest === true && <button
+          {newCount > 0 && !follow && history?.followingLatest === true ? <button
             className="absolute bottom-3 right-4 z-10 border border-line bg-raised px-3 py-1 text-xs text-fg shadow-[0_8px_32px_rgba(0,0,0,0.4)] hover:bg-hover motion-safe:animate-row-in"
-            onClick={scrollToTail}>
+            onClick={() => {
+              if (history?.hasNewer) load('latest')
+              else scrollToTail()
+            }}>
             ↓ {newCount} new event{newCount === 1 ? '' : 's'}
+          </button> : (!follow || history?.hasNewer || history?.followingLatest === false) && <button
+            aria-label="Jump to latest" disabled={!!history?.loading}
+            className="absolute bottom-3 right-4 z-10 flex size-7 items-center justify-center border border-line bg-raised text-dim shadow-[0_8px_32px_rgba(0,0,0,0.4)] hover:text-fg disabled:opacity-45 motion-safe:animate-row-in"
+            onClick={() => load('latest')}>
+            <Icon icon="chevron-down" size={14} aria-hidden="true" />
           </button>}
         </div>
       </div>
@@ -613,6 +616,21 @@ function ExpandButton({ expanded, onToggle }: { expanded: boolean; onToggle: () 
   )
 }
 
+/* Copies one event's text; revealed on row hover so the stream stays clean. */
+function CopyButton({ copied, onCopy }: { copied: boolean; onCopy: () => void }): JSX.Element {
+  return (
+    <button type="button" aria-label={copied ? 'Copied' : 'Copy event'}
+      onClick={(event) => {
+        event.stopPropagation()
+        onCopy()
+      }}
+      className={cn('absolute right-1 top-1 z-10 flex size-5 items-center justify-center border border-line bg-raised text-dim transition-opacity hover:text-fg focus-visible:opacity-100',
+        copied ? 'opacity-100 text-ok' : 'opacity-0 group-hover:opacity-100')}>
+      <Icon icon={copied ? 'check' : 'copy'} size={11} aria-hidden="true" />
+    </button>
+  )
+}
+
 function Gutter({ event, label, tone, expandable, expanded, onToggle }: {
   event: TaskEvent
   label: string
@@ -677,16 +695,18 @@ function ToolUseContent({ event, expanded, onToggle }: {
   )
 }
 
-function ToolResultRow({ result, expanded, hidden, onToggle }: {
+function ToolResultRow({ result, expanded, hidden, copied, onToggle, onCopy }: {
   result: TaskEvent
   expanded: boolean
   hidden: boolean
+  copied: boolean
   onToggle: (id: string) => void
+  onCopy: (id: string, text: string) => void
 }): JSX.Element {
   const failed = result.category === 'error'
   return (
     <div data-event-id={result.id} data-output-category={result.category} aria-expanded={expanded}
-      className={cn('mt-1 flex items-start gap-2 border-l border-line pl-2.5', hidden && 'hidden')}>
+      className={cn('group relative mt-1 flex items-start gap-2 border-l border-line pl-2.5', hidden && 'hidden')}>
       <ExpandButton expanded={expanded} onToggle={() => onToggle(result.id)} />
       <span className="min-w-0 flex-1">
         <span className={cn('block text-[10px] uppercase tracking-wide select-none', failed ? 'text-danger' : KIND_TONE.tool_result)}>
@@ -695,41 +715,48 @@ function ToolResultRow({ result, expanded, hidden, onToggle }: {
         <ClampedText text={result.text} lines={CLAMP_LINES.tool_result} expanded={expanded}
           className={failed ? 'text-danger' : 'text-dim'} onToggle={() => onToggle(result.id)} />
       </span>
+      <CopyButton copied={copied} onCopy={() => onCopy(result.id, result.text)} />
     </div>
   )
 }
 
-const ToolRow = memo(function ToolRow({ use, result, useExpanded, resultExpanded, useHidden, resultHidden, animate, onToggle }: {
+const ToolRow = memo(function ToolRow({ use, result, useExpanded, resultExpanded, useHidden, resultHidden, useCopied, resultCopied, animate, onToggle, onCopy }: {
   use: TaskEvent
   result: TaskEvent
   useExpanded: boolean
   resultExpanded: boolean
   useHidden: boolean
   resultHidden: boolean
+  useCopied: boolean
+  resultCopied: boolean
   animate: boolean
   onToggle: (id: string) => void
+  onCopy: (id: string, text: string) => void
 }): JSX.Element {
   const mcpTool = /^mcp(?:__|[_ -])/i.test(use.text.split('\n', 1)[0]) || use.text.split('\n', 1)[0].includes('/')
   return (
     <div data-output-category={mcpTool ? 'mcp_tool' : 'tool_use'} data-event-id={use.id} aria-expanded={useExpanded}
-      className={cn('grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
+      className={cn('group relative grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
         animate && 'motion-safe:animate-row-in', useHidden && 'hidden')}>
       <Gutter event={use} label={mcpTool ? 'mcp_tool' : 'tool_use'} tone={mcpTool ? 'text-violet' : KIND_TONE.tool_use}
         expandable expanded={useExpanded} onToggle={() => onToggle(use.id)} />
       <span className="min-w-0">
         <ToolUseContent event={use} expanded={useExpanded} onToggle={onToggle} />
-        <ToolResultRow result={result} expanded={resultExpanded} hidden={resultHidden} onToggle={onToggle} />
+        <ToolResultRow result={result} expanded={resultExpanded} hidden={resultHidden} copied={resultCopied} onToggle={onToggle} onCopy={onCopy} />
       </span>
+      <CopyButton copied={useCopied} onCopy={() => onCopy(use.id, use.text)} />
     </div>
   )
 })
 
-const EventRow = memo(function EventRow({ event, expanded, hidden, animate, onToggle }: {
+const EventRow = memo(function EventRow({ event, expanded, hidden, copied, animate, onToggle, onCopy }: {
   event: TaskEvent
   expanded: boolean
   hidden: boolean
+  copied: boolean
   animate: boolean
   onToggle: (id: string) => void
+  onCopy: (id: string, text: string) => void
 }): JSX.Element {
   const uncommitted = event.kind === 'did_not_commit'
   const tool = event.category === 'tool_use'
@@ -740,7 +767,7 @@ const EventRow = memo(function EventRow({ event, expanded, hidden, animate, onTo
   const expandable = tool || toolResult || clampable(event.text, lines)
   return (
     <div data-output-category={mcpTool ? 'mcp_tool' : event.category} data-event-id={event.id} aria-expanded={expanded}
-      className={cn('grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
+      className={cn('group relative grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
         animate && 'motion-safe:animate-row-in', hidden && 'hidden')}>
       <Gutter event={event} label={mcpTool ? 'mcp_tool' : CATEGORY_LABEL[event.category]}
         tone={uncommitted ? 'text-warn' : mcpTool ? 'text-violet' : KIND_TONE[event.category]}
@@ -752,6 +779,7 @@ const EventRow = memo(function EventRow({ event, expanded, hidden, animate, onTo
             showMoreLink={event.category === 'message' || event.category === 'thinking'}
             onToggle={() => onToggle(event.id)} />
         </span>}
+      <CopyButton copied={copied} onCopy={() => onCopy(event.id, event.text)} />
     </div>
   )
 })

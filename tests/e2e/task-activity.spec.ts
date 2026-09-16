@@ -88,6 +88,6 @@ test('activity follows new output without pulling the reader away from earlier e
   await emitOutput(page, { id: 'tool', category: 'tool_use', text: 'Read file\npackage.json' })
   await expect(activity).toHaveText('Running Read file…')
   expect(await output.evaluate((element) => element.scrollTop)).toBe(scrollTop)
-  await page.getByRole('button', { name: 'Jump to latest' }).click()
+  await page.getByRole('button', { name: /new event/ }).click()
   await expect(activity).toBeInViewport()
 })
