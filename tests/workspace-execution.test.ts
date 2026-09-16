@@ -34,6 +34,7 @@ function fixture(): { store: Store; work: string; personal: string; task: Task; 
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
   const task = store.addTask({ id: 'work-task', workspaceId: work, projectId: 'project',
     agentId: 'codex', agentLabel: 'Codex', prompt: 'Work task', title: 'Work task', cwd: testHome,
+    style: 'quick', checkoutMode: 'local',
     status: 'running', deliveryStatus: 'unavailable', startedAt: 1,
     inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,
     filesChanged: 0, additions: 0, deletions: 0 })

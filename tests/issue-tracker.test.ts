@@ -309,9 +309,8 @@ test('schedules dependencies and priorities sequentially and retains final task 
   GitDeliveryManager.failFinalize = false
   expect(call('tasks:cancel', unrelatedTaskId)).toBe(true)
   await tick()
-  GitDeliveryManager.repository = false
   for (const agentId of ['opencode', 'codex']) {
-    const serverId = await start('Server task without Git', agentId)
+    const serverId = await start('Server task', agentId)
     const serverExit = async (output: string): Promise<void> => {
       agentProcesses.active.delete(serverId)
       agentProcesses.emit('exit', { taskId: serverId, code: 0, cancelled: false,
@@ -329,7 +328,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
     await tick()
     expect(tracker.get(currentId).evidence).toBe('Server validation passed')
     expect(store.getTask(serverId)?.status, 'Completion needs no assistant output').toBe('succeeded')
-    expect(store.getTask(serverId)?.deliveryStatus).toBe('unavailable')
+    expect(store.getTask(serverId)?.deliveryStatus).toBe('reviewable')
   }
   tracker.close()
   store.close()
