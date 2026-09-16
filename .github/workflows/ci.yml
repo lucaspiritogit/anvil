@@ -55,12 +55,12 @@ jobs:
         include:
           - name: macos-arm64
             os: macos-15
-            arguments: --mac dmg --arm64 -c.mac.identity=null
+            arguments: --mac dmg --arm64 -c.mac.identity="-"
             artifact: release/*.dmg
             server_artifact: release/Anvil-server-*-macos-arm64.tar.gz
           - name: macos-x64
             os: macos-15-intel
-            arguments: --mac dmg --x64 -c.mac.identity=null
+            arguments: --mac dmg --x64 -c.mac.identity="-"
             artifact: release/*.dmg
             server_artifact: release/Anvil-server-*-macos-x64.tar.gz
           - name: windows-x64
@@ -87,6 +87,17 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx electron-builder ${{ matrix.arguments }} --publish never
+      - name: Verify macOS app signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app_path="release/mac/Anvil.app"
+          if [[ "${{ matrix.name }}" == "macos-arm64" ]]; then
+            app_path="release/mac-arm64/Anvil.app"
+          fi
+
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          codesign --display --verbose=2 "$app_path"
       - run: node scripts/tests/verify-package.mjs
       - run: node scripts/package-server.mjs
       - uses: actions/upload-artifact@v4
@@ -124,7 +135,9 @@ jobs:
           RELEASE_TAG: ${{ needs.check.outputs.release_tag }}
         run: |
           cat > release-notes.md <<'NOTES'
-          Download the desktop app or the Anvil server archive for your platform below. These builds are unsigned.
+          Download the desktop app or the Anvil server archive for your platform below.
+          macOS desktop builds are ad-hoc signed but are not notarized by Apple.
+          macOS may require an explicit security override on first launch.
 
           Server archives include Node.js and the browser UI. Extract one and run `anvil-server` for local access, `anvil-server --lan` for password-protected LAN access, or `anvil-server --tailscale` for private Tailscale HTTPS access.
 
