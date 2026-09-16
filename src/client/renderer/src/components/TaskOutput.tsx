@@ -133,6 +133,11 @@ type Row =
   | { kind: 'event'; event: TaskEvent }
   | { kind: 'tool'; use: TaskEvent; result: TaskEvent }
 
+const MCP_TOOL_NAME = /^(?:anvil_issue_tracker|anvil_browser)(?:[/_]|$)/
+function isMcpTool(event: TaskEvent): boolean {
+  return event.category === 'tool_use' && MCP_TOOL_NAME.test(event.text.split('\n', 1)[0].trim())
+}
+
 /* A tool call and the result snapshot that follows it form one row: the result
  * nests under its call instead of doubling the stream's row count. */
 function buildRows(events: TaskEvent[] | undefined): Row[] {
@@ -733,12 +738,12 @@ const ToolRow = memo(function ToolRow({ use, result, useExpanded, resultExpanded
   onToggle: (id: string) => void
   onCopy: (id: string, text: string) => void
 }): JSX.Element {
-  const mcpTool = /^mcp(?:__|[_ -])/i.test(use.text.split('\n', 1)[0]) || use.text.split('\n', 1)[0].includes('/')
+  const mcpTool = isMcpTool(use)
   return (
     <div data-output-category={mcpTool ? 'mcp_tool' : 'tool_use'} data-event-id={use.id} aria-expanded={useExpanded}
       className={cn('group relative grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
         animate && 'motion-safe:animate-row-in', useHidden && 'hidden')}>
-      <Gutter event={use} label={mcpTool ? 'mcp_tool' : 'tool_use'} tone={mcpTool ? 'text-violet' : KIND_TONE.tool_use}
+      <Gutter event={use} label={mcpTool ? 'mcp_tool' : 'tool_use'} tone={mcpTool ? 'text-orange-300' : KIND_TONE.tool_use}
         expandable expanded={useExpanded} onToggle={() => onToggle(use.id)} />
       <span className="min-w-0">
         <ToolUseContent event={use} expanded={useExpanded} onToggle={onToggle} />
@@ -760,7 +765,7 @@ const EventRow = memo(function EventRow({ event, expanded, hidden, copied, anima
 }): JSX.Element {
   const uncommitted = event.kind === 'did_not_commit'
   const tool = event.category === 'tool_use'
-  const mcpTool = tool && (/^mcp(?:__|[_ -])/i.test(event.text.split('\n', 1)[0]) || event.text.split('\n', 1)[0].includes('/'))
+  const mcpTool = isMcpTool(event)
   const toolResult = event.category === 'tool_result' || event.id.startsWith('tool-result:')
   const lines = toolResult ? CLAMP_LINES.tool_result : CLAMP_LINES[event.category]
   const prose = PROSE[event.category]
@@ -770,7 +775,7 @@ const EventRow = memo(function EventRow({ event, expanded, hidden, copied, anima
       className={cn('group relative grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
         animate && 'motion-safe:animate-row-in', hidden && 'hidden')}>
       <Gutter event={event} label={mcpTool ? 'mcp_tool' : CATEGORY_LABEL[event.category]}
-        tone={uncommitted ? 'text-warn' : mcpTool ? 'text-violet' : KIND_TONE[event.category]}
+        tone={uncommitted ? 'text-warn' : mcpTool ? 'text-orange-300' : KIND_TONE[event.category]}
         expandable={expandable} expanded={expanded} onToggle={() => onToggle(event.id)} />
       {tool ? <ToolUseContent event={event} expanded={expanded} onToggle={onToggle} /> :
         <span className={cn('min-w-0', event.category === 'message' && 'block border-l-2 border-accent/50 py-0.5 pl-3')}>

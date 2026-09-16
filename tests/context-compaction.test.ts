@@ -141,6 +141,24 @@ test.each(['codex', 'opencode'] as const)('%s compacts the saved session through
     expect(requests.some((request) => request.method === 'turn/start')).toBe(false)
     expect(events.filter((event) => event.type === 'output' && event.event.text === CONTEXT_COMPACTED)).toHaveLength(1)
   } else {
+    expect(requests.some((request) => request.method === 'session/load')).toBe(true)
     expect(requests.find((request) => request.method === 'session/prompt').params.prompt).toEqual([{ type: 'text', text: '/compact' }])
   }
+})
+
+test('OpenCode compacts a saved session even when it does not advertise the compact command', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'anvil-compact-'))
+  onTestCleanup(() => rm(directory, { recursive: true, force: true }))
+  const transcript = join(directory, 'requests.jsonl')
+  const args = [resolve('tests/fixtures/opencode-acp.cjs'), 'compact-unadvertised', transcript]
+  const turn = { ...input(), cwd: directory, model: 'provider/model', resumeSessionId: 'session-test' }
+  const client = new OpenCodeAcpClient({ command: process.execPath, args })
+  onTestCleanup(() => client.close())
+  const events: TaskEvent[] = []
+  const compacted = await client.compact(turn, (event) => events.push(event))
+  expect(compacted.status, compacted.error).toBe('succeeded')
+  expect(events.filter((event) => event.type === 'context').at(-1)).toMatchObject({ contextUsed: 120, contextSize: 1000 })
+  const requests = (await readFile(transcript, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
+  expect(requests.some((request) => request.method === 'session/load')).toBe(true)
+  expect(requests.find((request) => request.method === 'session/prompt').params.prompt).toEqual([{ type: 'text', text: '/compact' }])
 })

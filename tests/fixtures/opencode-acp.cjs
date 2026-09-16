@@ -111,7 +111,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     modelSelected = true
     respond(message.id, { configOptions: selectedConfig() })
   } else if (message.method === 'session/prompt') {
-    if (scenario === 'compact') {
+    if (scenario.startsWith('compact')) {
       if (message.params.prompt[0].text !== '/compact') process.exit(17)
       update({ sessionUpdate: 'usage_update', used: 120, size: 1000 })
       return respond(message.id, { stopReason: 'end_turn' })

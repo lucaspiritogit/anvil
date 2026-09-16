@@ -89,18 +89,37 @@ test('tool calls show a name and gray input, with one expandable result per call
   await expect(output.locator('[data-output-category]')).toHaveCount(4)
 })
 
-test('MCP tool calls have a violet type and retain their call details', async ({ page }) => {
+test('MCP tool calls have a light orange type and retain their call details', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&tools=1')
   const output = page.getByRole('log', { name: 'Task output' })
   await expect(output.locator('[data-output-category="tool_use"]')).toHaveCount(1)
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('fixture:output', { detail: {
     id: 'tool-use:mcp', taskId: 'output', ts: Date.now(), stream: 'stdout', kind: 'output',
-    category: 'tool_use', text: 'docs/search\nACP tool calls'
+    category: 'tool_use', text: 'anvil_browser_browser_open\nhttp://localhost:4173'
   } })))
   const tool = output.locator('[data-output-category="mcp_tool"]')
-  await expect(tool.getByText('mcp_tool', { exact: true })).toHaveClass(/text-violet/)
-  await expect(tool.getByText('docs/search', { exact: true })).toBeVisible()
-  await expect(tool.getByText('ACP tool calls', { exact: true })).toBeVisible()
+  await expect(tool.getByText('mcp_tool', { exact: true })).toHaveClass(/text-orange-300/)
+  await expect(tool.getByText('anvil_browser_browser_open', { exact: true })).toBeVisible()
+  await expect(tool.getByText('http://localhost:4173', { exact: true })).toBeVisible()
+})
+
+test('shell commands and paths are not MCP tool calls', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=output&tools=1')
+  const output = page.getByRole('log', { name: 'Task output' })
+  await expect(output.locator('[data-output-category="tool_use"]')).toHaveCount(1)
+  const emit = (detail: TaskEvent) => page.evaluate((event) => {
+    window.dispatchEvent(new CustomEvent('fixture:output', { detail: event }))
+  }, detail)
+  await emit({
+    id: 'tool-use:shell-path', taskId: 'output', ts: Date.now(), stream: 'stdout', kind: 'output',
+    category: 'tool_use', text: 'npm run tests -- src/server/agents/output.ts'
+  })
+  await emit({
+    id: 'tool-result:shell-path', taskId: 'output', ts: Date.now(), stream: 'stdout', kind: 'output',
+    category: 'tool_result', text: 'passed'
+  })
+  await expect(output.locator('[data-output-category="tool_use"]')).toHaveCount(2)
+  await expect(output.locator('[data-output-category="mcp_tool"]')).toHaveCount(0)
 })
 
 test('partial message and thinking snapshots update existing rows', async ({ page }) => {

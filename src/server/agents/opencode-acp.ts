@@ -48,7 +48,6 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
     let cancelTimer: ReturnType<typeof setTimeout> | undefined
     let acceptingUpdates = false
     let sessionReady = false
-    let supportsCompact = false
     let rejectExecution: (error: Error) => void = () => {}
     const interrupted = new Promise<never>((_, reject) => { rejectExecution = reject })
     void interrupted.catch(() => {})
@@ -68,9 +67,6 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       diagnostic: (text) => output.line(text, 'error', 'stderr'),
       client: {
         sessionUpdate: async (notification) => {
-          if (notification.sessionId === sessionId && notification.update.sessionUpdate === 'available_commands_update') {
-            supportsCompact = notification.update.availableCommands.some((command) => command.name === 'compact')
-          }
           if (acceptingUpdates && notification.sessionId === sessionId) {
             input.onStarted?.()
             output.update(notification.update)
@@ -103,9 +99,6 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
         output.line(`$ ${command} ${(this.options.args ?? OPEN_CODE_ACP_ARGS).join(' ')}`, 'system', 'system')
         const server: OpenCodeAcpConnection = new OpenCodeAcpConnection(this.options.workspace?.home ?? this.options.serverCwd ?? input.cwd, this.options, {
           sessionUpdate: async (notification) => {
-          if (notification.sessionId === sessionId && notification.update.sessionUpdate === 'available_commands_update') {
-            supportsCompact = notification.update.availableCommands.some((command) => command.name === 'compact')
-          }
             for (const active of this.executions) {
               if (active.server() === server && active.session() === notification.sessionId) {
                 await active.client.sessionUpdate(notification)
@@ -190,7 +183,6 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       clearTimeout(startupTimer)
       input.signal?.throwIfAborted()
       input.beforeDispatch?.()
-      if (input.compactOnly && !supportsCompact) throw new Error('This OpenCode session does not advertise the compact command')
       sessionReady = true
       acceptingUpdates = true
       const response = await request(connection.rpc.prompt({ sessionId, prompt: [
