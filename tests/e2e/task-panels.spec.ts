@@ -78,10 +78,39 @@ test('completed quick tasks can commit their scoped changes or commit and push',
   await expect(page.getByRole('button', { name: 'Commit', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'More commit actions' }).click()
   await page.getByRole('menuitem', { name: 'Commit & Push' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Commit & Push', exact: true })
+  const message = dialog.getByRole('textbox', { name: 'Commit message', exact: true })
+  await expect(message).toHaveValue('Review sidebar changes')
+  await dialog.getByRole('button', { name: 'Generate commit message with Codex' }).click()
+  await expect(message).toHaveValue('fix: clamp output rows by measured truncation')
+  await message.fill('test: scoped quick commit')
+  await dialog.getByRole('button', { name: 'Commit & Push', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Commit', exact: true })).toHaveCount(0)
-  expect(await page.evaluate(() => (window as unknown as { lastQuickCommit: unknown }).lastQuickCommit)).toEqual({ taskId: 'review', push: true })
+  expect(await page.evaluate(() => (window as unknown as { lastQuickCommit: unknown }).lastQuickCommit)).toEqual({ taskId: 'review', push: true, message: 'test: scoped quick commit' })
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('combobox', { name: 'Changed file' })).toHaveValue('src/sidebar.ts')
+})
+
+test('quick commit modal drafts fail without losing the typed message', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=review&commitDraftFailure=1')
+  await page.evaluate(async () => {
+    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    useStore.setState((state) => ({
+      tasks: state.tasks.map((task) => task.id === 'review'
+        ? { ...task, style: 'quick', checkoutMode: 'local', reviewPaths: ['src/sidebar.ts'] }
+        : task)
+    }))
+  })
+  await page.getByRole('button', { name: 'Commit', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Commit task changes', exact: true })
+  const message = dialog.getByRole('textbox', { name: 'Commit message', exact: true })
+  await message.fill('Keep my message')
+  await dialog.getByRole('button', { name: 'Generate commit message with Codex' }).click()
+  await expect(dialog.getByRole('alert')).toHaveText('The agent could not draft a commit message.')
+  await expect(message).toHaveValue('Keep my message')
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(page.getByRole('dialog')).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Commit', exact: true })).toBeEnabled()
 })
 
 test('long task titles truncate to one line and the composer persists across panels', async ({ page }, testInfo) => {

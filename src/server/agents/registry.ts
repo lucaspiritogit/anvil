@@ -22,6 +22,7 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     command: 'opencode',
     args: ['acp'],
     executionProtocol: 'acp',
+    supportsSteering: true,
     supportsCompaction: true,
     defaultModel: 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
     models: { kind: 'adapter', adapterId: 'opencode' }

@@ -1,6 +1,7 @@
 import { isAbsolute } from 'node:path'
 import type { Client, SessionConfigOption } from '@agentclientprotocol/sdk'
 import type { AgentClientProtocol, TaskEvent, TaskInput, TaskResult } from './agent-client-protocol'
+import type { TaskSteeringInput } from './agent-executor'
 import { requireOpenCodeImageModel } from './opencode-models'
 import { AcpOutput } from './acp-output'
 import { OpenCodeAcpConnection, type OpenCodeAcpOptions } from './opencode-acp-connection'
@@ -9,8 +10,10 @@ import { OPEN_CODE_ACP_ARGS, requireWorkspaceOpenCodeModel } from './opencode-wo
 import { retryableAgentFailure } from './agent-failure'
 
 interface AcpExecution {
+  taskId: string
   server(): OpenCodeAcpConnection | undefined
   session(): string | undefined
+  steer(input: TaskSteeringInput): Promise<void>
   client: Client
   diagnostic(text: string): void
 }
@@ -34,6 +37,13 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
     if ([...this.executions].some((entry) => entry.session() === input.resumeSessionId)) throw new Error('This session already has an active turn')
     if (!input.resumeSessionId) throw new Error('Compaction requires a saved session')
     return this.execute({ ...input, compactOnly: true, resumeFallbackPrompt: undefined, images: undefined }, onEvent)
+  }
+
+  async steer(input: TaskSteeringInput): Promise<void> {
+    if (!input.message.trim()) throw new Error('A steering message needs some text')
+    const execution = [...this.executions].find((entry) => entry.taskId === input.taskId)
+    if (!execution) throw new Error('This task has no active OpenCode turn')
+    await execution.steer(input)
   }
 
   async execute(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult> {
@@ -62,9 +72,23 @@ export class OpenCodeAcpClient implements AgentClientProtocol {
       }
     }
     const execution: AcpExecution = {
+      taskId: input.taskId,
       server: () => connection,
       session: () => sessionId,
       diagnostic: (text) => output.line(text, 'error', 'stderr'),
+      steer: async (steering) => {
+        if (input.compactOnly || !acceptingUpdates || !connection || !sessionId || input.signal?.aborted) {
+          throw new Error('OpenCode is not ready for steering. Wait for an active turn and try again.')
+        }
+        if (steering.sessionId !== sessionId) throw new Error('The task session changed. Try sending again.')
+        // ACP answers session/prompt only once the session goes idle, so
+        // awaiting the response would block steering for the rest of the
+        // turn. OpenCode queues the message into the running turn and its
+        // updates stream through this execution's session routing.
+        void connection.rpc.prompt({ sessionId, prompt: [{ type: 'text', text: steering.message }] }).catch((failure) => {
+          if (acceptingUpdates) output.line(`Steering message failed: ${failure instanceof Error ? failure.message : String(failure)}`, 'error', 'system')
+        })
+      },
       client: {
         sessionUpdate: async (notification) => {
           if (acceptingUpdates && notification.sessionId === sessionId) {

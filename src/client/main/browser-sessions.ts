@@ -1,6 +1,6 @@
 import type { MouseInputEvent, Rectangle, WebContents, WebPreferences } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { BROWSER_VIEWPORTS, type BrowserObservationLayout, type BrowserObservationState, type BrowserViewport } from '../../shared/browser-observation'
+import { BROWSER_VIEWPORTS, clampBrowserZoom, type BrowserObservationLayout, type BrowserObservationState, type BrowserViewport } from '../../shared/browser-observation'
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
 const MAX_EXPRESSION_LENGTH = 20_000
@@ -178,11 +178,23 @@ export class BrowserSessionManager {
     for (const [taskId, candidate] of this.sessions) {
       if (taskId !== layout.taskId && !candidate.view.webContents.isDestroyed()) candidate.view.setVisible(false)
     }
+    const zoom = clampBrowserZoom(layout.zoom ?? 1)
+    if (layout.fit === false && session.viewport === 'desktop') {
+      session.view.webContents.setZoomFactor(zoom)
+      session.view.setBounds({
+        x: layout.bounds.x,
+        y: layout.bounds.y,
+        width: layout.bounds.width,
+        height: layout.bounds.height
+      })
+      session.view.setVisible(true)
+      return
+    }
     const viewport = BROWSER_VIEWPORTS[session.viewport]
     const scale = Math.min(1, layout.bounds.width / viewport.width, layout.bounds.height / viewport.height)
     const width = Math.max(1, Math.floor(viewport.width * scale))
     const height = Math.max(1, Math.floor(viewport.height * scale))
-    session.view.webContents.setZoomFactor(scale)
+    session.view.webContents.setZoomFactor(scale * zoom)
     session.view.setBounds({
       x: layout.bounds.x + Math.floor((layout.bounds.width - width) / 2),
       y: layout.bounds.y + Math.floor((layout.bounds.height - height) / 2),

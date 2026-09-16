@@ -229,6 +229,26 @@ test('handles ACP sessions, output, permissions, recovery and cancellation', asy
     expect((await client('success').execute({ ...input, cwd: join(directory, 'missing') }, () => {})).status).toBe('failed')
     expect((await client('success').execute({ ...input, cwd: '.' }, () => {})).error!).toMatch(/absolute/)
 
+    const steeringClient = client('steer')
+    let steeringReady!: () => void
+    const steeringTurn = new Promise<void>((resolve) => { steeringReady = resolve })
+    const steeringExecution = steeringClient.execute(input, (event) => {
+      if (event.type === 'output' && event.event.text === 'Waiting for steering\n') steeringReady()
+    })
+    await steeringTurn
+    const steering = { taskId: input.taskId, sessionId: 'session-test', message: 'Adjust validation' }
+    await expect(steeringClient.steer({ ...steering, taskId: 'other-task' })).rejects.toThrow(/no active/)
+    await expect(steeringClient.steer({ ...steering, sessionId: 'old-session' })).rejects.toThrow(/session changed/)
+    await expect(steeringClient.steer({ ...steering, message: ' ' })).rejects.toThrow(/needs some text/)
+    await steeringClient.steer(steering)
+    const steered = await steeringExecution
+    expect(steered.status, steered.error).toBe('succeeded')
+    expect(steered.output, 'The queued steering message joins the active turn').toBe('Waiting for steering\nSteered\n')
+    await expect(steeringClient.steer(steering)).rejects.toThrow(/no active/)
+    const steeringPrompts = (await requests()).filter((request) => request.method === 'session/prompt' && request.params.prompt[0].text === 'Adjust validation')
+    expect(steeringPrompts.length).toBe(1)
+    expect(steeringPrompts[0].params).toStrictEqual({ sessionId: 'session-test', prompt: [{ type: 'text', text: 'Adjust validation' }] })
+
     const manager = new AgentProcessManager(client('success'))
     onTestCleanup(async () => {
       await manager.close()
@@ -255,6 +275,21 @@ test('handles ACP sessions, output, permissions, recovery and cancellation', asy
     cancellationManager.cancelAll()
     expect(((await cancelledExit) as [ExitInfo])[0].cancelled).toBe(true)
     expect(cancellationManager.isRunning(input.taskId)).toBe(false)
+
+    const steeringManager = new AgentProcessManager(client('steer'))
+    onTestCleanup(async () => {
+      await steeringManager.close()
+      steeringManager.removeAllListeners()
+    })
+    const managerReady = new Promise<void>((resolve) => {
+      steeringManager.on('event', (event) => { if (event.text === 'Waiting for steering\n') resolve() })
+    })
+    const steeringExit = once(steeringManager, 'exit')
+    steeringManager.start({ ...input, agent: getAgent('opencode')! })
+    await managerReady
+    await steeringManager.steer({ taskId: input.taskId, sessionId: 'session-test', message: 'Adjust validation' })
+    expect(((await steeringExit) as [ExitInfo])[0].code).toBe(0)
+    await expect(steeringManager.steer({ taskId: input.taskId, sessionId: 'session-test', message: 'Adjust validation' })).rejects.toThrow(/no active/)
 
   } finally {
     await Promise.all(clients.map((executor) => executor.close()))

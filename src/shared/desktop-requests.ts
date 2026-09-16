@@ -26,7 +26,9 @@ function browserLayout(value: unknown): value is BrowserObservationLayout {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const input = value as Partial<BrowserObservationLayout>
   if (!text(input.taskId) || typeof input.visible !== 'boolean' || !input.bounds || typeof input.bounds !== 'object') return false
-  if (Object.keys(input).some((key) => !['taskId', 'visible', 'bounds'].includes(key))) return false
+  if (Object.keys(input).some((key) => !['taskId', 'visible', 'bounds', 'zoom', 'fit'].includes(key))) return false
+  if (input.zoom !== undefined && (typeof input.zoom !== 'number' || !Number.isFinite(input.zoom) || input.zoom < 0.25 || input.zoom > 4)) return false
+  if (input.fit !== undefined && typeof input.fit !== 'boolean') return false
   if (Object.keys(input.bounds).some((key) => !['x', 'y', 'width', 'height'].includes(key))) return false
   const validCoordinates = ['x', 'y', 'width', 'height'].every((key) => {
     const coordinate = input.bounds?.[key as keyof BrowserObservationLayout['bounds']]

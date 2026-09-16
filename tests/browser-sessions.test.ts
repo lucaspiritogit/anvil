@@ -102,6 +102,34 @@ test('places isolated task browsers inside the renderer-provided output pane', a
   expect(fixture.changes).toContainEqual({ taskId: 'task-a', open: false, viewport: 'mobile' })
 })
 
+test('places adaptive and zoomed layouts in the renderer-provided output pane', async () => {
+  const fixture = browserFixture()
+  await fixture.manager.open('task-a', 'First', 'http://127.0.0.1:4173/')
+  const bounds = { x: 500, y: 120, width: 640, height: 700 }
+
+  fixture.manager.layout({ taskId: 'task-a', visible: true, bounds, fit: false })
+  expect(fixture.views[0].webContents.setZoomFactor).toHaveBeenLastCalledWith(1)
+  expect(fixture.views[0].setBounds).toHaveBeenLastCalledWith(bounds)
+
+  fixture.manager.layout({ taskId: 'task-a', visible: true, bounds, fit: false, zoom: 1.5 })
+  expect(fixture.views[0].webContents.setZoomFactor).toHaveBeenLastCalledWith(1.5)
+  expect(fixture.views[0].setBounds).toHaveBeenLastCalledWith(bounds)
+
+  fixture.manager.layout({ taskId: 'task-a', visible: true, bounds, fit: false, zoom: 99 })
+  expect(fixture.views[0].webContents.setZoomFactor).toHaveBeenLastCalledWith(2)
+
+  fixture.manager.layout({ taskId: 'task-a', visible: true, bounds, fit: true, zoom: 2 })
+  expect(fixture.views[0].webContents.setZoomFactor).toHaveBeenLastCalledWith(1)
+  expect(fixture.views[0].setBounds).toHaveBeenLastCalledWith({ x: 500, y: 270, width: 640, height: 400 })
+
+  fixture.manager.viewport('task-a', 'mobile')
+  fixture.manager.layout({ taskId: 'task-a', visible: true, bounds, fit: false, zoom: 1.5 })
+  expect(fixture.views[0].webContents.setZoomFactor).toHaveBeenLastCalledWith(expect.closeTo((700 / 844) * 1.5, 5))
+  expect(fixture.views[0].setBounds).toHaveBeenLastCalledWith({ x: 658, y: 120, width: 323, height: 700 })
+
+  fixture.manager.closeAll()
+})
+
 test('exposes browser actions through a turn-scoped MCP connection', async () => {
   const fixture = browserFixture()
   const server = new BrowserToolServer(fixture.manager)

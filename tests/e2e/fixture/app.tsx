@@ -71,7 +71,8 @@ if (query.has('steering')) {
     ...task, sessionId: query.has('noSession') ? undefined : 'latest-session', model: 'task-model',
     ...(query.has('pending') ? { status: 'pending', deliveryStatus: 'agent_failed' } : {}),
     ...(query.has('running') ? { status: 'running', deliveryStatus: 'working', endedAt: undefined } : {}),
-    ...(query.has('unsupported') ? { agentId: 'opencode', agentLabel: 'OpenCode' } : {})
+    ...(query.has('unsupported') ? { agentId: 'legacy-cli', agentLabel: 'Legacy CLI' } : {}),
+    ...(query.has('agent') ? { agentId: query.get('agent')!, agentLabel: query.get('agent')! } : {})
   } : task)
 }
 if (query.has('cancelled')) {
@@ -488,9 +489,9 @@ window.anvil = {
     onInitFailed: (handler: (message: string) => void) => subscribeReadiness((value) => { if (!value.ok) handler(value.message) })
   },
   browser: {
-    state: async (taskId) => ({ taskId, open: false, viewport: 'desktop' }),
+    state: async (taskId) => ({ taskId, open: query.has('browser'), viewport: 'desktop' }),
     layout: async () => {},
-    viewport: async ({ taskId, viewport }) => ({ taskId, open: false, viewport }),
+    viewport: async ({ taskId, viewport }) => ({ taskId, open: query.has('browser'), viewport }),
     onChanged: () => noop
   },
   ...(query.has('electron') ? {
@@ -601,7 +602,8 @@ window.anvil = {
     onModelsChanged: () => () => {},
     list: async () => [
       { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5', supportsSteering: true, supportsCompaction: true },
-      { id: 'opencode', label: 'OpenCode', description: 'OpenCode agent', command: 'opencode', args: [], defaultModel: 'provider/model' }
+      { id: 'opencode', label: 'OpenCode', description: 'OpenCode agent', command: 'opencode', args: [], defaultModel: 'provider/model', supportsSteering: true, supportsCompaction: true },
+      { id: 'legacy-cli', label: 'Legacy CLI', description: 'Legacy CLI agent', command: 'legacy', args: [], defaultModel: 'legacy-model' }
     ],
     models: async (agentId: string): Promise<ProviderModelList> => query.has('composerModel') ? {
       agentId, models: [query.get('composerModel')!], reasoningByModel: {
@@ -943,7 +945,15 @@ window.anvil = {
     },
     commitQuick: async (input) => {
       window.dispatchEvent(new CustomEvent('fixture:quick-commit', { detail: input }))
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      if (query.has('quickCommitFailure')) throw new Error('The task files no longer have changes to commit')
       return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', headCommit: 'quick-commit', reviewedAt: Date.now() })
+    },
+    draftCommitMessage: async (input) => {
+      window.dispatchEvent(new CustomEvent('fixture:commit-draft', { detail: input }))
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      if (query.has('commitDraftFailure')) throw new Error('The agent could not draft a commit message.')
+      return 'fix: clamp output rows by measured truncation'
     },
     approveIssue: async ({ taskId }: { taskId: string; issueId: string; headCommit: string | null }) => {
       window.dispatchEvent(new CustomEvent('fixture:issue-approval', { detail: { taskId } }))

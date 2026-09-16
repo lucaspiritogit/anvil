@@ -1,8 +1,8 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { Icon } from '../icons'
 import type { PullRequestField, PullRequestInfo, PullRequestPreview, Task } from '@shared/types'
 import { btn, cn, field, modal } from '../ui'
+import { AiGenerateButton } from './AiGenerateButton'
 
 export function OpenPullRequestModal({ task, onClose }: { task: Task; onClose: () => void }): JSX.Element {
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -32,22 +32,26 @@ export function OpenPullRequestModal({ task, onClose }: { task: Task; onClose: (
     }
   }, [task.id])
 
-  const generate = async (field: PullRequestField): Promise<void> => {
-    if (inFlight.current) return
-    inFlight.current = true
-    setBusy(field)
-    setError(null)
-    try {
-      const draft = await window.anvil.github.draftField({ taskId: task.id, field, title, description })
-      if (field === 'title') setTitle(draft)
-      else setDescription(draft)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error))
-    } finally {
-      inFlight.current = false
-      setBusy(null)
-    }
-  }
+  const generate = (field: PullRequestField): Promise<string> =>
+    window.anvil.github.draftField({ taskId: task.id, field, title, description })
+
+  const sparkles = (field: PullRequestField): JSX.Element => (
+    <AiGenerateButton
+      noun={`PR ${field}`}
+      agentLabel={task.agentLabel}
+      disabled={busy !== null}
+      generate={() => generate(field)}
+      onGenerated={(draft) => {
+        if (field === 'title') setTitle(draft)
+        else setDescription(draft)
+      }}
+      onError={setError}
+      onBusyChange={(active) => {
+        if (active) setError(null)
+        setBusy(active ? field : null)
+      }}
+    />
+  )
 
   const open = async (): Promise<void> => {
     if (!preview || inFlight.current) return
@@ -64,25 +68,13 @@ export function OpenPullRequestModal({ task, onClose }: { task: Task; onClose: (
     }
   }
 
-  const sparkles = (field: PullRequestField): JSX.Element => (
-    <button
-      className={cn(btn.ghost, 'shrink-0 self-start p-2')}
-      aria-label={`Generate PR ${field} with ${task.agentLabel}`}
-      title={`Let ${task.agentLabel} write the ${field}`}
-      disabled={busy !== null}
-      onClick={() => void generate(field)}
-    >
-      <Icon icon="sparkles" size={18} className={busy === field ? 'animate-pulse' : ''} />
-    </button>
-  )
-
   return (
     <dialog
       ref={dialogRef}
       aria-labelledby="open-pr-title"
       aria-describedby="open-pr-description"
       className={cn(modal.panel, modal.width.normal, 'm-auto text-fg backdrop:bg-black/55')}
-      onCancel={(event) => { event.preventDefault(); if (!inFlight.current) onClose() }}
+      onCancel={(event) => { event.preventDefault(); if (!inFlight.current && busy === null) onClose() }}
     >
       <h2 id="open-pr-title" className={modal.title}>{result ? result.existing ? 'PR already open' : 'Pull request created' : 'Open PR'}</h2>
       {result ? <>

@@ -1,18 +1,37 @@
-import type { JSX } from 'react'
+import type { JSX, PointerEvent as ReactPointerEvent } from 'react'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Task, TaskEvent, TaskEventCategory } from '@shared/types'
 import { TASK_EVENT_CATEGORIES } from '@shared/types'
 import type { taskIssuePresentation } from '@shared/task-issue-presentation'
-import { BROWSER_VIEWPORTS, type BrowserViewport } from '@shared/browser-observation'
+import { BROWSER_VIEWPORTS, BROWSER_ZOOM_LEVELS, type BrowserViewport } from '@shared/browser-observation'
 import { taskStyle } from '@shared/task-style'
 import { useStore } from '../state/store'
 import { btn, cn } from '../ui'
 import { Icon } from '../icons'
 import { TaskActivity } from './TaskActivity'
+import { CommitQuickTaskModal } from './CommitQuickTaskModal'
 
 const PLACEHOLDER = 'py-8 text-center text-dim'
 const BROWSER_HEADER_HEIGHT = 32
-const BROWSER_MAX_WIDTH_RATIO = 0.48
+const BROWSER_DEFAULT_WIDTH_RATIO = 0.48
+const BROWSER_MIN_WIDTH_RATIO = 0.2
+const BROWSER_RATIO_STORAGE_KEY = 'anvil.browser-pane-ratio'
+
+function clampBrowserRatio(value: number): number {
+  return Math.min(1, Math.max(BROWSER_MIN_WIDTH_RATIO, value))
+}
+
+function loadBrowserRatio(): number {
+  try {
+    const stored = Number(window.localStorage.getItem(BROWSER_RATIO_STORAGE_KEY))
+    if (Number.isFinite(stored) && stored > 0) return clampBrowserRatio(stored)
+  } catch {}
+  return BROWSER_DEFAULT_WIDTH_RATIO
+}
+
+function storeBrowserRatio(value: number): void {
+  try { window.localStorage.setItem(BROWSER_RATIO_STORAGE_KEY, String(value)) } catch {}
+}
 
 type Direction = 'initial' | 'latest' | 'older'
 type Anchor = { id: string; offset: number }
@@ -27,7 +46,8 @@ function QuickCommitActions({ task }: { task: Task }): JSX.Element | null {
   const toggleRef = useRef<HTMLButtonElement>(null)
   const menuItemRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState<'commit' | 'push' | null>(null)
+  const [modal, setModal] = useState<{ push: boolean } | null>(null)
+  const [busy, setBusy] = useState<'push' | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -42,19 +62,6 @@ function QuickCommitActions({ task }: { task: Task }): JSX.Element | null {
 
   const quickLocal = taskStyle(task) === 'quick' && task.checkoutMode === 'local'
   if (!quickLocal || !['reviewable', 'approved'].includes(task.deliveryStatus)) return null
-
-  const commit = async (push: boolean): Promise<void> => {
-    setOpen(false)
-    setBusy(push ? 'push' : 'commit')
-    setError('')
-    try {
-      await window.anvil.tasks.commitQuick({ taskId: task.id, push })
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure))
-    } finally {
-      setBusy(null)
-    }
-  }
 
   const push = async (): Promise<void> => {
     setBusy('push')
@@ -74,40 +81,42 @@ function QuickCommitActions({ task }: { task: Task }): JSX.Element | null {
     {task.deliveryStatus === 'approved' ? <button className={cn(btn.primary, 'bg-ok py-1 text-xs')} disabled={busy !== null} onClick={() => void push()}>
       {busy === 'push' ? 'Pushing…' : 'Push'}
     </button> :
-    <div
-      ref={rootRef}
-      className="relative inline-flex shrink-0"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape' && open) {
-          event.preventDefault()
-          setOpen(false)
-          toggleRef.current?.focus()
-        }
-      }}
-    >
-      <button className={cn(btn.primary, 'bg-ok py-1 text-xs')} disabled={busy !== null} onClick={() => void commit(false)}>
-        {busy === 'commit' ? 'Committing…' : 'Commit'}
-      </button>
-      <button
-        ref={toggleRef}
-        className={cn(btn.primary, 'border-l border-canvas/25 bg-ok px-2 py-1')}
-        disabled={busy !== null}
-        aria-label="More commit actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+    <>
+      <div
+        ref={rootRef}
+        className="relative inline-flex shrink-0"
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && open) {
+            event.preventDefault()
+            setOpen(false)
+            toggleRef.current?.focus()
+          }
+        }}
       >
-        <Icon icon="chevron-down" size={14} aria-hidden="true" />
-      </button>
-      {open && <div role="menu" aria-label="Commit actions" className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full border border-line bg-raised p-1 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-        <button ref={menuItemRef} role="menuitem" className="block w-full px-3 py-2 text-left font-medium whitespace-nowrap text-fg hover:bg-hover focus:bg-hover focus:outline-none" onClick={() => void commit(true)}>
-          Commit &amp; Push
+        <button className={cn(btn.primary, 'bg-ok py-1 text-xs')} onClick={() => setModal({ push: false })}>
+          Commit
         </button>
-      </div>}
-    </div>}
+        <button
+          ref={toggleRef}
+          className={cn(btn.primary, 'border-l border-canvas/25 bg-ok px-2 py-1')}
+          aria-label="More commit actions"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Icon icon="chevron-down" size={14} aria-hidden="true" />
+        </button>
+        {open && <div role="menu" aria-label="Commit actions" className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full border border-line bg-raised p-1 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+          <button ref={menuItemRef} role="menuitem" className="block w-full px-3 py-2 text-left font-medium whitespace-nowrap text-fg hover:bg-hover focus:bg-hover focus:outline-none" onClick={() => { setOpen(false); setModal({ push: true }) }}>
+            Commit &amp; Push
+          </button>
+        </div>}
+      </div>
+      {modal && <CommitQuickTaskModal task={task} push={modal.push} onClose={() => setModal(null)} />}
+    </>}
   </div>
 }
 
@@ -293,7 +302,7 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
   }, [])
 
   return (
-    <section id="task-panel-output" aria-label="Output" className={cn('flex flex-1 min-h-0 min-w-0', !visible && 'hidden')}>
+    <section id="task-panel-output" aria-label="Output" className={cn('relative flex flex-1 min-h-0 min-w-0', !visible && 'hidden')}>
       <div className="flex flex-1 min-h-0 min-w-0 flex-col">
         <nav aria-label="Output history" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-5 py-1.5 text-xs">
           <span role="status" className="text-dim">{history?.loading ? 'Loading output…' : history?.loaded ? `${filtering ? `${visibleCount} of ` : ''}${events?.length ?? 0} events · ${history.followingLatest ? 'Latest' : 'History'}` : ''}</span>
@@ -392,9 +401,17 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
 function BrowserObservationPane({ taskId, visible }: { taskId: string; visible: boolean }): JSX.Element | null {
   const [open, setOpen] = useState(false)
   const [viewport, setViewport] = useState<BrowserViewport>('desktop')
+  const [ratio, setRatio] = useState(loadBrowserRatio)
+  const [expanded, setExpanded] = useState(false)
+  const [fit, setFit] = useState(false)
+  const [zoom, setZoom] = useState(1)
+  const [dragging, setDragging] = useState(false)
   const [paneSize, setPaneSize] = useState<{ width: number; height: number } | null>(null)
+  const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null)
   const paneRef = useRef<HTMLElement>(null)
   const frameRef = useRef<HTMLDivElement>(null)
+
+  const fitted = viewport === 'mobile' || fit
 
   useEffect(() => {
     let active = true
@@ -422,13 +439,13 @@ function BrowserObservationPane({ taskId, visible }: { taskId: string; visible: 
   useLayoutEffect(() => {
     const pane = paneRef.current
     const container = pane?.parentElement
-    if (!open || !visible || !pane || !container) {
+    if (!open || !visible || !pane || !container || !fitted) {
       setPaneSize(null)
       return
     }
     const dimensions = BROWSER_VIEWPORTS[viewport]
     const measure = (): void => {
-      const maximumWidth = Math.floor(container.clientWidth * BROWSER_MAX_WIDTH_RATIO)
+      const maximumWidth = Math.floor(container.clientWidth * (expanded ? 1 : ratio))
       const maximumHeight = container.clientHeight - BROWSER_HEADER_HEIGHT
       if (maximumWidth < 1 || maximumHeight < 1) return
       const scale = Math.min(1, maximumWidth / dimensions.width, maximumHeight / dimensions.height)
@@ -442,31 +459,37 @@ function BrowserObservationPane({ taskId, visible }: { taskId: string; visible: 
     const observer = new ResizeObserver(measure)
     observer.observe(container)
     return () => observer.disconnect()
-  }, [open, viewport, visible])
+  }, [open, viewport, visible, fitted, ratio, expanded])
 
   useLayoutEffect(() => {
     const frame = frameRef.current
-    const hidden = { taskId, visible: false, bounds: { x: 0, y: 0, width: 0, height: 0 } }
+    const hidden: Parameters<typeof window.anvil.browser.layout>[0] = { taskId, visible: false, bounds: { x: 0, y: 0, width: 0, height: 0 } }
     const place = (layout: Parameters<typeof window.anvil.browser.layout>[0]): void => {
       void window.anvil.browser.layout(layout).catch(() => {})
     }
-    if (!open || !visible || !frame) {
+    if (!open || !visible || !frame || dragging) {
       place(hidden)
+      setFrameSize(null)
       return
     }
     let animationFrame = 0
     const measure = (): void => {
       animationFrame = 0
       const bounds = frame.getBoundingClientRect()
+      const width = Math.max(0, Math.round(Math.min(bounds.width, window.innerWidth - bounds.x)))
+      const height = Math.max(0, Math.round(Math.min(bounds.height, window.innerHeight - bounds.y)))
+      setFrameSize((current) => current?.width === width && current.height === height ? current : { width, height })
       place({
         taskId,
-        visible: bounds.width >= 1 && bounds.height >= 1,
+        visible: width >= 1 && height >= 1,
         bounds: {
           x: Math.max(0, Math.round(bounds.x)),
           y: Math.max(0, Math.round(bounds.y)),
-          width: Math.max(0, Math.round(Math.min(bounds.width, window.innerWidth - bounds.x))),
-          height: Math.max(0, Math.round(Math.min(bounds.height, window.innerHeight - bounds.y)))
-        }
+          width,
+          height
+        },
+        zoom,
+        fit: fitted
       })
     }
     const schedule = (): void => {
@@ -482,21 +505,86 @@ function BrowserObservationPane({ taskId, visible }: { taskId: string; visible: 
       window.removeEventListener('resize', schedule)
       place(hidden)
     }
-  }, [open, taskId, viewport, visible])
+  }, [open, taskId, viewport, visible, zoom, fitted, dragging])
 
   if (!open) return null
   const dimensions = BROWSER_VIEWPORTS[viewport]
   const nextViewport = viewport === 'desktop' ? 'mobile' : 'desktop'
+  const fitScale = fitted && paneSize ? paneSize.width / dimensions.width : 1
+  const sizeLabel = fitted
+    ? `${dimensions.width} × ${dimensions.height}${fitScale < 1 ? ` · ${Math.round(fitScale * 100)}%` : ''}`
+    : frameSize ? `${frameSize.width} × ${frameSize.height}` : `${dimensions.width} × ${dimensions.height}`
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    event.preventDefault()
+    const container = paneRef.current?.parentElement
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    setDragging(true)
+    const move = (e: PointerEvent): void => {
+      setRatio(clampBrowserRatio((rect.right - e.clientX) / rect.width))
+    }
+    const up = (e: PointerEvent): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      const next = clampBrowserRatio((rect.right - e.clientX) / rect.width)
+      setRatio(next)
+      storeBrowserRatio(next)
+      setDragging(false)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  const stepZoom = (direction: 1 | -1): void => {
+    setZoom((current) => {
+      const index = BROWSER_ZOOM_LEVELS.indexOf(current)
+      const next = (index === -1 ? BROWSER_ZOOM_LEVELS.length - 1 : index) + direction
+      return BROWSER_ZOOM_LEVELS[Math.min(BROWSER_ZOOM_LEVELS.length - 1, Math.max(0, next))]
+    })
+  }
+
   return (
-    <section ref={paneRef} aria-label="Agent browser" style={paneSize ? { width: paneSize.width, height: paneSize.height + BROWSER_HEADER_HEIGHT } : undefined}
-      className={cn('flex min-h-0 shrink-0 self-start flex-col overflow-hidden border-l border-line', !paneSize && 'h-full w-[48%]')}>
+    <section ref={paneRef} aria-label="Agent browser"
+      style={expanded ? undefined : fitted
+        ? paneSize ? { width: paneSize.width, height: paneSize.height + BROWSER_HEADER_HEIGHT } : undefined
+        : { width: `${ratio * 100}%` }}
+      className={cn('flex min-h-0 shrink-0 flex-col overflow-hidden border-line bg-canvas',
+        expanded ? 'absolute inset-0 z-20 h-full w-full' : 'relative self-start border-l',
+        !expanded && !fitted && 'h-full self-stretch',
+        !expanded && fitted && !paneSize && 'h-full w-[48%]')}>
+      {!expanded && <div role="separator" aria-orientation="vertical" aria-label="Resize browser pane" title="Resize browser pane"
+        className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-accent/30"
+        onPointerDown={startResize} />}
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-3 text-[11px] font-medium text-dim">
-        <span>Browser</span>
-        <span>{dimensions.width} × {dimensions.height}</span>
-        <button className={cn(btn.ghost, 'ml-auto px-2 py-0.5 text-[11px]')} aria-label={`Switch browser to ${nextViewport} view`}
-          onClick={() => { void window.anvil.browser.viewport({ taskId, viewport: nextViewport }).catch(() => {}) }}>
-          {nextViewport === 'mobile' ? 'Mobile' : 'Desktop'}
-        </button>
+        <span className="shrink-0">Browser</span>
+        <span className="min-w-0 truncate tabular-nums">{sizeLabel}</span>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {viewport === 'desktop' && <button
+            className={cn(btn.ghost, 'px-1.5 py-0.5 text-[11px]', fitted && 'text-fg')}
+            aria-pressed={fitted}
+            title="Scale the fixed 1280 × 800 page to fit the pane"
+            onClick={() => setFit((value) => !value)}>
+            Fit
+          </button>}
+          <div role="group" aria-label="Browser zoom" className="flex items-center">
+            <button className={cn(btn.ghost, 'px-1.5 py-0.5 text-[11px] disabled:opacity-45')} aria-label="Zoom browser out"
+              disabled={zoom <= BROWSER_ZOOM_LEVELS[0]} onClick={() => stepZoom(-1)}>−</button>
+            <button className={cn(btn.ghost, 'px-1.5 py-0.5 text-[11px] tabular-nums')} aria-label="Reset browser zoom" title="Reset browser zoom"
+              onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+            <button className={cn(btn.ghost, 'px-1.5 py-0.5 text-[11px] disabled:opacity-45')} aria-label="Zoom browser in"
+              disabled={zoom >= BROWSER_ZOOM_LEVELS[BROWSER_ZOOM_LEVELS.length - 1]} onClick={() => stepZoom(1)}>+</button>
+          </div>
+          <button className={cn(btn.ghost, 'px-1.5 py-0.5 text-[11px]')} aria-expanded={expanded}
+            title={expanded ? 'Restore the task output alongside the browser' : 'Expand the browser over the task output'}
+            onClick={() => setExpanded((value) => !value)}>
+            {expanded ? 'Restore' : 'Expand'}
+          </button>
+          <button className={cn(btn.ghost, 'px-2 py-0.5 text-[11px]')} aria-label={`Switch browser to ${nextViewport} view`}
+            onClick={() => { void window.anvil.browser.viewport({ taskId, viewport: nextViewport }).catch(() => {}) }}>
+            {nextViewport === 'mobile' ? 'Mobile' : 'Desktop'}
+          </button>
+        </div>
       </div>
       <div ref={frameRef} className="min-h-0 flex-1 bg-canvas" />
     </section>

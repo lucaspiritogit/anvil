@@ -3,6 +3,8 @@ import { TaskIssues } from '../tasks/task-issues'
 import type { HandlerRegistry } from '../handler-registry'
 import { randomUUID } from 'node:crypto'
 import { getAgent } from '../agents/registry'
+import { draftCommitMessage } from '../agents/commit-message-draft'
+import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { withTaskOperation } from '../tasks/operations'
 import { resumeTaskTurn } from '../tasks/resume'
 import { issueReworkPrompt, mergeConflictRepairPrompt, reviewPrompt } from '../agents/task-prompts'
@@ -409,10 +411,21 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     })
   })
 
-  ipc.handle('tasks:commit-quick', async ({ taskId, push }): Promise<Task> => {
+  ipc.handle('tasks:draft-commit-message', async ({ taskId, message }): Promise<string> => {
+    return withTaskOperation(store, taskId, 'draft', async (check) => {
+      const { task, project } = requireQuickTask(taskId)
+      const workspace = resolveTaskWorkspace(store, task.id)
+      const diff = await gitDelivery.getWorkingTreeDiff(project.path, task.reviewPaths!)
+      check()
+      requireQuickTask(taskId)
+      return await draftCommitMessage(agentProcesses, workspace, task, diff, message, store.getTaskExecution(taskId)?.reasoningEffort)
+    })
+  })
+
+  ipc.handle('tasks:commit-quick', async ({ taskId, push, message }): Promise<Task> => {
     return withTaskOperation(store, taskId, 'commit', async (check) => {
       const { task, project } = requireQuickTask(taskId)
-      const headCommit = await gitDelivery.commitPaths(project.path, task.reviewPaths!, task.title)
+      const headCommit = await gitDelivery.commitPaths(project.path, task.reviewPaths!, message?.trim() || task.title)
       check()
       const committed = store.updateTask(task.id, {
         deliveryStatus: 'approved',

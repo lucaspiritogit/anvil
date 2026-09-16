@@ -79,7 +79,8 @@ export interface IpcRequests {
   'tasks:merge-conflict-abort': { taskId: string; conflictId: string }
   'tasks:push-preview': string
   'tasks:push': { taskId: string; preview: TaskPushPreview }
-  'tasks:commit-quick': { taskId: string; push: boolean }
+  'tasks:commit-quick': { taskId: string; push: boolean; message?: string }
+  'tasks:draft-commit-message': { taskId: string; message: string }
   'tasks:approve-issue': { taskId: string; issueId: string; headCommit: string | null }
   'tasks:reject-issue': { taskId: string; issueId: string; headCommit: string | null; comment?: string }
   'comments:list': string

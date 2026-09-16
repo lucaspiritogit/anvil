@@ -116,6 +116,18 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       update({ sessionUpdate: 'usage_update', used: 120, size: 1000 })
       return respond(message.id, { stopReason: 'end_turn' })
     }
+    if (scenario === 'steer') {
+      if (!promptId) {
+        if (message.params.prompt[0].text !== 'Implement the issue') process.exit(11)
+        promptId = message.id
+        text('Waiting for steering\n')
+        return
+      }
+      if (message.params.prompt[0].text !== 'Adjust validation') process.exit(18)
+      text('Steered\n')
+      respond(message.id, { stopReason: 'end_turn' })
+      return respond(promptId, { stopReason: 'end_turn' })
+    }
     if (hasModeConfig && !planSelected) process.exit(14)
     promptId = message.id
     if (scenario === 'read-only-config-draft') {

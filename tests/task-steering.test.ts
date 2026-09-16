@@ -4,7 +4,7 @@ import { onTestCleanup } from './test-cleanup'
 import { join } from 'node:path'
 import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
 import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git'
-import { getAgent } from '../src/server/agents/registry'
+import { BUILTIN_AGENTS, getAgent } from '../src/server/agents/registry'
 import { registerTaskHandlers } from '../src/server/handlers/tasks'
 import { registerReviewHandlers } from '../src/server/handlers/review'
 import { registerSteeringHandlers } from '../src/server/handlers/steering'
@@ -48,7 +48,7 @@ test('serializes steering and comments through resume, completion and recovery',
       for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve))
     }
     expect(getAgent('codex')?.supportsSteering).toBe(true)
-    expect(!getAgent('opencode')?.supportsSteering).toBeTruthy()
+    expect(getAgent('opencode')?.supportsSteering).toBe(true)
     expect(() => call('tasks:steer', null)).toThrow(/Invalid IPC request/)
     expect(() => call('tasks:steer', { taskId: 'task', message: 42 })).toThrow(/Invalid IPC request/)
     await expect(steer('missing')).rejects.toThrow(/Task not found/)
@@ -124,8 +124,11 @@ test('serializes steering and comments through resume, completion and recovery',
     expect(store.getTaskExecution('reviewing')?.phase).toBe('reviewing')
     reviewTracker.close()
 
-    store.addTask({ ...finished, id: 'unsupported', agentId: 'opencode', status: 'running', deliveryStatus: 'working' })
+    const legacyAgent = { id: 'legacy-cli', label: 'Legacy CLI', description: 'Legacy CLI agent', command: 'legacy', args: [] }
+    BUILTIN_AGENTS.push(legacyAgent)
+    store.addTask({ ...finished, id: 'unsupported', agentId: 'legacy-cli', status: 'running', deliveryStatus: 'working' })
     await expect(steer('unsupported')).rejects.toThrow(/cannot accept input while running/)
+    BUILTIN_AGENTS.splice(BUILTIN_AGENTS.indexOf(legacyAgent), 1)
     store.updateTask('unsupported', { status: 'failed', deliveryStatus: 'agent_failed' })
     store.updateTask(task.id, { deliveryStatus: 'finalizing' })
     await expect(steer(task.id)).rejects.toThrow(/not finished/)

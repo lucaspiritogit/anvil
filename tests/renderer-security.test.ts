@@ -48,9 +48,15 @@ test('desktop IPC rejects secondary renderers and malformed shell inputs', async
   expect(handlers.get('desktop:browser-state')!(rendererEvent, 'task-a')).toEqual({ taskId: 'task-a', open: true, viewport: 'desktop' })
   const layout = { taskId: 'task-a', visible: true, bounds: { x: 500, y: 100, width: 600, height: 700 } }
   expect(handlers.get('desktop:browser-layout')!(rendererEvent, layout)).toEqual(layout)
+  const placed = { ...layout, zoom: 1.5, fit: false }
+  expect(handlers.get('desktop:browser-layout')!(rendererEvent, placed)).toEqual(placed)
   for (const malformed of [
     { ...layout, taskId: '' },
     { ...layout, visible: 'true' },
+    { ...layout, zoom: '1.5' },
+    { ...layout, zoom: 0 },
+    { ...layout, zoom: 10 },
+    { ...layout, fit: 'false' },
     { ...layout, bounds: { ...layout.bounds, width: -1 } },
     { ...layout, bounds: { ...layout.bounds, width: 0 } },
     { ...layout, bounds: { ...layout.bounds, x: 1.5 } },
