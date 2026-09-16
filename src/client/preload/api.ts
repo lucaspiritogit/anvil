@@ -218,6 +218,7 @@ export function createAnvilApi(url: string, host: ClientHost) {
         invoke('tasks:merge-conflict-abort', input),
       pushPreview: (taskId: string): Promise<TaskPushPreview> => invoke('tasks:push-preview', taskId),
       push: (input: IpcRequests['tasks:push']): Promise<Task> => invoke('tasks:push', input),
+      commitQuick: (input: IpcRequests['tasks:commit-quick']): Promise<Task> => invoke('tasks:commit-quick', input),
       approveIssue: (input: IpcRequests['tasks:approve-issue']): Promise<Task> => invoke('tasks:approve-issue', input),
       rejectIssue: (input: IpcRequests['tasks:reject-issue']): Promise<Task> => invoke('tasks:reject-issue', input),
       onEvent: (handler: (event: TaskEvent) => void): (() => void) =>

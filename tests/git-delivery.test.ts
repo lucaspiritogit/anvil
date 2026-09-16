@@ -435,3 +435,16 @@ test('ignored task files survive finalization, restart and manual rebase', async
   await restarted.releaseWorktree('ignored')
   expect(existsSync(task.cwd)).toBe(false)
 })
+
+test('commits only the paths attributed to a Quick task', async () => {
+  const { repo, manager } = await fixture()
+  await writeFile(join(repo, 'app', 'source.ts'), 'quick change\n')
+  await writeFile(join(repo, 'unrelated.ts'), 'unrelated change\n')
+  git(repo, 'add', 'unrelated.ts')
+
+  const commit = await manager.commitPaths(repo, ['app/source.ts'], 'Agent generated title')
+
+  expect(git(repo, 'show', '-s', '--format=%s', commit)).toBe('Agent generated title')
+  expect(git(repo, 'show', '--format=', '--name-only', commit)).toBe('app/source.ts')
+  expect(git(repo, 'diff', '--cached', '--name-only')).toBe('unrelated.ts')
+})

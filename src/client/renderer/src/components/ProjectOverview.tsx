@@ -2,6 +2,7 @@ import type { JSX } from 'react'
 import { useEffect } from 'react'
 import { useStore } from '../state/store'
 import { TaskComposer } from './TaskComposer'
+import { WorkspaceUsageLimits } from './WorkspaceUsageLimits'
 import { cn } from '../ui'
 import type { Project } from '@shared/types'
 
@@ -68,6 +69,7 @@ export function ProjectOverview({ project }: Props): JSX.Element {
         {project && <GitAlert project={project} />}
         <TaskComposer key={project?.id ?? 'no-project'} />
       </div>
+      <WorkspaceUsageLimits />
     </div>
   )
 }

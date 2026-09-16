@@ -15,12 +15,13 @@ test('shows remaining weekly Codex limits below the composer', async ({ page }, 
   await expect(limits).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   expect((await limits.boundingBox())!.y).toBeGreaterThan((await composer.boundingBox())!.y)
 
+  await page.getByRole('button', { name: 'Analytics', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Analytics', level: 1 })).toBeVisible()
+  await expect(limits).toHaveCount(0)
+
+  await page.goto('/tests/e2e/fixture/')
   await page.setViewportSize({ width: 390, height: 700 })
   await limits.scrollIntoViewIfNeeded()
   expect(await overview.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
-
-  await page.getByRole('button', { name: 'Analytics', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Analytics', level: 1 })).toBeVisible()
-  await expect(limits).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('codex-weekly-limit.png') })
 })

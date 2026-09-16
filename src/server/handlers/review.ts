@@ -11,6 +11,7 @@ import type { TaskExecution } from '../tasks/task-execution'
 import type { Project, Task, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview } from '../../shared/types'
 import type { MergeConflictResult } from '../git/types'
 import { isTaskSettled } from '../../shared/task-settlement'
+import { taskStyle } from '../../shared/task-style'
 
 interface ReviewHandlerDependencies extends TaskContext {
   recordSystemEvent: RecordSystemEvent
@@ -45,6 +46,18 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
     return { task, project, headCommit: task.headCommit }
+  }
+
+  const requireQuickTask = (taskId: string) => {
+    requireFinishedTask(taskId)
+    const task = store.getTask(taskId)
+    if (!task) throw new Error('Task not found')
+    if (taskStyle(task) !== 'quick' || task.checkoutMode !== 'local') throw new Error('Only local Quick tasks can be committed directly')
+    if (task.deliveryStatus !== 'reviewable') throw new Error('This Quick task is not awaiting review')
+    if (!task.reviewPaths?.length) throw new Error('This task has no delivered code')
+    const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
+    if (!project) throw new Error('Project not found')
+    return { task, project }
   }
 
   const requireMergeConflictTask = (taskId: string, conflictId: string) => {
@@ -393,6 +406,32 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       recordSystemEvent(taskId, `Pushed ${preview.targetBranch} at ${preview.targetCommit} to origin.`)
       send('task:updated', task)
       return task
+    })
+  })
+
+  ipc.handle('tasks:commit-quick', async ({ taskId, push }): Promise<Task> => {
+    return withTaskOperation(store, taskId, 'commit', async (check) => {
+      const { task, project } = requireQuickTask(taskId)
+      const headCommit = await gitDelivery.commitPaths(project.path, task.reviewPaths!, task.title)
+      check()
+      const committed = store.updateTask(task.id, {
+        deliveryStatus: 'approved',
+        headCommit,
+        reviewedAt: Date.now(),
+        deliveryError: undefined
+      })
+      if (!committed) throw new Error('Task was deleted')
+      recordSystemEvent(task.id, `Committed ${task.reviewPaths!.length} task file${task.reviewPaths!.length === 1 ? '' : 's'} as ${headCommit.slice(0, 8)}.`)
+      send('task:updated', committed)
+      if (push) {
+        const preview = await gitDelivery.getPushPreview(project.path, undefined, headCommit)
+        await gitDelivery.push(project.path, preview, headCommit, () => {
+          check(committed)
+          requireApprovedTask(task.id)
+        })
+        recordSystemEvent(task.id, `Pushed ${preview.targetBranch} at ${headCommit} to origin.`)
+      }
+      return committed
     })
   })
 

@@ -80,6 +80,19 @@ test('tool calls show a name and gray input, with one expandable result per call
   await expect(output.locator('[data-output-category]')).toHaveCount(4)
 })
 
+test('MCP tool calls have a violet type and retain their call details', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=output&tools=1')
+  const output = page.getByRole('log', { name: 'Task output' })
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('fixture:output', { detail: {
+    id: 'tool-use:mcp', taskId: 'output', ts: Date.now(), stream: 'stdout', kind: 'output',
+    category: 'tool_use', text: 'docs/search\nACP tool calls'
+  } })))
+  const tool = output.locator('[data-output-category="mcp_tool"]')
+  await expect(tool.getByText('mcp_tool', { exact: true })).toHaveClass(/text-violet/)
+  await expect(tool.getByText('docs/search', { exact: true })).toBeVisible()
+  await expect(tool.getByText('ACP tool calls', { exact: true })).toBeVisible()
+})
+
 test('partial message and thinking snapshots update existing rows', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&tools=1')
   const output = page.getByRole('log', { name: 'Task output' })

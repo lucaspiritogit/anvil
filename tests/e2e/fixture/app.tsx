@@ -928,6 +928,10 @@ window.anvil = {
       window.dispatchEvent(new CustomEvent('fixture:push', { detail: input }))
       return tasks.find((task) => task.id === input.taskId)!
     },
+    commitQuick: async (input) => {
+      window.dispatchEvent(new CustomEvent('fixture:quick-commit', { detail: input }))
+      return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', headCommit: 'quick-commit', reviewedAt: Date.now() })
+    },
     approveIssue: async ({ taskId }: { taskId: string; issueId: string; headCommit: string | null }) => {
       window.dispatchEvent(new CustomEvent('fixture:issue-approval', { detail: { taskId } }))
       await new Promise((resolve) => setTimeout(resolve, 100))

@@ -62,6 +62,7 @@ function setupIpc(
   const mergeCalls: unknown[][] = []
   const mergeConflictCalls: { operation: string; args: unknown[] }[] = []
   const pushCalls: unknown[][] = []
+  const commitPathCalls: unknown[][] = []
   const mergeState = {
     conflict: false,
     validationFailure: false,
@@ -117,6 +118,10 @@ function setupIpc(
       }
     },
     async push(...args: unknown[]) { pushCalls.push(args) },
+    async commitPaths(...args: unknown[]) {
+      commitPathCalls.push(args)
+      return '9'.repeat(40)
+    },
     async rebase(...args: unknown[]) {
       rebaseCalls.push(args)
       return { headCommit: 'rebased', filesChanged: 0, additions: 0, deletions: 0, commits: [] }
@@ -170,7 +175,7 @@ function setupIpc(
 
   return {
     databaseFile, taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses,
-    gitDelivery, delivery, rebaseCalls, mergeCalls, mergeConflictCalls, pushCalls, mergeState, memory,
+    gitDelivery, delivery, rebaseCalls, mergeCalls, mergeConflictCalls, pushCalls, commitPathCalls, mergeState, memory,
     credentials, client, call, tick,
     get prRefreshes() { return prRefreshes },
     get credentialRefreshes() { return credentialRefreshes }
@@ -541,7 +546,7 @@ test('rejects unsafe clone URLs and removes failed clone destinations', async ()
 })
 
 test('runs local Quick tasks directly without issue plans', async () => {
-  const { store, project, agentProcesses, delivery, call, tick } = setupIpc()
+  const { store, project, agentProcesses, delivery, call, tick, commitPathCalls } = setupIpc()
   const prepareBranch = vi.spyOn(delivery, 'prepareBranch')
   const getWorkingTreeDiff = vi.spyOn(delivery, 'getWorkingTreeDiff')
 
@@ -588,6 +593,9 @@ test('runs local Quick tasks directly without issue plans', async () => {
   expect(getWorkingTreeDiff).toHaveBeenLastCalledWith(project.path, ['src/quick.ts'])
   expect((await call('tasks:diff', quick.id)).patch).toContain('src/quick.ts')
   expect(prepareBranch).not.toHaveBeenCalled()
+  const committed: Task = await call('tasks:commit-quick', { taskId: quick.id, push: false })
+  expect(commitPathCalls).toEqual([[project.path, ['src/quick.ts'], quick.title]])
+  expect(committed).toMatchObject({ deliveryStatus: 'approved', headCommit: '9'.repeat(40) })
   call('tasks:settle', quick.id)
   expect(store.getTask(quick.id)?.settledAt).toBeTypeOf('number')
 })

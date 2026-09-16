@@ -10,7 +10,7 @@ export interface WorkingTreeDiff extends TaskDiff {
   deletions: number
 }
 
-function scopedPaths(repoPath: string, paths: string[]): string[] {
+export function scopedPaths(repoPath: string, paths: string[]): string[] {
   const root = resolve(repoPath)
   return [...new Set(paths.flatMap((path) => {
     if (!path || path.includes('\0')) return []

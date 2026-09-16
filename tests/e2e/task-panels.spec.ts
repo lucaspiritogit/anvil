@@ -57,7 +57,7 @@ test('quick tasks keep the Changes panel available', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
 })
 
-test('completed quick tasks render their review diff without branch delivery actions', async ({ page }) => {
+test('completed quick tasks can commit their scoped changes or commit and push', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const { useStore } = await import('/src/client/renderer/src/state/store.ts')
@@ -70,6 +70,16 @@ test('completed quick tasks render their review diff without branch delivery act
 
   await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0)
+  await page.evaluate(() => {
+    window.addEventListener('fixture:quick-commit', (event) => {
+      Object.assign(window, { lastQuickCommit: (event as CustomEvent).detail })
+    })
+  })
+  await expect(page.getByRole('button', { name: 'Commit', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'More commit actions' }).click()
+  await page.getByRole('menuitem', { name: 'Commit & Push' }).click()
+  await expect(page.getByRole('button', { name: 'Commit', exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => (window as unknown as { lastQuickCommit: unknown }).lastQuickCommit)).toEqual({ taskId: 'review', push: true })
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('combobox', { name: 'Changed file' })).toHaveValue('src/sidebar.ts')
 })

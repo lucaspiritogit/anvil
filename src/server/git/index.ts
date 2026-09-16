@@ -25,7 +25,7 @@ import { renameTaskBranch, restackBranch, finalizeBranch } from './task-branches
 import { rebase } from './rebase'
 import { getPullRequestPreview, pushPullRequestBranch } from './pull-requests'
 import { abortMergeConflict, completeMergeConflict, getMergeConflict, getMergePreview, getPushPreview, merge, push, saveMergeConflictFile, validateMergeConflict } from './merge'
-import { changedFiles, getDiff, getIssueDiff, getWorkingTreeDiff } from './diff'
+import { changedFiles, getDiff, getIssueDiff, getWorkingTreeDiff, scopedPaths } from './diff'
 
 export type { PreparedCheckout, RebasedBranch, FinalizeOptions, FinalizedCheckout, IssueDiffSource, MergeResult } from './types'
 
@@ -226,6 +226,20 @@ export class GitDeliveryManager {
 
   getWorkingTreeDiff(repoPath: string, paths: string[]) {
     return getWorkingTreeDiff(repoPath, paths)
+  }
+
+  commitPaths(repoPath: string, paths: string[], message: string): Promise<string> {
+    return withRepoLock(this.context, repoPath, async () => {
+      const scoped = scopedPaths(repoPath, paths)
+      if (!scoped.length) throw new Error('This task has no files to commit')
+      const pathspecs = scoped.map((path) => `./${path}`)
+      const env = { GIT_LITERAL_PATHSPECS: '1' }
+      await git(repoPath, ['add', '-A', '--', ...pathspecs], [0], env)
+      const staged = await git(repoPath, ['diff', '--cached', '--quiet', '--', ...pathspecs], [0, 1], env)
+      if (staged.exitCode === 0) throw new Error('The task files no longer have changes to commit')
+      await git(repoPath, ['commit', '--only', '-m', message, '--', ...pathspecs], [0], env)
+      return (await git(repoPath, ['rev-parse', 'HEAD'])).stdout.trim()
+    })
   }
 
   worktreeHead(taskId: string): string | null {
