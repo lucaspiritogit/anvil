@@ -1,7 +1,7 @@
 import type { Issue, Task, TaskComment, TaskExecutionState, TaskMergeConflict, TaskStyle } from '../../shared/types'
 
 const TOOLS = 'Use anvil_issue_tracker tools.'
-export const BROWSER_TOOL_INSTRUCTION = 'Use anvil_browser if the task requires a design decision or a component/interfaces needs to be tested.'
+export const BROWSER_TOOL_INSTRUCTION = 'Prefer anvil_browser to render UI changes for the user.'
 const FINISH_ISSUE = 'Commit finished work and call anvil_submit_review. Call anvil_block_issue if unfinished.'
 
 export function planningPrompt(task: string, _state: Pick<TaskExecutionState, 'projectPath' | 'parentIssueId'>): string {

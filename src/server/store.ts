@@ -6,7 +6,7 @@ import { resolveWorkspaceDirectory } from '../shared/app-data'
 import { normalizeWorkspaceName, readRootConfig, writeRootConfig, type RootConfig } from './root-config'
 import { TaskImageStorage } from './task-image-storage'
 import type { PullRequestMerged } from '../shared/github-pull-request-state'
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -1091,6 +1091,28 @@ export class Store {
         hasNewer: newest !== undefined && exists(gt(taskEvents.sequence, newest))
       }
     })
+  }
+
+  readTaskOutput(taskId: string, options: { cursor?: number; kinds?: string[]; limit: number; query?: string }): {
+    events: (TaskEvent & { sequence: number })[]
+    nextCursor: number | null
+  } {
+    if (!this.getTask(taskId)) return { events: [], nextCursor: null }
+    const { cursor = 0, kinds = [], limit, query } = options
+    const db = this.taskConnection(taskId).db
+    const kindFilter = kinds.length
+      ? or(inArray(taskEvents.kind, kinds as TaskEvent['kind'][]), inArray(taskEvents.category, kinds as TaskEvent['category'][]))
+      : undefined
+    const rows = db.select().from(taskEvents).where(and(
+      eq(taskEvents.taskId, taskId), gt(taskEvents.sequence, cursor), kindFilter,
+      query === undefined ? undefined : sql`instr(lower(${taskEvents.text}), lower(${query})) > 0`
+    )).orderBy(asc(taskEvents.sequence)).limit(limit + 1).all()
+    const hasMore = rows.length > limit
+    const page = hasMore ? rows.slice(0, limit) : rows
+    return {
+      events: page.map((row) => ({ ...toTaskEvent(row), sequence: row.sequence })),
+      nextCursor: hasMore ? page.at(-1)!.sequence : null
+    }
   }
 
   /** Select messages before applying the bound so tool traffic cannot crowd out the final summary. */

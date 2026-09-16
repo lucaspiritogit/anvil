@@ -189,7 +189,7 @@ test('enables task tools for server turns and releases them after success, failu
       expect(active.has(input.taskId)).toBe(true)
       expect(input.mcpServers?.[0].headers.Authorization).toBe(input.taskId)
       expect(input.mcpServers?.[1]).toMatchObject({ name: 'anvil_browser', required: false })
-      expect(input.prompt).toContain('Use anvil_browser if the task requires')
+      expect(input.prompt).toContain('Prefer anvil_browser to render UI changes for the user.')
       input.onStarted?.()
       if (input.prompt.startsWith('fail')) throw new Error('Transport failed')
       if (input.prompt.startsWith('cancel')) {

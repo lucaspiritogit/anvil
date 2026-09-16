@@ -38,7 +38,8 @@ import type { TailscaleConnection } from './tailscale'
 import { TaskBranches } from './tasks/task-branch'
 import type { HeadlessAccessMode } from '../shared/types'
 import { IssueToolServer } from './issue-tools/server'
-import type { BrowserCapabilityConnection } from './browser-host-client'
+import { BrowserHostClient, type BrowserCapabilityConnection } from './browser-host-client'
+import { RemoteBrowserHostTransport } from './remote-browser-host'
 
 export interface BrowserCapabilityProvider {
   open(taskId: string, title: string): Promise<BrowserCapabilityConnection>
@@ -67,6 +68,10 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   const broadcast = (channel: string, payload: unknown): void => {
     events.emit('event', channel, payload)
   }
+  const remoteBrowserTransport = new RemoteBrowserHostTransport((request) => broadcast('browser-host:request', request))
+  const remoteBrowserTools = new BrowserHostClient(remoteBrowserTransport)
+  ipc.handle('browser-host:register', (input, context) => remoteBrowserTransport.register(context.remoteAddress, input.addresses))
+  ipc.handle('browser-host:response', (response, context) => remoteBrowserTransport.receive(response, context.remoteAddress))
   const encryption = options.encryption ?? createCredentialEncryption(join(dataDirectory, 'credentials.key'))
   const store = new Store(join(dataDirectory, 'config.json'), {
     migrationsFolder: options.migrationsDirectory
@@ -90,10 +95,11 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   const openTaskTools = async (taskId: string, selection: { issueTracker: boolean } = { issueTracker: true }) => {
     const issueConnection = selection.issueTracker ? await issueTools.open(taskId) : undefined
     let browserConnection: BrowserCapabilityConnection | undefined
-    if (options.browserTools) {
+    const browserTools = options.browserTools ?? remoteBrowserTools
+    if (browserTools) {
       const task = store.getTask(taskId)
       try {
-        browserConnection = await options.browserTools.open(taskId, task?.title ?? 'Agent task')
+        browserConnection = await browserTools.open(taskId, task?.title ?? 'Agent task')
       } catch (error) {
         console.warn('Could not open browser tools for the agent turn:', error)
       }
@@ -273,6 +279,8 @@ export function createAnvilRuntime(options: RuntimeOptions) {
         Promise.resolve().then(() => closeModelDiscovery()),
         Promise.resolve().then(() => issueTools.close()),
         Promise.resolve().then(() => options.browserTools?.close()),
+        Promise.resolve().then(() => remoteBrowserTools.close()),
+        Promise.resolve().then(() => remoteBrowserTransport.close()),
         Promise.resolve().then(() => githubPolling.close()),
         Promise.resolve().then(() => projectMemory.close())
       ])

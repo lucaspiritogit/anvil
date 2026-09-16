@@ -114,9 +114,11 @@ test('exposes browser actions through a turn-scoped MCP connection', async () =>
   await client.connect(new StreamableHTTPClientTransport(new URL(connection.url), { requestInit: { headers: connection.headers } }))
   expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(['browser_open', 'browser_viewport']))
 
+  server.setRemoteHost('100.64.0.10')
   const opened = await client.callTool({ name: 'browser_open', arguments: { url: 'http://localhost:4173/' } })
   expect(opened.isError).not.toBe(true)
   expect(fixture.views).toHaveLength(1)
+  expect(fixture.views[0].webContents.currentUrl).toBe('http://100.64.0.10:4173/')
   const viewport = await client.callTool({ name: 'browser_viewport', arguments: { viewport: 'mobile' } })
   expect(viewport.isError).not.toBe(true)
   expect(fixture.manager.state('task-a').viewport).toBe('mobile')

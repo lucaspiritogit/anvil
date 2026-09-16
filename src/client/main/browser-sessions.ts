@@ -40,7 +40,7 @@ export interface BrowserSnapshot {
   }>
 }
 
-export function browserUrl(value: string): string {
+export function browserUrl(value: string, remoteHost?: string): string {
   if (value.length > 4_096) throw new Error('Browser URL is too long')
   let url: URL
   try {
@@ -48,8 +48,8 @@ export function browserUrl(value: string): string {
   } catch {
     throw new Error('Browser URL is invalid')
   }
-  if (!['http:', 'https:'].includes(url.protocol) || !LOOPBACK_HOSTS.has(url.hostname) || url.username || url.password) {
-    throw new Error('The agent browser only opens loopback HTTP or HTTPS URLs')
+  if (!['http:', 'https:'].includes(url.protocol) || (!LOOPBACK_HOSTS.has(url.hostname) && url.hostname !== remoteHost) || url.username || url.password) {
+    throw new Error('The agent browser only opens task-server HTTP or HTTPS URLs')
   }
   return url.href
 }
@@ -77,11 +77,16 @@ function textResult(value: unknown): unknown {
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, BrowserSession>()
+  private remoteHost?: string
 
   constructor(
     private readonly host: BrowserSessionViewHost,
     private readonly changed: (state: BrowserObservationState) => void = () => {}
   ) {}
+
+  setRemoteHost(host: string | undefined): void {
+    this.remoteHost = host
+  }
 
   private session(taskId: string): BrowserSession {
     const session = this.sessions.get(taskId)
@@ -104,7 +109,7 @@ export class BrowserSessionManager {
     const contents = view.webContents
     const allowedNavigation = (value: string): boolean => {
       try {
-        browserUrl(value)
+        browserUrl(value, this.remoteHost)
         return true
       } catch {
         return false
@@ -133,7 +138,7 @@ export class BrowserSessionManager {
   }
 
   async open(taskId: string, _title: string, urlValue: string): Promise<BrowserSnapshot> {
-    const url = browserUrl(urlValue)
+    const url = browserUrl(urlValue, this.remoteHost)
     let session = this.sessions.get(taskId)
     if (!session || session.view.webContents.isDestroyed()) session = this.create(taskId)
     await session.view.webContents.loadURL(url)

@@ -185,7 +185,8 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: {
       const input = decodeRpcInput(body.channel, 'input' in body ? body.input : undefined)
       const deferred: Array<() => void | Promise<void>> = []
       const result = await runtime.invoke(body.channel, input, {
-        deferUntilResponse: (action) => { deferred.push(action) }
+        deferUntilResponse: (action) => { deferred.push(action) },
+        remoteAddress: getConnInfo(context).remote.address
       })
       if (deferred.length) {
         context.env.outgoing.once('finish', () => {

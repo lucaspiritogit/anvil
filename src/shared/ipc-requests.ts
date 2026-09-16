@@ -1,8 +1,11 @@
 import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskReviewPolicy, TaskCheckoutMode } from './types'
+import type { BrowserHostResponse } from './browser-host'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
 export interface IpcRequests {
   'app:caffeine': undefined
+  'browser-host:register': { addresses: string[] }
+  'browser-host:response': BrowserHostResponse
   'wallpapers:directory': string | undefined
   'wallpapers:list': string | undefined
   'wallpapers:import': { path: string; workspaceId?: string }

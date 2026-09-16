@@ -123,6 +123,15 @@ const composer = object({
 
 const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'app:caffeine': none,
+  'browser-host:register': object({ addresses: array(text(64, true, /^[0-9a-f:.]+$/i), 32) }),
+  'browser-host:response': (value, field) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) invalid(field, 'must be a browser host response')
+    const response = value as Record<string, unknown>
+    const base = { type: oneOf('anvil-browser-host-response'), requestId: id, ok: boolean }
+    return response.ok === true
+      ? object({ ...base, connection: optional(object({ url: text(2048), headers: stringRecord })) })(value, field) as IpcRequests['browser-host:response']
+      : object({ ...base, error: text(4096) })(value, field) as IpcRequests['browser-host:response']
+  },
   'wallpapers:directory': optional(workspaceId),
   'wallpapers:list': optional(workspaceId),
   'wallpapers:import': object({ path: text(4096), workspaceId: optional(workspaceId) }),

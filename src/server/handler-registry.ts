@@ -8,6 +8,7 @@ export interface HandlerRegistry {
 
 export interface HandlerContext {
   deferUntilResponse(action: () => void | Promise<void>): void
+  remoteAddress?: string
 }
 
 export function createHandlerRegistry() {

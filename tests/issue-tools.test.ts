@@ -181,6 +181,34 @@ test('tools preserve ownership, dependency scheduling and developer review', () 
   expect(call('task-a', 'anvil_get_plan')).toMatchObject({ task: { id: 'task-a' }, issues: [expect.objectContaining({ id: first.id }), expect.objectContaining({ id: second.id })] })
 })
 
+test('task data tools summarize tasks and page and search output', () => {
+  const { store, issues, addTask, call } = fixture()
+  const issue = call('task-a', 'anvil_create_issue', input) as Issue
+  issues.finishPlanning('task-a')
+  issues.claim('task-a', 'base-commit')
+  store.appendEvent({ id: 'one', taskId: 'task-a', ts: 1, stream: 'stdout', kind: 'output', category: 'message', text: 'Starting work' })
+  store.appendEvent({ id: 'two', taskId: 'task-a', ts: 2, stream: 'stderr', kind: 'output', category: 'error', text: 'Build failed with E_TEST' })
+  store.appendEvent({ id: 'three', taskId: 'task-a', ts: 3, stream: 'stdout', kind: 'output', category: 'tool_result', text: 'Recovered from E_TEST' })
+
+  expect(call('task-a', 'anvil_get_task', { taskId: 'task-a' })).toMatchObject({
+    task: { id: 'task-a', prompt: 'Implement a change', status: 'running' },
+    execution: { phase: 'working', currentIssueId: issue.id },
+    issueSummary: { total: 1, byStatus: { working: 1 }, issues: [{ id: issue.id, status: 'working', baseCommit: 'base-commit' }] },
+    commitReferences: {}
+  })
+  const first = call('task-a', 'anvil_get_task_events', { taskId: 'task-a', limit: 2 }) as { events: { sequence: number; text: string }[]; nextCursor: number }
+  expect(first.events.map((event) => event.text)).toEqual(['Starting work', 'Build failed with E_TEST'])
+  expect(call('task-a', 'anvil_get_task_events', { taskId: 'task-a', cursor: first.nextCursor, kinds: ['tool_result'] }))
+    .toMatchObject({ events: [{ text: 'Recovered from E_TEST' }], nextCursor: null })
+  expect(call('task-a', 'anvil_search_task_output', { taskId: 'task-a', query: 'e_test' }))
+    .toMatchObject({ events: [{ text: 'Build failed with E_TEST' }, { text: 'Recovered from E_TEST' }], nextCursor: null })
+
+  addTask('task-b')
+  expect(call('task-a', 'anvil_get_task', { taskId: 'task-b' })).toMatchObject({ task: { id: 'task-b' } })
+  expect(() => call('task-a', 'anvil_get_task_events', { taskId: 'task-a', cursor: -1 })).toThrow(/Cursor/)
+  expect(() => call('task-a', 'anvil_search_task_output', { taskId: 'task-a', query: '' })).toThrow(/Query/)
+})
+
 test('only matching internal finalization can complete the submitted current issue and recovery advances once', () => {
   const { store, issues, call } = fixture()
   const first = call('task-a', 'anvil_create_issue', input) as Issue

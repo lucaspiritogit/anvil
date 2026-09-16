@@ -7,6 +7,7 @@ import { resolveServerTarget } from './server-connection-settings'
 export interface BrowserHost {
   open(taskId: string, title: string): Promise<{ url: string; headers: Record<string, string> }>
   release(taskId: string): void
+  setRemoteHost?(host: string | undefined): void
 }
 
 export interface ServerConnection {

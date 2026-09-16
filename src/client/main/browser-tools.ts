@@ -90,8 +90,14 @@ export class BrowserToolServer {
   private server?: ServerType
   private starting?: Promise<string>
   private closed = false
+  private remoteHost?: string
 
   constructor(private readonly manager: BrowserSessionManager) {}
+
+  setRemoteHost(host: string | undefined): void {
+    this.remoteHost = host
+    this.manager.setRemoteHost(host)
+  }
 
   private start(): Promise<string> {
     if (this.closed) return Promise.reject(new Error('Browser tools are closed'))
@@ -130,7 +136,15 @@ export class BrowserToolServer {
       protocol.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
         try {
           if (this.closed || !owner.active || owner.turn !== turn || this.owners.get(authorization) !== owner) throw new Error('Agent turn has ended')
-          const result = await callBrowserTool(this.manager, owner, params.name, params.arguments ?? {})
+          let args = params.arguments ?? {}
+          if (params.name === 'browser_open' && this.remoteHost && typeof args.url === 'string') {
+            const url = new URL(args.url)
+            if (['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname)) {
+              url.hostname = this.remoteHost.includes(':') ? `[${this.remoteHost}]` : this.remoteHost
+              args = { ...args, url: url.toString() }
+            }
+          }
+          const result = await callBrowserTool(this.manager, owner, params.name, args)
           if (params.name === 'browser_screenshot') {
             const screenshot = result as Awaited<ReturnType<BrowserSessionManager['screenshot']>>
             return { content: [{ type: 'image', data: screenshot.data, mimeType: screenshot.mimeType }, { type: 'text', text: JSON.stringify({ url: screenshot.url }) }] }
@@ -150,7 +164,7 @@ export class BrowserToolServer {
     this.server = server
     return new Promise<string>((resolve, reject) => {
       server.once('error', reject)
-      server.listen(0, '127.0.0.1', () => {
+      server.listen(0, '0.0.0.0', () => {
         server.removeListener('error', reject)
         const address = server.address()
         if (!address || typeof address === 'string') {

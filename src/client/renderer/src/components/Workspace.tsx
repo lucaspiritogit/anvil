@@ -7,6 +7,7 @@ import { cn } from '../ui'
 import { TaskView } from './TaskView'
 import { ProjectOverview } from './ProjectOverview'
 import { AnalyticsPage } from './AnalyticsPage'
+import { WorkspaceUsageLimits } from './WorkspaceUsageLimits'
 
 export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationButtonRef, onToggleNavigation }: {
   mobileNavigation: boolean
@@ -48,6 +49,9 @@ export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationBu
         {activeTask && <TaskView key={`${activeTask.id}:${view.kind === 'task' ? view.panel ?? 'default' : 'default'}`} task={activeTask}
           initialPanel={view.kind === 'task' ? view.panel : undefined} />}
       </section>
+      <div className="shrink-0 px-8 pb-8 max-[980px]:px-[22px] max-[700px]:px-3 max-[700px]:pb-2">
+        <WorkspaceUsageLimits />
+      </div>
     </main>
   )
 }

@@ -109,17 +109,20 @@ async function replaceRenderer(state: ServerConnectionState): Promise<void> {
 const connectionSettings = new ServerConnectionSettings(app.getPath('userData'))
 const connectionManager = new ServerConnectionManager({
   settings: connectionSettings,
-  connect: (target) => connectToServer({
-    executable: process.execPath,
-    entry: join(__dirname, '../server/index.js'),
-    dataDirectory,
-    rendererOrigin: developmentRendererUrl ? new URL(developmentRendererUrl).origin : undefined,
-    packaged: app.isPackaged,
-    browserHost: browserTools,
-    target
-  }),
+  connect: (target) => {
+    if (target.mode === 'local') browserTools.setRemoteHost(undefined)
+    return connectToServer({
+      executable: process.execPath,
+      entry: join(__dirname, '../server/index.js'),
+      dataDirectory,
+      rendererOrigin: developmentRendererUrl ? new URL(developmentRendererUrl).origin : undefined,
+      packaged: app.isPackaged,
+      browserHost: browserTools,
+      target
+    })
+  },
   reconnect: replaceRenderer,
-  startActivity: (url) => registerCaffeineMode(createServerCaffeineActivity(url), powerSaveBlocker),
+  startActivity: (url) => registerCaffeineMode(createServerCaffeineActivity(url, browserTools), powerSaveBlocker),
   reportCleanupError: (error) => console.error('Could not clean up the previous Anvil server connection:', error)
 })
 

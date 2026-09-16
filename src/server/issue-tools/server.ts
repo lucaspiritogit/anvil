@@ -21,7 +21,13 @@ const fields = {
   dependencies: { type: 'array', items: { type: 'string' } }
 }
 const id = { type: 'string', description: 'Issue ID from anvil_get_plan or the supplied issue context; submission must use the currentIssueId.' }
+const taskId = { type: 'string', description: 'Task ID in the current Anvil workspace.' }
+const cursor = { type: 'integer', minimum: 0, description: 'Exclusive event sequence returned by a previous page.' }
+const eventKinds = ['output', 'did_not_commit', 'delivery', 'message', 'thinking', 'tool_use', 'tool_result', 'system', 'error']
 export const ISSUE_TOOLS: Tool[] = [
+  { name: 'anvil_get_task', description: 'Read an Anvil task prompt, status, execution phase, issue summary, and task and issue commit references.', inputSchema: { type: 'object', properties: { taskId }, required: ['taskId'], additionalProperties: false } },
+  { name: 'anvil_get_task_events', description: 'Read an ordered, paginated task event history. Use nextCursor to continue.', inputSchema: { type: 'object', properties: { taskId, cursor, kinds: { type: 'array', items: { type: 'string', enum: eventKinds }, uniqueItems: true }, limit: { type: 'integer', minimum: 1, maximum: 200, default: 100 } }, required: ['taskId'], additionalProperties: false } },
+  { name: 'anvil_search_task_output', description: 'Search task output text without loading the entire transcript. Results are ordered and paginated; use nextCursor to continue.', inputSchema: { type: 'object', properties: { taskId, query: { type: 'string', minLength: 1 }, cursor }, required: ['taskId', 'query'], additionalProperties: false } },
   { name: 'anvil_get_plan', description: 'Read the current Anvil task, branchName, canNameBranch eligibility, parent issue, execution phase and all its issues. Call this before resuming work.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'anvil_set_task_branch', description: 'Choose one descriptive Git branch name when anvil_get_plan reports task.canNameBranch. Anvil supplies task/workspace ownership, renames the managed checkout and saves the accepted name. Retry invalid or colliding choices; repeating the accepted name is safe. Established branches cannot be renamed.', inputSchema: { type: 'object', properties: { branchName: { type: 'string', description: 'Proposed literal short Git branch name, outside the reserved anvil-tmp/ namespace.' } }, required: ['branchName'], additionalProperties: false } },
   { name: 'anvil_create_issue', description: 'Add a queued issue to the current task during planning. Parent and workspace are supplied by Anvil. Dependencies must belong to this task.', inputSchema: { type: 'object', properties: fields, required: ['title', 'description', 'checklist', 'validation'], additionalProperties: false } },
@@ -56,6 +62,35 @@ export function callIssueTool(store: Store, taskId: string, workspaceId: string,
   return store.transaction(() => {
     const task = store.getTask(taskId)
     if (!task || task.workspaceId !== workspaceId) throw new Error('Task not found in the owning workspace')
+    if (name === 'anvil_get_task' || name === 'anvil_get_task_events' || name === 'anvil_search_task_output') {
+      if (typeof args.taskId !== 'string') throw new Error('Task ID must be a string')
+      const requested = store.getTask(args.taskId)
+      if (!requested || requested.workspaceId !== workspaceId) throw new Error('Task not found in the owning workspace')
+      const execution = store.getTaskExecution(requested.id)
+      if (name === 'anvil_get_task') {
+        const issues = execution ? store.issueTracker(requested.projectId, workspaceId).list(execution.parentIssueId) : []
+        return {
+          task: requested,
+          execution: execution ? { phase: execution.phase, currentIssueId: execution.currentIssueId, error: execution.error } : null,
+          issueSummary: {
+            total: issues.length,
+            byStatus: Object.fromEntries(['queued', 'working', 'blocked', 'review', 'complete'].map((status) => [status, issues.filter((issue) => issue.status === status).length])),
+            issues: issues.map((issue) => ({ id: issue.id, title: issue.title, status: issue.status, baseCommit: issue.baseCommit, headCommit: issue.headCommit }))
+          },
+          commitReferences: { baseCommit: requested.baseCommit, headCommit: requested.headCommit }
+        }
+      }
+      const parsedCursor = args.cursor === undefined ? 0 : args.cursor
+      if (!Number.isSafeInteger(parsedCursor) || (parsedCursor as number) < 0) throw new Error('Cursor must be a non-negative integer')
+      if (name === 'anvil_search_task_output') {
+        if (typeof args.query !== 'string' || !args.query.trim()) throw new Error('Query must be a non-empty string')
+        return store.readTaskOutput(requested.id, { cursor: parsedCursor as number, limit: 50, query: args.query })
+      }
+      const limit = args.limit === undefined ? 100 : args.limit
+      if (!Number.isSafeInteger(limit) || (limit as number) < 1 || (limit as number) > 200) throw new Error('Limit must be an integer from 1 to 200')
+      if (args.kinds !== undefined && (!Array.isArray(args.kinds) || args.kinds.some((kind) => typeof kind !== 'string' || !eventKinds.includes(kind)))) throw new Error('Invalid event kind')
+      return store.readTaskOutput(requested.id, { cursor: parsedCursor as number, limit: limit as number, kinds: args.kinds as string[] | undefined })
+    }
     const state = store.getTaskExecution(taskId)
     if (!state) throw new Error('Task has no issue plan')
     const tracker = store.issueTracker(task.projectId, workspaceId)
@@ -183,7 +218,7 @@ export class IssueToolServer {
             finally { this.branchCalls.delete(call) }
           } else {
             result = callIssueTool(this.store, owner.taskId, owner.workspaceId, params.name, args)
-            if (params.name !== 'anvil_get_plan') this.changed(owner.taskId)
+            if (!['anvil_get_plan', 'anvil_get_task', 'anvil_get_task_events', 'anvil_search_task_output'].includes(params.name)) this.changed(owner.taskId)
           }
           return { content: [{ type: 'text', text: JSON.stringify(result) }] }
         } catch (error) {

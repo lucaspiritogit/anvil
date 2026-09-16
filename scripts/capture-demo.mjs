@@ -78,54 +78,6 @@ try {
       window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, ...patch } }))
     }, { taskId, patch })
   }
-  async function automaticallyStackTask(taskId, parentTaskId, expectedFiles) {
-    await page.evaluate(async ({ taskId, parentTaskId, expectedFiles }) => {
-      const tasks = await window.anvil.tasks.list()
-      const task = tasks.find((candidate) => candidate.id === taskId)
-      const parent = tasks.find((candidate) => candidate.id === parentTaskId)
-      window.dispatchEvent(new CustomEvent('fixture:task-updated', {
-        detail: {
-          ...task,
-          status: 'running',
-          deliveryStatus: 'preparing',
-          workingStartedAt: undefined,
-          branchName: undefined,
-          sessionId: undefined,
-          expectedFiles,
-          parentTaskId,
-          baseBranch: parent.branchName,
-          stackSuggestion: undefined
-        }
-      }))
-    }, { taskId, parentTaskId, expectedFiles })
-  }
-  async function startStackedTask(taskId) {
-    await page.evaluate(async (taskId) => {
-      const task = (await window.anvil.tasks.list()).find((candidate) => candidate.id === taskId)
-      const next = {
-        ...task,
-        status: 'running',
-        deliveryStatus: 'working',
-        branchName: `anvil/${taskId}`,
-        baseBranch: 'main',
-        workingStartedAt: Date.now()
-      }
-      delete next.parentTaskId
-      window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: next }))
-    }, taskId)
-  }
-  async function openChanges() {
-    await click(page.getByRole('tab', { name: /^Changes/ }))
-    await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
-  }
-  async function mergeTask() {
-    await click(page.getByRole('button', { name: 'Merge', exact: true }))
-    const dialog = page.getByRole('alertdialog')
-    await expect(dialog).toContainText('using git merge')
-    await capture(0.64)
-    await click(dialog.getByRole('button', { name: 'Merge', exact: true }))
-    await expect(page.getByLabel('Task status', { exact: true })).toContainText('Merged')
-  }
   await page.addInitScript(() => {
     localStorage.setItem('fixture:workspaces', JSON.stringify([{ id: 'default', name: 'Personal', createdAt: 0 }]))
     localStorage.setItem('fixture:preferences', JSON.stringify({
@@ -139,52 +91,6 @@ try {
     const personal = { ...initial, overviewBackgroundMode: wallpaper ? 'image' : 'color', overviewWallpaperId: wallpaper ? 'demo.jpg' : null }
     if (wallpaper) window.anvil.wallpapers.read = async () => wallpaper
     window.settingsTest.apply(personal)
-    const patches = {
-      parent: `diff --git a/src/shared/keybindings.ts b/src/shared/keybindings.ts
-index 1111111..2222222 100644
---- a/src/shared/keybindings.ts
-+++ b/src/shared/keybindings.ts
-@@ -18,3 +18,5 @@ export const DEFAULT_KEYBINDINGS = {
-   newTask: 'Meta+N',
-+  previousTask: 'Meta+[',
-+  nextTask: 'Meta+]',
-   openSettings: 'Meta+,',
- }
-`,
-      child: `diff --git a/src/client/renderer/src/components/SidebarTask.tsx b/src/client/renderer/src/components/SidebarTask.tsx
-index 3333333..4444444 100644
---- a/src/client/renderer/src/components/SidebarTask.tsx
-+++ b/src/client/renderer/src/components/SidebarTask.tsx
-@@ -88,4 +88,5 @@ export function SidebarTask({ task }: Props) {
-       <span className="truncate">{task.title}</span>
-+      <kbd className="text-dim">⌘ ]</kbd>
-     </button>
-   )
- }
-`
-    }
-    window.anvil.tasks.diff = async (taskId) => {
-      const task = (await window.anvil.tasks.list()).find((candidate) => candidate.id === taskId)
-      const parent = task?.title === 'Add task keyboard shortcuts'
-      return {
-        commits: [{
-          sha: parent ? '1234567890abcdef' : 'abcdef1234567890',
-          subject: parent ? 'Add task navigation shortcuts' : 'Show shortcut hints'
-        }],
-        patch: parent ? patches.parent : patches.child
-      }
-    }
-    window.anvil.tasks.mergePreview = async (taskId) => {
-      const task = (await window.anvil.tasks.list()).find((candidate) => candidate.id === taskId)
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      return {
-        sourceBranch: task.branchName,
-        targetBranch: 'main',
-        sourceCommit: 'source-head',
-        targetCommit: 'target-head',
-        commitCount: 1
-      }
-    }
   }, wallpaper)
   await page.addStyleTag({ content: `
     body { padding: 28px; background: #080c11; overflow: hidden }
@@ -200,49 +106,53 @@ index 3333333..4444444 100644
   })
   await page.waitForTimeout(600)
   await capture(0.48)
-  await focusNewTask()
-  const parentId = await typePrompt('Add task keyboard shortcuts')
-  await emit(parentId, 'message', 'I’ll add next-task and previous-task shortcuts using the existing keybinding registry.')
-  await capture(1.0)
-  await emit(parentId, 'tool_use', 'Read files\nsrc/shared/keybindings.ts · src/client/renderer/src/components/Sidebar.tsx')
-  await emit(parentId, 'tool_result', 'Task navigation and keybindings are ready to extend.')
-  await emit(parentId, 'tool_use', 'Edit files\nAdd next-task and previous-task shortcuts')
-  await capture(0.48)
-  await focusNewTask()
-  const childId = await typePrompt('Add shortcut hints')
-  await emit(childId, 'message', 'This uses the same keybinding code, so I’ll queue it on the keyboard-shortcuts task.')
-  await automaticallyStackTask(childId, parentId, ['src/shared/keybindings.ts'])
-  await expect(page.getByRole('button', { name: 'Stacked on Add task keyboard shortcuts', exact: true })).toBeVisible()
-  await expect(page.getByRole('status').filter({ hasText: 'Queued. Waiting for Add task keyboard shortcuts' })).toBeVisible()
-  await capture(1.4)
-  await page.screenshot({ path: join(output, 'demo-stack-preview.png') })
-  const childRow = page.getByRole('button', { name: 'Open task: Add shortcut hints', exact: true })
-  const parentRow = page.getByRole('button', { name: 'Open task: Add task keyboard shortcuts', exact: true })
-  await click(parentRow)
-  await emit(parentId, 'tool_result', 'Updated keybindings.ts · +2 −0')
-  await emit(parentId, 'message', 'Task navigation wraps at either end and keeps the active task visible.')
-  await updateTask(parentId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 18000, filesChanged: 1, additions: 2, deletions: 0 })
-  await capture(0.4)
-  await openChanges()
-  await capture(1.8)
-  await page.screenshot({ path: join(output, 'demo-agent-preview.png') })
-  await mergeTask()
-  await capture(1.2)
-  await page.screenshot({ path: join(output, 'demo-workspace-preview.png') })
 
-  await startStackedTask(childId)
-  await expect(childRow.getByRole('img', { name: 'Working' })).toBeVisible()
-  await capture(0.32)
-  await click(childRow)
-  await emit(childId, 'tool_use', 'Edit files\nShow the shortcut beside each navigation action')
-  await emit(childId, 'tool_result', 'Updated SidebarTask.tsx · +1 −0')
+  const projectSelector = page.getByRole('button', { name: 'Project', exact: true })
+  await click(projectSelector)
+  const projectDialog = page.getByRole('dialog', { name: 'Choose project', exact: true })
+  await expect(projectDialog).toBeVisible()
+  await capture(0.72)
+  await page.screenshot({ path: join(output, 'demo-project-selector.png') })
+  await click(projectDialog.getByRole('button', { name: /^Anvil\b/ }))
+
+  const locationSelector = page.getByRole('button', { name: 'Execution location', exact: true })
+  await click(locationSelector)
+  const locationDialog = page.getByRole('dialog', { name: 'Choose execution location', exact: true })
+  await expect(locationDialog).toBeVisible()
+  await capture(0.64)
+  await click(locationDialog.getByRole('button', { name: /^Local checkout\b/ }))
+  await expect(locationSelector).toHaveAccessibleDescription('Local checkout')
+
+  const branchSelector = page.getByRole('button', { name: 'Project branch', exact: true })
+  await click(branchSelector)
+  const branchDialog = page.getByRole('dialog', { name: 'Choose local branch', exact: true })
+  await expect(branchDialog).toBeVisible()
+  await capture(0.72)
+  await page.screenshot({ path: join(output, 'demo-checkout-selector.png') })
+  await page.keyboard.press('Escape')
+
+  const taskStyle = page.getByRole('combobox', { name: 'Task style', exact: true })
+  await taskStyle.selectOption('quick')
+  await expect(page.getByText('Runs without a plan.', { exact: true })).toBeVisible()
+  await capture(0.72)
+  await page.screenshot({ path: join(output, 'demo-quick-task.png') })
+  await focusNewTask()
+  const quickTaskId = await typePrompt('Polish the analytics date picker')
+  await emit(quickTaskId, 'message', 'I’ll make this focused UI update directly in the local checkout.')
+  await emit(quickTaskId, 'tool_use', 'Edit file\nsrc/client/renderer/src/components/AnalyticsPage.tsx')
   await capture(0.8)
-  await emit(childId, 'message', 'Shortcut hints are ready for review.')
-  await updateTask(childId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 6000, filesChanged: 1, additions: 1, deletions: 0 })
-  await capture(0.4)
-  await openChanges()
-  await capture(1.4)
-  await mergeTask()
+  await emit(quickTaskId, 'tool_result', 'Updated AnalyticsPage.tsx · +8 −3')
+  await emit(quickTaskId, 'message', 'The date picker is polished and ready to review.')
+  await updateTask(quickTaskId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 8000, filesChanged: 1, additions: 8, deletions: 3 })
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Review')
+  await capture(1.1)
+  await page.screenshot({ path: join(output, 'demo-agent-preview.png') })
+
+  await click(page.getByRole('button', { name: 'Analytics', exact: true }))
+  await expect(page.getByRole('heading', { name: 'Analytics', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Tokens over time', exact: true })).toBeVisible()
+  await capture(2.2, { x: 1000, y: 360 })
+  await page.screenshot({ path: join(output, 'demo-analytics-preview.png') })
   if (frame > targetFrames) throw new Error(`Demo ran ${(frame / fps).toFixed(2)} seconds before the final hold; expected at most ${durationSeconds}.`)
   if (frame < targetFrames) await capture((targetFrames - frame) / fps)
   if (errors.length) throw new Error(errors.join('\n'))
