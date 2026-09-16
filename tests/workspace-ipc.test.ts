@@ -84,11 +84,11 @@ test('removing a workspace unregisters it without deleting its files and selects
   const work = call('workspaces:create', 'Work')
   await call('workspaces:select', work.id)
   const directory = store.getWorkspaceDirectory(work.id)
-  expect(call('workspaces:remove', work.id).workspace.id).toBe('default')
+  expect((await call('workspaces:remove', work.id)).workspace.id).toBe('default')
   expect(store.getWorkspaces().map((workspace) => workspace.id)).toEqual(['default'])
   expect(existsSync(directory)).toBe(true)
   expect(broadcast).toHaveBeenCalledWith('workspaces:selected', expect.objectContaining({ workspace: expect.objectContaining({ id: 'default' }) }))
-  expect(() => call('workspaces:remove', 'default')).toThrow('at least one workspace')
+  await expect(async () => call('workspaces:remove', 'default')).rejects.toThrow('at least one workspace')
 })
 
 function rendererBridge(): void {
