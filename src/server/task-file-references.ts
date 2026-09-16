@@ -30,6 +30,5 @@ export function promptWithFileReferences(prompt: string, projectPath: string, pa
     JSON.stringify([...new Set(paths)]),
     `Original project directory: ${JSON.stringify(projectPath)}.`,
     'Resolve these paths relative to the task working directory, including when it is a Git worktree. For non-Git tasks this is the original project directory.',
-    'Check that each file exists before using it. Untracked files and uncommitted edits may exist only in the original project or differ from the task copy. If a task copy is absent, report it or explicitly use the original project file as reference material. Do not assume it was copied into the worktree.'
   ].join('\n\n')
 }

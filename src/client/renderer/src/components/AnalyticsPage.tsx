@@ -447,17 +447,6 @@ function AnalyticsContent({ analytics }: { analytics: WorkspaceAnalytics }): JSX
         <Panel title="Token mix per day" aside="stacked" className="col-span-8 max-[940px]:col-span-1" bodyClassName="pb-3">
           <TokenMixChart daily={analytics.daily} />
         </Panel>
-        <Panel title="Task outcomes" aside={percent(analytics.tasks.successRate)} className="col-span-4 max-[940px]:col-span-1">
-          <AsciiMeter
-            label="Success rate"
-            value={`${count(analytics.tasks.successful)} / ${count(analytics.tasks.completed)}`}
-            ratio={analytics.tasks.successRate ?? 0}
-            tone="green"
-            width={18}
-            className="mb-2"
-          />
-          <OutcomesDonut counts={analytics.tasks.statusCounts} />
-        </Panel>
 
         <Panel title="Tasks per day" aside={`${count(analytics.tasks.total)} total`} className="col-span-6 max-[940px]:col-span-1" bodyClassName="pb-3">
           <TasksPerDay daily={analytics.daily} />
