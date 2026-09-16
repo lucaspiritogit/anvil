@@ -106,6 +106,14 @@ by Anvil. Desktop Tailscale access still requires the Anvil username and passwor
 See [SECURITY.md](SECURITY.md) for agent permissions, password handling, and
 network exposure details.
 
+### Connecting a subscription account on a remote server
+
+Anvil supports connecting your subscription using a one-time device code. If device-code login is unavailable or you prefer browser sign-in, use an encrypted SSH tunnel to forward the OAuth callback to your server.
+
+```sh
+ssh -N -L 1455:localhost:1455 your-user@your-server
+```
+
 ## Project memory
 
 Project memory is off by default. Enable it in **Settings > Memory** to save
