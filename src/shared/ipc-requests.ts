@@ -19,6 +19,7 @@ export interface IpcRequests {
   'workspaces:snapshot': undefined
   'workspaces:create': string
   'workspaces:rename': { workspaceId: string; name: string }
+  'workspaces:remove': string
   'workspaces:select': string
   'workspaces:preferences:get': string
   'workspaces:preferences:set': { workspaceId: string; patch: Partial<WorkspacePreferences> }

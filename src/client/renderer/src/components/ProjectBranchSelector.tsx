@@ -27,6 +27,7 @@ export function ProjectBranchSelector({ projectId, style, parentBranch, startBas
   const selectProject = useStore((state) => state.selectProject)
   const addProject = useStore((state) => state.addProject)
   const cloneProject = useStore((state) => state.cloneProject)
+  const removeProject = useStore((state) => state.removeProject)
   const isRepository = useStore((state) => projectId ? state.gitStatusByProject[projectId]?.isRepository : false)
   const loadGitStatus = useStore((state) => state.loadGitStatus)
   const [open, setOpen] = useState<OpenPicker>(null)
@@ -194,6 +195,7 @@ export function ProjectBranchSelector({ projectId, style, parentBranch, startBas
         onChange={chooseProject}
         onAdd={add}
         onClone={clone}
+        onRemove={removeProject}
         onBusyChange={setTransition}
         onClose={() => setOpen(null)}
       />}

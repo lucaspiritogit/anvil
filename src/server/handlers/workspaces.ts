@@ -20,7 +20,8 @@ export function registerWorkspaceHandlers(
   broadcast: (channel: string, payload: unknown) => void,
   rename: (workspaceId: string, name: string) => ReturnType<Store['renameWorkspace']> | Promise<ReturnType<Store['renameWorkspace']>> = (workspaceId, name) => store.renameWorkspace(workspaceId, name),
   beforeSelect: () => Promise<void> = async () => {},
-  afterSelect: (workspaceId: string, context: HandlerContext) => void = () => {}
+  afterSelect: (workspaceId: string, context: HandlerContext) => void = () => {},
+  remove: (workspaceId: string) => ReturnType<Store['removeWorkspace']> | Promise<ReturnType<Store['removeWorkspace']>> = (workspaceId) => store.removeWorkspace(workspaceId)
 ): void {
   ipc.handle('workspaces:list', () => store.getWorkspaces())
   ipc.handle('workspaces:snapshot', () => workspaceSnapshot(store))
@@ -33,6 +34,22 @@ export function registerWorkspaceHandlers(
     const workspace = await rename(workspaceId, name)
     broadcast('workspaces:changed', store.getWorkspaces())
     return workspace
+  })
+  ipc.handle('workspaces:remove', async (workspaceId, context) => {
+    const workspaces = store.getWorkspaces()
+    if (!workspaces.some((workspace) => workspace.id === workspaceId)) throw new Error('Workspace not found')
+    if (workspaces.length === 1) throw new Error('Anvil must have at least one workspace')
+    if (store.hasRunningTasks(workspaceId)) throw new Error('Wait for running tasks in this workspace to finish before deleting it')
+    const selecting = store.getActiveWorkspace().id === workspaceId
+    if (selecting) await beforeSelect()
+    await remove(workspaceId)
+    const snapshot = workspaceSnapshot(store)
+    broadcast('workspaces:changed', snapshot.workspaces)
+    if (selecting) {
+      afterSelect(snapshot.workspace.id, context)
+      broadcast('workspaces:selected', snapshot)
+    }
+    return snapshot
   })
   ipc.handle('workspaces:select', async (workspaceId, context) => {
     if (!store.getWorkspaces().some((workspace) => workspace.id === workspaceId)) throw new Error('Workspace not found')

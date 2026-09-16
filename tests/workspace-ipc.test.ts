@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { Store } from '../src/server/store'
@@ -77,6 +78,17 @@ test('independent settings and composer choices survive selection, rename and SQ
   expect(store.getSettings(work.id)).toEqual(selected.settings)
   expect(store.getWorkspacePreferences(work.id).composer).toEqual(composer)
   expect(store.getSettings('default')).toEqual(original.settings)
+})
+
+test('removing a workspace unregisters it without deleting its files and selects a fallback', async () => {
+  const work = call('workspaces:create', 'Work')
+  await call('workspaces:select', work.id)
+  const directory = store.getWorkspaceDirectory(work.id)
+  expect(call('workspaces:remove', work.id).workspace.id).toBe('default')
+  expect(store.getWorkspaces().map((workspace) => workspace.id)).toEqual(['default'])
+  expect(existsSync(directory)).toBe(true)
+  expect(broadcast).toHaveBeenCalledWith('workspaces:selected', expect.objectContaining({ workspace: expect.objectContaining({ id: 'default' }) }))
+  expect(() => call('workspaces:remove', 'default')).toThrow('at least one workspace')
 })
 
 function rendererBridge(): void {

@@ -699,6 +699,18 @@ window.anvil = {
       persistWorkspaces()
       return workspace
     },
+    remove: async (id) => {
+      if (workspaceRows.length === 1) throw new Error('Anvil must have at least one workspace')
+      const index = workspaceRows.findIndex((row) => row.id === id)
+      if (index < 0) throw new Error('Workspace not found')
+      workspaceRows.splice(index, 1)
+      if (selectedWorkspace === id) {
+        selectedWorkspace = workspaceRows[0]!.id
+        settings = workspaceSettings[selectedWorkspace]
+      }
+      persistWorkspaces()
+      return snapshot()
+    },
     select: async (id) => {
       if (query.has('workspaceDelay')) await new Promise((resolve) => setTimeout(resolve, 300))
       if (query.has('workspaceSelectFailure') && id !== 'default') throw new Error('Could not switch workspace. Try again.')

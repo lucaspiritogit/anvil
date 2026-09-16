@@ -37,6 +37,8 @@
   /* Softer than Tailwind's own pulse, for the "agent is working" dot. */
   --animate-blink: blink 1.4s ease-in-out infinite;
   --animate-breathe: breathe 2.4s ease-in-out infinite;
+  /* Live output rows fade up as they land at the tail. */
+  --animate-row-in: row-in 180ms ease-out;
 
   @keyframes breathe {
     0%, 100% {
@@ -50,6 +52,17 @@
   @keyframes blink {
     50% {
       opacity: 0.3;
+    }
+  }
+
+  @keyframes row-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
     }
   }
 }

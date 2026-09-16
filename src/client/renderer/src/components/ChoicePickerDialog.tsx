@@ -10,6 +10,7 @@ export interface PickerChoice {
   description?: string
   icon?: ReactNode
   disabled?: boolean
+  onDelete?: () => void
 }
 
 export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, footer, onSelect, onClose }: {
@@ -56,7 +57,7 @@ export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, foo
           className="min-h-0 flex-1 overflow-y-auto p-2"
           onKeyDown={(event) => {
             if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-            const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+            const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled):not([data-picker-action])')]
             const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
             if (index < 0) return
             event.preventDefault()
@@ -66,8 +67,8 @@ export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, foo
           }}
         >
           {filtered.map((choice) => (
+            <div key={choice.id} className={cn('mb-1 flex items-stretch', choice.id === value && 'bg-hover')}>
             <button
-              key={choice.id}
               type="button"
               aria-label={choice.label}
               aria-description={choice.description}
@@ -75,7 +76,7 @@ export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, foo
               disabled={choice.disabled}
               title={choice.label}
               onClick={() => onSelect(choice.id)}
-              className={cn('mb-1 flex w-full items-center gap-3 px-3 py-3 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45', choice.id === value && 'bg-hover')}
+              className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45"
             >
               {choice.icon}
               <span className="min-w-0 flex-1">
@@ -84,6 +85,12 @@ export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, foo
               </span>
               {choice.id === value && <Icon icon="check" size={16} className="shrink-0 text-accent" aria-hidden="true" />}
             </button>
+            {choice.onDelete && <button type="button" data-picker-action aria-label={`Delete ${choice.label}`} title={`Delete ${choice.label}`}
+              className="shrink-0 px-3 text-dim hover:bg-hover hover:text-danger focus-visible:outline-2 focus-visible:outline-accent"
+              onClick={choice.onDelete}>
+              <Icon icon="trash" size={16} aria-hidden="true" />
+            </button>}
+            </div>
           ))}
           {!filtered.length && <p role="status" className="px-3 py-6 text-center text-xs text-dim">No {noun} match your search.</p>}
         </div>

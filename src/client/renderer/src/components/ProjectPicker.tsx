@@ -4,6 +4,7 @@ import type { Project, ProjectDirectoryListing } from '@shared/types'
 import { Icon } from '../icons'
 import { ChoicePickerDialog } from './ChoicePickerDialog'
 import { PickerDialog } from './PickerDialog'
+import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 
 type AddMode = 'folder' | 'clone'
 
@@ -156,17 +157,24 @@ function AddProjectDialog({ anchorRef, onAdd, onClone, onBack, onClose, onBusyCh
   )
 }
 
-export function ProjectPicker({ anchorRef, projects, value, onChange, onAdd, onClone, onClose, onBusyChange }: {
+export function ProjectPicker({ anchorRef, projects, value, onChange, onAdd, onClone, onRemove, onClose, onBusyChange }: {
   anchorRef: RefObject<HTMLButtonElement | null>
   projects: Project[]
   value: string | null
   onChange: (id: string) => void
   onAdd: (path: string) => Promise<Project | null>
   onClone: (url: string) => Promise<Project | null>
+  onRemove: (id: string) => Promise<void>
   onClose: () => void
   onBusyChange: (busy: boolean) => void
 }): JSX.Element {
   const [view, setView] = useState<'projects' | 'add'>('projects')
+  const [deleting, setDeleting] = useState<Project | null>(null)
+
+  if (deleting) return <DeleteConfirmationDialog title="Delete project?" name={deleting.name}
+    description={'Remove "{name}" and its tasks from Anvil? This cannot be undone.'}
+    fileNotice="The project checkout on disk will not be deleted." confirmLabel="Delete project"
+    onConfirm={() => onRemove(deleting.id)} onClose={() => setDeleting(null)} />
 
   if (view === 'add') return <AddProjectDialog anchorRef={anchorRef} onAdd={onAdd} onClone={onClone} onBack={() => setView('projects')} onClose={onClose} onBusyChange={onBusyChange} />
 
@@ -179,7 +187,8 @@ export function ProjectPicker({ anchorRef, projects, value, onChange, onAdd, onC
       id: project.id,
       label: project.name,
       description: project.path,
-      icon: <Icon icon="folder" size={16} className="shrink-0 text-dim" />
+      icon: <Icon icon="folder" size={16} className="shrink-0 text-dim" />,
+      onDelete: () => setDeleting(project)
     }))}
     footer={<div className="border-t border-line p-2">
       <button

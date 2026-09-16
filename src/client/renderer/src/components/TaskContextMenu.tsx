@@ -136,9 +136,10 @@ export function TaskContextMenu(): JSX.Element | null {
     >
       <button
         role="menuitem"
-        className="w-full px-3 py-1.5 text-left text-danger hover:bg-hover focus:bg-hover focus:outline-none"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-danger hover:bg-hover focus:bg-hover focus:outline-none"
         onClick={() => setConfirming(true)}
       >
+        <Icon icon="trash" size={16} className="shrink-0" aria-hidden="true" />
         Delete
       </button>
     </div>

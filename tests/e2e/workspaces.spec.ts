@@ -93,6 +93,22 @@ test('Workspace is below Settings and supports keyboard selection, filtering and
   await expect(picker(page)).toHaveAttribute('aria-expanded', 'false')
 })
 
+test('workspace trash action confirms removal and preserves disk files', async ({ page }) => {
+  await page.goto(fixture)
+  await page.evaluate(() => window.anvil.workspaces.create('Work'))
+  await picker(page).click()
+  const trash = page.getByRole('button', { name: 'Delete Work', exact: true })
+  await expect(trash.locator('svg')).toBeVisible()
+  await trash.click()
+  const dialog = page.getByRole('dialog', { name: 'Delete workspace?' })
+  await expect(dialog).toContainText('The workspace folder on disk will not be deleted.')
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await picker(page).click()
+  await page.getByRole('button', { name: 'Delete Work', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Delete workspace?' }).getByRole('button', { name: 'Delete workspace', exact: true }).click()
+  await expect.poll(() => page.evaluate(async () => (await window.anvil.workspaces.list()).map((workspace) => workspace.name))).toEqual(['Default'])
+})
+
 test('create and rename validate names, trap focus, prevent duplicates and preserve stable IDs', async ({ page }) => {
   await page.goto(fixture + '?workspaceDelay')
   await picker(page).focus()

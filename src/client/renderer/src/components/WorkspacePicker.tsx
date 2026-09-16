@@ -4,6 +4,7 @@ import { Icon } from '../icons'
 import { MAX_WORKSPACE_NAME_LENGTH, type Workspace } from '@shared/types'
 import { useStore } from '../state/store'
 import { btn, cn, field, modal } from '../ui'
+import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 
 function WorkspaceNameDialog({ workspace, onClose, onCreated }: {
   workspace: Workspace | null
@@ -97,6 +98,7 @@ export function WorkspacePicker(): JSX.Element {
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState(0)
   const [editing, setEditing] = useState<Workspace | 'create' | null>(null)
+  const [deleting, setDeleting] = useState<Workspace | null>(null)
   const selected = workspaces.find((workspace) => workspace.id === value)
   const options = workspaces.filter((workspace) => workspace.name.toLowerCase().includes(query.trim().toLowerCase()))
   const activeIndex = Math.min(highlight, options.length - 1)
@@ -134,6 +136,12 @@ export function WorkspacePicker(): JSX.Element {
   }
   const edit = (mode: 'create' | 'rename'): void => { close(); setEditing(mode === 'create' ? 'create' : selected ?? null) }
   const closeDialog = (): void => { flushSync(() => setEditing(null)); restoreFocus() }
+
+  if (deleting) return <DeleteConfirmationDialog title="Delete workspace?" name={deleting.name}
+    description={'Remove "{name}" and its projects and tasks from Anvil? This cannot be undone.'}
+    fileNotice="The workspace folder on disk will not be deleted." confirmLabel="Delete workspace"
+    onConfirm={() => useStore.getState().removeWorkspace(deleting.id)}
+    onClose={() => { flushSync(() => setDeleting(null)); restoreFocus() }} />
 
   return <div className="relative min-w-0 flex-1" onBlur={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget)) close()
@@ -181,13 +189,20 @@ export function WorkspacePicker(): JSX.Element {
     </div>
     {open && <div className="absolute inset-x-0 bottom-full z-30 mb-1 max-h-[65vh] overflow-y-auto border border-line bg-raised shadow-lg">
       <div ref={listRef} id={`${id}-list`} role="listbox" aria-label="Workspaces" className="max-h-[min(320px,40vh)] overflow-y-auto overscroll-contain p-1">
-        {options.map((workspace, index) => <div key={workspace.id} id={`${id}-option-${index}`} role="option"
-          aria-selected={workspace.id === value} title={workspace.name}
-          onMouseDown={(event) => event.preventDefault()} onClick={() => void choose(workspace.id)}
-          onMouseMove={() => setHighlight(index)}
-          className={cn('min-w-0 cursor-pointer px-2 py-2 text-xs', index === activeIndex && 'bg-hover', workspace.id === value ? 'text-accent' : 'text-fg')}>
-          <div className="truncate font-medium">{workspace.name}</div>
-          {workspace.id === value && <div className="mt-0.5 text-[10px] text-dim">Selected workspace</div>}
+        {options.map((workspace, index) => <div key={workspace.id} className={cn('flex min-w-0 items-stretch', index === activeIndex && 'bg-hover')}>
+          <button id={`${id}-option-${index}`} role="option" aria-selected={workspace.id === value} title={workspace.name}
+            onMouseDown={(event) => event.preventDefault()} onClick={() => void choose(workspace.id)}
+            onMouseMove={() => setHighlight(index)}
+            className={cn('min-w-0 flex-1 px-2 py-2 text-left text-xs', workspace.id === value ? 'text-accent' : 'text-fg')}>
+            <span className="block truncate font-medium">{workspace.name}</span>
+            {workspace.id === value && <span className="mt-0.5 block text-[10px] text-dim">Selected workspace</span>}
+          </button>
+          <button type="button" aria-label={`Delete ${workspace.name}`} title={workspaces.length === 1 ? 'Anvil must have at least one workspace' : `Delete ${workspace.name}`}
+            disabled={workspaces.length === 1} onMouseDown={(event) => event.preventDefault()}
+            className="shrink-0 px-2 text-dim hover:bg-hover hover:text-danger focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
+            onClick={() => { close(); setDeleting(workspace) }}>
+            <Icon icon="trash" size={16} aria-hidden="true" />
+          </button>
         </div>)}
       </div>
       {!options.length && <p role="status" className="px-3 py-2 text-xs text-dim">No workspaces match your search.</p>}

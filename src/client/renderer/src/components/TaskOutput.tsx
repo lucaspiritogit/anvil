@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Task, TaskEvent, TaskEventCategory } from '@shared/types'
+import { TASK_EVENT_CATEGORIES } from '@shared/types'
 import type { taskIssuePresentation } from '@shared/task-issue-presentation'
 import { BROWSER_VIEWPORTS, type BrowserViewport } from '@shared/browser-observation'
 import { taskStyle } from '@shared/task-style'
@@ -13,8 +14,13 @@ const PLACEHOLDER = 'py-8 text-center text-dim'
 const BROWSER_HEADER_HEIGHT = 32
 const BROWSER_MAX_WIDTH_RATIO = 0.48
 
-type Direction = 'initial' | 'latest'
+type Direction = 'initial' | 'latest' | 'older'
 type Anchor = { id: string; offset: number }
+
+const timeFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+
+const scrollBehavior = (): ScrollBehavior =>
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
 
 function QuickCommitActions({ task }: { task: Task }): JSX.Element | null {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -123,6 +129,28 @@ export function TaskOutput({ task, visible, presentation }: {
   return <TaskOutputHistory task={task} visible={visible} presentation={presentation} events={events} />
 }
 
+type Row =
+  | { kind: 'event'; event: TaskEvent }
+  | { kind: 'tool'; use: TaskEvent; result: TaskEvent }
+
+/* A tool call and the result snapshot that follows it form one row: the result
+ * nests under its call instead of doubling the stream's row count. */
+function buildRows(events: TaskEvent[] | undefined): Row[] {
+  if (!events) return []
+  const rows: Row[] = []
+  for (let index = 0; index < events.length; index++) {
+    const event = events[index]
+    const next = events[index + 1]
+    if (event.category === 'tool_use' && next && (next.category === 'tool_result' || next.id.startsWith('tool-result:'))) {
+      rows.push({ kind: 'tool', use: event, result: next })
+      index++
+    } else {
+      rows.push({ kind: 'event', event })
+    }
+  }
+  return rows
+}
+
 function TaskOutputHistory({ task, visible, presentation, events }: {
   task: Task
   visible: boolean
@@ -137,6 +165,22 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
   const attempt = useRef<Direction>('initial')
   const pending = useRef<Direction | null>(null)
   const needsHistory = history === null
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
+  const [silentCategories, setSilentCategories] = useState<ReadonlySet<TaskEventCategory>>(new Set())
+  const [query, setQuery] = useState('')
+  const [newCount, setNewCount] = useState(0)
+  const tailBaseline = useRef(0)
+  const [copied, setCopied] = useState(false)
+  const seen = useRef<Set<string> | null>(null)
+
+  const toggleExpanded = useCallback((id: string): void => {
+    setExpandedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
 
   const captureAnchor = (): void => {
     const output = outputRef.current
@@ -152,7 +196,10 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
     anchor.current = null
     pending.current = null
     attempt.current = 'initial'
+    seen.current = null
     setFollow(true)
+    setNewCount(0)
+    setExpandedIds(new Set())
     void loadTaskEvents(task.id)
   }, [loadTaskEvents, task.id, needsHistory])
 
@@ -168,9 +215,11 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
     if (!output || !visible) return
     const completed = pending.current && !history?.loading
     const jump = completed && !history?.error && pending.current === 'latest'
-    if (jump || (follow && history?.followingLatest)) {
+    if (jump) {
+      output.scrollTo({ top: output.scrollHeight, behavior: scrollBehavior() })
+      setFollow(true)
+    } else if (follow && history?.followingLatest) {
       output.scrollTop = output.scrollHeight
-      if (jump) setFollow(true)
     } else if (anchor.current) {
       // A stable event ID survives prepends and trimming the opposite window edge.
       // Disable native anchoring below so it does not compete with this adjustment.
@@ -183,33 +232,148 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
     else captureAnchor()
   }, [events, history, follow, visible, task.status, task.deliveryStatus, presentation])
 
+  // Rows animate in only when they arrive live at the tail; history pages and
+  // in-place snapshot updates reuse existing IDs and stay still.
+  if (events && seen.current === null && history?.loaded) seen.current = new Set(events.map((event) => event.id))
+  const fresh = new Set<string>()
+  if (events && seen.current) {
+    for (const event of events) {
+      if (seen.current.has(event.id)) continue
+      if (history?.followingLatest) fresh.add(event.id)
+      seen.current.add(event.id)
+    }
+  }
+
+  const rows = useMemo(() => buildRows(events), [events])
+  const normalizedQuery = query.trim().toLowerCase()
+  const filtering = silentCategories.size > 0 || normalizedQuery.length > 0
+  const eventHidden = useCallback((event: TaskEvent): boolean => {
+    if (silentCategories.has(event.category)) return true
+    return normalizedQuery.length > 0 && !event.text.toLowerCase().includes(normalizedQuery)
+  }, [silentCategories, normalizedQuery])
+  const visibleCount = useMemo(() =>
+    (events ?? []).reduce((count, event) => count + (eventHidden(event) ? 0 : 1), 0),
+  [events, eventHidden])
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<TaskEventCategory, number>()
+    for (const event of events ?? []) counts.set(event.category, (counts.get(event.category) ?? 0) + 1)
+    return counts
+  }, [events])
+
+  useEffect(() => {
+    if (follow || !history?.followingLatest) {
+      setNewCount(0)
+      return
+    }
+    setNewCount(Math.max(0, (events?.length ?? 0) - tailBaseline.current))
+  }, [events, follow, history?.followingLatest])
+
+  const scrollToTail = (): void => {
+    const output = outputRef.current
+    if (!output) return
+    output.scrollTo({ top: output.scrollHeight, behavior: scrollBehavior() })
+    setFollow(true)
+    setNewCount(0)
+  }
+
+  const copyOutput = async (): Promise<void> => {
+    if (!events) return
+    const lines = events.filter((event) => !eventHidden(event)).map((event) =>
+      `[${timeFormat.format(event.ts)}] ${CATEGORY_LABEL[event.category]}: ${event.text}`)
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'))
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard unavailable (permissions); the button simply stays idle.
+    }
+  }
+
   return (
     <section id="task-panel-output" aria-label="Output" className={cn('flex flex-1 min-h-0 min-w-0', !visible && 'hidden')}>
       <div className="flex flex-1 min-h-0 min-w-0 flex-col">
         <nav aria-label="Output history" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-5 py-1.5 text-xs">
-          <span role="status" className="text-dim">{history?.loading ? 'Loading output…' : history?.loaded ? `${events?.length ?? 0} events · ${history.followingLatest ? 'Latest' : 'History'}` : ''}</span>
+          <span role="status" className="text-dim">{history?.loading ? 'Loading output…' : history?.loaded ? `${filtering ? `${visibleCount} of ` : ''}${events?.length ?? 0} events · ${history.followingLatest ? 'Latest' : 'History'}` : ''}</span>
+          {history?.loaded && (events?.length ?? 0) > 0 && <button className={cn(btn.ghost, 'flex items-center gap-1.5 py-1 text-xs')} onClick={() => void copyOutput()}>
+            <Icon icon={copied ? 'check' : 'copy'} size={12} aria-hidden="true" />
+            {copied ? 'Copied' : 'Copy output'}
+          </button>}
           <QuickCommitActions task={task} />
           {(!follow || history?.hasNewer || history?.followingLatest === false) && <button className={cn(btn.ghost, 'ml-auto py-1 text-xs')} disabled={!!history?.loading} onClick={() => load('latest')}>Jump to latest</button>}
         </nav>
+        <div role="toolbar" aria-label="Output filters" className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-5 py-1.5">
+          {TASK_EVENT_CATEGORIES.map((category) => {
+            const silent = silentCategories.has(category)
+            return <button key={category} aria-pressed={!silent}
+              title={`${silent ? 'Show' : 'Hide'} ${CATEGORY_LABEL[category]} events`}
+              className={cn('flex items-center gap-1.5 border px-2 py-0.5 text-[11px] transition-colors',
+                silent ? 'border-line/50 text-dim/40' : 'border-line text-dim hover:text-fg')}
+              onClick={() => setSilentCategories((current) => {
+                const next = new Set(current)
+                if (next.has(category)) next.delete(category)
+                else next.add(category)
+                return next
+              })}>
+              <span aria-hidden className={cn('size-[6px] rounded-full', CATEGORY_DOT[category])} />
+              {CATEGORY_LABEL[category]}
+              <span aria-hidden className="text-dim/60">{categoryCounts.get(category) ?? 0}</span>
+            </button>
+          })}
+          <label className="ml-auto flex items-center gap-1.5 text-dim">
+            <Icon icon="search" size={12} aria-hidden="true" />
+            <input type="text" value={query} aria-label="Filter output" placeholder="Filter output…"
+              onChange={(event) => setQuery(event.target.value)}
+              className="w-44 bg-transparent text-xs text-fg outline-none placeholder:text-dim/60" />
+          </label>
+        </div>
         {history?.error && <div role="alert" className="shrink-0 px-5 py-2 text-xs text-danger">
           {history.error}
           <button className={cn(btn.ghost, 'ml-3')} onClick={() => load(attempt.current)}>Retry output</button>
         </div>}
-        <div ref={outputRef} role="log" aria-label="Task output" aria-busy={!!history?.loading}
-          className="flex-1 min-h-0 min-w-0 px-5 pb-3 overflow-y-auto overscroll-contain [overflow-anchor:none] font-mono text-[12.5px] leading-[1.55]"
-          onScroll={(event) => {
-            if (!visible) return
-            const output = event.currentTarget
-            const atTail = history?.followingLatest === true && output.scrollHeight - output.scrollTop - output.clientHeight < 40
-            setFollow(atTail)
-            if (atTail) anchor.current = null
-            else captureAnchor()
-          }}>
-          <PromptBlock label="Prompt" text={task.prompt} />
-          {!history?.loaded && !history?.error && <p className={PLACEHOLDER}>Loading output…</p>}
-          {history?.loaded && events?.length === 0 && task.status !== 'running' && <p className={PLACEHOLDER}>No output recorded.</p>}
-          {events?.map((event) => <LogRow key={event.id} event={event} />)}
-          <TaskActivity task={task} presentation={presentation} event={history?.followingLatest ? events?.at(-1) : undefined} />
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <div ref={outputRef} role="log" aria-label="Task output" aria-busy={!!history?.loading}
+            className="flex-1 min-h-0 min-w-0 px-5 pb-3 overflow-y-auto overscroll-contain [overflow-anchor:none] font-mono text-[12.5px] leading-[1.55]"
+            onScroll={(event) => {
+              if (!visible) return
+              const output = event.currentTarget
+              const atTail = history?.followingLatest === true && output.scrollHeight - output.scrollTop - output.clientHeight < 40
+              if (atTail) {
+                setFollow(true)
+                setNewCount(0)
+                anchor.current = null
+              } else {
+                if (follow) tailBaseline.current = events?.length ?? 0
+                setFollow(false)
+                captureAnchor()
+              }
+            }}>
+            <PromptBlock label="Prompt" text={task.prompt} />
+            {!history?.loaded && !history?.error && <div role="status" aria-label="Loading output" className="space-y-2.5 py-6">
+              {[72, 88, 54, 80, 63].map((width) => (
+                <div key={width} className="h-3 bg-line/60 motion-safe:animate-breathe" style={{ width: `${width}%` }} />
+              ))}
+            </div>}
+            {history?.loaded && events?.length === 0 && task.status !== 'running' && <p className={PLACEHOLDER}>No output recorded.</p>}
+            {history?.loaded && history.hasOlder && <div className="flex justify-center py-1.5">
+              <button className={cn(btn.ghost, 'py-1 text-xs')} disabled={!!history.loading} onClick={() => load('older')}>
+                {history.loading === 'older' ? 'Loading earlier…' : 'Load earlier events'}
+              </button>
+            </div>}
+            {rows.map((row) => row.kind === 'tool'
+              ? <ToolRow key={row.use.id} use={row.use} result={row.result}
+                useExpanded={expandedIds.has(row.use.id)} resultExpanded={expandedIds.has(row.result.id)}
+                useHidden={eventHidden(row.use)} resultHidden={eventHidden(row.result)}
+                animate={fresh.has(row.use.id)} onToggle={toggleExpanded} />
+              : <EventRow key={row.event.id} event={row.event} expanded={expandedIds.has(row.event.id)}
+                hidden={eventHidden(row.event)} animate={fresh.has(row.event.id)} onToggle={toggleExpanded} />)}
+            {filtering && visibleCount === 0 && (events?.length ?? 0) > 0 && <p className={PLACEHOLDER}>No events match the current filters.</p>}
+            <TaskActivity task={task} presentation={presentation} event={history?.followingLatest ? events?.at(-1) : undefined} />
+          </div>
+          {newCount > 0 && !follow && history?.followingLatest === true && <button
+            className="absolute bottom-3 right-4 z-10 border border-line bg-raised px-3 py-1 text-xs text-fg shadow-[0_8px_32px_rgba(0,0,0,0.4)] hover:bg-hover motion-safe:animate-row-in"
+            onClick={scrollToTail}>
+            ↓ {newCount} new event{newCount === 1 ? '' : 's'}
+          </button>}
         </div>
       </div>
       <BrowserObservationPane taskId={task.id} visible={visible} />
@@ -379,7 +543,7 @@ const CATEGORY_LABEL: Record<TaskEventCategory, string> = {
 /* One colour per stream, so a log skims by kind. A row that reports the agent
  * never committing is amber whatever category carried it. */
 const KIND_TONE: Record<TaskEventCategory, string> = {
-  message: 'text-dim',
+  message: 'text-accent',
   thinking: 'text-violet',
   tool_use: 'text-accent',
   tool_result: 'text-cyan',
@@ -387,8 +551,17 @@ const KIND_TONE: Record<TaskEventCategory, string> = {
   error: 'text-danger'
 }
 
+const CATEGORY_DOT: Record<TaskEventCategory, string> = {
+  message: 'bg-accent',
+  thinking: 'bg-violet',
+  tool_use: 'bg-accent',
+  tool_result: 'bg-cyan',
+  system: 'bg-ok',
+  error: 'bg-danger'
+}
+
 const TEXT_TONE: Record<TaskEventCategory, string> = {
-  message: '',
+  message: 'text-fg',
   thinking: 'italic text-dim',
   tool_use: '',
   tool_result: 'text-dim',
@@ -396,48 +569,189 @@ const TEXT_TONE: Record<TaskEventCategory, string> = {
   error: 'text-danger'
 }
 
-function LogRow({ event }: { event: TaskEvent }): JSX.Element {
-  const [expanded, setExpanded] = useState(false)
-  const uncommitted = event.kind === 'did_not_commit'
-  const [toolName, ...toolDescription] = event.category === 'tool_use' ? event.text.split('\n') : []
-  const tool = toolName ? { name: toolName, description: toolDescription.join('\n') } : undefined
-  const mcpTool = tool && (/^mcp(?:__|[_ -])/i.test(tool.name) || tool.name.includes('/'))
-  const toolResult = event.category === 'tool_result' || event.id.startsWith('tool-result:')
+/* Prose categories read in the UI font; the machine streams stay monospace. */
+const PROSE: Partial<Record<TaskEventCategory, string>> = {
+  message: 'font-sans text-[13px] leading-relaxed',
+  thinking: 'font-sans'
+}
+
+/* How much of each stream shows before a row offers expansion. Agent messages
+ * get room to speak; tool results stay a single skim line. */
+const CLAMP_LINES: Record<TaskEventCategory, number> = {
+  message: 15,
+  thinking: 6,
+  tool_use: 2,
+  tool_result: 1,
+  system: 2,
+  error: 3
+}
+
+const LINE_CLAMP: Record<number, string> = {
+  1: 'line-clamp-1',
+  2: 'line-clamp-2',
+  3: 'line-clamp-3',
+  6: 'line-clamp-6',
+  15: 'line-clamp-15'
+}
+
+/* Measuring every row would cost a layout pass per event; long lines wrap, so
+ * a character budget per line is close enough to decide "can this clamp". */
+function clampable(text: string, lines: number): boolean {
+  return text.split('\n').length > lines || text.length > lines * 80
+}
+
+function ExpandButton({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }): JSX.Element {
   return (
-    <div
-      data-output-category={mcpTool ? 'mcp_tool' : event.category}
-      data-event-id={event.id}
-      role="button"
-      tabIndex={0}
-      aria-expanded={expanded}
-      className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 cursor-pointer border-b border-line/55 last:border-b-0 hover:bg-hover/45"
-      onClick={() => setExpanded((value) => !value)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          setExpanded((value) => !value)
-        }
+    <button type="button" aria-label={expanded ? 'Collapse event' : 'Expand event'} aria-expanded={expanded}
+      onClick={(event) => {
+        event.stopPropagation()
+        onToggle()
       }}
-    >
-      <span className={cn('text-[11px] select-none', uncommitted ? 'text-warn' : mcpTool ? 'text-violet' : KIND_TONE[event.category])}>
-        {mcpTool ? 'mcp_tool' : CATEGORY_LABEL[event.category]}
+      className="-ml-1 mt-px flex size-4 shrink-0 items-center justify-center text-dim/50 hover:text-fg">
+      <Icon icon="chevron-right" size={12} aria-hidden="true" className={cn('transition-transform duration-150', expanded && 'rotate-90')} />
+    </button>
+  )
+}
+
+function Gutter({ event, label, tone, expandable, expanded, onToggle }: {
+  event: TaskEvent
+  label: string
+  tone: string
+  expandable: boolean
+  expanded: boolean
+  onToggle: () => void
+}): JSX.Element {
+  return (
+    <span className="flex select-none flex-col gap-0.5">
+      <span className="flex items-center gap-1">
+        {expandable && <ExpandButton expanded={expanded} onToggle={onToggle} />}
+        <span className={cn('text-[11px]', tone)}>{label}</span>
       </span>
-      <span className="min-w-0">
-        {tool ? <>
-          <span className="block break-words">{tool.name}</span>
-          {tool.description && <span className={cn('whitespace-pre-wrap break-words text-dim', expanded ? 'block' : 'line-clamp-2')}>
-            {tool.description}
-          </span>}
-        </> : <span
-          className={cn(
-            'min-w-0 whitespace-pre-wrap break-words',
-            expanded ? 'block' : toolResult ? 'line-clamp-1' : 'line-clamp-3',
-            uncommitted ? 'text-warn' : TEXT_TONE[event.category]
-          )}
-        >
-          {event.text || ' '}
-        </span>}
+      <time dateTime={new Date(event.ts).toISOString()} className="text-[10px] leading-tight text-dim/50 tabular-nums">
+        {timeFormat.format(event.ts)}
+      </time>
+    </span>
+  )
+}
+
+function ClampedText({ text, lines, expanded, className, showMoreLink, onToggle }: {
+  text: string
+  lines: number
+  expanded: boolean
+  className?: string
+  showMoreLink?: boolean
+  onToggle?: () => void
+}): JSX.Element {
+  const truncatable = clampable(text, lines)
+  return (
+    <span className="relative block min-w-0">
+      <span className={cn('whitespace-pre-wrap break-words [overflow-wrap:anywhere]', expanded ? 'block' : truncatable && LINE_CLAMP[lines], className)}>
+        {text || ' '}
+      </span>
+      {!expanded && truncatable && <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-canvas to-transparent" />}
+      {truncatable && showMoreLink && onToggle && <button type="button" aria-expanded={expanded}
+        onClick={(event) => {
+          event.stopPropagation()
+          onToggle()
+        }}
+        className="mt-0.5 text-[11px] text-accent hover:underline">
+        {expanded ? 'Show less' : 'Show more'}
+      </button>}
+    </span>
+  )
+}
+
+function ToolUseContent({ event, expanded, onToggle }: {
+  event: TaskEvent
+  expanded: boolean
+  onToggle: (id: string) => void
+}): JSX.Element {
+  const [toolName, ...toolDescription] = event.text.split('\n')
+  const description = toolDescription.join('\n')
+  return (
+    <span className="min-w-0">
+      <span className="block break-words">{toolName}</span>
+      {description && <ClampedText text={description} lines={CLAMP_LINES.tool_use} expanded={expanded}
+        className="text-dim" onToggle={() => onToggle(event.id)} />}
+    </span>
+  )
+}
+
+function ToolResultRow({ result, expanded, hidden, onToggle }: {
+  result: TaskEvent
+  expanded: boolean
+  hidden: boolean
+  onToggle: (id: string) => void
+}): JSX.Element {
+  const failed = result.category === 'error'
+  return (
+    <div data-event-id={result.id} data-output-category={result.category} aria-expanded={expanded}
+      className={cn('mt-1 flex items-start gap-2 border-l border-line pl-2.5', hidden && 'hidden')}>
+      <ExpandButton expanded={expanded} onToggle={() => onToggle(result.id)} />
+      <span className="min-w-0 flex-1">
+        <span className={cn('block text-[10px] uppercase tracking-wide select-none', failed ? 'text-danger' : KIND_TONE.tool_result)}>
+          {failed ? 'error' : 'result'}
+        </span>
+        <ClampedText text={result.text} lines={CLAMP_LINES.tool_result} expanded={expanded}
+          className={failed ? 'text-danger' : 'text-dim'} onToggle={() => onToggle(result.id)} />
       </span>
     </div>
   )
 }
+
+const ToolRow = memo(function ToolRow({ use, result, useExpanded, resultExpanded, useHidden, resultHidden, animate, onToggle }: {
+  use: TaskEvent
+  result: TaskEvent
+  useExpanded: boolean
+  resultExpanded: boolean
+  useHidden: boolean
+  resultHidden: boolean
+  animate: boolean
+  onToggle: (id: string) => void
+}): JSX.Element {
+  const mcpTool = /^mcp(?:__|[_ -])/i.test(use.text.split('\n', 1)[0]) || use.text.split('\n', 1)[0].includes('/')
+  return (
+    <div data-output-category={mcpTool ? 'mcp_tool' : 'tool_use'} data-event-id={use.id} aria-expanded={useExpanded}
+      className={cn('grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
+        animate && 'motion-safe:animate-row-in', useHidden && 'hidden')}>
+      <Gutter event={use} label={mcpTool ? 'mcp_tool' : 'tool_use'} tone={mcpTool ? 'text-violet' : KIND_TONE.tool_use}
+        expandable expanded={useExpanded} onToggle={() => onToggle(use.id)} />
+      <span className="min-w-0">
+        <ToolUseContent event={use} expanded={useExpanded} onToggle={onToggle} />
+        <ToolResultRow result={result} expanded={resultExpanded} hidden={resultHidden} onToggle={onToggle} />
+      </span>
+    </div>
+  )
+})
+
+const EventRow = memo(function EventRow({ event, expanded, hidden, animate, onToggle }: {
+  event: TaskEvent
+  expanded: boolean
+  hidden: boolean
+  animate: boolean
+  onToggle: (id: string) => void
+}): JSX.Element {
+  const uncommitted = event.kind === 'did_not_commit'
+  const tool = event.category === 'tool_use'
+  const mcpTool = tool && (/^mcp(?:__|[_ -])/i.test(event.text.split('\n', 1)[0]) || event.text.split('\n', 1)[0].includes('/'))
+  const toolResult = event.category === 'tool_result' || event.id.startsWith('tool-result:')
+  const lines = toolResult ? CLAMP_LINES.tool_result : CLAMP_LINES[event.category]
+  const prose = PROSE[event.category]
+  const expandable = tool || toolResult || clampable(event.text, lines)
+  return (
+    <div data-output-category={mcpTool ? 'mcp_tool' : event.category} data-event-id={event.id} aria-expanded={expanded}
+      className={cn('grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
+        animate && 'motion-safe:animate-row-in', hidden && 'hidden')}>
+      <Gutter event={event} label={mcpTool ? 'mcp_tool' : CATEGORY_LABEL[event.category]}
+        tone={uncommitted ? 'text-warn' : mcpTool ? 'text-violet' : KIND_TONE[event.category]}
+        expandable={expandable} expanded={expanded} onToggle={() => onToggle(event.id)} />
+      {tool ? <ToolUseContent event={event} expanded={expanded} onToggle={onToggle} /> :
+        <span className={cn('min-w-0', event.category === 'message' && 'block border-l-2 border-accent/50 py-0.5 pl-3')}>
+          <ClampedText text={event.text} lines={lines} expanded={expanded}
+            className={cn(prose, uncommitted ? 'text-warn' : TEXT_TONE[event.category])}
+            showMoreLink={event.category === 'message' || event.category === 'thinking'}
+            onToggle={() => onToggle(event.id)} />
+        </span>}
+    </div>
+  )
+})

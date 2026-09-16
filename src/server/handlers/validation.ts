@@ -148,6 +148,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'workspaces:snapshot': none,
   'workspaces:create': workspaceName,
   'workspaces:rename': object({ workspaceId, name: workspaceName }),
+  'workspaces:remove': workspaceId,
   'workspaces:select': workspaceId,
   'workspaces:preferences:get': workspaceId,
   'workspaces:preferences:set': object({ workspaceId, patch: object({ composer: optional(composer), lastProjectId: optional(nullable(id)) }) }),

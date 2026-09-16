@@ -30,6 +30,7 @@ export function selectedWorkspaceDirectory(dataDirectory = resolveAppDataDirecto
   if (config.version !== 1 || !Array.isArray(config.workspaces)) throw new Error('Invalid root config')
   const workspace = config.workspaces.find((entry: { id: string }) => entry.id === config.activeWorkspaceId)
     ?? config.workspaces.find((entry: { id: string }) => entry.id === 'default')
+    ?? config.workspaces[0]
   if (!workspace || typeof workspace.name !== 'string') throw new Error('Selected workspace not found')
   return resolveWorkspaceDirectory(dataDirectory, workspace.name)
 }

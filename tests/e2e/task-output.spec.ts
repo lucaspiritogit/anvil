@@ -36,14 +36,20 @@ async function expectAnchor(page: Page, before: { id: string; offset: number }):
   await expect.poll(async () => Math.abs((await anchor(page)).offset - before.offset)).toBeLessThanOrEqual(1)
 }
 
-test('shows the bounded latest output without directional history controls', async ({ page }) => {
+test('loads earlier events on demand and preserves the reader position', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&historySize=4500')
   await expect(rows(page)).toHaveCount(500)
   await expect(rows(page).first()).toHaveAttribute('data-event-id', 'history-4001')
   await expect(rows(page).last()).toHaveAttribute('data-event-id', 'history-4500')
   await expect.poll(() => atBottom(page)).toBe(true)
-  await expect(page.getByRole('button', { name: 'Older output', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Newer output', exact: true })).toHaveCount(0)
+  await scrollTo(page, 0)
+  const rowTop = async () => output(page).locator('[data-event-id="history-4001"]').evaluate((el) => el.getBoundingClientRect().top)
+  const before = await rowTop()
+  await page.getByRole('button', { name: 'Load earlier events' }).click()
+  await expect(rows(page)).toHaveCount(1000)
+  await expect(rows(page).first()).toHaveAttribute('data-event-id', 'history-3501')
+  // scrollTop rounds fractional CSS pixels in Chromium.
+  await expect.poll(async () => Math.abs((await rowTop()) - before)).toBeLessThanOrEqual(1)
 })
 
 test('follows the live tail, preserves a reader through snapshots and hidden panels, and reloads latest', async ({ page }) => {
@@ -139,8 +145,7 @@ test('prompt, tool rows, delivery messages, empty output and activity retain acc
   await expect(prompt.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true')
   await prompt.getByRole('button', { name: 'Show less' }).click()
   const tool = output(page).locator('[data-output-category="tool_use"]')
-  await tool.focus()
-  await page.keyboard.press('Enter')
+  await tool.getByRole('button', { name: 'Expand event' }).first().click()
   await expect(tool).toHaveAttribute('aria-expanded', 'true')
   await expect(tool).toContainText('Shell')
   await expect(output(page).locator('[data-output-category="tool_result"]')).toContainText('first.ts')
@@ -152,6 +157,38 @@ test('prompt, tool rows, delivery messages, empty output and activity retain acc
   await expect(output(page).locator('[data-event-id="delivery"] .text-warn').first()).toBeAttached()
   await page.goto('/tests/e2e/fixture/?scenario=output&emptyOutput=1')
   await expect(output(page)).toContainText('No output recorded.')
+})
+
+test('filters events by category chip and text query', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=output&tools=1&steering=1&running=1')
+  await expect(rows(page)).toHaveCount(2)
+  await emit(page, 'agent-message', 'A message from the agent')
+  await emit(page, 'agent-error', 'Something failed', 'output', 'error')
+  const filters = page.getByRole('toolbar', { name: 'Output filters' })
+  await filters.getByRole('button', { name: 'error', exact: true }).click()
+  await expect(output(page).locator('[data-event-id="agent-error"]')).toBeHidden()
+  await expect(output(page).locator('[data-event-id="agent-message"]')).toBeVisible()
+  await filters.getByRole('button', { name: 'error', exact: true }).click()
+  await expect(output(page).locator('[data-event-id="agent-error"]')).toBeVisible()
+  await filters.getByRole('textbox', { name: 'Filter output' }).fill('Something')
+  await expect(output(page).locator('[data-event-id="agent-message"]')).toBeHidden()
+  await expect(output(page).locator('[data-event-id="agent-error"]')).toBeVisible()
+  await filters.getByRole('textbox', { name: 'Filter output' }).fill('')
+  await expect(output(page).locator('[data-event-id="agent-message"]')).toBeVisible()
+})
+
+test('reports new events in a pill while scrolled up and returns to the tail', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=output&historySize=600&steering=1&running=1')
+  await expect(rows(page)).toHaveCount(500)
+  await scrollTo(page, 0)
+  await emit(page, 'live-1', 'First new event')
+  await emit(page, 'live-2', 'Second new event')
+  const pill = page.getByRole('button', { name: /new events/ })
+  await expect(pill).toHaveText('↓ 2 new events')
+  await pill.click()
+  await expect.poll(() => atBottom(page)).toBe(true)
+  await expect(pill).toHaveCount(0)
+  await expect(rows(page).last()).toContainText('Second new event')
 })
 
 test('event-only bursts commit output without TaskView, review/header owner, diff or composer commits', async ({ page }) => {

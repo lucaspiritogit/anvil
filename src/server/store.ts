@@ -452,6 +452,20 @@ export class Store {
     return this.requireWorkspace(id)
   }
 
+  removeWorkspace(id: string): Workspace {
+    this.requireWorkspace(id)
+    if (this.config.workspaces.length === 1) throw new Error('Anvil must have at least one workspace')
+    if (this.hasRunningTasks(id)) throw new Error('Wait for running tasks in this workspace to finish before deleting it')
+    const workspaces = this.config.workspaces.filter((workspace) => workspace.id !== id)
+    const activeWorkspaceId = this.config.activeWorkspaceId === id ? workspaces[0]!.id : this.config.activeWorkspaceId
+    if (activeWorkspaceId !== this.config.activeWorkspaceId) this.workspaceConnection(activeWorkspaceId)
+    this.saveConfig({ ...this.config, workspaces, activeWorkspaceId })
+    this.storage.closeWorkspace(id)
+    this.initializedWorkspaces.delete(id)
+    this.activityChanged()
+    return this.getActiveWorkspace()
+  }
+
   getActiveWorkspace(): Workspace {
     return this.requireWorkspace(this.config.activeWorkspaceId)
   }

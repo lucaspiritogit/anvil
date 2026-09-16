@@ -3,6 +3,18 @@ import { chooseBranch, chooseProject, restoreComposerSelection } from './compose
 
 test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
+test('project trash action confirms removal and leaves the checkout on disk', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/')
+  await page.getByRole('button', { name: 'Project', exact: true }).click()
+  const trash = page.getByRole('dialog', { name: 'Choose project' }).getByRole('button', { name: 'Delete Workbench', exact: true })
+  await expect(trash.locator('svg')).toBeVisible()
+  await trash.click()
+  const dialog = page.getByRole('dialog', { name: 'Delete project?' })
+  await expect(dialog).toContainText('The project checkout on disk will not be deleted.')
+  await dialog.getByRole('button', { name: 'Delete project', exact: true }).click()
+  await expect.poll(() => page.evaluate(async () => (await window.anvil.projects.list()).map((project) => project.name))).not.toContain('Workbench')
+})
+
 test('Quick defaults to the current checkout and supports keyboard branch switching', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/')
   const surface = page.getByTestId('project-overview')

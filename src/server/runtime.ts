@@ -189,6 +189,27 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     }
   }, () => terminals.disposeProjects(), (workspaceId, handlerContext) => {
     handlerContext.deferUntilResponse(async () => { await connections.activate(workspaceId) })
+  }, async (workspaceId) => {
+    const release = agentProcesses.acquireAccountChange(workspaceId)
+    let resumeAccounts: (() => void) | undefined
+    let resumeModels: (() => void) | undefined
+    try {
+      resumeAccounts = await accounts.pauseWorkspace(workspaceId)
+      resumeModels = await pauseWorkspaceModelDiscovery(workspaceId)
+      await agentProcesses.invalidateWorkspaceClients(workspaceId)
+      await projectMemory.closeWorkspace(workspaceId)
+      const polling = polls.get(workspaceId)
+      polls.delete(workspaceId)
+      await polling?.close()
+      const workspace = store.removeWorkspace(workspaceId)
+      wallpaperLibraries.delete(workspaceId)
+      invalidateWorkspaceModels(workspaceId)
+      return workspace
+    } finally {
+      resumeModels?.()
+      resumeAccounts?.()
+      release()
+    }
   })
   registerAgentHandlers(ipc, store)
   registerAnalyticsHandlers(ipc, store)

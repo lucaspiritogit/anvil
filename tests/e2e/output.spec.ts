@@ -19,12 +19,20 @@ for (const viewport of [{ width: 1100, height: 700 }, { width: 900, height: 500 
     await page.mouse.wheel(0, -100000)
     const first = output.getByText(/^Output 0:/)
     await expect(first).toBeInViewport()
-    await first.click() // Expanded long output must also stay contained.
+    // Expanded long output must also stay contained.
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('fixture:output', { detail: {
+      id: 'long-message', taskId: 'output', ts: Date.now(), stream: 'stdout', kind: 'output', category: 'message',
+      text: Array.from({ length: 40 }, (_, index) => `Line ${index + 1} of a very long agent message`).join('\n')
+    } })))
+    const longRow = output.locator('[data-event-id="long-message"]')
+    await longRow.getByRole('button', { name: 'Expand event' }).click()
+    await expect(longRow).toContainText('Line 40 of a very long agent message')
     await expect(page.getByRole('tab', { name: 'Output', exact: true })).toBeInViewport()
-    const textBounds = await first.boundingBox()
+    const textBounds = await longRow.locator('.whitespace-pre-wrap').boundingBox()
     expect(textBounds!.x + textBounds!.width).toBeLessThanOrEqual(viewport.width)
+    await longRow.getByRole('button', { name: 'Collapse event' }).click()
     await page.getByRole('button', { name: 'Jump to latest' }).click()
-    await expect(latest).toBeInViewport()
+    await expect(longRow).toBeInViewport()
     await expect(page.getByRole('tab', { name: 'Output', exact: true })).toBeInViewport()
   })
 }
@@ -38,7 +46,7 @@ test('output is a compact event stream with event types on the left', async ({ p
   const resultBounds = (await tool.getByText('Shell', { exact: true }).boundingBox())!
   expect(typeBounds.x + typeBounds.width).toBeLessThanOrEqual(resultBounds.x)
   expect(Math.abs(typeBounds.y - resultBounds.y)).toBeLessThan(3)
-  await expect(output.locator('time')).toHaveCount(0)
+  await expect(output.locator('time').first()).toBeAttached()
   await expect(page.getByRole('form', { name: 'Steer task' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('event-stream.png') })
 })
@@ -58,7 +66,7 @@ test('tool calls show a name and gray input, with one expandable result per call
   await expect(results).toHaveCount(1)
   await expect(results).toHaveAttribute('aria-expanded', 'false')
   const collapsedHeight = (await results.boundingBox())!.height
-  await results.click()
+  await results.getByRole('button', { name: 'Expand event' }).click()
   await expect(results).toHaveAttribute('aria-expanded', 'true')
   expect((await results.boundingBox())!.height).toBeGreaterThan(collapsedHeight)
 
@@ -83,6 +91,7 @@ test('tool calls show a name and gray input, with one expandable result per call
 test('MCP tool calls have a violet type and retain their call details', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&tools=1')
   const output = page.getByRole('log', { name: 'Task output' })
+  await expect(output.locator('[data-output-category="tool_use"]')).toHaveCount(1)
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('fixture:output', { detail: {
     id: 'tool-use:mcp', taskId: 'output', ts: Date.now(), stream: 'stdout', kind: 'output',
     category: 'tool_use', text: 'docs/search\nACP tool calls'

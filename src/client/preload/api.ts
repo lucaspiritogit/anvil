@@ -125,6 +125,7 @@ export function createAnvilApi(url: string, host: ClientHost) {
       snapshot: (): Promise<WorkspaceSnapshot> => invoke('workspaces:snapshot'),
       create: (name: string): Promise<Workspace> => invoke('workspaces:create', name),
       rename: (workspaceId: string, name: string): Promise<Workspace> => invoke('workspaces:rename', { workspaceId, name }),
+      remove: (workspaceId: string): Promise<WorkspaceSnapshot> => invoke('workspaces:remove', workspaceId),
       select: (workspaceId: string): Promise<WorkspaceSnapshot> => invoke('workspaces:select', workspaceId),
       getPreferences: (workspaceId: string): Promise<WorkspacePreferences> => invoke('workspaces:preferences:get', workspaceId),
       setPreferences: (workspaceId: string, patch: Partial<WorkspacePreferences>): Promise<WorkspacePreferences> => invoke('workspaces:preferences:set', { workspaceId, patch }),

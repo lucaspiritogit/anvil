@@ -112,6 +112,7 @@ interface AnvilState {
   selectWorkspace: (workspaceId: string) => Promise<void>
   createWorkspace: (name: string) => Promise<void>
   renameWorkspace: (workspaceId: string, name: string) => Promise<void>
+  removeWorkspace: (workspaceId: string) => Promise<void>
   applyWorkspaceSnapshot: (snapshot: WorkspaceSnapshot) => void
   receiveWorkspaceSelection: (snapshot: WorkspaceSnapshot) => void
   applySettingsChange: (change: WorkspaceSettingsChange) => void
@@ -314,6 +315,19 @@ export const useStore = create<AnvilState>((set, get) => ({
   renameWorkspace: async (workspaceId, name) => {
     await window.anvil.workspaces.rename(workspaceId, name)
     set({ workspaces: await window.anvil.workspaces.list() })
+  },
+  removeWorkspace: async (workspaceId) => {
+    const generation = ++workspaceGeneration
+    set({ ...evictTaskEvents(), workspaceSwitching: true, workspaceError: null })
+    try {
+      const snapshot = await enqueueWorkspaceRequest(() => window.anvil.workspaces.remove(workspaceId))
+      if (generation === workspaceGeneration) get().applyWorkspaceSnapshot(snapshot)
+    } catch (error) {
+      if (generation === workspaceGeneration) set({ workspaceError: error instanceof Error ? error.message : 'Could not delete workspace' })
+      throw error
+    } finally {
+      if (generation === workspaceGeneration) set({ workspaceSwitching: false })
+    }
   },
   ready: false,
   projects: [],

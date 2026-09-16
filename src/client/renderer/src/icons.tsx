@@ -33,6 +33,7 @@ import settings from './icons/settings.svg?raw'
 import chartNoAxesCombined from './icons/chart-no-axes-combined.svg?raw'
 import sparkles from './icons/sparkles.svg?raw'
 import terminal from './icons/terminal.svg?raw'
+import trash from './icons/trash.svg?raw'
 import tableOfContents from './icons/table-of-contents.svg?raw'
 import waypoints from './icons/waypoints.svg?raw'
 import x from './icons/x.svg?raw'
@@ -84,6 +85,7 @@ const artwork = {
   'chart-no-axes-combined': body(chartNoAxesCombined),
   sparkles: body(sparkles),
   terminal: body(terminal),
+  trash: body(trash),
   'table-of-contents': body(tableOfContents),
   waypoints: body(waypoints),
   x: body(x)

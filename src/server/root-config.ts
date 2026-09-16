@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH, type Workspace } from '../shared/types'
+import { MAX_WORKSPACE_NAME_LENGTH, type Workspace } from '../shared/types'
 import { validateWorkspaceFolderName } from './workspace-directories'
 
 export interface RootConfig {
@@ -37,12 +37,11 @@ export function readRootConfig(filename: string): RootConfig {
     ids.add(workspace.id)
     names.add(normalized.nameKey)
   }
-  if (!ids.has(DEFAULT_WORKSPACE_ID)) throw new Error('Default workspace missing from root config')
   return {
     version: 1,
     workspaces: value.workspaces,
     activeWorkspaceId: typeof value.activeWorkspaceId === 'string' && ids.has(value.activeWorkspaceId)
-      ? value.activeWorkspaceId : DEFAULT_WORKSPACE_ID
+      ? value.activeWorkspaceId : value.workspaces[0]!.id
   }
 }
 
