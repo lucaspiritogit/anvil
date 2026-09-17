@@ -4,12 +4,16 @@
 
 - Node 24.15+
 - At least one agent CLI on your PATH.
+- Linux: Python 3, `make`, and a C++20 compiler such as GCC 10 or newer. `node-pty`
+  builds locally because its npm package does not include Linux binaries.
+
+Windows x64 and arm64 use the `node-pty` binaries included in its npm package.
+They do not require Visual Studio Build Tools for a normal install.
 
 ## Run locally
 
 ```sh
 npm install
-unset ELECTRON_RUN_AS_NODE
 npm run dev
 ```
 

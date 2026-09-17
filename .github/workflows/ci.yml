@@ -85,6 +85,7 @@ jobs:
           node-version: '24.20.0'
           cache: npm
       - run: npm ci
+      - run: npm run test:node-pty
       - run: npm run build
       - run: npx electron-builder ${{ matrix.arguments }} --publish never
       - name: Verify macOS app signature

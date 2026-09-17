@@ -23,9 +23,10 @@ await copyFile(join(root, 'LICENSE'), join(stagingDirectory, 'LICENSE'))
 
 const npm = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : 'npm'
 const npmArguments = process.platform === 'win32' ? ['/d', '/s', '/c', 'npm.cmd'] : []
-// Removing the root postinstall above lets these packages install their Node
-// binaries without electron-rebuild replacing them with Electron ABI builds.
 run(npm, [...npmArguments, 'ci', '--omit=dev', '--no-audit', '--no-fund'], appDirectory)
+if (process.platform === 'darwin') {
+  await chmod(join(appDirectory, 'node_modules', 'node-pty', 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper'), 0o755)
+}
 
 const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
 const nodeExecutable = await realpath(process.execPath)
