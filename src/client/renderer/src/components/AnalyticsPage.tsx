@@ -444,7 +444,7 @@ function AnalyticsContent({ analytics }: { analytics: WorkspaceAnalytics }): JSX
           <TokenTotals analytics={analytics} />
         </Panel>
 
-        <Panel title="Token mix per day" aside="stacked" className="col-span-8 max-[940px]:col-span-1" bodyClassName="pb-3">
+        <Panel title="Token mix per day" aside="stacked" className="col-span-12 max-[940px]:col-span-1" bodyClassName="pb-3">
           <TokenMixChart daily={analytics.daily} />
         </Panel>
 
@@ -513,17 +513,15 @@ export function AnalyticsPage(): JSX.Element {
 
   return (
     <div className="analytics-grid h-full overflow-y-auto px-8 py-7 font-mono max-[900px]:px-5 max-[700px]:px-3 max-[700px]:py-3">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4">
+      <div className="mx-auto flex w-full max-w-360 flex-col gap-4">
         <header className="flex items-start justify-between gap-8 border-b border-dashed border-line pb-4 max-[840px]:flex-col max-[840px]:gap-4">
           <div className="min-w-0">
-            <p className="mb-2 text-[10px] tracking-[0.2em] text-accent uppercase">Workspace telemetry / SQLite</p>
             <h1 className="text-xl font-semibold tracking-[-0.03em]">Analytics</h1>
-            <p className="mt-1 text-xs text-dim">Task usage and outcomes for the selected period.</p>
             <a
               href={DITHER_KIT_URL}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-1.5 border-b border-dotted border-accent/50 pb-0.5 text-[10px] tracking-[0.12em] text-dim uppercase transition-colors hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="mt-2 inline-flex items-center gap-1.5 border-b border-dotted border-accent/50 pb-0.5 text-[10px] tracking-[0.12em] text-dim uppercase transition-colors hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <span aria-hidden="true" className="text-accent">◆</span>
               Charts by Dither Kit
