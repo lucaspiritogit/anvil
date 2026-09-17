@@ -20,7 +20,7 @@ import type {
   TaskMergeConflictSnapshot,
   TaskMergePreview,
   TaskPushPreview,
-  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskReviewPolicy,
+  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskReviewPolicy, TaskCheckoutMode,
   TaskResultNotice, TaskResultNoticeChange
 } from '@shared/types'
 import { nextTaskStyle } from '../../../../shared/task-style'
@@ -98,6 +98,18 @@ const sortTaskResultNotices = (notices: TaskResultNotice[]): TaskResultNotice[] 
   (a, b) => b.createdAt - a.createdAt || b.resultVersion - a.resultVersion || a.id.localeCompare(b.id)
 )
 
+const TASK_SEEN_STORAGE_KEY = 'anvil-task-seen-at'
+
+const loadTaskSeenAt = (): Record<string, number> => {
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(TASK_SEEN_STORAGE_KEY) ?? '{}')
+    if (typeof stored !== 'object' || stored === null) return {}
+    return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))
+  } catch {
+    return {}
+  }
+}
+
 const mergeTaskResultNotice = (current: TaskResultNotice | undefined, incoming: TaskResultNotice): TaskResultNotice => ({
   ...incoming,
   ...(current?.seenAt !== undefined && incoming.seenAt === undefined ? { seenAt: current.seenAt } : {}),
@@ -119,6 +131,8 @@ interface AnvilState {
   ready: boolean
   projects: Project[]
   tasks: Task[]
+  taskSeenAt: Record<string, number>
+  markTaskSeen: (taskId: string) => void
   taskResultNotices: TaskResultNotice[]
   taskResultNoticeError: TaskResultNoticeError | null
   applyTaskResultNoticeChange: (change: TaskResultNoticeChange) => void
@@ -205,7 +219,7 @@ interface AnvilState {
   sendComments: (taskId: string) => Promise<void>
 
   loadAgentModels: (agentId: string) => Promise<void>
-  startTask: (input: { projectId?: string; style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
+  startTask: (input: { projectId?: string; style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
   steerTask: (taskId: string, message: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string, panel?: TaskPanel) => Promise<void>
@@ -332,6 +346,16 @@ export const useStore = create<AnvilState>((set, get) => ({
   ready: false,
   projects: [],
   tasks: [],
+  taskSeenAt: loadTaskSeenAt(),
+  markTaskSeen: (taskId) => {
+    set((state) => {
+      const known = new Set(state.tasks.map((task) => task.id))
+      const taskSeenAt = Object.fromEntries(Object.entries({ ...state.taskSeenAt, [taskId]: Date.now() })
+        .filter(([id]) => known.has(id)))
+      try { window.localStorage.setItem(TASK_SEEN_STORAGE_KEY, JSON.stringify(taskSeenAt)) } catch {}
+      return { taskSeenAt }
+    })
+  },
   taskResultNotices: [],
   taskResultNoticeError: null,
   applyTaskResultNoticeChange: (change) => {
@@ -575,7 +599,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  startTask: async ({ projectId: requestedProjectId, style, reviewPolicy, startBase, parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
+  startTask: async ({ projectId: requestedProjectId, style, reviewPolicy, checkoutMode, startBase, parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
     if (get().workspaceSwitching || !get().ready) throw new Error('Workspace is still loading')
     const generation = workspaceGeneration
     const projectId = requestedProjectId ?? get().activeProjectId
@@ -584,7 +608,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     const view = get().view
     const task = await window.anvil.tasks.start({
       workspaceId: get().activeWorkspaceId ?? undefined,
-      projectId, style, reviewPolicy, parentTaskId, agentId, prompt, model,
+      projectId, style, reviewPolicy, checkoutMode, parentTaskId, agentId, prompt, model,
       ...(startBase ? { startBase } : {}),
       ...(images?.length ? { images } : {}),
       ...(fileReferences?.length ? { fileReferences } : {}),
@@ -649,6 +673,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     if (currentView.kind !== 'task' || currentView.taskId !== taskId) {
       set({ ...evictTaskEvents(), activeProjectId: task.projectId, view: { kind: 'task', taskId, ...(panel ? { panel } : {}) } })
     }
+    get().markTaskSeen(taskId)
     await get().loadTaskEvents(taskId)
   },
 

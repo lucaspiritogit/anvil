@@ -96,7 +96,7 @@ test('task updates replace the sidebar status without leaving stale success indi
     { status: 'failed', deliveryStatus: 'reviewable', hasPullRequest: true, label: 'Failed' },
     { status: 'succeeded', deliveryStatus: 'failed', hasPullRequest: false, label: 'Failed' },
     { status: 'cancelled', deliveryStatus: 'approved', hasPullRequest: false, label: null },
-    { status: 'succeeded', deliveryStatus: 'no_changes', hasPullRequest: false, label: 'Done' }
+    { status: 'succeeded', deliveryStatus: 'no_changes', hasPullRequest: false, label: 'Ready for review' }
   ] as const
   await expect(task.getByRole('img', { name: 'Working', exact: true })).toBeVisible()
   for (const scenario of scenarios) {
@@ -122,6 +122,40 @@ test('task updates replace the sidebar status without leaving stale success indi
       await expect(task.locator('..')).not.toHaveClass(/bg-(ok|orange-400|violet)\/8/)
     }
   }
+  await task.click()
+  await expect(task.getByRole('img', { name: 'Done', exact: true })).toBeVisible()
+})
+
+test('finished tasks of any style show a review state, sort first, and badge the header', async ({ page }) => {
+  await page.goto(fixture)
+  const sidebar = page.getByRole('complementary')
+  const output = sidebar.getByRole('button', { name: 'Open task: Layout test task', exact: true })
+  const badge = sidebar.getByRole('status', { name: /ready for review/ })
+
+  await expect(badge).toHaveText('2')
+  await expect(badge).toHaveAccessibleName('2 tasks ready for review')
+  await expect(output.getByRole('img', { name: 'Ready for review', exact: true })).toBeVisible()
+
+  const labels = await page.locator('nav[aria-label="Active tasks"] [data-task-id] button[aria-label^="Open task:"]')
+    .evaluateAll((elements) => elements.map((element) => element.getAttribute('aria-label')))
+  expect(labels.slice(0, 2)).toEqual(['Open task: Review sidebar changes', 'Open task: Layout test task'])
+
+  await page.evaluate(async () => {
+    const current = (await window.anvil.tasks.list()).find((task) => task.id === 'output')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...current, style: 'quick', checkoutMode: 'local' } }))
+  })
+  await expect(output.getByRole('img', { name: 'Ready for review', exact: true })).toBeVisible()
+
+  await output.click()
+  await expect(output.getByRole('img', { name: 'Done', exact: true })).toBeVisible()
+  await expect(badge).toHaveText('1')
+
+  await page.evaluate(async () => {
+    const current = (await window.anvil.tasks.list()).find((task) => task.id === 'output')!
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...current, deliveryStatus: 'reviewable' } }))
+  })
+  await expect(output.getByRole('img', { name: 'Ready for review', exact: true })).toBeVisible()
+  await expect(badge).toHaveText('2')
 })
 
 test('search filters active and settled tasks by title, project, or branch', async ({ page }) => {

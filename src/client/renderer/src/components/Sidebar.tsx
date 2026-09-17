@@ -6,6 +6,7 @@ import { IS_MAC } from '../keys'
 import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@shared/appearance'
 import { useStore } from '../state/store'
 import { cn } from '../ui'
+import { taskAttentionRank, taskNeedsReview } from '@shared/task-review'
 import { useSidebarIssueSnapshots } from '../hooks/use-task-issues'
 import { SidebarTaskList } from './SidebarTaskList'
 import { WorkspacePicker } from './WorkspacePicker'
@@ -30,6 +31,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   const workspaceId = useStore((state) => state.activeWorkspaceId)
   const projects = useStore((state) => state.projects)
   const tasks = useStore((state) => state.tasks)
+  const taskSeenAt = useStore((state) => state.taskSeenAt)
   const activeProjectId = useStore((state) => state.activeProjectId)
   const view = useStore((state) => state.view)
   const settingsOpen = useStore((state) => state.settingsOpen)
@@ -65,11 +67,15 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
         .some((text) => text?.toLowerCase().includes(query))
     })
     return {
-      activeTasks: matching.filter((task) => task.settledAt === undefined),
+      activeTasks: matching.filter((task) => task.settledAt === undefined)
+        .sort((first, second) =>
+          taskAttentionRank(first, taskSeenAt[first.id]) - taskAttentionRank(second, taskSeenAt[second.id])),
       settledTasks: matching.filter((task) => task.settledAt !== undefined)
         .sort((first, second) => second.settledAt! - first.settledAt!)
     }
-  }, [tasks, search, projectById, snapshots])
+  }, [tasks, search, projectById, snapshots, taskSeenAt])
+  const reviewCount = useMemo(() => tasks.filter((task) => taskNeedsReview(task, taskSeenAt[task.id])).length,
+    [tasks, taskSeenAt])
   const listKey = JSON.stringify([workspaceId, search])
   const matchingCount = activeTasks.length + settledTasks.length
   const showSettled = settledOpen || Boolean(query)
@@ -113,6 +119,17 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
     >
       <div style={titlebarStyle} className={cn('flex shrink-0 items-center h-11 px-4 text-[11px] font-semibold tracking-[0.12em] text-dim', IS_MAC && 'drag-region')}>
         ANVIL
+        {reviewCount > 0 && (
+          <span
+            role="status"
+            aria-label={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready for review`}
+            title={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready for review`}
+            className="ml-2 inline-flex items-center gap-1 rounded-full bg-orange-400/15 px-1.5 py-0.5 text-[10px] tracking-normal text-orange-400"
+          >
+            <Icon icon="bell-ring" size={11} aria-hidden="true" />
+            {reviewCount}
+          </span>
+        )}
         <button
           ref={mobileNavigation ? mobileNavigationCloseRef : undefined}
           className={cn(ICON_BUTTON, 'no-drag ml-auto')}

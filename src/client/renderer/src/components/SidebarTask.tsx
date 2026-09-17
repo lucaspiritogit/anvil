@@ -1,10 +1,11 @@
 import { isQueuedStackTask } from '@shared/task-stacks'
 import type { ComponentPropsWithRef, JSX } from 'react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import type { Project, Task, TaskIssueSnapshot } from '@shared/types'
 import { taskIssuePresentation } from '@shared/task-issue-presentation'
 import { canSettleTask, settlementDeadline } from '@shared/task-settlement'
+import { isTaskFinishedUnseen } from '@shared/task-review'
 import { useStore } from '../state/store'
 import { IS_MAC } from '../keys'
 import { cn } from '../ui'
@@ -23,7 +24,7 @@ const TASK_INDICATORS = {
   failed: { icon: 'x', label: 'Failed', tone: 'text-danger', highlight: '' }
 } as const
 
-function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
+function taskIndicator(task: Task, finishedUnseen: boolean): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
   if (task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit') return TASK_INDICATORS.running
   if (task.status === 'pending') return TASK_INDICATORS.queued
   if (task.status === 'running') return TASK_INDICATORS.running
@@ -31,11 +32,12 @@ function taskIndicator(task: Task): typeof TASK_INDICATORS[keyof typeof TASK_IND
     return TASK_INDICATORS.failed
   }
   if (task.status === 'succeeded') {
-    if (taskStyle(task) !== 'work') return TASK_INDICATORS.done
-    if (task.deliveryStatus === 'no_changes') return TASK_INDICATORS.done
-    if (task.deliveryStatus === 'approved') return TASK_INDICATORS.merged
     if (task.deliveryStatus === 'reviewable' && task.pullRequest) return TASK_INDICATORS.openPullRequest
     if (task.deliveryStatus === 'reviewable') return TASK_INDICATORS.reviewable
+    if (taskStyle(task) !== 'work' || task.deliveryStatus === 'no_changes') {
+      return finishedUnseen ? TASK_INDICATORS.reviewable : TASK_INDICATORS.done
+    }
+    if (task.deliveryStatus === 'approved') return TASK_INDICATORS.merged
   }
   return undefined
 }
@@ -87,6 +89,9 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const queuedHeight = useRef<number | null>(null)
   const openTask = useStore((state) => state.openTask)
   const settleTask = useStore((state) => state.settleTask)
+  const seenAt = useStore((state) => state.taskSeenAt[task.id])
+  const markTaskSeen = useStore((state) => state.markTaskSeen)
+  const finishedUnseen = isTaskFinishedUnseen(task, seenAt)
   const [settling, setSettling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(() => expandedSubtasks.has(task.id))
@@ -102,7 +107,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const eligible = canSettleTask(task)
   const deadline = settlementDeadline(task)
   const presentation = taskIssuePresentation(task, snapshot)
-  const indicator = queuedStack ? TASK_INDICATORS.queued : presentation ? taskIssueIndicator(presentation) : taskIndicator(task)
+  const indicator = queuedStack ? TASK_INDICATORS.queued : presentation ? taskIssueIndicator(presentation) : taskIndicator(task, finishedUnseen)
   const statusIcon = (
     <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex shrink-0', indicator?.tone ?? 'text-dim')}>
       <Icon
@@ -138,6 +143,10 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
       delete article.dataset.expanding
     }
   }, [queuedStack, compact])
+
+  useEffect(() => {
+    if (active && finishedUnseen) markTaskSeen(task.id)
+  }, [active, finishedUnseen, markTaskSeen, task.id])
 
   const settle = async (): Promise<void> => {
     if (settling) return

@@ -82,7 +82,7 @@ test('F1 opens once, restores focus, and yields to settings, terminals, dialogs,
   await workspace.pressSequentially('Work')
   await workspace.press('ArrowDown')
   await workspace.press('Enter')
-  await expect(page.getByRole('status')).toHaveText('Switching workspace…')
+  await expect(page.getByRole('status').filter({ hasText: 'Switching workspace…' })).toBeVisible()
   await page.keyboard.press('F1')
   await expect(page.getByRole('dialog', { name: 'Command palette' })).toHaveCount(0)
   await page.evaluate(() => window.dispatchEvent(new Event('fixture:finish-workspace-switch')))
