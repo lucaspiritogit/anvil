@@ -25,9 +25,9 @@ test('Quick defaults to the current checkout and supports keyboard branch switch
 
   await expect(composer.getByRole('combobox', { name: 'Task style' })).toHaveValue('quick')
   await expect(project).toHaveAccessibleDescription('Anvil, /tmp/anvil')
-  await expect(location).toHaveText(/Current checkout/)
+  await expect(location).toHaveAccessibleDescription('Local checkout')
   await expect(branch).toHaveAccessibleDescription('main')
-  for (const control of [project, branch]) {
+  for (const control of [project, location, branch]) {
     await expect(control).toHaveAttribute('aria-haspopup', 'dialog')
     await expect(control).toHaveAttribute('aria-expanded', 'false')
     await expect(control.locator('svg').last()).toHaveAttribute('width', '12')
@@ -39,7 +39,6 @@ test('Quick defaults to the current checkout and supports keyboard branch switch
   await expect(page.getByRole('dialog', { name: 'Choose project' }).getByRole('searchbox')).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(project).toBeFocused()
-  await expect(location).not.toHaveAttribute('aria-haspopup')
   await branch.press('Enter')
   await expect(branch).toHaveAttribute('aria-expanded', 'true')
   const picker = page.getByRole('dialog', { name: 'Choose local branch' })
@@ -229,6 +228,38 @@ test('project picker browses server folders, clones repositories and retains the
   await cloneProject.getByRole('textbox', { name: 'HTTPS repository URL' }).fill('https://github.com/acme/remote-app.git')
   await cloneProject.getByRole('button', { name: 'Clone repository', exact: true }).click()
   await expect(project).toHaveAccessibleDescription('remote-app, /fixture/workspaces/default/projects/remote-app')
+})
+
+test('Quick can run in an isolated worktree without switching the local checkout', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/')
+  const surface = page.getByTestId('project-overview')
+  const composer = surface.getByRole('form', { name: 'Start a task' })
+  const location = surface.getByRole('button', { name: 'Execution location', exact: true })
+  const branch = surface.getByRole('button', { name: 'Project branch', exact: true })
+
+  await expect(composer.getByRole('combobox', { name: 'Task style' })).toHaveValue('quick')
+  await expect(location).toHaveAccessibleDescription('Local checkout')
+  await expect(branch).toHaveAccessibleDescription('main')
+
+  await location.click()
+  const picker = page.getByRole('dialog', { name: 'Choose execution location' })
+  await expect(picker.getByRole('button', { name: 'Local checkout', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await picker.getByRole('button', { name: 'Isolated worktree', exact: true }).click()
+  await expect(location).toHaveAccessibleDescription('Isolated worktree')
+  await expect(branch).toHaveAccessibleDescription('starting from origin/main')
+  expect((await page.evaluate(() => window.anvil.projects.branches('project-0'))).currentBranch).toBe('main')
+
+  const prompt = composer.getByRole('textbox', { name: 'Task prompt' })
+  await prompt.fill('Focus on an isolated change')
+  await composer.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.composerTest.starts[0])).toEqual({
+    workspaceId: 'default', projectId: 'project-0', style: 'quick', reviewPolicy: 'review_each_issue',
+    checkoutMode: 'worktree', startBase: 'refs/remotes/origin/main', agentId: 'codex', model: 'gpt-5',
+    prompt: 'Focus on an isolated change', parentTaskId: undefined, reasoningEffort: 'high'
+  })
+  await expect.poll(async () => (await page.evaluate(() => window.anvil.tasks.list())).find((task) => task.id.startsWith('started-')))
+    .toMatchObject({ checkoutMode: 'worktree', branchName: expect.stringMatching(/^anvil\//), cwd: expect.stringMatching(/^\/tmp\/anvil-worktrees\//) })
+  expect((await page.evaluate(() => window.anvil.projects.branches('project-0'))).currentBranch).toBe('main')
 })
 
 test('new worktrees use the selected base without switching the local checkout', async ({ page }) => {

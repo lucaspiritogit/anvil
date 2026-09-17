@@ -404,7 +404,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
         recordSystemEvent(taskId, `Could not push ${preview.targetBranch} to origin: ${error instanceof Error ? error.message : String(error)}`, 'delivery', 'error')
         throw error
       }
-      const task = requireApprovedTask(taskId).task
+      const task = store.updateTask(taskId, { pushedCommit: headCommit }) ?? requireApprovedTask(taskId).task
       recordSystemEvent(taskId, `Pushed ${preview.targetBranch} at ${preview.targetCommit} to origin.`)
       send('task:updated', task)
       return task
@@ -430,6 +430,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       const committed = store.updateTask(task.id, {
         deliveryStatus: 'approved',
         headCommit,
+        pushedCommit: undefined,
         reviewedAt: Date.now(),
         deliveryError: undefined
       })
@@ -443,6 +444,10 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
           requireApprovedTask(task.id)
         })
         recordSystemEvent(task.id, `Pushed ${preview.targetBranch} at ${headCommit} to origin.`)
+        const pushed = store.updateTask(task.id, { pushedCommit: headCommit })
+        if (!pushed) throw new Error('Task was deleted')
+        send('task:updated', pushed)
+        return pushed
       }
       return committed
     })

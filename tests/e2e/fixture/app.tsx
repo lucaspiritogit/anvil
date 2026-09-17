@@ -873,7 +873,7 @@ window.anvil = {
       const localBranch = projectBranches[input.projectId] ?? 'main'
       const worktreeBase = ((await window.anvil.projects.branches(input.projectId)).worktreeBases ?? [])
         .find((candidate) => candidate.ref === input.startBase)?.name ?? 'origin/main'
-      const localCheckout = input.style === 'quick'
+      const localCheckout = input.checkoutMode ? input.checkoutMode === 'local' : input.style === 'quick'
       const task: Task = {
         ...base, ...input, workspaceId: input.workspaceId ?? selectedWorkspace, id, title: input.prompt || 'Image task',
         checkoutMode: localCheckout ? 'local' : 'worktree',
@@ -945,13 +945,18 @@ window.anvil = {
     }),
     push: async (input) => {
       window.dispatchEvent(new CustomEvent('fixture:push', { detail: input }))
-      return tasks.find((task) => task.id === input.taskId)!
+      const task = tasks.find((task) => task.id === input.taskId)!
+      return update({ ...task, ...(task.headCommit ? { pushedCommit: task.headCommit } : {}) })
     },
     commitQuick: async (input) => {
       window.dispatchEvent(new CustomEvent('fixture:quick-commit', { detail: input }))
       await new Promise((resolve) => setTimeout(resolve, 100))
       if (query.has('quickCommitFailure')) throw new Error('The task files no longer have changes to commit')
-      return update({ ...tasks.find((task) => task.id === input.taskId)!, deliveryStatus: 'approved', headCommit: 'quick-commit', reviewedAt: Date.now() })
+      return update({
+        ...tasks.find((task) => task.id === input.taskId)!,
+        deliveryStatus: 'approved', headCommit: 'quick-commit', reviewedAt: Date.now(),
+        ...(input.push ? { pushedCommit: 'quick-commit' } : {})
+      })
     },
     draftCommitMessage: async (input) => {
       window.dispatchEvent(new CustomEvent('fixture:commit-draft', { detail: input }))

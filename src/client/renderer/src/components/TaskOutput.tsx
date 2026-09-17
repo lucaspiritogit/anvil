@@ -63,6 +63,7 @@ function QuickCommitActions({ task }: { task: Task }): JSX.Element | null {
 
   const quickLocal = taskStyle(task) === 'quick' && task.checkoutMode === 'local'
   if (!quickLocal || !['reviewable', 'approved'].includes(task.deliveryStatus)) return null
+  const pushed = Boolean(task.headCommit && task.pushedCommit === task.headCommit)
 
   const push = async (): Promise<void> => {
     setBusy('push')
@@ -79,7 +80,12 @@ function QuickCommitActions({ task }: { task: Task }): JSX.Element | null {
 
   return <div className="ml-auto flex min-w-0 items-center gap-2">
     {error && <span role="alert" className="max-w-80 truncate text-danger" title={error}>{error}</span>}
-    {task.deliveryStatus === 'approved' ? <button className={cn(btn.primary, 'bg-ok py-1 text-xs')} disabled={busy !== null} onClick={() => void push()}>
+    {task.deliveryStatus === 'approved' ? pushed ?
+    <span className="flex items-center gap-1 py-1 text-xs text-ok">
+      <Icon icon="check" size={14} aria-hidden="true" />
+      Pushed
+    </span> :
+    <button className={cn(btn.primary, 'bg-ok py-1 text-xs')} disabled={busy !== null} onClick={() => void push()}>
       {busy === 'push' ? 'Pushing…' : 'Push'}
     </button> :
     <>

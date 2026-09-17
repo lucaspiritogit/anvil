@@ -79,7 +79,9 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
           return localTask
         }
         if (!git.isRepository) {
-          throw new Error('Work requires a Git repository so it can run in an isolated branch and worktree')
+          throw new Error(style === 'work'
+            ? 'Work requires a Git repository so it can run in an isolated branch and worktree'
+            : 'A worktree Quick task requires a Git repository so it can run in an isolated branch and worktree')
         }
 
         const parentId = store.getTask(task.id)?.parentTaskId

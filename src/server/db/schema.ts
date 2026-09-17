@@ -140,6 +140,7 @@ export const tasks = sqliteTable(
     branchName: text('branch_name'),
     baseCommit: text('base_commit'),
     headCommit: text('head_commit'),
+    pushedCommit: text('pushed_commit'),
     filesChanged: integer('files_changed').notNull().default(0),
     additions: integer('additions').notNull().default(0),
     deletions: integer('deletions').notNull().default(0),

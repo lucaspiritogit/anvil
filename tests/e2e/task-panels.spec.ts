@@ -87,8 +87,33 @@ test('completed quick tasks can commit their scoped changes or commit and push',
   await dialog.getByRole('button', { name: 'Commit & Push', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Commit', exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => (window as unknown as { lastQuickCommit: unknown }).lastQuickCommit)).toEqual({ taskId: 'review', push: true, message: 'test: scoped quick commit' })
+  await expect(page.getByRole('button', { name: 'Push', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Pushed', { exact: true })).toBeVisible()
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('combobox', { name: 'Changed file' })).toHaveValue('src/sidebar.ts')
+})
+
+test('committed quick tasks push their head commit and hide the push action', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=review')
+  await page.evaluate(async () => {
+    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    useStore.setState((state) => ({
+      tasks: state.tasks.map((task) => task.id === 'review'
+        ? { ...task, style: 'quick', checkoutMode: 'local', deliveryStatus: 'approved', headCommit: 'quick-head', reviewPaths: ['src/sidebar.ts'] }
+        : task)
+    }))
+    window.addEventListener('fixture:push', (event) => {
+      Object.assign(window, { lastQuickPush: (event as CustomEvent).detail })
+    })
+  })
+
+  await page.getByRole('tab', { name: 'Output', exact: true }).click()
+  await page.getByRole('button', { name: 'Push', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Push', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Pushed', { exact: true })).toBeVisible()
+  const detail = await page.evaluate(() => (window as unknown as { lastQuickPush: { taskId: string; preview: { targetBranch: string } } }).lastQuickPush)
+  expect(detail.taskId).toBe('review')
+  expect(detail.preview.targetBranch).toBe('user-current')
 })
 
 test('quick commit modal drafts fail without losing the typed message', async ({ page }) => {

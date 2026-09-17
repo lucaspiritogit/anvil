@@ -481,6 +481,7 @@ export interface Task {
   branchName?: string
   baseCommit?: string
   headCommit?: string
+  pushedCommit?: string
   /** Current PR for this task's reviewable head revision. Derived from persisted link metadata. */
   pullRequest?: TaskPullRequest
   filesChanged: number

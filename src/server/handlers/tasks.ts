@@ -224,10 +224,11 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       }
       const model = input.model || agent.defaultModel
       const style = input.style ?? 'work'
-      const checkoutMode = style === 'quick' ? 'local' : 'worktree'
+      const checkoutMode = input.checkoutMode ?? (style === 'quick' ? 'local' : 'worktree')
+      if (style === 'work' && checkoutMode !== 'worktree') throw new Error('Work tasks require an isolated worktree')
       if (style !== 'work' && input.parentTaskId) throw new Error('Only Work tasks can be stacked')
       if (style !== 'work' && input.reviewPolicy === 'review_at_task_end') throw new Error('Only Work tasks can use end-of-task review')
-      if (style !== 'work' && input.startBase !== undefined) throw new Error('Quick tasks cannot choose a worktree start base')
+      if (checkoutMode === 'local' && input.startBase !== undefined) throw new Error('Local checkout tasks cannot choose a worktree start base')
       if (input.parentTaskId && input.startBase !== undefined) throw new Error('Stacked tasks start from their parent task')
       const task: Task = {
         id: randomUUID(),

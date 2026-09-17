@@ -26,6 +26,7 @@ import type {
   TaskStatus
 } from '@shared/types'
 import { taskStyle } from '@shared/task-style'
+import { taskCheckoutMode } from '@shared/task-checkout'
 import { TaskStyleBadge } from './TaskStyleBadge'
 
 interface Props {
@@ -486,6 +487,7 @@ function MergeActions({ disabled, title, onSelect }: {
 export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element {
   const style = taskStyle(task)
   const work = style === 'work'
+  const integrates = work || taskCheckoutMode(task) === 'worktree'
   const { snapshot, error: issueError, refresh } = useTaskIssues(task.id, work)
   const issue = task.status !== 'succeeded' && task.status !== 'cancelled' ? snapshot?.children.find((child) => child.status === 'review' &&
     (!snapshot.execution?.currentIssueId || child.id === snapshot.execution.currentIssueId)) : undefined
@@ -664,7 +666,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                 {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
                 <span className={dot(task.status)} />
                 <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : STATUS_LABEL[task.status]}</span>
-                {work && <><span className="text-dim">·</span>
+                {integrates && <><span className="text-dim">·</span>
                 <span className={cn('flex items-center gap-1.5', openPullRequest ? 'text-ok' : deliveryTone(task.deliveryStatus))}>
                   {openPullRequest && <Icon icon="git-branch" size={14} aria-hidden="true" />}
                   {openPullRequest
@@ -675,11 +677,11 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                 </span></>}
                 </>}
               </span>
-              {reviewable && (work || !approved && pending.length > 0) && <span className="ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
+              {reviewable && (integrates || !approved && pending.length > 0) && <span className="ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
                 {!approved && pending.length > 0 && <button className={btn.ghost} disabled={sending} onClick={() => void sendComments(task.id)}>
                   {sending ? 'Sending…' : `Send ${pending.length} comment${pending.length === 1 ? '' : 's'}`}
                 </button>}
-                {work && <><button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
+                {integrates && <><button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
                   Open PR
                 </button>
                 {!approved

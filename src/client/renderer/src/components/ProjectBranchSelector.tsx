@@ -173,7 +173,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
   const work = style === 'work'
   const worktree = work || checkoutMode === 'worktree'
   const branchLabel = worktree ? `starting from ${baseLabel}` : localBranchLabel
-  const locationLabel = worktree ? 'Isolated worktree' : 'Current checkout'
+  const locationLabel = worktree ? 'Isolated worktree' : 'Local checkout'
   const controlsDisabled = disabled || transitioning
   const branchDisabled = disabled || !projectId || !isRepository || !branches || (work && Boolean(parentBranch))
 
@@ -259,7 +259,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
         noun="locations"
         value={checkoutMode}
         choices={[
-          { id: 'local', label: 'Current checkout', description: 'Run directly in the project’s current checkout' },
+          { id: 'local', label: 'Local checkout', description: 'Run directly in the project’s current checkout' },
           { id: 'worktree', label: 'Isolated worktree', description: 'Run on a dedicated branch in an isolated worktree' }
         ]}
         onClose={() => setOpen(null)}

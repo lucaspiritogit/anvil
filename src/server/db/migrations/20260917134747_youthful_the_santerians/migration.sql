@@ -1,0 +1,1 @@
+ALTER TABLE `tasks` ADD `pushed_commit` text;
