@@ -123,7 +123,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
       {style === 'quick' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-dim"><TaskStyleBadge style="quick" /> Ask a question or make a focused change in the current checkout.</p>}
       {style === 'work' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-dim"><TaskStyleBadge style="work" /> Delegate planned work on a task branch. Changes wait for you to merge them.</p>}
-      {style === 'work' && reviewPolicy === 'review_at_task_end' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-warn"><Icon icon="moon-star" size={14} /> Runs unattended until the final review. Merge and push still wait for you.</p>}
+      {style === 'work' && reviewPolicy === 'review_at_task_end' && <p className="-mt-2 mb-3 flex items-center gap-1.5 pl-2.5 text-xs text-warn"><Icon icon="moon-star" size={12} className="shrink-0" /> Runs unattended until the final review. Merge and push still wait for you.</p>}
       {style === 'work' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">Work requires a Git repository so Anvil can create an isolated branch and worktree.</p>}
       {style === 'work' && parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
         <Icon icon="layers" size={14} />
