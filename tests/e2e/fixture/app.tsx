@@ -84,7 +84,7 @@ if (query.has('openPr')) {
     : task)
 }
 tasks = tasks.map((task) => ({ ...task, branchName: `anvil/${task.id === 'approved' ? 'polish-task-cards' : task.id}` }))
-if (query.has('demo')) tasks = tasks.filter((task) => ['running', 'review', 'approved'].includes(task.id))
+if (query.has('demo')) tasks = []
 const issueSnapshots: Record<string, TaskIssueSnapshot | null> = {}
 window.addEventListener('fixture:issues', (event) => {
   const { taskId, snapshot } = (event as CustomEvent<{ taskId: string; snapshot: TaskIssueSnapshot | null }>).detail
@@ -309,46 +309,42 @@ window.settingsTest = {
 }
 const analyticsResponse: WorkspaceAnalytics = {
   range: { startAt: 0, endAt: 0 },
-  daily: [{
-    date: '2026-09-15',
-    inputTokens: 100_000,
-    outputTokens: 25_000,
-    cachedTokens: 40_000,
-    totalTokens: 125_000,
-    reportedCostUsd: 4.25,
-    taskCount: 6,
-    statusCounts: { pending: 0, running: 1, succeeded: 4, failed: 1, cancelled: 0 },
-    workingTimeMs: 900_000,
-    filesChanged: 12,
-    additions: 350,
-    deletions: 90
-  }],
-  tokens: { input: 100_000, output: 25_000, cached: 40_000, total: 125_000 },
-  cost: { reportedUsd: 4.25, reportedTaskCount: 5, unreportedTaskCount: 1 },
+  daily: [
+    { date: '2026-09-09', inputTokens: 48_000, outputTokens: 8_000, cachedTokens: 20_000, totalTokens: 56_000, reportedCostUsd: 1.2, taskCount: 2, statusCounts: { pending: 0, running: 0, succeeded: 2, failed: 0, cancelled: 0 }, workingTimeMs: 180_000, filesChanged: 4, additions: 120, deletions: 18 },
+    { date: '2026-09-10', inputTokens: 62_000, outputTokens: 12_000, cachedTokens: 30_000, totalTokens: 74_000, reportedCostUsd: 1.5, taskCount: 2, statusCounts: { pending: 0, running: 0, succeeded: 1, failed: 1, cancelled: 0 }, workingTimeMs: 240_000, filesChanged: 5, additions: 144, deletions: 32 },
+    { date: '2026-09-11', inputTokens: 80_000, outputTokens: 14_000, cachedTokens: 42_000, totalTokens: 94_000, reportedCostUsd: 1.9, taskCount: 3, statusCounts: { pending: 0, running: 0, succeeded: 3, failed: 0, cancelled: 0 }, workingTimeMs: 330_000, filesChanged: 7, additions: 210, deletions: 45 },
+    { date: '2026-09-12', inputTokens: 56_000, outputTokens: 10_000, cachedTokens: 25_000, totalTokens: 66_000, reportedCostUsd: 1.3, taskCount: 2, statusCounts: { pending: 0, running: 0, succeeded: 2, failed: 0, cancelled: 0 }, workingTimeMs: 260_000, filesChanged: 4, additions: 98, deletions: 21 },
+    { date: '2026-09-13', inputTokens: 105_000, outputTokens: 18_000, cachedTokens: 66_000, totalTokens: 123_000, reportedCostUsd: 2.4, taskCount: 4, statusCounts: { pending: 0, running: 0, succeeded: 3, failed: 0, cancelled: 1 }, workingTimeMs: 450_000, filesChanged: 9, additions: 265, deletions: 88 },
+    { date: '2026-09-14', inputTokens: 92_000, outputTokens: 16_000, cachedTokens: 51_000, totalTokens: 108_000, reportedCostUsd: 2.1, taskCount: 3, statusCounts: { pending: 0, running: 0, succeeded: 3, failed: 0, cancelled: 0 }, workingTimeMs: 390_000, filesChanged: 8, additions: 190, deletions: 52 },
+    { date: '2026-09-15', inputTokens: 100_000, outputTokens: 25_000, cachedTokens: 40_000, totalTokens: 125_000, reportedCostUsd: 4.25, taskCount: 6, statusCounts: { pending: 0, running: 1, succeeded: 4, failed: 1, cancelled: 0 }, workingTimeMs: 900_000, filesChanged: 12, additions: 350, deletions: 90 }
+  ],
+  tokens: { input: 543_000, output: 103_000, cached: 274_000, total: 646_000 },
+  cost: { reportedUsd: 14.65, reportedTaskCount: 20, unreportedTaskCount: 2 },
   tasks: {
-    total: 6,
-    completed: 5,
-    successful: 4,
-    successRate: 0.8,
-    statusCounts: { pending: 0, running: 1, succeeded: 4, failed: 1, cancelled: 0 }
+    total: 22,
+    completed: 21,
+    successful: 18,
+    successRate: 18 / 21,
+    statusCounts: { pending: 0, running: 1, succeeded: 18, failed: 2, cancelled: 1 }
   },
-  favoriteModel: { key: 'openai/gpt-5.2', label: 'openai/gpt-5.2', taskCount: 3 },
-  favoriteProvider: { key: 'codex', label: 'Codex', taskCount: 4 },
-  timing: { workingTimeMs: 900_000, averageWorkingTimeMs: 150_000 },
-  codeChanges: { filesChanged: 12, additions: 350, deletions: 90 },
+  favoriteModel: { key: 'openai/gpt-5.2', label: 'openai/gpt-5.2', taskCount: 11 },
+  favoriteProvider: { key: 'codex', label: 'Codex', taskCount: 14 },
+  timing: { workingTimeMs: 2_750_000, averageWorkingTimeMs: 125_000 },
+  codeChanges: { filesChanged: 49, additions: 1377, deletions: 346 },
   breakdowns: {
     providers: [
-      { key: 'codex', label: 'Codex', taskCount: 4, totalTokens: 100_000, reportedCostUsd: 3.5 },
-      { key: 'opencode', label: 'OpenCode', taskCount: 2, totalTokens: 25_000, reportedCostUsd: 0.75 }
+      { key: 'codex', label: 'Codex', taskCount: 14, totalTokens: 421_000, reportedCostUsd: 10.15 },
+      { key: 'opencode', label: 'OpenCode', taskCount: 8, totalTokens: 225_000, reportedCostUsd: 4.5 }
     ],
     models: [
-      { key: 'openai/gpt-5.2', label: 'openai/gpt-5.2', taskCount: 3, totalTokens: 80_000, reportedCostUsd: 3 },
-      { key: 'anthropic/claude-sonnet-4-6', label: 'anthropic/claude-sonnet-4-6', taskCount: 2, totalTokens: 35_000, reportedCostUsd: 1.25 }
+      { key: 'openai/gpt-5.2', label: 'openai/gpt-5.2', taskCount: 11, totalTokens: 332_000, reportedCostUsd: 8.4 },
+      { key: 'anthropic/claude-sonnet-4-6', label: 'anthropic/claude-sonnet-4-6', taskCount: 7, totalTokens: 214_000, reportedCostUsd: 4.65 },
+      { key: 'google/gemini-3-pro', label: 'google/gemini-3-pro', taskCount: 4, totalTokens: 100_000, reportedCostUsd: 1.6 }
     ],
     statuses: [],
     projects: [
-      { key: 'project-0', label: 'Anvil', taskCount: 4, totalTokens: 90_000, reportedCostUsd: 3.25 },
-      { key: 'project-1', label: 'Workbench', taskCount: 2, totalTokens: 35_000, reportedCostUsd: 1 }
+      { key: 'project-0', label: 'Anvil', taskCount: 15, totalTokens: 438_000, reportedCostUsd: 10.2 },
+      { key: 'project-1', label: 'Workbench', taskCount: 7, totalTokens: 208_000, reportedCostUsd: 4.45 }
     ]
   }
 }

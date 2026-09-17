@@ -4,8 +4,6 @@
 
 ![Anvil demo showing a task diff, a queued stacked task, and both tasks being merged](./public/showcase/anvil-demo.gif)
 
-<img width="1440" height="900" alt="image" src="https://github.com/user-attachments/assets/b82dc5bb-43e3-426a-8a65-5df87447d946" />
-
 Run Anvil as a desktop app or a standalone server. Use the same interface on the host machine, over a trusted LAN, or through Tailscale HTTPS.
 
 ## What it does
