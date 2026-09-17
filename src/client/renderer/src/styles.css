@@ -39,6 +39,8 @@
   --animate-breathe: breathe 2.4s ease-in-out infinite;
   /* Live output rows fade up as they land at the tail. */
   --animate-row-in: row-in 180ms ease-out;
+  /* Panels that appear after async data loads (usage limits). */
+  --animate-fade-in: fade-in 320ms ease-out;
 
   @keyframes breathe {
     0%, 100% {
@@ -52,6 +54,15 @@
   @keyframes blink {
     50% {
       opacity: 0.3;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
     }
   }
 

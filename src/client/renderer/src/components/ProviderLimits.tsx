@@ -24,7 +24,7 @@ export function ProviderLimits({ providers, className }: {
   if (!providers.length) return null
 
   return (
-    <div className={cn('w-full max-w-[1040px] mx-auto', className)}>
+    <div className={cn('w-full max-w-[1040px] mx-auto animate-fade-in', className)}>
       {providers.map((provider) => (
         <section
           key={provider.id}

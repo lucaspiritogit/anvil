@@ -15,7 +15,7 @@ function resetLabel(timestamp: number): string {
   }).format(new Date(timestamp * 1000))}`
 }
 
-export const WorkspaceUsageLimits = memo(function WorkspaceUsageLimits(): JSX.Element | null {
+export const WorkspaceUsageLimits = memo(function WorkspaceUsageLimits({ className }: { className?: string }): JSX.Element | null {
   const workspaceId = useStore((state) => state.activeWorkspaceId)
   const [limitWindow, setLimitWindow] = useState<CodexRateLimitWindow | null>(null)
 
@@ -51,5 +51,5 @@ export const WorkspaceUsageLimits = memo(function WorkspaceUsageLimits(): JSX.El
     }]
   }]
 
-  return <ProviderLimits providers={providers} />
+  return <ProviderLimits providers={providers} className={className} />
 })
