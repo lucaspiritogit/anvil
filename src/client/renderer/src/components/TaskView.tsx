@@ -16,6 +16,7 @@ import { TaskSteeringComposer } from './TaskSteeringComposer'
 import { TaskIssues } from './TaskIssues'
 import { useTaskIssues } from '../hooks/use-task-issues'
 import { TaskOutput } from './TaskOutput'
+import { QuickCommitActions } from './QuickCommitActions'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
 import { isTaskSettled } from '@shared/task-settlement'
 import type {
@@ -700,6 +701,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                   </button>}</>}
               </span>}
             </>}
+            <QuickCommitActions task={task} />
           </div>
         </div>
         <div className="mt-1.5 text-[11.5px] text-dim @max-[760px]:hidden">
