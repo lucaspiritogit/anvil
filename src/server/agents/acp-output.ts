@@ -19,6 +19,7 @@ export class AcpOutput {
   private messageIds = new Map<'message' | 'thinking', string>()
   private activeCategory?: 'message' | 'thinking'
   private costUsd: number | null = null
+  private reportedCostUsd: number | null = null
 
   private readonly issueId: string | undefined
 
@@ -75,6 +76,14 @@ export class AcpOutput {
         // session-cumulative; without a resume baseline it cannot be charged again.
         if (!this.input.resumeSessionId && update.cost?.currency === 'USD') {
           this.costUsd = update.cost.amount
+          // Stream the running total so the UI can show cost before the turn ends.
+          // Downstream treats usage snapshots as process-cumulative, so emitting
+          // the current total (not a delta) replaces the previous value.
+          if (this.costUsd !== this.reportedCostUsd) {
+            this.reportedCostUsd = this.costUsd
+            this.usage = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: this.costUsd }
+            this.onEvent({ type: 'usage', taskId: this.input.taskId, usage: this.usage })
+          }
         }
         break
     }

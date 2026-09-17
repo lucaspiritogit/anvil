@@ -76,7 +76,10 @@ test('handles ACP sessions, output, permissions, recovery and cancellation', asy
     expect(outputEvents.some((event) => event.stream === 'stderr' && event.text === 'trailing diagnostic')).toBeTruthy()
     expect(outputEvents.every((event) => event.id && event.ts && event.taskId === input.taskId && event.issueId === input.issueId)).toBeTruthy()
     expect(events.filter((event) => event.type === 'session').length).toBe(1)
-    expect(events.filter((event) => event.type === 'usage').length).toBe(1)
+    const usageEvents = events.filter((event) => event.type === 'usage')
+    expect(usageEvents.length, 'Stream the running cost, then the turn tokens').toBe(2)
+    expect(usageEvents[0]).toMatchObject({ usage: { totalTokens: 0, costUsd: 0.25 } })
+    expect(usageEvents[1]).toMatchObject({ usage: { totalTokens: 35, costUsd: 0.25 } })
     const initialRequests = await requests()
     expect(initialRequests.filter((request) => request.method).map((request) => request.method)).toStrictEqual([
       'initialize', 'session/new', 'session/set_config_option', 'session/prompt'
