@@ -13,12 +13,13 @@ export interface PickerChoice {
   onDelete?: () => void
 }
 
-export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, footer, onSelect, onClose }: {
+export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, header, footer, onSelect, onClose }: {
   anchorRef: RefObject<HTMLButtonElement | null>
   label: string
   noun: string
   choices: PickerChoice[]
   value: string
+  header?: ReactNode
   footer?: ReactNode
   onSelect: (id: string) => void
   onClose: () => void
@@ -50,6 +51,7 @@ export function ChoicePickerDialog({ anchorRef, label, noun, choices, value, foo
             <Icon icon="x" size={14} aria-hidden="true" />
           </button>
         </div>
+        {header}
         <div
           ref={listRef}
           role="group"

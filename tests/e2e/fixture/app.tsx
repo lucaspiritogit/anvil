@@ -587,6 +587,10 @@ window.anvil = {
       projectBranches[projectId] = branchName
       return window.anvil.projects.branches(projectId)
     },
+    createBranch: async ({ projectId, branchName }) => {
+      projectBranches[projectId] = branchName
+      return window.anvil.projects.branches(projectId)
+    },
     update: async (input: IpcRequests['projects:update']) => {
       window.projectSettingsTest.calls.push(input)
       if (query.has('projectsControlled')) await new Promise<void>((resolve, reject) => {

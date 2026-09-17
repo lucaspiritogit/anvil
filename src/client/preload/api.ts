@@ -181,7 +181,8 @@ export function createAnvilApi(url: string, host: ClientHost) {
       gitInit: (id: string): Promise<ProjectGitStatus> => invoke('projects:git-init', id),
       branches: (id: string): Promise<ProjectBranches> => invoke('projects:branches', id),
       files: (input: IpcRequests['projects:files']): Promise<ProjectFileList> => invoke('projects:files', input),
-      checkout: (input: IpcRequests['projects:checkout']): Promise<ProjectBranches> => invoke('projects:checkout', input)
+      checkout: (input: IpcRequests['projects:checkout']): Promise<ProjectBranches> => invoke('projects:checkout', input),
+      createBranch: (input: IpcRequests['projects:create-branch']): Promise<ProjectBranches> => invoke('projects:create-branch', input)
     },
     tasks: {
       list: (): Promise<Task[]> => invoke('tasks:list'),

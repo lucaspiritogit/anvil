@@ -1,4 +1,4 @@
-import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskReviewPolicy } from './types'
+import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskReviewPolicy, TaskCheckoutMode } from './types'
 import type { BrowserHostResponse } from './browser-host'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
@@ -48,6 +48,7 @@ export interface IpcRequests {
   'projects:branches': string
   'projects:files': { projectId: string }
   'projects:checkout': { projectId: string; branchName: string }
+  'projects:create-branch': { projectId: string; branchName: string }
   'tasks:list': undefined
   'task-result-notices:list': { workspaceId: string; projectId?: string }
   'task-result-notices:seen': { workspaceId: string; noticeId: string }
@@ -57,7 +58,7 @@ export interface IpcRequests {
   'tasks:events-page': TaskEventsRequest
   'tasks:diff': string
   'tasks:issue-diff': { taskId: string; issueId: string }
-  'tasks:start': { style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; startBase?: string; parentTaskId?: string; workspaceId?: string; projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
+  'tasks:start': { style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; workspaceId?: string; projectId: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
   'tasks:steer': { taskId: string; message: string }
   'tasks:compact': string
   'tasks:stack': { taskId: string; parentTaskId: string }

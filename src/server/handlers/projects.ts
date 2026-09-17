@@ -229,4 +229,14 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     projectsChanged?.(workspaceId)
     return result
   })
+
+  ipc.handle('projects:create-branch', async ({ projectId, branchName }) => {
+    const workspaceId = store.getActiveWorkspace().id
+    const project = store.getProjects().find((item) => item.id === projectId)
+    if (!project) throw new Error('Project not found')
+    requireCheckoutAvailable(projectId)
+    const result = await gitDelivery.createProjectBranch(project.path, branchName)
+    projectsChanged?.(workspaceId)
+    return result
+  })
 }

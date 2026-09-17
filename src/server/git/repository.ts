@@ -105,6 +105,20 @@ export async function switchProjectBranch(
   })
 }
 
+export async function createProjectBranch(
+  context: GitContext,
+  projectPath: string,
+  branchName: string
+): Promise<ProjectBranches> {
+  return withRepoLock(context, projectPath, async () => {
+    await git(projectPath, ['check-ref-format', '--branch', branchName])
+    const existing = await git(projectPath, ['show-ref', '--verify', `refs/heads/${branchName}`], [0, 1, 128])
+    if (existing.exitCode === 0) throw new Error(`Branch ${branchName} already exists`)
+    await git(projectPath, ['checkout', '-b', branchName])
+    return branches(projectPath)
+  })
+}
+
 export async function stackBase(projectPath: string, branch?: string): Promise<{ commit: string; branch: string }> {
   const ref = branch ? `refs/heads/${branch}` : 'HEAD'
   const commit = (await git(projectPath, ['rev-parse', '--verify', `${ref}^{commit}`])).stdout.trim()
