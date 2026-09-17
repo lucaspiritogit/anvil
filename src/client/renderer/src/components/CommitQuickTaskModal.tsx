@@ -8,7 +8,7 @@ export function CommitQuickTaskModal({ task, push, onClose }: { task: Task; push
   const dialogRef = useRef<HTMLDialogElement>(null)
   const previousFocus = useRef(document.activeElement)
   const inFlight = useRef(false)
-  const [message, setMessage] = useState(task.title)
+  const [message, setMessage] = useState('')
   const [busy, setBusy] = useState<'drafting' | 'committing' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
