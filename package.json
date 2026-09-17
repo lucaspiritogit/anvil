@@ -10,7 +10,6 @@
   },
   "scripts": {
     "test:e2e": "playwright test",
-    "postinstall": "node scripts/prepare-node-pty.cjs",
     "dev": "npm run build:server && node scripts/dev.cjs",
     "demo": "node scripts/capture-demo.mjs",
     "build": "npm run typecheck && npm run build:app",

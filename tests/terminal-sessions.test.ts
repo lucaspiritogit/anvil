@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
-import { TerminalSessionManager } from '../src/server/terminal-sessions'
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { TerminalSessionManager, ensureNodePtySpawnHelperExecutable } from '../src/server/terminal-sessions'
 import { validateIpcRequest } from '../src/server/handlers/validation'
 import type { Store } from '../src/server/store'
 
@@ -12,6 +15,22 @@ vi.mock('../src/server/agents/opencode-workspace', () => ({
     command: 'opencode', args, cwd: workspace.home, environment: workspace.environment
   })
 }))
+
+test('makes the node-pty spawn helper executable at runtime', () => {
+  const root = mkdtempSync(join(tmpdir(), 'anvil-node-pty-'))
+  const packageDirectory = join(root, 'app.asar', 'node_modules', 'node-pty')
+  const helperDirectory = join(root, 'app.asar.unpacked', 'node_modules', 'node-pty', 'prebuilds', 'darwin-arm64')
+  const helper = join(helperDirectory, 'spawn-helper')
+  try {
+    mkdirSync(helperDirectory, { recursive: true })
+    writeFileSync(helper, '')
+    chmodSync(helper, 0o644)
+    ensureNodePtySpawnHelperExecutable({ platform: 'darwin', architecture: 'arm64', packageDirectory })
+    expect(statSync(helper).mode & 0o111).not.toBe(0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 function fixture() {
   let data = (_value: string): void => {}

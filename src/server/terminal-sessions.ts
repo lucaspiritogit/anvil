@@ -1,11 +1,36 @@
 import { closeProcessTree } from './process-tree'
 import { randomUUID } from 'node:crypto'
+import { chmodSync, existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
 import type { Store } from './store'
 import type { TerminalSnapshot } from '../shared/terminal'
 import type { WorkspaceExecutionContext } from './agents/workspace-execution'
 import { openCodeWorkspaceCommand } from './agents/opencode-workspace'
 import { resolveCommand } from './agents/resolve'
+
+const requireForNodePty = createRequire(import.meta.url)
+
+export function ensureNodePtySpawnHelperExecutable(options: {
+  platform?: NodeJS.Platform
+  architecture?: string
+  packageDirectory?: string
+} = {}): void {
+  const platform = options.platform ?? process.platform
+  if (platform === 'win32') return
+  const architecture = options.architecture ?? process.arch
+  const packageDirectory = options.packageDirectory ?? dirname(requireForNodePty.resolve('node-pty/package.json'))
+  const helper = [
+    join(packageDirectory, 'build', 'Release', 'spawn-helper'),
+    join(packageDirectory, 'build', 'Debug', 'spawn-helper'),
+    join(packageDirectory, 'prebuilds', `${platform}-${architecture}`, 'spawn-helper')
+  ].map((candidate) => candidate
+    .replace('app.asar', 'app.asar.unpacked')
+    .replace('node_modules.asar', 'node_modules.asar.unpacked'))
+    .find(existsSync)
+  if (helper) chmodSync(helper, 0o755)
+}
 
 interface Session extends TerminalSnapshot {
   pty: IPty
@@ -51,6 +76,7 @@ export class TerminalSessionManager {
   private create(kind: Session['kind'], workspaceId: string, command: string, args: string[], cwd: string,
     environment: NodeJS.ProcessEnv, cols: number, rows: number, onExit?: (code: number) => void): { sessionId: string } {
     const env = Object.fromEntries(Object.entries(environment).filter((entry): entry is [string, string] => entry[1] !== undefined))
+    ensureNodePtySpawnHelperExecutable()
     const pty = spawn(command, args, { cwd, env, cols, rows, name: 'xterm-256color' })
     const sessionId = randomUUID()
     let markClosed!: () => void

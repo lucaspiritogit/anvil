@@ -1,12 +1,27 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { chmodSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
 
 if (process.versions.electron) {
   const nodePty = require('node-pty')
+  if (process.platform !== 'win32') {
+    const packageDirectory = dirname(require.resolve('node-pty/package.json'))
+    const helper = [
+      join(packageDirectory, 'build', 'Release', 'spawn-helper'),
+      join(packageDirectory, 'build', 'Debug', 'spawn-helper'),
+      join(packageDirectory, 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper')
+    ].map((candidate) => candidate
+      .replace('app.asar', 'app.asar.unpacked')
+      .replace('node_modules.asar', 'node_modules.asar.unpacked'))
+      .find(existsSync)
+    assert(helper, `node-pty spawn helper is missing for ${process.platform}-${process.arch}`)
+    chmodSync(helper, 0o755)
+  }
   const marker = 'anvil-node-pty-ok'
   const executable = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : '/bin/sh'
   const args = process.platform === 'win32'
