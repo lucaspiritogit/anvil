@@ -103,12 +103,11 @@ jobs:
           fi
 
           signing_p12="$RUNNER_TEMP/anvil-signing.p12"
-          signing_cert="$RUNNER_TEMP/anvil-signing.pem"
           signing_keychain="$RUNNER_TEMP/anvil-signing.keychain-db"
           signing_keychain_password="$(openssl rand -hex 32)"
 
           echo "::add-mask::$signing_keychain_password"
-          trap 'rm -f "$signing_p12" "$signing_cert"' EXIT
+          trap 'rm -f "$signing_p12"' EXIT
 
           printf '%s' "$SIGNING_P12_BASE64" |
             /usr/bin/base64 -D > "$signing_p12"
@@ -119,35 +118,22 @@ jobs:
             -lut 21600 "$signing_keychain"
           security unlock-keychain \
             -p "$signing_keychain_password" "$signing_keychain"
-
           security import "$signing_p12" \
             -k "$signing_keychain" \
             -P "$SIGNING_P12_PASSWORD" \
+            -A \
             -T /usr/bin/codesign
           security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
+            -S apple-tool:,apple: \
             -s \
             -k "$signing_keychain_password" \
-            "$signing_keychain"
+            "$signing_keychain" > /dev/null
           security list-keychains -d user -s \
             "$signing_keychain" \
             "$HOME/Library/Keychains/login.keychain-db"
-
           security find-certificate \
             -c "Anvil Self-Signed" \
-            -p "$signing_keychain" > "$signing_cert"
-          security add-trusted-cert \
-            -r trustRoot \
-            -p codeSign \
-            -k "$signing_keychain" \
-            "$signing_cert"
-
-          signing_identities="$(security find-identity -v -p codesigning "$signing_keychain")"
-          printf '%s\n' "$signing_identities"
-          if [[ "$signing_identities" != *'"Anvil Self-Signed"'* ]]; then
-            echo "Anvil Self-Signed is not a valid code-signing identity" >&2
-            exit 1
-          fi
+            "$signing_keychain" > /dev/null
       - run: npm run build
       - run: npx electron-builder ${{ matrix.arguments }} --publish never
       - name: Verify macOS app signature
@@ -160,7 +146,12 @@ jobs:
           fi
 
           codesign --verify --deep --strict --verbose=2 "$app_path"
-          codesign --display --verbose=2 "$app_path"
+          signature_details="$(codesign --display --verbose=2 "$app_path" 2>&1)"
+          printf '%s\n' "$signature_details"
+          if [[ "$signature_details" != *"Authority=Anvil Self-Signed"* ]]; then
+            echo "macOS app was not signed with Anvil Self-Signed" >&2
+            exit 1
+          fi
       - run: node scripts/tests/verify-package.mjs
       - run: node scripts/package-server.mjs
       - uses: actions/upload-artifact@v4
