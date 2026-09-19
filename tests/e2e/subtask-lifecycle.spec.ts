@@ -84,7 +84,7 @@ test('a newly created task discovers planning children and keeps execution and r
     await page.getByRole('tab', { name: /^Changes/ }).click()
     const review = page.getByRole('region', { name: 'Subtask code changes' })
     await expect(review.getByRole('status')).toContainText('Waiting for your review')
-    await expect(review.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
+    await expect(review.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
     if (index === 0) {
       // Approving lets the agent continue with the next queued issue.
       await page.getByRole('button', { name: 'Approve step', exact: true }).click()
@@ -129,7 +129,7 @@ test('a newly created task discovers planning children and keeps execution and r
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(task.title)
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
-  await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Merge task', exact: true })).toBeEnabled()
 })
 

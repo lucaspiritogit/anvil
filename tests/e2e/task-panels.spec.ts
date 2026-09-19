@@ -19,7 +19,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 500 
       await expect(changesTab).toHaveAttribute('aria-selected', 'true')
       await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
       if (scenario === 'review') {
-        await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
+        await expect(page.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
       } else {
         await expect(page.getByText(/No code changes to review\.|There is no final diff available for review\./)).toBeVisible()
       }
@@ -90,7 +90,7 @@ test('completed quick tasks can commit their scoped changes or commit and push',
   await expect(page.getByRole('button', { name: 'Push', exact: true })).toHaveCount(0)
   await expect(page.getByText('Pushed', { exact: true })).toBeVisible()
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await expect(page.getByRole('combobox', { name: 'Changed file' })).toHaveValue('src/sidebar.ts')
+  await expect(page.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
 })
 
 test('committed quick tasks push their head commit and hide the push action', async ({ page }) => {
@@ -239,5 +239,5 @@ test('stale child selection renders its owner with continuous output', async ({ 
   } })))
   await expect(page.getByRole('log')).toContainText('Live blocked')
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
 })

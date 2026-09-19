@@ -57,7 +57,6 @@ interface PatchFilesProps {
 /** The note and its composer share a card that hangs off a coloured spine. */
 const NOTE_CARD = 'px-3 py-2.5 my-1.5 bg-raised border-l-2'
 const EMPTY_PANEL = 'grid flex-1 place-content-center gap-2 p-6 text-center text-sm text-dim'
-const ICON_BTN = 'grid size-7 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-dim'
 
 const PatchFiles = lazy(async () => {
   const [{ FileDiff }, { parsePatchFiles }] = await Promise.all([
@@ -79,110 +78,118 @@ const PatchFiles = lazy(async () => {
         () => parsePatchFiles(patch).flatMap((parsed) => parsed.files),
         [patch]
       )
-      const [selectedPath, setSelectedPath] = useState<string | null>(null)
       const [viewed, setViewed] = useState<Set<string>>(() => new Set())
-      const selectedIndex = Math.max(0, files.findIndex((file) => file.name === selectedPath))
-      const selectedFile = files[selectedIndex]
+      const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
       const viewedCount = files.filter((file) => viewed.has(file.name)).length
 
-      const selectFile = (path: string): void => {
-        setSelectedPath(path)
-        onSelectLine(null)
+      const toggleCollapsed = (name: string): void => {
+        setCollapsed((previous) => {
+          const next = new Set(previous)
+          if (next.has(name)) next.delete(name)
+          else next.add(name)
+          return next
+        })
       }
 
-      const annotations: DiffLineAnnotation<NoteMetadata>[] = [
+      const markViewed = (name: string, checked: boolean): void => {
+        setViewed((previous) => {
+          const next = new Set(previous)
+          if (checked) next.add(name)
+          else next.delete(name)
+          return next
+        })
+        setCollapsed((previous) => {
+          const next = new Set(previous)
+          if (checked) next.add(name)
+          else next.delete(name)
+          return next
+        })
+      }
+
+      const annotationsFor = (name: string): DiffLineAnnotation<NoteMetadata>[] => [
         ...comments
-          .filter((comment) => comment.file === selectedFile?.name)
+          .filter((comment) => comment.file === name)
           .map((comment) => ({
             side: comment.side,
             lineNumber: comment.lineNumber,
             metadata: { comment }
           })),
-        ...(draft && draft.file === selectedFile?.name
+        ...(draft && draft.file === name
           ? [{ side: draft.side, lineNumber: draft.lineNumber, metadata: { draft } }]
           : [])
       ]
 
-      if (!selectedFile) return <p className="p-5 text-sm text-dim">No file changes in this range.</p>
+      if (files.length === 0) return <p className="p-5 text-sm text-dim">No file changes in this range.</p>
       return (
         <div className="flex flex-1 flex-col min-h-0 min-w-0">
-          <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 border-b border-line text-xs">
-            <div className="flex min-w-0 flex-1 items-center gap-1 @max-[760px]:basis-full">
-              <button className={ICON_BTN} aria-label="Previous file" disabled={selectedIndex === 0} onClick={() => selectFile(files[selectedIndex - 1].name)}>
-                <Icon icon="chevron-left" size={16} aria-hidden="true" />
-              </button>
-              <select
-                aria-label="Changed file"
-                className={cn(field.control, 'min-w-0 flex-1 max-w-xl px-2 py-1 font-mono text-xs')}
-                value={selectedFile.name}
-                onChange={(event) => selectFile(event.target.value)}
-              >
-                {files.map((file) => (
-                  <option key={file.name} value={file.name}>
-                    {viewed.has(file.name) ? '✓ ' : ''}{file.name}
-                  </option>
-                ))}
-              </select>
-              <button className={ICON_BTN} aria-label="Next file" disabled={selectedIndex === files.length - 1} onClick={() => selectFile(files[selectedIndex + 1].name)}>
-                <Icon icon="chevron-right" size={16} aria-hidden="true" />
-              </button>
-              <span className="ml-1 shrink-0 tabular-nums text-dim">{selectedIndex + 1} / {files.length}</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-dim">
-              {trailing}
-              <label className="flex items-center gap-1.5 hover:text-fg">
-                <input
-                  type="checkbox"
-                  className="accent-accent"
-                  checked={viewed.has(selectedFile.name)}
-                  onChange={(event) => {
-                    const checked = event.target.checked
-                    setViewed((previous) => {
-                      const next = new Set(previous)
-                      if (checked) next.add(selectedFile.name)
-                      else next.delete(selectedFile.name)
-                      return next
-                    })
-                  }}
-                />
-                Viewed
-              </label>
-              <span className="tabular-nums">{viewedCount} of {files.length} viewed</span>
-            </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 border-b border-line text-xs text-dim">
+            {trailing}
+            <span className="ml-auto tabular-nums">{viewedCount} of {files.length} viewed</span>
           </div>
-          <div key={selectedFile.name} className="flex-1 min-h-0 overflow-auto overscroll-contain">
-            <FileDiff
-              fileDiff={selectedFile}
-              disableWorkerPool
-              lineAnnotations={annotations}
-              selectedLines={
-                draft && draft.file === selectedFile.name
-                  ? { start: draft.lineNumber, end: draft.lineNumber, side: draft.side }
-                  : null
-              }
-              renderAnnotation={({ metadata }) =>
-                metadata.comment ? (
-                  <CommentNote comment={metadata.comment} onRemove={() => onRemove(metadata.comment.id)} />
-                ) : (
-                  <CommentComposer onCancel={() => onSelectLine(null)} onSubmit={(body) => onSubmit(metadata.draft, body)} />
-                )
-              }
-              options={{
-                themeType: 'dark',
-                diffStyle: 'unified',
-                overflow: 'wrap',
-                disableFileHeader: true,
-                enableLineSelection: true,
-                onLineSelectionEnd(range) {
-                  if (range === null) return
-                  onSelectLine({
-                    file: selectedFile.name,
-                    side: range.side === 'deletions' ? 'deletions' : 'additions',
-                    lineNumber: range.end
-                  })
-                }
-              }}
-            />
+          <div data-diff-scroller className="flex-1 min-h-0 overflow-auto overscroll-contain">
+            {files.map((file) => {
+              const isCollapsed = collapsed.has(file.name)
+              return (
+                <section key={file.name} aria-label={file.name} data-diff-file={file.name} className="border-b border-line">
+                  <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-raised px-4 py-1.5 text-xs">
+                    <button
+                      type="button"
+                      aria-expanded={!isCollapsed}
+                      title={isCollapsed ? 'Expand file' : 'Collapse file'}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:text-fg"
+                      onClick={() => toggleCollapsed(file.name)}
+                    >
+                      <Icon icon="chevron-right" size={12} aria-hidden="true"
+                        className={cn('shrink-0 text-dim transition-transform duration-150', !isCollapsed && 'rotate-90')} />
+                      <span className={cn('min-w-0 truncate font-mono', viewed.has(file.name) && 'text-dim')}>{file.name}</span>
+                    </button>
+                    <label className="flex shrink-0 items-center gap-1.5 text-dim hover:text-fg">
+                      <input
+                        type="checkbox"
+                        className="accent-accent"
+                        checked={viewed.has(file.name)}
+                        onChange={(event) => markViewed(file.name, event.target.checked)}
+                      />
+                      Viewed
+                    </label>
+                  </div>
+                  {!isCollapsed && (
+                    <FileDiff
+                      fileDiff={file}
+                      disableWorkerPool
+                      lineAnnotations={annotationsFor(file.name)}
+                      selectedLines={
+                        draft && draft.file === file.name
+                          ? { start: draft.lineNumber, end: draft.lineNumber, side: draft.side }
+                          : null
+                      }
+                      renderAnnotation={({ metadata }) =>
+                        metadata.comment ? (
+                          <CommentNote comment={metadata.comment} onRemove={() => onRemove(metadata.comment.id)} />
+                        ) : (
+                          <CommentComposer onCancel={() => onSelectLine(null)} onSubmit={(body) => onSubmit(metadata.draft, body)} />
+                        )
+                      }
+                      options={{
+                        themeType: 'dark',
+                        diffStyle: 'unified',
+                        overflow: 'wrap',
+                        disableFileHeader: true,
+                        enableLineSelection: true,
+                        onLineSelectionEnd(range) {
+                          if (range === null) return
+                          onSelectLine({
+                            file: file.name,
+                            side: range.side === 'deletions' ? 'deletions' : 'additions',
+                            lineNumber: range.end
+                          })
+                        }
+                      }}
+                    />
+                  )}
+                </section>
+              )
+            })}
           </div>
         </div>
       )

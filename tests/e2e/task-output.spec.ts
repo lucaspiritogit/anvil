@@ -218,7 +218,7 @@ test('event-only bursts commit output without TaskView, review/header owner, dif
   await page.goto('/tests/e2e/fixture/?scenario=review&renderProbe=1')
   await eventTotal(page, 2)
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await expect(page.getByRole('combobox', { name: 'Changed file' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
   const hiddenBefore = await page.evaluate(() => ({ ...window.outputCommits }))
   await emit(page, 'review-agent', 'Snapshot while output is hidden', 'review')
   await page.waitForTimeout(50)
