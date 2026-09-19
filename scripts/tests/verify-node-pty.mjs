@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url)
 
 if (process.versions.electron) {
   const nodePty = require('node-pty')
-  if (process.platform !== 'win32') {
+  if (process.platform === 'darwin') {
     const packageDirectory = dirname(require.resolve('node-pty/package.json'))
     const helper = [
       join(packageDirectory, 'build', 'Release', 'spawn-helper'),
