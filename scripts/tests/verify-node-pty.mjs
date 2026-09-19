@@ -45,6 +45,7 @@ if (process.versions.electron) {
     assert.equal(exitCode, 0)
     assert.match(output, new RegExp(marker))
     console.log(`node-pty verified with Electron ${process.versions.electron}`)
+    process.exit(0)
   })
 } else {
   const electronExecutable = require('electron')
