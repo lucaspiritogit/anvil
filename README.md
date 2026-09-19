@@ -28,7 +28,21 @@ Run Anvil as a desktop app or a standalone server. Use the same interface on the
 
 ## Install
 
-Download the latest DMG from
+Install the macOS app with Homebrew:
+
+```sh
+brew update
+brew install --cask lucaspiritogit/tap/anvil
+```
+
+Upgrade an existing install with:
+
+```sh
+brew update
+brew upgrade --cask lucaspiritogit/tap/anvil
+```
+
+You can also download the latest DMG from
 [Releases](https://github.com/lucaspiritogit/anvil/releases), open it, drag Anvil
 into Applications, and launch it there.
 
