@@ -2,13 +2,13 @@ import { rendererEvent } from './renderer-fixture'
 import { expect, test, vi } from 'vitest'
 import { onTestCleanup } from './test-cleanup'
 import { join } from 'node:path'
-import { Store } from '../src/server/store'
+import { Store } from '../apps/server/src/store'
 import { registerTestIpc } from './test-ipc'
 import { handlers, testHome, AgentProcessManager, GitDeliveryManager } from './issue-tracker-doubles'
-import type { Task, TaskComment } from '../src/shared/types'
+import type { Task, TaskComment } from '@anvil/protocol/types'
 
 test('deletes finished, active and queued tasks without resurrecting persisted state', async () => {
-  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const database = join(testHome, '.anvil-composer/config.json')
   const store = new Store(database, options)
   store.addProject({

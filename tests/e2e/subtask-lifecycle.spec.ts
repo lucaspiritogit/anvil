@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { Task, TaskEvent, TaskIssueSnapshot } from '../../src/shared/types'
+import type { Task, TaskEvent, TaskIssueSnapshot } from '@anvil/protocol/types'
 import { restoreComposerSelection } from './composer-setup'
 
 test('a newly created task discovers planning children and keeps execution and review on its owner', async ({ page }) => {

@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest'
-import type { Task, TaskStatus, WorkspaceAnalytics } from '../src/shared/types'
-import { createHandlerRegistry } from '../src/server/handler-registry'
-import { registerAnalyticsHandlers } from '../src/server/handlers/analytics'
-import { Store } from '../src/server/store'
+import type { Task, TaskStatus, WorkspaceAnalytics } from '@anvil/protocol/types'
+import { createHandlerRegistry } from '../apps/server/src/handler-registry'
+import { registerAnalyticsHandlers } from '../apps/server/src/handlers/analytics'
+import { Store } from '../apps/server/src/store'
 import { migrationsFolder } from './migration-fixture'
 import { onTestCleanup } from './test-cleanup'
 

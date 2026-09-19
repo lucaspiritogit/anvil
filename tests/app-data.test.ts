@@ -1,12 +1,12 @@
 import { test, expect } from 'vitest'
 import { join } from 'node:path'
-import { resolveAppDataDirectory } from '../src/shared/app-data'
-import { Store } from '../src/server/store'
-import type { Task } from '../src/shared/types'
+import { resolveAppDataDirectory } from '@anvil/app-data'
+import { Store } from '../apps/server/src/store'
+import type { Task } from '@anvil/protocol/types'
 import { testHome } from './issue-tracker-doubles'
 
 test('separates development storage from live packaged tasks', () => {
-  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const productionDirectory = resolveAppDataDirectory(testHome, true)
   const developmentDirectory = resolveAppDataDirectory(testHome, false)
   const production = new Store(join(productionDirectory, 'config.json'), options)

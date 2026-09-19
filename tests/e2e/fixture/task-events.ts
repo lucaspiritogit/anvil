@@ -1,5 +1,5 @@
-import { DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '../../../src/shared/types'
-import type { TaskEvent, TaskEventsPage, TaskEventsRequest } from '../../../src/shared/types'
+import { DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '@anvil/protocol/types'
+import type { TaskEvent, TaskEventsPage, TaskEventsRequest } from '@anvil/protocol/types'
 
 export function pageTaskEvents(history: TaskEvent[], input: TaskEventsRequest): TaskEventsPage {
   const rows = history.filter((event) => event.taskId === input.taskId)

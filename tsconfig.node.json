@@ -1,10 +1,12 @@
 {
   "include": [
-    "electron.vite.config.ts",
-    "src/server/**/*",
-    "src/client/main/**/*",
-    "src/client/preload/**/*",
-    "src/shared/**/*"
+    "apps/server/**/*",
+    "apps/desktop/electron.vite.config.ts",
+    "apps/desktop/src/main/**/*",
+    "apps/desktop/src/preload/**/*",
+    "packages/app-data/**/*",
+    "packages/client-api/**/*",
+    "packages/protocol/**/*"
   ],
   "compilerOptions": {
     "composite": true,
@@ -24,6 +26,12 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@anvil/app-data": ["./packages/app-data/src/index.ts"],
+      "@anvil/client-api": ["./packages/client-api/src/index.ts"],
+      "@anvil/protocol/*": ["./packages/protocol/src/*"]
+    }
   }
 }

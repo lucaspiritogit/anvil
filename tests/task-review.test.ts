@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
-import type { Task } from '../src/shared/types'
-import { isTaskFinishedUnseen, taskAttentionRank, taskNeedsReview } from '../src/shared/task-review'
+import type { Task } from '@anvil/protocol/types'
+import { isTaskFinishedUnseen, taskAttentionRank, taskNeedsReview } from '@anvil/protocol/task-review'
 
 const makeTask = (patch: Partial<Task> = {}): Task => ({
   workspaceId: 'default', id: 'task', projectId: 'project', title: 'task', prompt: 'task',

@@ -1,5 +1,5 @@
 import { join, resolve } from 'node:path'
-import { createAnvilRuntime } from '../src/server/runtime'
+import { createAnvilRuntime } from '../apps/server/src/runtime'
 import { handlers, testHome } from './issue-tracker-doubles'
 import { rendererContents } from './renderer-fixture'
 import { onTestCleanup } from './test-cleanup'
@@ -8,8 +8,8 @@ import { onTestCleanup } from './test-cleanup'
 export function registerTestIpc(): ReturnType<typeof createAnvilRuntime> {
   const runtime = createAnvilRuntime({
     dataDirectory: process.env.ANVIL_DATA_DIR ?? join(testHome, '.anvil-composer'),
-    migrationsDirectory: resolve('src/server/db/migrations'),
-    memoryMigrationsDirectory: resolve('src/server/memory/migrations')
+    migrationsDirectory: resolve('apps/server/src/db/migrations'),
+    memoryMigrationsDirectory: resolve('apps/server/src/memory/migrations')
   })
   for (const channel of runtime.channels()) {
     handlers.set(channel, (_event, input) => runtime.invoke(channel, input))

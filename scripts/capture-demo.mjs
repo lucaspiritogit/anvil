@@ -114,7 +114,7 @@ try {
   const quickTaskId = await typePrompt('Tighten analytics date controls')
   await emit(quickTaskId, 'message', 'I’ll update the date controls in the current checkout and keep the change focused.')
   await capture(0.7)
-  await emit(quickTaskId, 'tool_use', 'Edit file\nsrc/client/renderer/src/components/AnalyticsPage.tsx')
+  await emit(quickTaskId, 'tool_use', 'Edit file\napps/web/src/components/AnalyticsPage.tsx')
   await capture(0.65)
   await emit(quickTaskId, 'tool_result', 'Updated AnalyticsPage.tsx · +8 −3')
   await emit(quickTaskId, 'message', 'The date controls are ready to review.')

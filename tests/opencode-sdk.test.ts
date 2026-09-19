@@ -3,9 +3,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { expect, test, vi } from 'vitest'
-import { openCodeAdapter } from '../src/server/agents/adapters'
-import { discoverOpenCodeModels } from '../src/server/agents/opencode-sdk'
-import type { WorkspaceExecutionContext } from '../src/server/agents/workspace-execution'
+import { openCodeAdapter } from '../apps/server/src/agents/adapters'
+import { discoverOpenCodeModels } from '../apps/server/src/agents/opencode-sdk'
+import type { WorkspaceExecutionContext } from '../apps/server/src/agents/workspace-execution'
 import { openCodeWorkspaceFixture } from './opencode-workspace-fixture'
 
 async function setWorkspaceKey(workspace: WorkspaceExecutionContext, key: string): Promise<void> {

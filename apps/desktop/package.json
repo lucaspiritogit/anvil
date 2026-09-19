@@ -1,0 +1,16 @@
+{
+  "name": "@anvil/desktop",
+  "version": "1.2.9",
+  "private": true,
+  "scripts": {
+    "build": "electron-vite build --config electron.vite.config.ts"
+  },
+  "dependencies": {
+    "@anvil/app-data": "*",
+    "@anvil/client-api": "*",
+    "@anvil/protocol": "*",
+    "@hono/node-server": "^2.1.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "hono": "^4.13.7"
+  }
+}

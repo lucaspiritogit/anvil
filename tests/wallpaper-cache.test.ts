@@ -3,7 +3,7 @@ import {
   invalidateWallpaper,
   loadWallpaper,
   setWallpaperCacheSource
-} from '../src/client/renderer/src/state/wallpaper-cache'
+} from '../apps/web/src/state/wallpaper-cache'
 
 class FakeImage {
   onload: (() => void) | null = null

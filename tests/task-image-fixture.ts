@@ -1,5 +1,5 @@
 import { imageFixture } from './image-fixtures'
-import type { TaskImageAttachment } from '../src/shared/types'
+import type { TaskImageAttachment } from '@anvil/protocol/types'
 
 export async function taskImages(): Promise<TaskImageAttachment[]> {
   return Promise.all((['png', 'jpeg', 'webp'] as const).map(async (format) => ({

@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events'
 import { expect, test, vi } from 'vitest'
 import { spawn } from 'node:child_process'
-import { connectToServer } from '../src/client/main/server-process'
-import { serverAddress } from '../src/shared/server-address'
+import { connectToServer } from '../apps/desktop/src/main/server-process'
+import { serverAddress } from '@anvil/protocol/server-address'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }))
 

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { expect, test, vi } from 'vitest'
-import type { BrowserHostRequest } from '../src/shared/browser-host'
-import { BrowserHostClient } from '../src/server/browser-host-client'
+import type { BrowserHostRequest } from '@anvil/protocol/browser-host'
+import { BrowserHostClient } from '../apps/server/src/browser-host-client'
 
 class HostTransport extends EventEmitter {
   connected = true

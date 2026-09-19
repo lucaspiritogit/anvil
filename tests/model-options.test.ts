@@ -5,7 +5,7 @@ import {
   humanizeModelName,
   modelMatchesQuery,
   normalizeModelSearch
-} from '../src/client/renderer/src/model-options'
+} from '../apps/web/src/model-options'
 
 test('humanizes model slugs from every catalogue without changing their IDs', () => {
   const cases = [

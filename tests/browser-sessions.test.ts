@@ -3,8 +3,8 @@ import type { WebContents, WebPreferences } from 'electron'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { expect, onTestFinished, test, vi } from 'vitest'
-import { BrowserSessionManager } from '../src/client/main/browser-sessions'
-import { BrowserToolServer } from '../src/client/main/browser-tools'
+import { BrowserSessionManager } from '../apps/desktop/src/main/browser-sessions'
+import { BrowserToolServer } from '../apps/desktop/src/main/browser-tools'
 
 class FakeSession extends EventEmitter {
   setPermissionCheckHandler = vi.fn()

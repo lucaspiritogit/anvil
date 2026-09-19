@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { startCanvasFrames } from '../src/components/dither-kit/canvas-frames'
+import { startCanvasFrames } from '../apps/web/src/components/dither-kit/canvas-frames'
 
 afterEach(() => vi.unstubAllGlobals())
 

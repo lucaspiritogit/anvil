@@ -1,15 +1,15 @@
 import { EventEmitter } from 'node:events'
 import type { NotificationConstructorOptions } from 'electron'
-import { registerTaskNotifications } from '../src/client/main/task-notifications'
-import { callIssueTool } from '../src/server/issue-tools/server'
+import { registerTaskNotifications } from '../apps/desktop/src/main/task-notifications'
+import { callIssueTool } from '../apps/server/src/issue-tools/server'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
-import { Store } from '../src/server/store'
-import { registerTaskExecution } from '../src/server/tasks/task-execution'
-import { registerTaskEvents } from '../src/server/tasks/events'
-import type { ExitInfo, AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
-import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git'
+import { Store } from '../apps/server/src/store'
+import { registerTaskExecution } from '../apps/server/src/tasks/task-execution'
+import { registerTaskEvents } from '../apps/server/src/tasks/events'
+import type { ExitInfo, AgentProcessManager as RealAgentProcessManager } from '../apps/server/src/agents/process-manager'
+import type { GitDeliveryManager as RealGitDeliveryManager } from '../apps/server/src/git'
 import { AgentProcessManager, GitDeliveryManager, testHome } from './issue-tracker-doubles'
 import { onTestCleanup } from './test-cleanup'
 
@@ -19,7 +19,7 @@ async function tick(): Promise<void> {
 
 async function setup() {
   const store = new Store(join(testHome, randomUUID(), 'config.json'), {
-    migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
+    migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations')
   })
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Project', path: testHome, createdAt: 0,

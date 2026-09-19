@@ -1,5 +1,5 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
-import { createHandlerRegistry, type HandlerRegistry } from '../src/server/handler-registry'
+import { createHandlerRegistry, type HandlerRegistry } from '../apps/server/src/handler-registry'
 import { handlers } from './issue-tracker-doubles'
 
 export const rendererUrl = 'http://localhost:5173/'

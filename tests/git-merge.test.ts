@@ -4,8 +4,8 @@ import { execFileSync } from 'node:child_process'
 import { chmod, mkdtemp, mkdir, readFile, writeFile, rm, realpath, rename, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitDeliveryManager } from '../src/server/git'
-import { MERGE_CONFLICT_MAX_FILE_BYTES, type TaskMergeConflict } from '../src/shared/types'
+import { GitDeliveryManager } from '../apps/server/src/git'
+import { MERGE_CONFLICT_MAX_FILE_BYTES, type TaskMergeConflict } from '@anvil/protocol/types'
 
 test('merges into the current branch while guarding stale previews, local changes and conflicts', async () => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'anvil-merge-')))

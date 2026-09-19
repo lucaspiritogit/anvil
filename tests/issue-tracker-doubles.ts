@@ -3,11 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { BatchIssue, Completion, Issue } from '../src/shared/valence'
+import type { BatchIssue, Completion, Issue } from '@anvil/protocol/valence'
 import { openTaskTracker as openIssueTracker } from './task-state'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import type { TaskToolConnection } from '../src/server/agents/process-manager'
+import type { TaskToolConnection } from '../apps/server/src/agents/process-manager'
 
 export const testHome = process.env.ANVIL_TEST_HOME ?? realpathSync(mkdtempSync(join(tmpdir(), 'anvil-issue-tracker-test-')))
 export const handlers = new Map<string, (...args: any[]) => any>()

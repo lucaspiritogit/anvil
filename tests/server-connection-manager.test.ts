@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
-import { ServerConnectionManager, type ServerConnectionState } from '../src/client/main/server-connection-manager'
-import type { ServerTarget } from '../src/shared/server-address'
-import type { ServerConnection } from '../src/client/main/server-process'
+import { ServerConnectionManager, type ServerConnectionState } from '../apps/desktop/src/main/server-connection-manager'
+import type { ServerTarget } from '@anvil/protocol/server-address'
+import type { ServerConnection } from '../apps/desktop/src/main/server-process'
 
 class SettingsFixture {
   saved: ServerTarget | undefined

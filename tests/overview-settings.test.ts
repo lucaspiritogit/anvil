@@ -5,12 +5,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { imageFixture } from './image-fixtures'
-import { Store } from '../src/server/store'
-import { WallpaperLibrary } from '../src/server/wallpapers'
-import { registerConnectionsHandlers, registerSettingsHandlers } from '../src/server/handlers/settings'
-import { createHandlerRegistry } from '../src/server/handler-registry'
-import { ServerAuth } from '../src/server/server-auth'
-import type { TailscaleConnection } from '../src/server/tailscale'
+import { Store } from '../apps/server/src/store'
+import { WallpaperLibrary } from '../apps/server/src/wallpapers'
+import { registerConnectionsHandlers, registerSettingsHandlers } from '../apps/server/src/handlers/settings'
+import { createHandlerRegistry } from '../apps/server/src/handler-registry'
+import { ServerAuth } from '../apps/server/src/server-auth'
+import type { TailscaleConnection } from '../apps/server/src/tailscale'
 import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { handlers } from './issue-tracker-doubles'
 
@@ -18,7 +18,7 @@ let root: string
 let database: string
 let store: Store
 let wallpapers: WallpaperLibrary
-const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
 const call = (channel: string, value?: unknown): any => handlers.get(channel)!(rendererEvent, channel === 'settings:set' ? { workspaceId: 'default', patch: value } : value)
 
 beforeEach(() => {

@@ -1,14 +1,14 @@
 import { rendererEvent } from './renderer-fixture'
 import { expect, test, vi } from 'vitest'
 import { join } from 'node:path'
-import { Store } from '../src/server/store'
-import { TaskIssues } from '../src/server/tasks/task-issues'
+import { Store } from '../apps/server/src/store'
+import { TaskIssues } from '../apps/server/src/tasks/task-issues'
 import { registerTestIpc } from './test-ipc'
-import type { Task } from '../src/shared/types'
+import type { Task } from '@anvil/protocol/types'
 import { GitDeliveryManager, handlers, testHome } from './issue-tracker-doubles'
 
 test('settles eligible tasks at the review TTL and persists manual settlement', async () => {
-  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const database = join(testHome, '.anvil-composer/config.json')
   const store = new Store(database, options)
   const releaseWorktree = vi.spyOn(GitDeliveryManager.prototype, 'releaseWorktree')
@@ -97,7 +97,7 @@ test('settles eligible tasks at the review TTL and persists manual settlement', 
 })
 
 test('retries branch-aware cleanup for tasks settled before startup', () => {
-  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const database = join(testHome, '.anvil-composer/config.json')
   const store = new Store(database, options)
   store.addProject({

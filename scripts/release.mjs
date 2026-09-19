@@ -36,8 +36,16 @@ try {
   ], { cwd, stdio: 'inherit' })
 
   const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  for (const workspace of ['@anvil/server', '@anvil/web', '@anvil/desktop']) {
+    execFileSync(process.execPath, [
+      process.env.npm_execpath,
+      'version', version,
+      '--workspace', workspace,
+      '--git-tag-version=false'
+    ], { cwd, stdio: 'inherit' })
+  }
   const tag = `v${version}`
-  git(['add', 'package.json', 'package-lock.json'])
+  git(['add', 'package.json', 'package-lock.json', 'apps/server/package.json', 'apps/web/package.json', 'apps/desktop/package.json'])
   git(['commit', '-m', `chore: release ${version}`])
   git(['tag', '-a', tag, '-m', `Anvil ${tag}`])
   try {

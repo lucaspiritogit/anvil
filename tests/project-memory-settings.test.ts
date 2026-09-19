@@ -3,16 +3,16 @@ import { test, expect } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Store } from '../src/server/store'
-import { SettingsProjectMemory } from '../src/server/memory/settings-project-memory'
-import { createTaskMemory } from '../src/server/memory/task-memory'
-import type { ProjectMemory } from '../src/server/memory/project-memory'
-import type { TaskContext } from '../src/server/tasks/context'
+import { Store } from '../apps/server/src/store'
+import { SettingsProjectMemory } from '../apps/server/src/memory/settings-project-memory'
+import { createTaskMemory } from '../apps/server/src/memory/task-memory'
+import type { ProjectMemory } from '../apps/server/src/memory/project-memory'
+import type { TaskContext } from '../apps/server/src/tasks/context'
 
 test('gates memory access and discards retrieval when disabled', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-memory-settings-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
-  const store = new Store(join(directory, 'config.json'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const store = new Store(join(directory, 'config.json'), { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   onTestCleanup(() => store.close())
   const calls: string[] = []
   let release: (() => void) | undefined
@@ -73,7 +73,7 @@ test('gates memory access and discards retrieval when disabled', async () => {
 })
 
 test('replaces the memory adapter after live model and URL changes', async () => {
-  const store = new Store(':memory:', { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const store = new Store(':memory:', { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   const changed: string[] = []
   const dynamic = new SettingsProjectMemory(() => store.getSettings(), (settings) => {
     changed.push(settings.memoryEmbeddingModel)
@@ -91,8 +91,8 @@ test('replaces the memory adapter after live model and URL changes', async () =>
 })
 
 test('workspace memory callbacks and in-flight recall retain their owning profile', async () => {
-  const { WorkspaceProjectMemory } = await import('../src/server/memory/workspace-project-memory')
-  const store = new Store(':memory:', { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const { WorkspaceProjectMemory } = await import('../apps/server/src/memory/workspace-project-memory')
+  const store = new Store(':memory:', { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   onTestCleanup(() => store.close())
   const work = store.createWorkspace('Work')
   store.setSettings({ memoryEnabled: true, memoryEmbeddingModel: 'personal-model' }, 'default')

@@ -13,7 +13,8 @@ async function main() {
   const vitePackagePath = require.resolve('electron-vite/package.json')
   const vitePackage = require(vitePackagePath)
   const viteCliPath = path.join(path.dirname(vitePackagePath), vitePackage.bin['electron-vite'])
-  process.argv.splice(1, 1, viteCliPath, 'dev')
+  const configPath = path.join(__dirname, '..', 'apps', 'desktop', 'electron.vite.config.ts')
+  process.argv.splice(1, 1, viteCliPath, 'dev', '--config', configPath)
   await import(pathToFileURL(viteCliPath).href)
 }
 

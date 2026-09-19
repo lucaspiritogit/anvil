@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { createHttpClient } from '../src/client/preload/http-client'
+import { createHttpClient } from '@anvil/client-api'
 
 class FakeEventSource {
   static OPEN = 1

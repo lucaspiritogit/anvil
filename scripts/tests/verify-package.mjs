@@ -12,7 +12,7 @@ assert(candidates.length, 'No packaged desktop app found')
 for (const filename of candidates) {
   const archive = resolve(filename)
   const entries = listPackage(archive).map((entry) => entry.replaceAll('\\', '/'))
-  for (const path of ['out/main/index.js', 'out/preload/index.js', 'out/server/index.js', 'out/renderer/index.html', 'out/renderer/closing.html']) {
+  for (const path of ['out/main/index.js', 'out/preload/index.js', 'out/server/index.js', 'out/server/public/index.html', 'out/server/public/closing.html']) {
     assert(entries.includes(`/${path}`), `Missing ${path}`)
   }
   for (const directory of ['db', 'memory']) {

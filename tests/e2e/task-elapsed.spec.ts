@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import type { Task, TaskIssueSnapshot } from '../../src/shared/types'
+import type { Task, TaskIssueSnapshot } from '@anvil/protocol/types'
 
 const start = new Date('2026-09-11T12:00:00Z').getTime()
 

@@ -1,39 +1,39 @@
 import { onTestCleanup } from './test-cleanup'
-import { WallpaperLibrary } from '../src/server/wallpapers'
+import { WallpaperLibrary } from '../apps/server/src/wallpapers'
 import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { test, expect, vi } from 'vitest'
 import { pngWithDimensions } from './image-fixtures'
-import { TaskImageStorage } from '../src/server/task-image-storage'
+import { TaskImageStorage } from '../apps/server/src/task-image-storage'
 import { taskImages } from './task-image-fixture'
-import { MERGE_CONFLICT_MAX_FILE_BYTES, TASK_IMAGE_LIMITS } from '../src/shared/types'
+import { MERGE_CONFLICT_MAX_FILE_BYTES, TASK_IMAGE_LIMITS } from '@anvil/protocol/types'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { taskState } from './task-state'
-import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
-import { agentRebasePrompt, mergeConflictRepairPrompt } from '../src/server/agents/task-prompts'
-import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git'
-import { registerAgentHandlers } from '../src/server/handlers/agents'
-import { registerGitHubHandlers } from '../src/server/handlers/github'
-import { GitHubClient } from '../src/server/github-client'
-import { GitHubCredentials } from '../src/server/github-credentials'
-import { registerProjectHandlers } from '../src/server/handlers/projects'
-import { registerRebaseHandlers } from '../src/server/handlers/rebase'
-import { registerReviewHandlers } from '../src/server/handlers/review'
-import { registerTaskHandlers } from '../src/server/handlers/tasks'
-import { registerSteeringHandlers } from '../src/server/handlers/steering'
-import { registerWorkspaceHandlers } from '../src/server/handlers/workspaces'
-import { registerSettingsHandlers } from '../src/server/handlers/settings'
-import { createTaskMemory } from '../src/server/memory/task-memory'
-import { createTaskCompletion } from '../src/server/tasks/completion'
-import { registerTaskEvents } from '../src/server/tasks/events'
-import { registerTaskExecution } from '../src/server/tasks/task-execution'
-import { titleFor } from '../src/server/tasks/task-title'
-import { withTaskOperation } from '../src/server/tasks/operations'
-import { callIssueTool } from '../src/server/issue-tools/server'
-import { Store } from '../src/server/store'
-import { TaskIssues } from '../src/server/tasks/task-issues'
-import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent } from '../src/shared/types'
+import type { AgentProcessManager as RealAgentProcessManager } from '../apps/server/src/agents/process-manager'
+import { agentRebasePrompt, mergeConflictRepairPrompt } from '../apps/server/src/agents/task-prompts'
+import type { GitDeliveryManager as RealGitDeliveryManager } from '../apps/server/src/git'
+import { registerAgentHandlers } from '../apps/server/src/handlers/agents'
+import { registerGitHubHandlers } from '../apps/server/src/handlers/github'
+import { GitHubClient } from '../apps/server/src/github-client'
+import { GitHubCredentials } from '../apps/server/src/github-credentials'
+import { registerProjectHandlers } from '../apps/server/src/handlers/projects'
+import { registerRebaseHandlers } from '../apps/server/src/handlers/rebase'
+import { registerReviewHandlers } from '../apps/server/src/handlers/review'
+import { registerTaskHandlers } from '../apps/server/src/handlers/tasks'
+import { registerSteeringHandlers } from '../apps/server/src/handlers/steering'
+import { registerWorkspaceHandlers } from '../apps/server/src/handlers/workspaces'
+import { registerSettingsHandlers } from '../apps/server/src/handlers/settings'
+import { createTaskMemory } from '../apps/server/src/memory/task-memory'
+import { createTaskCompletion } from '../apps/server/src/tasks/completion'
+import { registerTaskEvents } from '../apps/server/src/tasks/events'
+import { registerTaskExecution } from '../apps/server/src/tasks/task-execution'
+import { titleFor } from '../apps/server/src/tasks/task-title'
+import { withTaskOperation } from '../apps/server/src/tasks/operations'
+import { callIssueTool } from '../apps/server/src/issue-tools/server'
+import { Store } from '../apps/server/src/store'
+import { TaskIssues } from '../apps/server/src/tasks/task-issues'
+import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent } from '@anvil/protocol/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome, shell, dialog } from './issue-tracker-doubles'
 
 function setupIpc(
@@ -41,7 +41,7 @@ function setupIpc(
   cloneRepository?: (url: string, destination: string) => Promise<void>
 ) {
   const databaseFile = join(testHome, `ipc-${randomUUID()}`, 'config.json')
-  const store = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const store = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   onTestCleanup(() => store.close())
   const tasks = { get: (id: string) => store.getTask(id), has: (id: string) => !!store.getTask(id) }
   const trackers = { get: (id: string) => taskState(store, id) }
@@ -1127,7 +1127,7 @@ test('reloads original image bytes when the app restarts during planning', async
   const images = await taskImages()
   const task: Task = await call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Inspect image', images })
   await tick()
-  const reopened = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const reopened = new Store(databaseFile, { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   onTestCleanup(() => reopened.close())
   expect(reopened.getTask(task.id)?.status).toBe('pending')
   expect(reopened.getTaskExecution(task.id)?.hasImages).toBe(true)

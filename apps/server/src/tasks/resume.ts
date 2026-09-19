@@ -1,0 +1,144 @@
+import { requireStackParent, stackParentIsReady } from './task-stacks'
+import { shouldCompactContext } from '@anvil/protocol/task-context'
+import { resolveTaskWorkspace } from '../agents/workspace-execution'
+import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
+import { taskStyle } from '@anvil/protocol/task-style'
+import type { Task, TaskExecutionState } from '@anvil/protocol/types'
+import type { TaskContext } from './context'
+import { requireProjectCheckoutAvailable, usesManagedWorktree } from './checkout'
+
+interface ResumeOptions {
+  check: (expected?: Task) => Task
+  validate: (task: Task) => void
+  prompt: (task: Task, state: TaskExecutionState | undefined) => string
+  gitInstructions?: boolean
+  allowRestack?: boolean
+  resumeExecution?: (taskId: string) => TaskExecutionState
+  acceptExecution?: (taskId: string) => void
+  rollbackExecution?: (taskId: string, previousState: TaskExecutionState) => void
+}
+
+/** Share location, saved settings and rollback for every stopped-task follow-up. */
+export async function resumeTaskTurn(
+  { store, agentProcesses, gitDelivery, send }: TaskContext,
+  { check, validate, prompt, resumeExecution, acceptExecution, rollbackExecution,
+    gitInstructions = true, allowRestack = false }: ResumeOptions
+): Promise<Task> {
+  const task = check()
+  const style = taskStyle(task)
+  validate(task)
+  const requireParentFinished = (current: Task): void => {
+    if (!stackParentIsReady({ store, agentProcesses, gitDelivery, send }, current)) {
+      throw new Error('Wait for the parent task to finish before resuming')
+    }
+  }
+  if (style === 'work') requireParentFinished(task)
+  if (style === 'work' && task.restackState && !allowRestack) throw new Error('Finish restacking this task before resuming')
+  const workspace = resolveTaskWorkspace(store, task.id)
+  if (task.settledAt !== undefined) throw new Error('This task is settled and cannot be resumed')
+  const agent = getAgent(task.agentId)
+  if (!agent) throw new Error(`Unknown agent: ${task.agentId}`)
+  if (task.sessionId && !agent.executionProtocol && !agent.resumeArgs) throw new Error('This agent cannot resume its saved session')
+  const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
+  if (!project) throw new Error('Project not found')
+  const guard = (): Task => {
+    const current = check()
+    validate(current)
+    if (style === 'work') requireParentFinished(current)
+    if (agentProcesses.isRunning(task.id)) throw new Error('This task is already running')
+    requireProjectCheckoutAvailable(store, current)
+    return current
+  }
+  const savedState = store.getTaskExecution(task.id)
+  const images = savedState?.hasImages ? store.taskImages.read(task.id) : undefined
+  if (savedState?.hasImages && !images && !task.sessionId) {
+    throw new Error('The original task images were cleared. Start a new task and attach the images again.')
+  }
+  try {
+    let location: Partial<Task> = { cwd: project.path }
+    const git = await gitDelivery.status(project.path)
+    if (style === 'work' && !usesManagedWorktree(task)) throw new Error('Work tasks require an isolated worktree')
+    if (style === 'work' && !git.isRepository) throw new Error('Work requires a Git repository so it can run in an isolated branch and worktree')
+    if (usesManagedWorktree(task) && task.branchName) {
+      const checkout = await gitDelivery.checkoutBranch(project.path, task.id, task.branchName, task.baseBranch, guard)
+      location = { cwd: checkout.cwd }
+    } else if (usesManagedWorktree(task) && git.isRepository) {
+      guard()
+      const parent = task.parentTaskId ? requireStackParent(store, task, task.parentTaskId) : undefined
+      const base = parent
+        ? await gitDelivery.stackBase(project.path, parent.branchName)
+        : task.startBase
+          ? await gitDelivery.resolveWorktreeBase(project.path, task.startBase)
+          : undefined
+      const prepared = await gitDelivery.prepareBranch(project.path, task.id, () => {
+        guard()
+        if (task.parentTaskId) requireStackParent(store, task, task.parentTaskId)
+      }, base)
+      location = { cwd: prepared.cwd, baseCommit: prepared.baseCommit,
+        baseBranch: parent ? requireStackParent(store, task, parent.id).branchName : prepared.baseBranch,
+        branchName: prepared.branchName }
+      // Retain the temporary checkout even if dispatch is interrupted. The
+      // next attempt must reuse it instead of creating another branch.
+      if (store.getTask(task.id)) store.updateTask(task.id, location)
+    }
+    const current = guard()
+    const previousState = store.getTaskExecution(task.id)
+    let running: Task | undefined
+    try {
+      const state = resumeExecution ? resumeExecution(task.id) : previousState
+      const message = prompt(current, state)
+      const managed = usesManagedWorktree(current) && Boolean(location.branchName ?? current.branchName)
+      const guidance = managed ? GIT_SYSTEM_PROMPT : ''
+      const executionPrompt = guidance && gitInstructions ? `${guidance}\n\n${message}` : message
+      guard()
+      running = store.updateTask(task.id, {
+        ...location, status: 'running', endedAt: undefined, exitCode: null, error: undefined,
+        deliveryStatus: managed ? 'working' : 'unavailable', deliveryError: undefined
+      })!
+      // No scheduled callback: startup errors return to the invoking handler.
+      await agentProcesses.startResumed({
+        workspace,
+        beforeDispatch: () => {
+          const dispatching = check(running)
+          if (style === 'work') requireParentFinished(dispatching)
+          requireProjectCheckoutAvailable(store, dispatching)
+        },
+        taskId: task.id, issueId: state?.currentIssueId ?? undefined, agent, cwd: running.cwd,
+        projectPath: project.path, model: current.model, reasoningEffort: state?.reasoningEffort,
+        issueTracker: style === 'work',
+        resumeSessionId: current.sessionId,
+        autoCompact: shouldCompactContext(current, store.getSettings(current.workspaceId)),
+        prompt: executionPrompt,
+        images,
+        resumeFallbackPrompt: resumeExecution && state?.phase !== 'complete' && (!state?.hasImages || images)
+          ? executionPrompt
+          : undefined
+      })
+      acceptExecution?.(task.id)
+      send('task:updated', store.getTask(task.id) ?? running)
+      return store.getTask(task.id) ?? running
+    } catch (error) {
+      // Do not resurrect a deleted task or overwrite a newer lifecycle transition.
+      const latest = store.getTask(task.id)
+      if (latest && (!running || latest.status === 'running' && latest.deliveryStatus === running.deliveryStatus)) {
+        const restored = store.transaction(() => {
+          if (previousState) {
+            if (rollbackExecution) rollbackExecution(task.id, previousState)
+            else store.saveTaskExecution(previousState)
+          }
+          return store.updateTask(task.id, {
+            ...current, ...location, branchName: latest.branchName, sessionId: latest.sessionId,
+            contextUsed: latest.contextUsed, contextSize: latest.contextSize, contextCompactionError: latest.contextCompactionError,
+            inputTokens: latest.inputTokens, outputTokens: latest.outputTokens, cachedTokens: latest.cachedTokens,
+            totalTokens: latest.totalTokens, costUsd: latest.costUsd
+          }, current)!
+        }, current.workspaceId)
+        send('task:updated', restored)
+      }
+      throw error
+    }
+  } catch (error) {
+    if (!store.getTask(task.id) && usesManagedWorktree(task)) await gitDelivery.releaseWorktree(task.id)
+    throw error
+  }
+}

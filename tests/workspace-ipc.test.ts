@@ -2,18 +2,18 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, expect, test, vi } from 'vitest'
-import { Store } from '../src/server/store'
-import { WallpaperLibrary } from '../src/server/wallpapers'
-import { registerSettingsHandlers } from '../src/server/handlers/settings'
-import { registerWorkspaceHandlers } from '../src/server/handlers/workspaces'
+import { Store } from '../apps/server/src/store'
+import { WallpaperLibrary } from '../apps/server/src/wallpapers'
+import { registerSettingsHandlers } from '../apps/server/src/handlers/settings'
+import { registerWorkspaceHandlers } from '../apps/server/src/handlers/workspaces'
 import { handlers, testHome } from './issue-tracker-doubles'
 import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { onTestCleanup } from './test-cleanup'
-import type { ComposerPreferences, Settings, WorkspaceSnapshot } from '../src/shared/types'
-import { useStore } from '../src/client/renderer/src/state/store'
-import { useComposerPreferences } from '../src/client/renderer/src/state/composer-preferences'
+import type { ComposerPreferences, Settings, WorkspaceSnapshot } from '@anvil/protocol/types'
+import { useStore } from '../apps/web/src/state/store'
+import { useComposerPreferences } from '../apps/web/src/state/composer-preferences'
 
-const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
 const composer: ComposerPreferences = {
   agentId: 'codex', modelsByAgent: { codex: 'work-model', opencode: 'provider/model' },
   reasoningByAgentModel: { '["codex","work-model"]': 'high', '["opencode","provider/model"]': 'low' },

@@ -2,12 +2,13 @@
 
 ## Project structure
 
-Anvil is an Electron desktop app built with TypeScript, React, Zustand, and Tailwind CSS.
+Anvil is an Electron desktop app and standalone Node server built with TypeScript, React, Zustand, and Tailwind CSS.
 
-- `src/main/` owns agent processes, the issue tracker, Git worktrees, SQLite storage, and IPC handlers.
-- `src/main/db/` contains the Drizzle SQLite schema and generated migrations. `src/main/memory/` contains the separate PGlite/PostgreSQL project-memory adapters and migrations.
-- `src/preload/index.ts` exposes the typed desktop API; `src/shared/` holds shared types and keybindings.
-- `src/renderer/src/` contains React components, application state, styles, and shared UI helpers.
+- `apps/server/src/` owns agent processes, the issue tracker, Git worktrees, SQLite storage, and HTTP handlers.
+- `apps/server/src/db/` contains the Drizzle SQLite schema and generated migrations. `apps/server/src/memory/` contains the separate PGlite/PostgreSQL project-memory adapters and migrations.
+- `apps/desktop/src/` owns Electron main and preload code.
+- `apps/web/src/` contains the browser UI used by the standalone server and Electron.
+- `packages/protocol/`, `packages/client-api/`, and `packages/app-data/` contain shared contracts and host-neutral helpers.
 - `tests/` contains issue tracker tests and test doubles. `scripts/` contains maintenance and test runners. `public/` holds static assets.
 
 ## Development commands

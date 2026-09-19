@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
-import { IssueTracker } from '../src/server/valence/tracker'
+import { IssueTracker } from '../apps/server/src/valence/tracker'
 import { testHome } from './issue-tracker-doubles'
-import type { Store } from '../src/server/store'
+import type { Store } from '../apps/server/src/store'
 
 /** Read both clients' public interfaces without querying either database directly. */
 export function taskState(store: Store, taskId: string) {

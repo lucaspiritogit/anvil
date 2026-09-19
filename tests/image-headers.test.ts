@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
-import { readImageHeaders, validateImageHeaders } from '../src/shared/image-headers'
-import { validateTaskImages } from '../src/server/task-images'
+import { readImageHeaders, validateImageHeaders } from '@anvil/protocol/image-headers'
+import { validateTaskImages } from '../apps/server/src/task-images'
 import { imageFixture, pngWithDimensions } from './image-fixtures'
 
 test.each(['sample.png', 'sample.jpeg', 'progressive.jpeg', 'sample.webp', 'lossless.webp'])('reads %s dimensions from bounded headers', (name) => {

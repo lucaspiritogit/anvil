@@ -1,7 +1,7 @@
 const { spawnSync } = require('node:child_process')
 const { existsSync, mkdirSync, rmSync } = require('node:fs')
 const { dirname, join } = require('node:path')
-const { workspaceDatabase, selectedWorkspaceDirectory } = require('../src/shared/app-data.ts')
+const { workspaceDatabase, selectedWorkspaceDirectory } = require('../packages/app-data/src/index.ts')
 
 function dropDatabase() {
   const database = workspaceDatabase()

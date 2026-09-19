@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { analyticsPresetPeriod, analyticsRange, currentMonthPeriod, moveAnalyticsPeriod } from '../src/client/renderer/src/analytics-period'
+import { analyticsPresetPeriod, analyticsRange, currentMonthPeriod, moveAnalyticsPeriod } from '../apps/web/src/analytics-period'
 
 describe('analytics periods', () => {
   test('uses the current local calendar month at month boundaries', () => {

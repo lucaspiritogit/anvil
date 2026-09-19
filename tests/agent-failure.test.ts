@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { AgentTransportError, retryableAgentFailure } from '../src/server/agents/agent-failure'
+import { AgentTransportError, retryableAgentFailure } from '../apps/server/src/agents/agent-failure'
 
 test('recognizes recorded transient provider errors and structured Codex stream failures', () => {
   for (const message of [

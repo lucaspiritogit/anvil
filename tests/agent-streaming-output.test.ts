@@ -1,9 +1,9 @@
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test, vi } from 'vitest'
-import { AcpOutput } from '../src/server/agents/acp-output'
-import { CodexAppServerOutput } from '../src/server/agents/codex-app-server-output'
-import type { TaskEvent, TaskInput } from '../src/server/agents/agent-executor'
+import { AcpOutput } from '../apps/server/src/agents/acp-output'
+import { CodexAppServerOutput } from '../apps/server/src/agents/codex-app-server-output'
+import type { TaskEvent, TaskInput } from '../apps/server/src/agents/agent-executor'
 
 const input: TaskInput = { workspace: testWorkspace(), taskId: 'streaming-output', prompt: 'hello', cwd: '/tmp' }
 const flushIntervalMs = 250

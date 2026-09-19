@@ -2,15 +2,15 @@ import { expect, test, vi } from 'vitest'
 import { chmodSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TerminalSessionManager, ensureNodePtySpawnHelperExecutable } from '../src/server/terminal-sessions'
-import { validateIpcRequest } from '../src/server/handlers/validation'
-import type { Store } from '../src/server/store'
+import { TerminalSessionManager, ensureNodePtySpawnHelperExecutable } from '../apps/server/src/terminal-sessions'
+import { validateIpcRequest } from '../apps/server/src/handlers/validation'
+import type { Store } from '../apps/server/src/store'
 
 const native = vi.hoisted(() => ({ spawn: vi.fn(), resolveCommand: vi.fn() }))
 vi.mock('node-pty', () => native)
-vi.mock('../src/server/process-tree', () => ({ closeProcessTree: async (_pid: number, _closed: Promise<void>, terminate: (force: boolean) => void) => terminate(false) }))
-vi.mock('../src/server/agents/resolve', () => ({ resolveCommand: native.resolveCommand }))
-vi.mock('../src/server/agents/opencode-workspace', () => ({
+vi.mock('../apps/server/src/process-tree', () => ({ closeProcessTree: async (_pid: number, _closed: Promise<void>, terminate: (force: boolean) => void) => terminate(false) }))
+vi.mock('../apps/server/src/agents/resolve', () => ({ resolveCommand: native.resolveCommand }))
+vi.mock('../apps/server/src/agents/opencode-workspace', () => ({
   openCodeWorkspaceCommand: (workspace: { home: string; environment: NodeJS.ProcessEnv }, args: string[]) => ({
     command: 'opencode', args, cwd: workspace.home, environment: workspace.environment
   })

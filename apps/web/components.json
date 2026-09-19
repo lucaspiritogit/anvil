@@ -1,0 +1,23 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "css": "src/styles.css",
+    "baseColor": "zinc",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@renderer/components",
+    "utils": "@renderer/ui",
+    "ui": "@renderer/components",
+    "lib": "@renderer",
+    "hooks": "@renderer/hooks"
+  },
+  "registries": {
+    "@dither-kit": "https://tripwire.sh/r/{name}.json"
+  }
+}

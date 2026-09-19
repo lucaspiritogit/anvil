@@ -6,8 +6,8 @@ import {
   SERVER_CONNECTION_SETTINGS_FILENAME,
   ServerConnectionSettings,
   resolveServerTarget
-} from '../src/client/main/server-connection-settings'
-import { normalizeServerTarget, serverAddress } from '../src/shared/server-address'
+} from '../apps/desktop/src/main/server-connection-settings'
+import { normalizeServerTarget, serverAddress } from '@anvil/protocol/server-address'
 
 const directories: string[] = []
 

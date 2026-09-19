@@ -1,0 +1,841 @@
+import { issueIsReviewReady, issuePresentation, taskIssuePresentation } from '@anvil/protocol/task-issue-presentation'
+import type { JSX, ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Icon } from '../icons'
+import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
+import { TaskStackStatus } from './TaskStackStatus'
+import { useStore, type TaskPanel } from '../state/store'
+import { btn, cn, deliveryTone, dot, field, ISSUE_STATUS, statusTone } from '../ui'
+import { AgentIcon } from './AgentIcon'
+import { AgentRebaseModal } from './AgentRebaseModal'
+import { ApproveTaskModal, type TaskDeliveryAction } from './ApproveTaskModal'
+import { OpenPullRequestModal } from './OpenPullRequestModal'
+import { CopyableText } from './CopyableText'
+import { RebaseModal } from './RebaseModal'
+import { TaskSteeringComposer } from './TaskSteeringComposer'
+import { TaskIssues } from './TaskIssues'
+import { useTaskIssues } from '../hooks/use-task-issues'
+import { TaskOutput } from './TaskOutput'
+import { QuickCommitActions } from './QuickCommitActions'
+import type { DiffLineAnnotation } from '@pierre/diffs/react'
+import { isTaskSettled } from '@anvil/protocol/task-settlement'
+import type {
+  DeliveryStatus,
+  Task,
+  TaskComment,
+  TaskDiff,
+  TaskStatus
+} from '@anvil/protocol/types'
+import { taskStyle } from '@anvil/protocol/task-style'
+import { taskCheckoutMode } from '@anvil/protocol/task-checkout'
+import { TaskStyleBadge } from './TaskStyleBadge'
+
+interface Props {
+  task: Task
+  initialPanel?: TaskPanel
+}
+
+/** Either a saved note or the line currently being written on. */
+type NoteMetadata = { comment: TaskComment; draft?: undefined } | { comment?: undefined; draft: CommentDraft }
+
+interface CommentDraft {
+  file: string
+  side: TaskComment['side']
+  lineNumber: number
+}
+
+interface PatchFilesProps {
+  patch: string
+  comments: TaskComment[]
+  draft: CommentDraft | null
+  trailing?: ReactNode
+  onSelectLine: (draft: CommentDraft | null) => void
+  onSubmit: (draft: CommentDraft, body: string) => void
+  onRemove: (id: string) => void
+}
+
+/** The note and its composer share a card that hangs off a coloured spine. */
+const NOTE_CARD = 'px-3 py-2.5 my-1.5 bg-raised border-l-2'
+const EMPTY_PANEL = 'grid flex-1 place-content-center gap-2 p-6 text-center text-sm text-dim'
+const ICON_BTN = 'grid size-7 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-dim'
+
+const PatchFiles = lazy(async () => {
+  const [{ FileDiff }, { parsePatchFiles }] = await Promise.all([
+    import('@pierre/diffs/react'),
+    import('@pierre/diffs')
+  ])
+
+  return {
+    default: function PatchFiles({
+      patch,
+      comments,
+      draft,
+      trailing,
+      onSelectLine,
+      onSubmit,
+      onRemove
+    }: PatchFilesProps): JSX.Element {
+      const files = useMemo(
+        () => parsePatchFiles(patch).flatMap((parsed) => parsed.files),
+        [patch]
+      )
+      const [selectedPath, setSelectedPath] = useState<string | null>(null)
+      const [viewed, setViewed] = useState<Set<string>>(() => new Set())
+      const selectedIndex = Math.max(0, files.findIndex((file) => file.name === selectedPath))
+      const selectedFile = files[selectedIndex]
+      const viewedCount = files.filter((file) => viewed.has(file.name)).length
+
+      const selectFile = (path: string): void => {
+        setSelectedPath(path)
+        onSelectLine(null)
+      }
+
+      const annotations: DiffLineAnnotation<NoteMetadata>[] = [
+        ...comments
+          .filter((comment) => comment.file === selectedFile?.name)
+          .map((comment) => ({
+            side: comment.side,
+            lineNumber: comment.lineNumber,
+            metadata: { comment }
+          })),
+        ...(draft && draft.file === selectedFile?.name
+          ? [{ side: draft.side, lineNumber: draft.lineNumber, metadata: { draft } }]
+          : [])
+      ]
+
+      if (!selectedFile) return <p className="p-5 text-sm text-dim">No file changes in this range.</p>
+      return (
+        <div className="flex flex-1 flex-col min-h-0 min-w-0">
+          <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 border-b border-line text-xs">
+            <div className="flex min-w-0 flex-1 items-center gap-1 @max-[760px]:basis-full">
+              <button className={ICON_BTN} aria-label="Previous file" disabled={selectedIndex === 0} onClick={() => selectFile(files[selectedIndex - 1].name)}>
+                <Icon icon="chevron-left" size={16} aria-hidden="true" />
+              </button>
+              <select
+                aria-label="Changed file"
+                className={cn(field.control, 'min-w-0 flex-1 max-w-xl px-2 py-1 font-mono text-xs')}
+                value={selectedFile.name}
+                onChange={(event) => selectFile(event.target.value)}
+              >
+                {files.map((file) => (
+                  <option key={file.name} value={file.name}>
+                    {viewed.has(file.name) ? '✓ ' : ''}{file.name}
+                  </option>
+                ))}
+              </select>
+              <button className={ICON_BTN} aria-label="Next file" disabled={selectedIndex === files.length - 1} onClick={() => selectFile(files[selectedIndex + 1].name)}>
+                <Icon icon="chevron-right" size={16} aria-hidden="true" />
+              </button>
+              <span className="ml-1 shrink-0 tabular-nums text-dim">{selectedIndex + 1} / {files.length}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-dim">
+              {trailing}
+              <label className="flex items-center gap-1.5 hover:text-fg">
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={viewed.has(selectedFile.name)}
+                  onChange={(event) => {
+                    const checked = event.target.checked
+                    setViewed((previous) => {
+                      const next = new Set(previous)
+                      if (checked) next.add(selectedFile.name)
+                      else next.delete(selectedFile.name)
+                      return next
+                    })
+                  }}
+                />
+                Viewed
+              </label>
+              <span className="tabular-nums">{viewedCount} of {files.length} viewed</span>
+            </div>
+          </div>
+          <div key={selectedFile.name} className="flex-1 min-h-0 overflow-auto overscroll-contain">
+            <FileDiff
+              fileDiff={selectedFile}
+              disableWorkerPool
+              lineAnnotations={annotations}
+              selectedLines={
+                draft && draft.file === selectedFile.name
+                  ? { start: draft.lineNumber, end: draft.lineNumber, side: draft.side }
+                  : null
+              }
+              renderAnnotation={({ metadata }) =>
+                metadata.comment ? (
+                  <CommentNote comment={metadata.comment} onRemove={() => onRemove(metadata.comment.id)} />
+                ) : (
+                  <CommentComposer onCancel={() => onSelectLine(null)} onSubmit={(body) => onSubmit(metadata.draft, body)} />
+                )
+              }
+              options={{
+                themeType: 'dark',
+                diffStyle: 'unified',
+                overflow: 'wrap',
+                disableFileHeader: true,
+                enableLineSelection: true,
+                onLineSelectionEnd(range) {
+                  if (range === null) return
+                  onSelectLine({
+                    file: selectedFile.name,
+                    side: range.side === 'deletions' ? 'deletions' : 'additions',
+                    lineNumber: range.end
+                  })
+                }
+              }}
+            />
+          </div>
+        </div>
+      )
+    }
+  }
+})
+
+function CommentNote({
+  comment,
+  onRemove
+}: {
+  comment: TaskComment
+  onRemove: () => void
+}): JSX.Element {
+  return (
+    <div
+      className={cn(
+        NOTE_CARD,
+        'flex gap-3 items-start justify-between',
+        comment.sentAt === null ? 'border-l-accent' : 'border-l-dim opacity-70'
+      )}
+    >
+      <p className="text-[13px] whitespace-pre-wrap">{comment.body}</p>
+      {comment.sentAt === null ? (
+        <button className={btn.text} onClick={onRemove}>
+          Remove
+        </button>
+      ) : (
+        <span className="flex-none text-[11px] text-dim">Sent</span>
+      )}
+    </div>
+  )
+}
+
+function CommentComposer({
+  onCancel,
+  onSubmit
+}: {
+  onCancel: () => void
+  onSubmit: (body: string) => void
+}): JSX.Element {
+  const [body, setBody] = useState('')
+  return (
+    <div className={cn(NOTE_CARD, 'border-l-warn')}>
+      <textarea
+        className={field.textarea}
+        autoFocus
+        rows={3}
+        value={body}
+        placeholder="Leave a note on this line…"
+        onChange={(e) => setBody(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onCancel()
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && body.trim()) onSubmit(body)
+        }}
+      />
+      <div className="flex gap-2 justify-end mt-2">
+        <button className={btn.ghost} onClick={onCancel}>
+          Cancel
+        </button>
+        <button className={btn.primary} disabled={!body.trim()} onClick={() => onSubmit(body)}>
+          Add comment
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The commit list and its rebase action live behind one disclosure in the diff
+ * toolbar, so the review surface stays about the code until the developer asks.
+ */
+function CommitsMenu({ diff, disabled, rebasing, onRebase }: {
+  diff: TaskDiff
+  disabled: boolean
+  rebasing: boolean
+  onRebase: () => void
+}): JSX.Element {
+  const ref = useRef<HTMLDetailsElement>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (event: PointerEvent): void => {
+      if (!ref.current?.contains(event.target as Node)) ref.current?.removeAttribute('open')
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [open])
+
+  const count = diff.commits.length
+  return (
+    <details ref={ref} className="relative" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="flex cursor-pointer select-none list-none items-center gap-1 hover:text-fg [&::-webkit-details-marker]:hidden">
+        {count} commit{count === 1 ? '' : 's'}
+        <Icon icon="chevron-down" size={14} aria-hidden="true" />
+      </summary>
+      <div className="absolute right-0 top-full z-20 mt-1.5 w-[min(460px,80vw)] border border-line bg-raised p-3 text-fg shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <span className="text-[11px] text-dim">Commits on this branch</span>
+          <button
+            className={cn(btn.ghost, 'py-1 text-xs')}
+            disabled={disabled || count < 2 || rebasing}
+            title={count < 2 ? 'Nothing to rebase: this branch has a single commit' : 'Rewrite these commits'}
+            onClick={onRebase}
+          >
+            {rebasing ? 'Rebasing…' : 'Rebase'}
+          </button>
+        </div>
+        <ul className="max-h-64 overflow-y-auto">
+          {diff.commits.map((commit) => <li key={commit.sha} className="flex gap-2 py-1.5 border-t border-line">
+            <code className="shrink-0 text-accent">{commit.sha.slice(0, 8)}</code>
+            <span className="min-w-0 break-words">{commit.subject}</span>
+          </li>)}
+        </ul>
+      </div>
+    </details>
+  )
+}
+
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  pending: 'Pending',
+  running: 'Running',
+  succeeded: 'Succeeded',
+  failed: 'Failed',
+  cancelled: 'Cancelled'
+}
+
+const DELIVERY_LABEL: Record<DeliveryStatus, string> = {
+  preparing: 'Preparing branch',
+  working: 'Branch active',
+  finalizing: 'Branch active',
+  did_not_commit: 'Branch active',
+  reviewable: 'Ready to review',
+  merge_conflict: 'Merge conflicts with target branch',
+  approved: 'Merged',
+  no_changes: 'No code changes',
+  agent_failed: 'Code not reviewable',
+  failed: 'Delivery failed',
+  unavailable: 'Not tracked by Git'
+}
+
+function StatBlock({ label, value, detail }: {
+  label: string
+  value: ReactNode
+  detail?: string
+}): JSX.Element {
+  return (
+    <div className="flex items-baseline gap-x-1.5 whitespace-nowrap" title={detail}>
+      <span className="text-dim">{label}</span>
+      <span className="font-medium tabular-nums text-fg">{value}</span>
+    </div>
+  )
+}
+
+function TaskDetails({ task, workspaceName, projectName, projectPath, now, mobile = false }: {
+  task: Task
+  workspaceName: string
+  projectName: string
+  projectPath?: string
+  now: number
+  mobile?: boolean
+}): JSX.Element {
+  return (
+    <div className={mobile ? 'grid gap-3 pt-2' : 'flex flex-wrap items-center justify-between gap-x-5 gap-y-1'}>
+      <div className={mobile ? 'grid min-w-0 gap-2' : 'flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1'}>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate" title={workspaceName} aria-label="Task workspace">{workspaceName}</span>
+          <span aria-hidden="true">/</span>
+          <span className="truncate" title={projectPath}>{projectName}</span>
+        </span>
+        <span className={cn('flex items-center gap-1.5', mobile && 'min-w-0')}>
+          <AgentIcon agentId={task.agentId} label={task.agentLabel} size={14} />
+          <span className={mobile ? 'shrink-0' : undefined}>{task.agentLabel}</span>
+          {task.model && <span className={mobile ? 'min-w-0 break-all' : '[overflow-wrap:anywhere]'}>· {task.model}</span>}
+        </span>
+        {task.branchName && (
+          <span className="flex min-w-0 items-center gap-1.5">
+            {task.baseBranch && <span className="min-w-0 truncate" title={task.baseBranch}>{task.baseBranch} ←</span>}
+            <CopyableText label="branch name" value={task.branchName} />
+          </span>
+        )}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="shrink-0">ID</span>
+          <CopyableText label="task ID" value={task.id} />
+        </span>
+      </div>
+      <div aria-label="Task statistics" role="group" className={mobile
+        ? 'grid grid-cols-2 gap-x-3 gap-y-2 border-t border-line pt-2'
+        : 'flex flex-wrap items-center gap-x-4 gap-y-1'}>
+        <StatBlock label="Elapsed" value={formatDuration(task, now)} />
+        <StatBlock label="Tokens" detail={tokenBreakdown(task)} value={
+          <span className="flex gap-x-1.5">
+            <span>{formatTokens(task.inputTokens)} <span className="text-dim">in</span></span>
+            <span className="text-dim">/</span>
+            <span>{formatTokens(task.outputTokens)} <span className="text-dim">out</span></span>
+          </span>
+        } />
+        <StatBlock label="Cached" value={formatTokens(task.cachedTokens)} detail={`${formatTokens(task.cachedTokens)} cached input`} />
+        <StatBlock label="Cost" value={formatCost(task.costUsd)} />
+      </div>
+    </div>
+  )
+}
+
+function Notice({ tone = 'danger', children }: { tone?: 'danger' | 'warn'; children: ReactNode }): JSX.Element {
+  return (
+    <div role="alert" className={cn('shrink-0 max-h-20 overflow-auto px-5 py-2 text-xs [overflow-wrap:anywhere]', tone === 'danger' ? 'text-danger bg-danger/8' : 'text-warn bg-warn/8')}>
+      {children}
+    </div>
+  )
+}
+
+function MergeActions({ disabled, title, onSelect }: {
+  disabled: boolean
+  title?: string
+  onSelect: (action: 'merge' | 'merge-and-push') => void
+}): JSX.Element {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const menuItemRef = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    menuItemRef.current?.focus()
+    const close = (event: PointerEvent): void => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [open])
+
+  useEffect(() => {
+    if (disabled) setOpen(false)
+  }, [disabled])
+
+  const select = (action: 'merge' | 'merge-and-push'): void => {
+    if (action === 'merge-and-push') toggleRef.current?.focus()
+    setOpen(false)
+    onSelect(action)
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative inline-flex shrink-0"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.preventDefault()
+          setOpen(false)
+          toggleRef.current?.focus()
+        }
+      }}
+    >
+      <button
+        className={cn(btn.primary, 'bg-ok')}
+        disabled={disabled}
+        title={title ?? 'Integrate the finished task into the target branch'}
+        onClick={() => select('merge')}
+      >
+        Merge task
+      </button>
+      <button
+        ref={toggleRef}
+        className={cn(btn.primary, 'border-l border-canvas/25 bg-ok px-2')}
+        disabled={disabled}
+        title={title ?? 'More merge actions'}
+        aria-label="More merge actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
+      >
+        <Icon icon="chevron-down" size={14} aria-hidden="true" />
+      </button>
+      {open && <div
+        role="menu"
+        aria-label="Merge actions"
+        className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full border border-line bg-raised p-1 shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
+      >
+        <button
+          ref={menuItemRef}
+          role="menuitem"
+          className="block w-full px-3 py-2 text-left font-medium whitespace-nowrap text-fg hover:bg-hover focus:bg-hover focus:outline-none"
+          onClick={() => select('merge-and-push')}
+        >
+          Merge &amp; Push
+        </button>
+      </div>}
+    </div>
+  )
+}
+
+export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element {
+  const style = taskStyle(task)
+  const work = style === 'work'
+  const integrates = work || taskCheckoutMode(task) === 'worktree'
+  const { snapshot, error: issueError, refresh } = useTaskIssues(task.id, work)
+  const issue = task.status !== 'succeeded' && task.status !== 'cancelled' ? snapshot?.children.find((child) => child.status === 'review' &&
+    (!snapshot.execution?.currentIssueId || child.id === snapshot.execution.currentIssueId)) : undefined
+  const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? task.workspaceId)
+  const project = useStore((s) => s.projects.find((item) => item.id === task.projectId))
+  const diff = useStore((s) => s.diffsByTask[task.id])
+  const diffError = useStore((s) => s.diffErrorsByTask[task.id])
+  const loadTaskDiff = useStore((s) => s.loadTaskDiff)
+  const [issueDiffState, setIssueDiffState] = useState<{ key: string; diff?: TaskDiff; error?: string }>({ key: '' })
+  const [diffAttempt, setDiffAttempt] = useState(0)
+  const approveIssue = useStore((s) => s.approveIssue)
+  const rejectIssue = useStore((s) => s.rejectIssue)
+  const [reviewBusy, setReviewBusy] = useState<'approve' | 'reject' | null>(null)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+
+  const comments = useStore((s) => s.commentsByTask[task.id])
+  const loadComments = useStore((s) => s.loadComments)
+  const addComment = useStore((s) => s.addComment)
+  const removeComment = useStore((s) => s.removeComment)
+  const sendComments = useStore((s) => s.sendComments)
+  const sending = useStore((s) => s.sendingComments === task.id)
+  const commentError = useStore((s) => s.commentError)
+  const [draft, setDraft] = useState<CommentDraft | null>(null)
+  const settings = useStore((s) => s.settings)
+  const supportsCompaction = useStore((s) => s.agents.find((agent) => agent.id === task.agentId)?.supportsCompaction)
+  const [compacting, setCompacting] = useState(false)
+  const [compactError, setCompactError] = useState('')
+  const compactBusy = compacting || task.contextCompacting === true
+  const compact = async (): Promise<void> => {
+    setCompacting(true)
+    setCompactError('')
+    try { await window.anvil.tasks.compact(task.id) }
+    catch (error) { setCompactError(error instanceof Error ? error.message : String(error)) }
+    finally { setCompacting(false) }
+  }
+  const openRebase = useStore((s) => s.openRebase)
+  const rebaseWithAgent = useStore((s) => s.rebaseWithAgent)
+  const rebasing = useStore((s) => s.rebasing === task.id)
+  const rebaseTaskId = useStore((s) => s.rebaseTaskId)
+  const [deliveryRequest, setDeliveryRequest] = useState<{ taskId: string; action: TaskDeliveryAction } | null>(null)
+  const [pullRequestTaskId, setPullRequestTaskId] = useState<string | null>(null)
+  const approved = task.deliveryStatus === 'approved'
+  const openPullRequest = task.deliveryStatus === 'reviewable' ? task.pullRequest : undefined
+
+  const [now, setNow] = useState(Date.now())
+  const done = task.status === 'succeeded' && (task.deliveryStatus === 'no_changes' || !work)
+  const reviewable = !issue && (task.deliveryStatus === 'reviewable' || approved)
+  const issueReviewPending = Boolean(issue && !issueIsReviewReady(snapshot))
+  const finalDiffPending = task.status === 'running' || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit'
+  const [activePanel, setActivePanel] = useState<TaskPanel>(initialPanel)
+  const conflictId = task.deliveryStatus === 'merge_conflict' ? task.mergeConflict?.id : undefined
+
+  useEffect(() => {
+    if (conflictId) setActivePanel('output')
+  }, [conflictId])
+
+  useEffect(() => {
+    setNow(Date.now())
+    // The persisted interval closes during issue review even if status stays running.
+    if (task.workingStartedAt === undefined) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [task.id, task.workingStartedAt])
+
+  useEffect(() => {
+    if (reviewable && !diff && !diffError) void loadTaskDiff(task.id)
+  }, [diff, diffError, loadTaskDiff, reviewable, task.id, task.headCommit, task.baseCommit])
+
+  const issueDiffKey = issue && (issue.status === 'review' || issue.status === 'complete')
+    ? JSON.stringify([task.id, issue.id, issue.baseCommit, issue.headCommit, snapshot?.reviewReady, task.headCommit, task.deliveryStatus]) : ''
+  const reviewRevision = useRef({ key: issueDiffKey, version: 0 })
+  if (reviewRevision.current.key !== issueDiffKey) {
+    reviewRevision.current = { key: issueDiffKey, version: reviewRevision.current.version + 1 }
+  }
+  const issueDiff = issueDiffState.key === issueDiffKey ? issueDiffState.diff : undefined
+  const issueDiffError = issueDiffState.key === issueDiffKey ? issueDiffState.error : undefined
+  useEffect(() => {
+    setDraft(null)
+    setReviewError(null)
+  }, [issueDiffKey])
+  useEffect(() => {
+    let active = true
+    setIssueDiffState({ key: issueDiffKey })
+    if (issue && issueDiffKey && issueIsReviewReady(snapshot)) {
+      void window.anvil.tasks.issueDiff({ taskId: task.id, issueId: issue.id }).then((diff) => {
+        if (active) setIssueDiffState({ key: issueDiffKey, diff })
+      }).catch((error: unknown) => {
+        if (active) setIssueDiffState({ key: issueDiffKey, error: error instanceof Error ? error.message : String(error) })
+      })
+    }
+    return () => { active = false }
+  }, [issueDiffKey, diffAttempt, task.id])
+
+  const retryIssueDiff = (): void => setDiffAttempt((value) => value + 1)
+  const reviewDisabled = compactBusy || !!reviewBusy || !!issueError || !issueIsReviewReady(snapshot) || !issueDiff
+
+  const reviewIssue = async (action: 'approve' | 'reject'): Promise<void> => {
+    if (!issue || issue.status !== 'review' || reviewDisabled) return
+    const submittedVersion = reviewRevision.current.version
+    setReviewBusy(action)
+    setReviewError(null)
+    try {
+      if (action === 'approve') await approveIssue(task.id, issue.id, issue.headCommit ?? null)
+      else {
+        await rejectIssue(task.id, issue.id, issue.headCommit ?? null)
+      }
+      if (reviewRevision.current.version === submittedVersion) {
+        setIssueDiffState({ key: '' })
+        setDraft(null)
+      }
+      refresh()
+    } catch (error) {
+      if (reviewRevision.current.version === submittedVersion) setReviewError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setReviewBusy(null)
+    }
+  }
+
+  const rebase = (): void => {
+    if (settings?.rebaseMode !== 'agent') openRebase(task.id)
+    else if (settings.confirmRebase === false) void rebaseWithAgent(task.id)
+    else openRebase(task.id)
+  }
+
+  useEffect(() => {
+    if ((work || reviewable) && !comments) void loadComments(task.id)
+  }, [comments, loadComments, reviewable, task.id, work])
+
+  const pending = (comments ?? []).filter((comment) => comment.sentAt === null)
+  // Submission is visible immediately, even while the turn is still stopping.
+  const presentation = taskIssuePresentation(task, snapshot)
+
+  const panels: readonly TaskPanel[] = work ? ['output', 'changes', 'issues'] : ['output', 'changes']
+
+  return (
+    <div className="@container relative flex flex-col h-full min-w-0 min-h-0 overflow-hidden">
+      {pullRequestTaskId === task.id && (
+        <OpenPullRequestModal key={task.id} task={task} onClose={() => setPullRequestTaskId(null)} />
+      )}
+      {deliveryRequest?.taskId === task.id && (
+        <ApproveTaskModal
+          key={`${task.id}:${deliveryRequest.action}`}
+          taskId={task.id}
+          action={deliveryRequest.action}
+          onClose={() => setDeliveryRequest(null)}
+        />
+      )}
+      {rebaseTaskId === task.id &&
+        (settings?.rebaseMode === 'agent' ? (
+          <AgentRebaseModal taskId={task.id} />
+        ) : (
+          diff && <RebaseModal taskId={task.id} commits={diff.commits} />
+        ))}
+
+      <TaskStackStatus key={`stack-${task.id}`} task={task} />
+      <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4 @max-[760px]:pt-2">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 @max-[760px]:flex-col">
+          <div className="flex min-w-0 flex-1 items-center gap-2 @max-[760px]:w-full @max-[760px]:flex-none">
+            <h1 className="min-w-0 truncate text-base font-medium leading-snug" title={task.title}>{task.title}</h1>
+            <TaskStyleBadge style={style} />
+            {work && task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warn/30 bg-warn/10 px-2.5 py-0.5 text-[11px] font-medium leading-relaxed tracking-wide text-warn"><Icon icon="moon-star" size={12} aria-hidden="true" />Review at the end</span>}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
+            {issue ? <>
+              <span aria-label="Task status" className={cn('min-w-0 font-medium [overflow-wrap:anywhere]', ISSUE_STATUS[issuePresentation(issue).status].tone)}>{issuePresentation(issue).label}{`: ${issue.title}`}</span>
+              {issue.status === 'review' && <>
+                <button className={cn(btn.ghost, 'ml-2')} disabled={reviewDisabled} onClick={() => void reviewIssue('reject')}>
+                  {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
+                </button>
+                <button className={cn(btn.primary, 'bg-ok')} title="Accept this step and continue inside the task workspace" disabled={reviewDisabled} onClick={() => void reviewIssue('approve')}>
+                  {reviewBusy === 'approve' ? 'Approving…' : 'Approve step'}
+                </button>
+              </>}
+            </> : <>
+              <span aria-label="Task status" className="flex min-w-0 flex-wrap items-center gap-2">
+                {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
+                <span className={dot(task.status)} />
+                <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : STATUS_LABEL[task.status]}</span>
+                {integrates && <><span className="text-dim">·</span>
+                <span className={cn('flex items-center gap-1.5', openPullRequest ? 'text-ok' : deliveryTone(task.deliveryStatus))}>
+                  {openPullRequest && <Icon icon="git-branch" size={14} aria-hidden="true" />}
+                  {openPullRequest
+                    ? 'Open PR'
+                    : task.deliveryStatus === 'merge_conflict' && task.mergeConflict
+                      ? `Merge conflicts with ${task.mergeConflict.targetBranch}`
+                      : DELIVERY_LABEL[task.deliveryStatus]}
+                </span></>}
+                </>}
+              </span>
+              {reviewable && (integrates || !approved && pending.length > 0) && <span className="ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
+                {!approved && pending.length > 0 && <button className={btn.ghost} disabled={sending} onClick={() => void sendComments(task.id)}>
+                  {sending ? 'Sending…' : `Send ${pending.length} comment${pending.length === 1 ? '' : 's'}`}
+                </button>}
+                {integrates && <><button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
+                  Open PR
+                </button>
+                {!approved
+                  ? <MergeActions
+                    disabled={!!reviewBusy || !diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)}
+                    title={task.restackState ? 'Finish restacking before merging' : task.parentTaskId ? 'Merge the parent task first' : undefined}
+                    onSelect={(action) => setDeliveryRequest({ taskId: task.id, action })}
+                  />
+                  : <button
+                    className={cn(btn.primary, 'bg-ok')}
+                    disabled={!diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)}
+                    title={task.restackState ? 'Finish restacking before pushing' : task.parentTaskId ? 'Merge the parent task first' : undefined}
+                    onClick={() => setDeliveryRequest({ taskId: task.id, action: 'push' })}
+                  >
+                    Push
+                  </button>}</>}
+              </span>}
+            </>}
+            <QuickCommitActions task={task} />
+          </div>
+        </div>
+        <div className="mt-1.5 text-[11.5px] text-dim @max-[760px]:hidden">
+          <TaskDetails task={task} workspaceName={workspaceName} projectName={project?.name ?? 'Tasks'} projectPath={project?.path} now={now} />
+        </div>
+        <details className="group mt-1.5 hidden text-[11.5px] text-dim @max-[760px]:block">
+          <summary className="flex w-fit cursor-pointer select-none list-none items-center gap-1 py-1 font-medium text-dim hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+            Details
+            <Icon icon="chevron-down" size={14} className="transition-transform group-open:rotate-180" aria-hidden="true" />
+          </summary>
+          <TaskDetails task={task} workspaceName={workspaceName} projectName={project?.name ?? 'Tasks'} projectPath={project?.path} now={now} mobile />
+        </details>
+      </header>
+
+      {issue && issueError && <Notice>Could not refresh subtask. Showing last known data. <button className={btn.text} onClick={refresh}>Retry</button></Notice>}
+      {(task.error || (task.restackState !== 'conflict' && task.deliveryError)) && <Notice>{task.error || task.deliveryError}</Notice>}
+      {task.contextCompactionError && <Notice>{task.contextCompactionError}</Notice>}
+      {reviewError && <Notice>{reviewError}</Notice>}
+      {(reviewable || issue) && commentError && <Notice>{commentError}</Notice>}
+
+      <div className="flex min-w-0 shrink-0 items-stretch gap-1 border-b border-line px-3 @max-[760px]:gap-0 @max-[760px]:px-2" role="tablist" aria-label="Task panels">
+        {panels.map((panel) => {
+          const selected = activePanel === panel
+          return (
+            <button
+              key={panel}
+              role="tab"
+              id={`task-tab-${panel}`}
+              aria-controls={`task-panel-${panel}`}
+              aria-selected={selected}
+              className={cn(
+                'relative flex min-w-0 items-center gap-1.5 px-2.5 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-accent @max-[760px]:flex-1 @max-[760px]:justify-center @max-[760px]:gap-1 @max-[760px]:px-1',
+                selected ? 'text-fg' : 'text-dim hover:text-fg'
+              )}
+              onClick={() => setActivePanel(panel)}
+            >
+              {selected && <span aria-hidden="true" className="absolute inset-x-0 -bottom-px h-0.5 bg-accent" />}
+              {panel === 'output' && 'Output'}
+              {panel === 'issues' && 'Issues'}
+              {panel === 'changes' && <>
+                Changes{' '}
+                <span className="font-mono font-normal tabular-nums text-dim">{issueReviewPending || reviewable && !diff ? 'Loading…' : task.filesChanged}</span>
+                {!issueReviewPending && (!reviewable || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono font-normal tabular-nums">
+                  <span className="text-ok">+{task.additions}</span> <span className="text-danger">−{task.deletions}</span>
+                </span></>}
+              </>}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="flex flex-1 min-h-0 min-w-0">
+        {work && <TaskIssues taskId={task.id} active={activePanel === 'issues'} />}
+
+        {issue && <section id="task-panel-changes" aria-label="Subtask code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
+          {issue.status === 'review' && <div className="shrink-0 px-4 py-2 border-b border-line bg-warn/5">
+            <p role="status" className="text-xs text-warn">{!issueDiff ? 'Loading code changes…' : 'Waiting for your review. The agent pauses until you approve or request changes.'}</p>
+            {pending.length > 0 && <p className="mt-1.5 text-[11px] text-dim">{pending.length} line comment{pending.length === 1 ? '' : 's'} will be sent with the rework request.</p>}
+          </div>}
+          <>
+            {issueDiff && (!issue.baseCommit || !issue.headCommit) && <p className="px-4 py-2 text-xs text-dim">Legacy submission: showing the available recorded range, with task commit fallback.</p>}
+            {!issueDiff && !issueDiffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
+            {issueDiffError && <div role="alert" className="p-5 text-sm text-danger">
+              <p>{issueDiffError}</p>
+              <button className={cn(btn.ghost, 'mt-3')} onClick={retryIssueDiff}>Retry</button>
+            </div>}
+            {issueDiff && <Suspense fallback={<p className="p-5 text-sm text-dim">Loading diff renderer…</p>}>
+              <PatchFiles
+                key={issueDiffKey}
+                patch={issueDiff.patch}
+                comments={pending}
+                draft={draft}
+                trailing={issue.status === 'review' && pending.length === 0 && <span>Select a line to comment</span>}
+                onSelectLine={issue.status === 'review' && !reviewDisabled ? setDraft : () => {}}
+                onSubmit={(target, body) => {
+                  if (issue && reviewDisabled) return
+                  void addComment({ taskId: task.id, ...target, body })
+                  setDraft(null)
+                }}
+                onRemove={(id) => { if (!reviewDisabled) void removeComment(task.id, id) }}
+              />
+            </Suspense>}
+          </>
+        </section>}
+
+        {!issue && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
+          {reviewable ? <>
+            {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
+            {diffError && <div role="alert" className="p-5 text-sm text-danger">
+              <p>{diffError}</p>
+              <button className={cn(btn.ghost, 'mt-3')} onClick={() => void loadTaskDiff(task.id)}>Retry</button>
+            </div>}
+            {diff && <Suspense fallback={<p className="p-5 text-sm text-dim">Loading diff renderer…</p>}>
+              <PatchFiles
+                key={diff.patch}
+                patch={diff.patch}
+                comments={comments ?? []}
+                draft={draft}
+                trailing={<>
+                  {!approved && <span>{pending.length ? `${pending.length} comment${pending.length === 1 ? '' : 's'} pending` : 'Select a line to comment'}</span>}
+                  {work && <CommitsMenu diff={diff} disabled={approved} rebasing={rebasing} onRebase={rebase} />}
+                </>}
+                onSelectLine={approved ? () => {} : setDraft}
+                onSubmit={(target, body) => {
+                  void addComment({ taskId: task.id, ...target, body })
+                  setDraft(null)
+                }}
+                onRemove={(id) => void removeComment(task.id, id)}
+              />
+            </Suspense>}
+          </> : <div className={EMPTY_PANEL}>
+            <p>{done ? 'Done' : finalDiffPending ? 'The agent is working on this task.' : DELIVERY_LABEL[task.deliveryStatus]}</p>
+            <p className="text-xs">{done ? 'No code changes to review.' : finalDiffPending ? 'The final task diff will appear here when it is ready for review.' : 'There is no final diff available for review.'}</p>
+          </div>}
+        </section>}
+
+        <TaskOutput key={task.id} task={task} visible={activePanel === 'output'} presentation={presentation} />
+      </div>
+
+      {!isTaskSettled(task) && <TaskSteeringComposer
+        key={`composer-${task.id}`}
+        task={task}
+        contextControl={{
+          compactVisible: Boolean(supportsCompaction && task.sessionId),
+          busy: compactBusy,
+          disabled: task.status === 'running' && !issueIsReviewReady(snapshot) || compactBusy || task.deliveryStatus === 'finalizing',
+          error: compactError,
+          contextUsed: task.contextUsed,
+          contextSize: task.contextSize,
+          warningThreshold: settings?.contextCompactionThreshold,
+          danger: Boolean(task.contextCompactionError || /context[._ ]window|context window|context length/i.test(task.error ?? '')),
+          onCompact: () => void compact()
+        }}
+      />}
+    </div>
+  )
+}

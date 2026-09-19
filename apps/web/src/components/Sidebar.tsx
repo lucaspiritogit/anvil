@@ -1,0 +1,233 @@
+import type { JSX, RefObject } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Icon } from '../icons'
+import { SETTINGS_SECTIONS } from '../settings-sections'
+import { IS_MAC } from '../keys'
+import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@anvil/protocol/appearance'
+import { useStore } from '../state/store'
+import { cn } from '../ui'
+import { taskAttentionRank, taskNeedsReview } from '@anvil/protocol/task-review'
+import { useSidebarIssueSnapshots } from '../hooks/use-task-issues'
+import { SidebarTaskList } from './SidebarTaskList'
+import { WorkspacePicker } from './WorkspacePicker'
+import { CaffeineToggle } from './CaffeineToggle'
+
+const ICON_BUTTON = 'grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent'
+
+export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, mobileNavigationOpen,
+  mobileNavigationCloseRef, onCloseMobileNavigation, onNavigate }: {
+  onOpenTerminal: () => void
+  terminalAvailable: boolean
+  mobileNavigation: boolean
+  mobileNavigationOpen: boolean
+  mobileNavigationCloseRef: RefObject<HTMLButtonElement | null>
+  onCloseMobileNavigation: () => void
+  onNavigate: () => void
+}): JSX.Element {
+  const fontSize = useStore((state) => state.settings?.fontSize)
+  const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
+  // Native traffic lights do not scale with the renderer's font-size zoom.
+  const titlebarStyle = IS_MAC ? { height: 44 / scale, paddingLeft: 78 / scale } : undefined
+  const workspaceId = useStore((state) => state.activeWorkspaceId)
+  const projects = useStore((state) => state.projects)
+  const tasks = useStore((state) => state.tasks)
+  const taskSeenAt = useStore((state) => state.taskSeenAt)
+  const activeProjectId = useStore((state) => state.activeProjectId)
+  const view = useStore((state) => state.view)
+  const settingsOpen = useStore((state) => state.settingsOpen)
+  const settingsSection = useStore((state) => state.settingsSection)
+  const setSettingsSection = useStore((state) => state.setSettingsSection)
+  const setSettingsOpen = useStore((state) => state.setSettingsOpen)
+  const showAnalytics = useStore((state) => state.showAnalytics)
+  const focusTaskComposer = useStore((state) => state.focusTaskComposer)
+  const sidebarCollapsed = useStore((state) => state.sidebarCollapsed)
+  const toggleSidebar = useStore((state) => state.toggleSidebar)
+  const [search, setSearch] = useState('')
+  const [settledOpen, setSettledOpen] = useState(false)
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    setSearch('')
+    setSettledOpen(false)
+  }, [workspaceId])
+
+  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
+  const query = search.trim().toLowerCase()
+  const snapshots = useSidebarIssueSnapshots(Boolean(query))
+  const { activeTasks, settledTasks } = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    const matching = tasks.filter((task) => {
+      return !query || [task.title, task.branchName, projectById.get(task.projectId)?.name,
+        ...(snapshots.get(task.id)?.children.map((issue) => issue.title) ?? [])]
+        .some((text) => text?.toLowerCase().includes(query))
+    })
+    return {
+      activeTasks: matching.filter((task) => task.settledAt === undefined)
+        .sort((first, second) =>
+          taskAttentionRank(first, taskSeenAt[first.id]) - taskAttentionRank(second, taskSeenAt[second.id])),
+      settledTasks: matching.filter((task) => task.settledAt !== undefined)
+        .sort((first, second) => second.settledAt! - first.settledAt!)
+    }
+  }, [tasks, search, projectById, snapshots, taskSeenAt])
+  const reviewCount = useMemo(() => tasks.filter((task) => taskNeedsReview(task, taskSeenAt[task.id])).length,
+    [tasks, taskSeenAt])
+  const listKey = JSON.stringify([workspaceId, search])
+  const matchingCount = activeTasks.length + settledTasks.length
+  const showSettled = settledOpen || Boolean(query)
+  const sidebarHidden = mobileNavigation ? !mobileNavigationOpen : sidebarCollapsed
+
+  if (settingsOpen) return (
+    <aside aria-label="Sidebar" className="flex min-h-0 flex-col border-r border-line bg-canvas max-[700px]:border-b max-[700px]:border-r-0">
+      <header style={titlebarStyle} className="drag-region flex h-11 shrink-0 items-center px-4">
+        <h1 className="text-sm font-semibold">Settings</h1>
+      </header>
+      <nav aria-label="Settings sections" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3 max-[700px]:flex-row max-[700px]:overflow-x-auto">
+        {SETTINGS_SECTIONS.map((section) => (
+          <button key={section.id} aria-current={settingsSection === section.id ? 'page' : undefined}
+            className={cn('flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-[13px] whitespace-nowrap focus-visible:outline focus-visible:outline-accent', settingsSection === section.id ? 'bg-accent/10 text-accent' : 'text-dim hover:bg-hover hover:text-fg')}
+            onClick={() => setSettingsSection(section.id)}>
+            <Icon icon={section.icon} size={18} aria-hidden="true" />
+            {section.label}
+          </button>
+        ))}
+      </nav>
+      <button className="mx-3 mb-3 flex shrink-0 items-center gap-2 px-3 py-2 text-left text-xs text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent"
+        onClick={() => setSettingsOpen(false)}>
+        <Icon icon="x" size={16} aria-hidden="true" />
+        Back to workspace
+      </button>
+    </aside>
+  )
+
+  return (
+    <aside
+      id="task-sidebar"
+      aria-label="Task sidebar"
+      className={cn(
+        'flex flex-col w-[304px] min-h-0 bg-canvas border-r border-line',
+        'max-[700px]:fixed max-[700px]:inset-y-0 max-[700px]:left-0 max-[700px]:z-30 max-[700px]:max-w-[calc(100vw-48px)] max-[700px]:shadow-2xl',
+        'transition-transform duration-[180ms] ease-[ease] motion-reduce:transition-none',
+        sidebarHidden && '-translate-x-full'
+      )}
+      inert={sidebarHidden}
+      aria-hidden={sidebarHidden || undefined}
+    >
+      <div style={titlebarStyle} className={cn('flex shrink-0 items-center h-11 px-4 text-[11px] font-semibold tracking-[0.12em] text-dim', IS_MAC && 'drag-region')}>
+        ANVIL
+        {reviewCount > 0 && (
+          <span
+            role="status"
+            aria-label={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready for review`}
+            title={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready for review`}
+            className="ml-2 inline-flex items-center gap-1 rounded-full bg-orange-400/15 px-1.5 py-0.5 text-[10px] tracking-normal text-orange-400"
+          >
+            <Icon icon="bell-ring" size={11} aria-hidden="true" />
+            {reviewCount}
+          </span>
+        )}
+        <button
+          ref={mobileNavigation ? mobileNavigationCloseRef : undefined}
+          className={cn(ICON_BUTTON, 'no-drag ml-auto')}
+          aria-label={mobileNavigation ? 'Close navigation' : 'Collapse sidebar'}
+          title={mobileNavigation ? 'Close navigation' : 'Collapse sidebar'}
+          aria-controls="task-sidebar"
+          aria-expanded={true}
+          onClick={mobileNavigation ? onCloseMobileNavigation : toggleSidebar}
+        >
+          <Icon icon={mobileNavigation ? 'x' : 'arrow-left-to-line'} size={18} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="flex shrink-0 flex-col gap-2 px-2.5 pb-3">
+        <button
+          className="flex h-9 shrink-0 items-center gap-2 border border-line px-2.5 text-xs text-fg hover:bg-hover disabled:opacity-40 focus-visible:outline focus-visible:outline-accent"
+          aria-label="New task"
+          title="New task"
+          disabled={!activeProjectId}
+          onClick={() => { focusTaskComposer(); if (mobileNavigation) onNavigate() }}
+        >
+          <Icon icon="pencil" size={16} aria-hidden="true" />
+          New Task
+        </button>
+        <button
+          className="flex h-9 shrink-0 items-center gap-2 border border-line px-2.5 text-xs text-fg hover:bg-hover disabled:opacity-40 focus-visible:outline focus-visible:outline-accent"
+          aria-label="Open terminal"
+          title="Open terminal"
+          disabled={!terminalAvailable}
+          onClick={onOpenTerminal}
+        >
+          <Icon icon="terminal" size={16} aria-hidden="true" />
+          Terminal
+        </button>
+        <div className="flex items-center gap-2 h-9 px-2.5 border border-line focus-within:border-dim/60">
+          <Icon icon="search" size={16} className="shrink-0 text-dim" aria-hidden="true" />
+          <input
+            type="search"
+            aria-label="Search tasks"
+            placeholder="Search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-dim outline-none [&::-webkit-search-cancel-button]:appearance-none"
+          />
+          {search && (
+            <button className="text-dim hover:text-fg" aria-label="Clear search" onClick={() => setSearch('')}>
+              <Icon icon="x" size={14} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <nav aria-label="Active tasks" className="flex flex-1 min-h-0 flex-col px-2.5 pb-2">
+        <SidebarTaskList key={listKey} tasks={activeTasks} snapshots={snapshots} projectById={projectById} now={now} view={view}
+          onNavigate={mobileNavigation ? onNavigate : undefined}
+          emptyMessage={matchingCount ? 'No active tasks.' : query ? 'No matching tasks.' : 'No tasks yet.'} />
+      </nav>
+
+      <section aria-label="Settled tasks" className="flex shrink-0 flex-col max-h-[35%] min-h-0 px-2.5">
+        <button
+          aria-expanded={showSettled}
+          aria-controls="settled-task-list"
+          onClick={() => { if (query) setSearch(''); setSettledOpen(!showSettled) }}
+          className="flex shrink-0 w-full items-center gap-2 px-2 py-3 text-[11px] text-dim hover:text-fg"
+        >
+          <Icon icon="chevron-down" size={13} className={cn('transition-transform', !showSettled && '-rotate-90')} aria-hidden="true" />
+          <span>Settled</span>
+          <span className="text-dim/60">{settledTasks.length}</span>
+          <span className="h-px flex-1 bg-line" />
+        </button>
+        {showSettled && (
+          <SidebarTaskList key={listKey} id="settled-task-list" tasks={settledTasks} snapshots={snapshots}
+            projectById={projectById} now={now} view={view} onNavigate={mobileNavigation ? onNavigate : undefined}
+            compact emptyMessage="No settled tasks." />
+        )}
+      </section>
+
+      <CaffeineToggle />
+
+      <button
+        className="flex shrink-0 items-center gap-2.5 mx-2.5 mt-2 px-2 py-2 text-left text-xs text-dim hover:bg-hover/60 hover:text-fg focus-visible:outline focus-visible:outline-accent"
+        onClick={() => { if (mobileNavigation) onNavigate(); setSettingsOpen(true) }}
+      >
+        <Icon icon="settings" size={18} aria-hidden="true" />
+        Settings
+      </button>
+      <button
+        aria-current={view.kind === 'analytics' ? 'page' : undefined}
+        className={cn('flex shrink-0 items-center gap-2.5 mx-2.5 mb-2 px-2 py-2 text-left text-xs hover:bg-hover/60 focus-visible:outline focus-visible:outline-accent',
+          view.kind === 'analytics' ? 'bg-accent/10 text-accent' : 'text-dim hover:text-fg')}
+        onClick={() => { showAnalytics(); if (mobileNavigation) onNavigate() }}
+      >
+        <Icon icon="chart-no-axes-combined" size={18} aria-hidden="true" />
+        Analytics
+      </button>
+      <div className="shrink-0 px-2.5 pb-3">
+        <WorkspacePicker />
+      </div>
+    </aside>
+  )
+}

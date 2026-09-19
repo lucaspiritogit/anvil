@@ -1,5 +1,5 @@
-import type { AnvilApi } from '../../../src/client/preload'
-import type { AgentAccountTarget, WorkspaceAgentAccount } from '../../../src/shared/types'
+import type { AnvilApi } from '@anvil/client-api'
+import type { AgentAccountTarget, WorkspaceAgentAccount } from '@anvil/protocol/types'
 
 export function fixtureAccounts(name: (id: string) => string, busy: boolean): AnvilApi['accounts'] {
   const states = new Map<string, WorkspaceAgentAccount>()

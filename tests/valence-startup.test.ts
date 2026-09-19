@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { Store } from '../src/server/store'
+import { Store } from '../apps/server/src/store'
 import { registerTestIpc } from './test-ipc'
 import { onTestCleanup } from './test-cleanup'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
@@ -16,7 +16,7 @@ async function tick(): Promise<void> {
 
 function fixture() {
   const store = new Store(join(testHome, '.anvil-composer/config.json'), {
-    migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
+    migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations')
   })
   onTestCleanup(() => store.close())
   const { agentProcesses } = registerTestIpc()

@@ -1,9 +1,9 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { useStore } from '../src/client/renderer/src/state/store'
-import { enqueueWorkspaceRequest } from '../src/client/renderer/src/state/workspace-requests'
-import type { Project, Task, TaskEvent, TaskEventsPage, TaskEventsRequest, WorkspaceSnapshot } from '../src/shared/types'
+import { useStore } from '../apps/web/src/state/store'
+import { enqueueWorkspaceRequest } from '../apps/web/src/state/workspace-requests'
+import type { Project, Task, TaskEvent, TaskEventsPage, TaskEventsRequest, WorkspaceSnapshot } from '@anvil/protocol/types'
 import { pageTaskEvents } from './e2e/fixture/task-events'
-import { DEFAULT_KEYBINDINGS } from '../src/shared/keybindings'
+import { DEFAULT_KEYBINDINGS } from '@anvil/protocol/keybindings'
 
 const task = (id: string, projectId = 'project'): Task => ({
   id, workspaceId: 'default', projectId, title: id, prompt: id, cwd: '/tmp', agentId: 'codex', agentLabel: 'Codex',

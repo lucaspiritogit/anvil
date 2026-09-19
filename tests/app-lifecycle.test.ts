@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest'
-import { createEventLatch } from '../src/shared/event-latch'
+import { createEventLatch } from '@anvil/protocol/event-latch'
 
 test('delivers a value to subscribers present at delivery time exactly once', () => {
   const latch = createEventLatch<number>()

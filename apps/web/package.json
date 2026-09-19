@@ -1,0 +1,25 @@
+{
+  "name": "@anvil/web",
+  "version": "1.2.9",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build --config vite.config.ts"
+  },
+  "dependencies": {
+    "@anvil/client-api": "*",
+    "@anvil/protocol": "*",
+    "@pierre/diffs": "^1.4.0",
+    "@tanstack/react-virtual": "^3.14.11",
+    "clsx": "^2.1.1",
+    "d3-scale": "^4.0.2",
+    "d3-shape": "^3.2.0",
+    "fuzzysort": "^3.1.0",
+    "ghostty-web": "^0.4.0",
+    "motion": "^13.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.7.0",
+    "zustand": "^5.0.2"
+  }
+}

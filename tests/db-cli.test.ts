@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from 'node:
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { workspaceDatabase, selectedWorkspaceDirectory } from '../src/shared/app-data'
+import { workspaceDatabase, selectedWorkspaceDirectory } from '@anvil/app-data'
 
 const require = createRequire(import.meta.url)
 const { dropDatabase } = require('../scripts/maintenance.cjs') as { dropDatabase(): void }

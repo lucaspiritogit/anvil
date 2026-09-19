@@ -43,7 +43,7 @@ test('switching to another task resets the active tab to Output', async ({ page 
 test('quick tasks keep the Changes panel available', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output')
   await page.evaluate(async () => {
-    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'output' ? { ...task, style: 'quick' } : task)
     }))
@@ -60,7 +60,7 @@ test('quick tasks keep the Changes panel available', async ({ page }) => {
 test('completed quick tasks can commit their scoped changes or commit and push', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
-    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'review'
         ? { ...task, style: 'quick', checkoutMode: 'local', reviewPaths: ['src/sidebar.ts', 'README.md'] }
@@ -96,7 +96,7 @@ test('completed quick tasks can commit their scoped changes or commit and push',
 test('committed quick tasks push their head commit and hide the push action', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
-    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'review'
         ? { ...task, style: 'quick', checkoutMode: 'local', deliveryStatus: 'approved', headCommit: 'quick-head', reviewPaths: ['src/sidebar.ts'] }
@@ -119,7 +119,7 @@ test('committed quick tasks push their head commit and hide the push action', as
 test('quick commit modal drafts fail without losing the typed message', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&commitDraftFailure=1')
   await page.evaluate(async () => {
-    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'review'
         ? { ...task, style: 'quick', checkoutMode: 'local', reviewPaths: ['src/sidebar.ts'] }
@@ -143,7 +143,7 @@ test('long task titles truncate to one line and the composer persists across pan
   await page.goto('/tests/e2e/fixture/?scenario=output&steering=1')
   const longTitle = 'A very long task title that must never wrap one letter per line'.repeat(4)
   await page.evaluate(async (title) => {
-    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'output' ? { ...task, title } : task)
     }))
@@ -170,7 +170,7 @@ test('mobile header keeps review actions and every task panel usable without ove
   await page.goto('/tests/e2e/fixture/?scenario=review')
   const longTitle = 'Review a narrow layout with an exceptionally long title '.repeat(5)
   await page.evaluate(async (title) => {
-    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'review' ? {
         ...task,
@@ -215,7 +215,7 @@ test('mobile header keeps review actions and every task panel usable without ove
 test('stale child selection renders its owner with continuous output', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
-    const { useStore } = await import('/src/client/renderer/src/state/store.ts')
+    const { useStore } = await import('/apps/web/src/state/store.ts')
     const read = window.anvil.tasks.eventsPage
     window.anvil.tasks.eventsPage = async (input) => {
       const page = await read(input)

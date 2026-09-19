@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import type { Task, TaskEvent } from '../../src/shared/types'
+import type { Task, TaskEvent } from '@anvil/protocol/types'
 
 async function emitOutput(page: Page, event: Pick<TaskEvent, 'id' | 'category' | 'text'>): Promise<void> {
   await page.evaluate((detail) => {

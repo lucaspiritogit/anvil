@@ -14,7 +14,7 @@ test('legacy suggestions are hidden while an automatic stack links the parent', 
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
-    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, stackSuggestion: { parentTaskId: 'running', paths: ['src/server/store.ts'] } } }))
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, stackSuggestion: { parentTaskId: 'running', paths: ['apps/server/src/store.ts'] } } }))
   })
   await expect(page.getByText('This task expects to modify files')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Stack', exact: true })).toHaveCount(0)

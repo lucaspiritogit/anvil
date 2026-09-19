@@ -9,7 +9,6 @@ files:
   - out/main/**
   - "!out/main/valence-cli.js"
   - out/preload/**
-  - out/renderer/**
   - package.json
   - out/server/**
 asarUnpack:

@@ -2,18 +2,18 @@ import { expect, test, vi } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { Store } from '../src/server/store'
-import { createTaskMemory } from '../src/server/memory/task-memory'
-import type { ProjectMemory, CompletedTaskMemory } from '../src/server/memory/project-memory'
-import type { TaskContext } from '../src/server/tasks/context'
-import type { TaskEvent, TaskEventsPage, TaskEventsRequest } from '../src/shared/types'
-import { DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '../src/shared/types'
+import { Store } from '../apps/server/src/store'
+import { createTaskMemory } from '../apps/server/src/memory/task-memory'
+import type { ProjectMemory, CompletedTaskMemory } from '../apps/server/src/memory/project-memory'
+import type { TaskContext } from '../apps/server/src/tasks/context'
+import type { TaskEvent, TaskEventsPage, TaskEventsRequest } from '@anvil/protocol/types'
+import { DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '@anvil/protocol/types'
 import { handlers, testHome } from './issue-tracker-doubles'
 import { rendererEvent } from './renderer-fixture'
 import { registerTestIpc } from './test-ipc'
 import { onTestCleanup } from './test-cleanup'
 
-const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
 function setup(database = join(testHome, randomUUID(), 'config.json')) {
   const store = new Store(database, options)
   onTestCleanup(() => store.close())

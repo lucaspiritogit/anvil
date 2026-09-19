@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
-import { BrowserHostClient } from '../src/server/browser-host-client'
-import { RemoteBrowserHostTransport } from '../src/server/remote-browser-host'
+import { BrowserHostClient } from '../apps/server/src/browser-host-client'
+import { RemoteBrowserHostTransport } from '../apps/server/src/remote-browser-host'
 
 test('relays browser host requests and makes the client MCP endpoint reachable by the server', async () => {
   let transport: RemoteBrowserHostTransport

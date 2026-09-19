@@ -1,18 +1,18 @@
 import { expect, test, vi } from 'vitest'
 import { join } from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import type { TerminalSessionManager } from '../src/server/terminal-sessions'
-import { WorkspaceAccounts, parseOpenCodeAccounts } from '../src/server/agents/workspace-accounts'
-import { AgentProcessManager } from '../src/server/agents/process-manager'
-import type { ConnectionHandlers } from '../src/server/agents/codex-app-server-connection'
-import type { CodexAccount, CodexAppServerRequests } from '../src/server/agents/codex-app-server-protocol'
-import type { AgentAccountConnect, AgentAccountTarget } from '../src/shared/types'
-import { validateIpcRequest } from '../src/server/handlers/validation'
+import type { TerminalSessionManager } from '../apps/server/src/terminal-sessions'
+import { WorkspaceAccounts, parseOpenCodeAccounts } from '../apps/server/src/agents/workspace-accounts'
+import { AgentProcessManager } from '../apps/server/src/agents/process-manager'
+import type { ConnectionHandlers } from '../apps/server/src/agents/codex-app-server-connection'
+import type { CodexAccount, CodexAppServerRequests } from '../apps/server/src/agents/codex-app-server-protocol'
+import type { AgentAccountConnect, AgentAccountTarget } from '@anvil/protocol/types'
+import { validateIpcRequest } from '../apps/server/src/handlers/validation'
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
-import { getAgent } from '../src/server/agents/registry'
+import { getAgent } from '../apps/server/src/agents/registry'
 
-vi.mock('../src/server/agents/resolve', () => ({ resolveCommand: () => ({ command: '/fake/opencode', prefixArgs: [], viaShell: false }) }))
+vi.mock('../apps/server/src/agents/resolve', () => ({ resolveCommand: () => ({ command: '/fake/opencode', prefixArgs: [], viaShell: false }) }))
 
 vi.mock('node:fs/promises', async () => {
   const real = await vi.importActual<any>('node:fs/promises')

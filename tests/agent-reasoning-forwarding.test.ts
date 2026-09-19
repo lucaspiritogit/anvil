@@ -1,9 +1,9 @@
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { expect, test } from 'vitest'
-import { AgentProcessManager } from '../src/server/agents/process-manager'
-import type { AgentExecutor, TaskEvent as ExecutorEvent, TaskInput, TaskResult } from '../src/server/agents/agent-executor'
-import type { AgentDefinition } from '../src/shared/types'
+import { AgentProcessManager } from '../apps/server/src/agents/process-manager'
+import type { AgentExecutor, TaskEvent as ExecutorEvent, TaskInput, TaskResult } from '../apps/server/src/agents/agent-executor'
+import type { AgentDefinition } from '@anvil/protocol/types'
 
 class RecordingExecutor implements AgentExecutor {
   inputs: TaskInput[] = []

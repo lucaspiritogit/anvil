@@ -1,9 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Store } from '../src/server/store'
-import { taskBranchNaming, temporaryTaskBranch } from '../src/server/tasks/task-branch'
-import { cancelTaskOperation } from '../src/server/tasks/operations'
+import { Store } from '../apps/server/src/store'
+import { taskBranchNaming, temporaryTaskBranch } from '../apps/server/src/tasks/task-branch'
+import { cancelTaskOperation } from '../apps/server/src/tasks/operations'
 import { taskBranchFixture, branchGit as git } from './task-branch-fixture'
 import { onTestCleanup } from './test-cleanup'
 

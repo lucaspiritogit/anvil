@@ -3,14 +3,14 @@ import { join } from 'node:path'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
-import { Store } from '../src/server/store'
-import { createHandlerRegistry } from '../src/server/handler-registry'
-import { registerTaskResultNoticeHandlers } from '../src/server/handlers/tasks'
-import { workspaceSnapshot } from '../src/server/handlers/workspaces'
-import type { Project, Task, TaskResultNotice, TaskResultNoticeChange } from '../src/shared/types'
+import { Store } from '../apps/server/src/store'
+import { createHandlerRegistry } from '../apps/server/src/handler-registry'
+import { registerTaskResultNoticeHandlers } from '../apps/server/src/handlers/tasks'
+import { workspaceSnapshot } from '../apps/server/src/handlers/workspaces'
+import type { Project, Task, TaskResultNotice, TaskResultNoticeChange } from '@anvil/protocol/types'
 import { onTestCleanup } from './test-cleanup'
 
-const migrationsFolder = join(process.cwd(), 'src/server/db/migrations')
+const migrationsFolder = join(process.cwd(), 'apps/server/src/db/migrations')
 
 function setup() {
   const root = mkdtempSync(join(tmpdir(), 'anvil-task-result-notices-'))

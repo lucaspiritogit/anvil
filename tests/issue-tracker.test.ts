@@ -1,16 +1,16 @@
-import { callIssueTool } from '../src/server/issue-tools/server'
+import { callIssueTool } from '../apps/server/src/issue-tools/server'
 import { rendererEvent } from './renderer-fixture'
 import { expect, test, vi } from 'vitest'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { BatchIssue } from '../src/shared/valence'
-import { Store } from '../src/server/store'
+import type { BatchIssue } from '@anvil/protocol/valence'
+import { Store } from '../apps/server/src/store'
 import { registerTestIpc } from './test-ipc'
 import { taskState } from './task-state'
 import { handlers, testHome, AgentProcessManager, GitDeliveryManager } from './issue-tracker-doubles'
 
 test('schedules dependencies and priorities sequentially and retains final task review', async () => {
-  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const database = join(testHome, '.anvil-composer/config.json')
   const store = new Store(database, options)
   const workspaceDatabase = store.getWorkspaceDatabasePath('default')

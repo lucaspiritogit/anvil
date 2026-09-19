@@ -4,28 +4,28 @@ import { execFileSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, vi } from 'vitest'
-import { AgentProcessManager, type ExitInfo } from '../src/server/agents/process-manager'
-import type { AgentExecutor, TaskInput, TaskResult } from '../src/server/agents/agent-executor'
-import { CodexAppServerClient } from '../src/server/agents/codex-app-server'
-import { OpenCodeAcpClient } from '../src/server/agents/opencode-acp'
-import { registerAgentAdapter } from '../src/server/agents/adapters'
-import { invalidateWorkspaceModels, listModels } from '../src/server/agents/models'
-import { resolveTaskWorkspace, resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../src/server/agents/workspace-execution'
-import { watchWorkspaceAuthChanges } from '../src/server/agents/workspace-auth-changes'
-import { draftPullRequestField } from '../src/server/agents/pull-request-draft'
-import { getAgent } from '../src/server/agents/registry'
-import { Store } from '../src/server/store'
-import { resumeTaskTurn } from '../src/server/tasks/resume'
-import { withTaskOperation } from '../src/server/tasks/operations'
-import type { TaskContext } from '../src/server/tasks/context'
-import type { Task, ProviderModelList, AgentDefinition } from '../src/shared/types'
-import { useStore } from '../src/client/renderer/src/state/store'
+import { AgentProcessManager, type ExitInfo } from '../apps/server/src/agents/process-manager'
+import type { AgentExecutor, TaskInput, TaskResult } from '../apps/server/src/agents/agent-executor'
+import { CodexAppServerClient } from '../apps/server/src/agents/codex-app-server'
+import { OpenCodeAcpClient } from '../apps/server/src/agents/opencode-acp'
+import { registerAgentAdapter } from '../apps/server/src/agents/adapters'
+import { invalidateWorkspaceModels, listModels } from '../apps/server/src/agents/models'
+import { resolveTaskWorkspace, resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../apps/server/src/agents/workspace-execution'
+import { watchWorkspaceAuthChanges } from '../apps/server/src/agents/workspace-auth-changes'
+import { draftPullRequestField } from '../apps/server/src/agents/pull-request-draft'
+import { getAgent } from '../apps/server/src/agents/registry'
+import { Store } from '../apps/server/src/store'
+import { resumeTaskTurn } from '../apps/server/src/tasks/resume'
+import { withTaskOperation } from '../apps/server/src/tasks/operations'
+import type { TaskContext } from '../apps/server/src/tasks/context'
+import type { Task, ProviderModelList, AgentDefinition } from '@anvil/protocol/types'
+import { useStore } from '../apps/web/src/state/store'
 import { GitDeliveryManager, testHome } from './issue-tracker-doubles'
 import { onTestCleanup } from './test-cleanup'
 
 function fixture(): { store: Store; work: string; personal: string; task: Task; database: string } {
   const database = join(testHome, randomUUID(), 'config.json')
-  const store = new Store(database, { migrationsFolder: resolve('src/server/db/migrations') })
+  const store = new Store(database, { migrationsFolder: resolve('apps/server/src/db/migrations') })
   onTestCleanup(() => store.close())
   const work = store.createWorkspace('Work').id
   const personal = store.createWorkspace('Personal').id
@@ -136,7 +136,7 @@ test('resumes an old session after switching and SQLite restart with its saved o
     issueIds: [], currentIssueId: null, error: null, reasoningEffort: 'high' })
   store.selectWorkspace(personal)
   store.close()
-  const restarted = new Store(database, { migrationsFolder: resolve('src/server/db/migrations') })
+  const restarted = new Store(database, { migrationsFolder: resolve('apps/server/src/db/migrations') })
   onTestCleanup(() => restarted.close())
   expect(restarted.getTask(task.id)).toBeUndefined()
   restarted.selectWorkspace(work)
@@ -259,7 +259,7 @@ test('scopes discovery and authentication invalidation by workspace and rejects 
 
 test('shutdown cancels and awaits an owned model discovery process', async () => {
   vi.resetModules()
-  const discovery = await import('../src/server/agents/models')
+  const discovery = await import('../apps/server/src/agents/models')
   onTestCleanup(() => discovery.closeModelDiscovery())
   const { store, work } = fixture()
   const pidFile = join(testHome, 'model-discovery.pid')

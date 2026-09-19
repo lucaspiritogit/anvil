@@ -2,17 +2,17 @@ import { EventEmitter } from 'node:events'
 import { join } from 'node:path'
 import type { NotificationConstructorOptions } from 'electron'
 import { expect, test, vi } from 'vitest'
-import { TaskIssues } from '../src/server/tasks/task-issues'
-import { callIssueTool } from '../src/server/issue-tools/server'
-import type { NotificationDeliveryOptions, NotificationAuthorization } from '../src/client/main/notification-delivery'
-import { Store } from '../src/server/store'
-import { registerTaskNotifications } from '../src/client/main/task-notifications'
-import type { Task } from '../src/shared/types'
+import { TaskIssues } from '../apps/server/src/tasks/task-issues'
+import { callIssueTool } from '../apps/server/src/issue-tools/server'
+import type { NotificationDeliveryOptions, NotificationAuthorization } from '../apps/desktop/src/main/notification-delivery'
+import { Store } from '../apps/server/src/store'
+import { registerTaskNotifications } from '../apps/desktop/src/main/task-notifications'
+import type { Task } from '@anvil/protocol/types'
 import { onTestCleanup } from './test-cleanup'
 
 function setup(options: NotificationDeliveryOptions = {}) {
   const store = new Store(':memory:', {
-    migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
+    migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations')
   })
   onTestCleanup(() => store.close())
   const notifications: FakeNotification[] = []

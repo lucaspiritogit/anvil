@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, symlink, truncate, writeFile } fro
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { imageFixture, pngWithDimensions } from './image-fixtures'
-import { WallpaperLibrary, MAX_WALLPAPER_BYTES, MAX_WALLPAPER_DIMENSION, MAX_WALLPAPER_PIXELS } from '../src/server/wallpapers'
+import { WallpaperLibrary, MAX_WALLPAPER_BYTES, MAX_WALLPAPER_DIMENSION, MAX_WALLPAPER_PIXELS } from '../apps/server/src/wallpapers'
 
 async function setupWallpapers() {
   const root = await mkdtemp(join(tmpdir(), 'anvil-wallpapers-'))

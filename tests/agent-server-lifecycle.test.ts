@@ -7,11 +7,11 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { once } from 'node:events'
-import { OpenCodeAcpClient } from '../src/server/agents/opencode-acp'
-import { CodexAppServerClient } from '../src/server/agents/codex-app-server'
-import { AgentProcessManager, type ExitInfo } from '../src/server/agents/process-manager'
-import { getAgent } from '../src/server/agents/registry'
-import type { TaskEvent, TaskInput } from '../src/server/agents/agent-executor'
+import { OpenCodeAcpClient } from '../apps/server/src/agents/opencode-acp'
+import { CodexAppServerClient } from '../apps/server/src/agents/codex-app-server'
+import { AgentProcessManager, type ExitInfo } from '../apps/server/src/agents/process-manager'
+import { getAgent } from '../apps/server/src/agents/registry'
+import type { TaskEvent, TaskInput } from '../apps/server/src/agents/agent-executor'
 
 type Executor = OpenCodeAcpClient | CodexAppServerClient
 interface TranscriptEntry {

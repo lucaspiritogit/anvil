@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 
 const root = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+const serverPackageJson = JSON.parse(await readFile(join(root, 'apps', 'server', 'package.json'), 'utf8'))
 const platform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : process.platform
 const name = `Anvil-server-${packageJson.version}-${platform}-${process.arch}`
 const stagingRoot = join(root, 'release', 'server')
@@ -15,8 +16,17 @@ await rm(stagingDirectory, { recursive: true, force: true })
 await mkdir(appDirectory, { recursive: true })
 await mkdir(runtimeDirectory, { recursive: true })
 await cp(join(root, 'out', 'server'), join(appDirectory, 'server'), { recursive: true })
-await cp(join(root, 'out', 'renderer'), join(appDirectory, 'renderer'), { recursive: true })
-const serverPackage = { ...packageJson, scripts: {} }
+const serverDependencies = Object.fromEntries(
+  Object.entries(serverPackageJson.dependencies).filter(([name]) => !name.startsWith('@anvil/'))
+)
+const serverPackage = {
+  name: 'anvil-server',
+  version: packageJson.version,
+  private: true,
+  license: packageJson.license,
+  engines: packageJson.engines,
+  dependencies: serverDependencies
+}
 await writeFile(join(appDirectory, 'package.json'), `${JSON.stringify(serverPackage, null, 2)}\n`)
 await copyFile(join(root, 'package-lock.json'), join(appDirectory, 'package-lock.json'))
 await copyFile(join(root, 'LICENSE'), join(stagingDirectory, 'LICENSE'))

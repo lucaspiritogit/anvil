@@ -3,17 +3,17 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Store } from '../src/server/store'
-import { GitDeliveryManager } from '../src/server/git'
-import { TaskStacks, requireStackMergeable, requireStackParent } from '../src/server/tasks/task-stacks'
-import { TaskIssues } from '../src/server/tasks/task-issues'
-import { callIssueTool } from '../src/server/issue-tools/server'
-import type { TaskContext } from '../src/server/tasks/context'
+import { Store } from '../apps/server/src/store'
+import { GitDeliveryManager } from '../apps/server/src/git'
+import { TaskStacks, requireStackMergeable, requireStackParent } from '../apps/server/src/tasks/task-stacks'
+import { TaskIssues } from '../apps/server/src/tasks/task-issues'
+import { callIssueTool } from '../apps/server/src/issue-tools/server'
+import type { TaskContext } from '../apps/server/src/tasks/context'
 import { onTestCleanup } from './test-cleanup'
-import { TaskBranches, temporaryTaskBranch } from '../src/server/tasks/task-branch'
+import { TaskBranches, temporaryTaskBranch } from '../apps/server/src/tasks/task-branch'
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }).trim()
-const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
 
 async function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'anvil-stacks-'))

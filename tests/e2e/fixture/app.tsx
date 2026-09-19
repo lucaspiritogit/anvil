@@ -1,16 +1,16 @@
 import { pageTaskEvents } from './task-events'
 import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
-import { useTaskIssues } from '../../../src/client/renderer/src/hooks/use-task-issues'
+import { useTaskIssues } from '../../../apps/web/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
-import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, ProjectDirectoryListing, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure, TaskResultNotice, TaskResultNoticeChange } from '../../../src/shared/types'
-import { DEFAULT_KEYBINDINGS } from '../../../src/shared/keybindings'
-import { canSettleTask } from '../../../src/shared/task-settlement'
-import type { IpcRequests } from '../../../src/shared/ipc-requests'
-import type { DesktopServerConnectionState } from '../../../src/shared/desktop-requests'
-import { serverAddress, type ServerTarget } from '../../../src/shared/server-address'
-import { useStore } from '../../../src/client/renderer/src/state/store'
-import '../../../src/client/renderer/src/styles.css'
+import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, ProjectDirectoryListing, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure, TaskResultNotice, TaskResultNoticeChange } from '@anvil/protocol/types'
+import { DEFAULT_KEYBINDINGS } from '@anvil/protocol/keybindings'
+import { canSettleTask } from '@anvil/protocol/task-settlement'
+import type { IpcRequests } from '@anvil/protocol/ipc-requests'
+import type { DesktopServerConnectionState } from '@anvil/protocol/desktop-requests'
+import { serverAddress, type ServerTarget } from '@anvil/protocol/server-address'
+import { useStore } from '../../../apps/web/src/state/store'
+import '../../../apps/web/src/styles.css'
 
 // Only the Electron bridge is replaced. Tests interact with the real App through Playwright.
 const noop = () => {}
@@ -213,7 +213,7 @@ declare global {
     outputTest: {
       hold: boolean
       failNext: boolean
-      requests: import('../../../src/shared/types').TaskEventsRequest[]
+      requests: import('@anvil/protocol/types').TaskEventsRequest[]
       release: (fail?: boolean) => void
     }
     workspaceTest: { select: (id: string) => Promise<void>; create: (name: string) => Promise<void> }
@@ -450,7 +450,7 @@ const projectBranches: Record<string, string> = Object.fromEntries(projects.map(
 
 window.fileMentionTest = {
   paths: {
-    'project-0': ['src/TaskComposer.tsx', 'src/TaskCompletion.ts', 'src/client/main/index.ts', 'src/client/renderer/index.ts', 'docs/My notes 日本語.md', 'new-untracked.txt'],
+    'project-0': ['src/TaskComposer.tsx', 'src/TaskCompletion.ts', 'apps/desktop/src/main/index.ts', 'apps/web/src/main.tsx', 'docs/My notes 日本語.md', 'new-untracked.txt'],
     'project-1': ['workbench/OnlyHere.ts']
   }, delay: {}, error: null, calls: []
 }
@@ -1077,7 +1077,7 @@ const stopInitialView = useStore.subscribe((state) => {
     useStore.setState({ activeProjectId: projects[0].id, view: { kind: 'task', taskId: 'review' } })
   }
 })
-const { App } = await import('../../../src/client/renderer/src/App')
+const { App } = await import('../../../apps/web/src/App')
 // Opt-in hook harness until the Issues panel is added. Existing scenarios use App.
 function IssuesRefreshFixture(): React.JSX.Element {
   const [taskId, setTaskId] = useState('output')

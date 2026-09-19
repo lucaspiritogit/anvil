@@ -5,11 +5,11 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { OpenCodeAcpClient } from '../src/server/agents/opencode-acp'
-import { AgentProcessManager } from '../src/server/agents/process-manager'
-import type { AgentExecutor, TaskInput } from '../src/server/agents/agent-executor'
-import { draftPullRequestField } from '../src/server/agents/pull-request-draft'
-import type { Task, TaskDiff } from '../src/shared/types'
+import { OpenCodeAcpClient } from '../apps/server/src/agents/opencode-acp'
+import { AgentProcessManager } from '../apps/server/src/agents/process-manager'
+import type { AgentExecutor, TaskInput } from '../apps/server/src/agents/agent-executor'
+import { draftPullRequestField } from '../apps/server/src/agents/pull-request-draft'
+import type { Task, TaskDiff } from '@anvil/protocol/types'
 
 test('drafts isolated read-only PR fields with validation, cleanup and real ACP sessions', async () => {
   const inputs: TaskInput[] = []

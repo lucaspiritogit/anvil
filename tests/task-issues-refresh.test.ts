@@ -3,10 +3,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { internalTrackerFixture } from './fixtures/internal-valence'
-import type { TaskIssueSnapshot } from '../src/shared/types'
-import { createTaskIssuesCache, selectedTaskIssue } from '../src/client/renderer/src/state/task-issues'
+import type { TaskIssueSnapshot } from '@anvil/protocol/types'
+import { createTaskIssuesCache, selectedTaskIssue } from '../apps/web/src/state/task-issues'
 import { onTestCleanup } from './test-cleanup'
-import { issuePresentation, taskIssuePresentation } from '../src/shared/task-issue-presentation'
+import { issuePresentation, taskIssuePresentation } from '@anvil/protocol/task-issue-presentation'
 
 const snapshot = (id: string): TaskIssueSnapshot => ({ parent: { id, anvilTaskId: id, title: id, description: '' }, children: [] })
 const RECOVERY_INTERVAL_MS = 60_000
@@ -41,7 +41,7 @@ function fixture(read = vi.fn<(id: string) => Promise<TaskIssueSnapshot | null>>
 const tick = () => vi.advanceTimersByTimeAsync(0)
 
 test('parent presentation follows transitions and preserves final delivery semantics', () => {
-  const task = { status: 'running' } as import('../src/shared/types').Task
+  const task = { status: 'running' } as import('@anvil/protocol/types').Task
   const state = snapshot('task')
   state.children = [{ id: 'child', title: 'Current work', description: '', validation: '', status: 'queued', checklist: [], dependencies: [], labels: [], priority: 'high', parentId: 'task' }]
   for (const status of ['queued', 'working', 'review', 'queued', 'working', 'blocked', 'complete'] as const) {

@@ -2,20 +2,20 @@ import { rendererEvent, rendererIpc } from './renderer-fixture'
 import { expect, test } from 'vitest'
 import { onTestCleanup } from './test-cleanup'
 import { join } from 'node:path'
-import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
-import type { GitDeliveryManager as RealGitDeliveryManager } from '../src/server/git'
-import { registerSteeringHandlers } from '../src/server/handlers/steering'
-import { createTaskMemory } from '../src/server/memory/task-memory'
-import { createTaskCompletion } from '../src/server/tasks/completion'
-import { registerTaskEvents } from '../src/server/tasks/events'
-import { registerTaskExecution } from '../src/server/tasks/task-execution'
-import { Store } from '../src/server/store'
-import type { Task } from '../src/shared/types'
+import type { AgentProcessManager as RealAgentProcessManager } from '../apps/server/src/agents/process-manager'
+import type { GitDeliveryManager as RealGitDeliveryManager } from '../apps/server/src/git'
+import { registerSteeringHandlers } from '../apps/server/src/handlers/steering'
+import { createTaskMemory } from '../apps/server/src/memory/task-memory'
+import { createTaskCompletion } from '../apps/server/src/tasks/completion'
+import { registerTaskEvents } from '../apps/server/src/tasks/events'
+import { registerTaskExecution } from '../apps/server/src/tasks/task-execution'
+import { Store } from '../apps/server/src/store'
+import type { Task } from '@anvil/protocol/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome } from './issue-tracker-doubles'
 
 test('rejects settled steering and preserves stopped resume and live steering paths', async () => {
   const databasePath = join(testHome, 'config.json')
-  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const store = new Store(databasePath, options)
   {
     store.addProject({

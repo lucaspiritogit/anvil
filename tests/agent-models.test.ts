@@ -3,8 +3,8 @@ import { afterAll, beforeAll, expect, test, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openCodeModelCatalogue, requireOpenCodeImageModel } from '../src/server/agents/opencode-models'
-import type { AgentDefinition, ProviderModelList } from '../src/shared/types'
+import { openCodeModelCatalogue, requireOpenCodeImageModel } from '../apps/server/src/agents/opencode-models'
+import type { AgentDefinition, ProviderModelList } from '@anvil/protocol/types'
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 
@@ -70,8 +70,8 @@ test('normalizes SDK model metadata for reasoning and image validation', () => {
 test('discovers adapter models, preserves cached metadata and reports failures', async () => {
   vi.resetModules()
   onTestCleanup(() => { vi.resetModules() })
-  const { registerAgentAdapter, getAgentAdapter } = await import('../src/server/agents/adapters')
-  const { listModels } = await import('../src/server/agents/models')
+  const { registerAgentAdapter, getAgentAdapter } = await import('../apps/server/src/agents/adapters')
+  const { listModels } = await import('../apps/server/src/agents/models')
   const directory = await mkdtemp(join(tmpdir(), 'anvil-models-'))
   try {
     const agent: AgentDefinition = {
@@ -135,8 +135,8 @@ test('discovers adapter models, preserves cached metadata and reports failures',
 test('coalesces concurrent catalogue discovery and reuses reasoning metadata', async () => {
   vi.resetModules()
   onTestCleanup(() => { vi.resetModules() })
-  const { registerAgentAdapter } = await import('../src/server/agents/adapters')
-  const { listModels } = await import('../src/server/agents/models')
+  const { registerAgentAdapter } = await import('../apps/server/src/agents/adapters')
+  const { listModels } = await import('../apps/server/src/agents/models')
   let respond!: (catalogue: ProviderModelList) => void
   const discover = vi.fn(() => new Promise<ProviderModelList>((resolve) => { respond = resolve }))
   registerAgentAdapter({ id: 'coalesced', createExecutor: () => { throw new Error('unused') }, listModels: discover })

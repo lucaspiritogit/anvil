@@ -1,6 +1,6 @@
-import { registerTaskNotifications } from '../src/client/main/task-notifications'
+import { registerTaskNotifications } from '../apps/desktop/src/main/task-notifications'
 import { EventEmitter } from 'node:events'
-import { callIssueTool } from '../src/server/issue-tools/server'
+import { callIssueTool } from '../apps/server/src/issue-tools/server'
 import { rendererEvent } from './renderer-fixture'
 import { expect, test, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
@@ -8,17 +8,17 @@ import { execFileSync } from 'node:child_process'
 import { writeFileSync, existsSync, unlinkSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { Store } from '../src/server/store'
-import { GitDeliveryManager } from '../src/server/git'
+import { Store } from '../apps/server/src/store'
+import { GitDeliveryManager } from '../apps/server/src/git'
 import { registerTestIpc } from './test-ipc'
 import { taskState } from './task-state'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
-import type { AgentProcessManager as RealAgentProcessManager } from '../src/server/agents/process-manager'
-import { registerTaskExecution } from '../src/server/tasks/task-execution'
-import { TaskIssues } from '../src/server/tasks/task-issues'
-import { createTaskCompletion } from '../src/server/tasks/completion'
+import type { AgentProcessManager as RealAgentProcessManager } from '../apps/server/src/agents/process-manager'
+import { registerTaskExecution } from '../apps/server/src/tasks/task-execution'
+import { TaskIssues } from '../apps/server/src/tasks/task-issues'
+import { createTaskCompletion } from '../apps/server/src/tasks/completion'
 import { onTestCleanup } from './test-cleanup'
-import { temporaryTaskBranch } from '../src/shared/task-branch'
+import { temporaryTaskBranch } from '@anvil/protocol/task-branch'
 
 const runGit = (cwd: string, ...args: string[]): string => execFileSync('git', args, {
   cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']
@@ -41,7 +41,7 @@ async function turnFixture(issueCount = 2) {
   writeFileSync(join(repo, 'tracked.txt'), 'base\n')
   runGit(repo, 'add', '.')
   runGit(repo, 'commit', '-m', 'Base')
-  const store = new Store(join(root, 'config.json'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const store = new Store(join(root, 'config.json'), { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Project', path: repo, createdAt: 0,
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
@@ -123,7 +123,7 @@ test.each(['unchanged', 'empty commit', 'net-zero edits'] as const)('%s complete
   expect(f.tracker.get(f.next.id)).toMatchObject({ status: 'working', baseCommit: completed.headCommit })
   expect(f.agents.starts).toHaveLength(1)
   expect(f.snapshots.some((snapshot) => snapshot.ready)).toBe(false)
-  const reopened = new Store(join(f.repo, '..', 'config.json'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const reopened = new Store(join(f.repo, '..', 'config.json'), { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   onTestCleanup(() => reopened.close())
   expect(new TaskIssues(reopened).list(f.task.id)[0]).toEqual(completed)
   expect(reopened.getTaskExecution(f.task.id)?.currentIssueId).toBe(f.next.id)
@@ -171,7 +171,7 @@ test.each([
   }
   await f.execution.finishTaskTurn({ taskId: task.id, code: 0, cancelled: false })
   expect(f.finish).toHaveBeenCalledTimes(1)
-  const reopened = new Store(join(f.repo, '..', 'config.json'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const reopened = new Store(join(f.repo, '..', 'config.json'), { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   onTestCleanup(() => reopened.close())
   expect(reopened.getTask(task.id)).toEqual(task)
   const recovered = new TaskIssues(reopened)
@@ -403,7 +403,7 @@ test('the working agent names its temporary branch and delivers sequential chang
   git(projectPath, 'add', '.gitignore')
   git(projectPath, 'commit', '-m', 'Initial commit')
   const database = join(testHome, '.anvil-composer/config.json')
-  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const seed = new Store(database, options)
   seed.addProject({ id: 'project', name: 'Git test', path: projectPath, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
 
@@ -541,7 +541,7 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   git(projectPath, 'add', '.gitignore')
   git(projectPath, 'commit', '-m', 'Initial commit')
   const database = join(testHome, '.anvil-composer/config.json')
-  const options = { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') }
+  const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const store = new Store(database, options)
   store.addProject({ id: 'issue-ranges', name: 'Issue ranges', path: projectPath, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
 

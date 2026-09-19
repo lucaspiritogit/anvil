@@ -5,16 +5,16 @@ import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
 import { build } from 'esbuild'
-import { Store } from '../src/server/store'
-import { IssueTracker } from '../src/server/valence/tracker'
-import type { CreateIssue, CreateParentIssue, IssueSelection, UpdateIssue, UpdateParentIssue } from '../src/shared/valence'
+import { Store } from '../apps/server/src/store'
+import { IssueTracker } from '../apps/server/src/valence/tracker'
+import type { CreateIssue, CreateParentIssue, IssueSelection, UpdateIssue, UpdateParentIssue } from '@anvil/protocol/valence'
 import { onTestCleanup } from './test-cleanup'
 
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'anvil-valence-core-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
   const registryPath = join(directory, 'config.json')
-  const store = new Store(registryPath, { migrationsFolder: resolve('src/server/db/migrations') })
+  const store = new Store(registryPath, { migrationsFolder: resolve('apps/server/src/db/migrations') })
   onTestCleanup(() => store.close())
   const path = store.getWorkspaceDatabasePath('default')
   const db = new DatabaseSync(path)
@@ -191,7 +191,7 @@ test('records the first issue start in Unix milliseconds and preserves it throug
   expect(a.start(dependent.id).startedAt).toBe(completedAt + 1_000)
   a.close()
   store.close()
-  const reopened = new Store(registryPath, { migrationsFolder: resolve('src/server/db/migrations') })
+  const reopened = new Store(registryPath, { migrationsFolder: resolve('apps/server/src/db/migrations') })
   onTestCleanup(() => reopened.close())
   expect(reopened.issueTracker('a').get(issue.id)).toMatchObject({ startedAt: firstStartedAt, completedAt })
   expect(reopened.issueTracker('a').list().find((entry) => entry.id === dependent.id)?.startedAt).toBe(completedAt + 1_000)
@@ -328,7 +328,7 @@ test('independent SQLite connections contend and claim each issue exactly once',
   const issues = a.createMany(Array.from({ length: 30 }, (_, index) => ({ ...input(), key: `${index}` })))
   const bundle = join(directory, 'tracker.cjs')
   await build({
-    entryPoints: [resolve('src/server/valence/tracker.ts')], outfile: bundle, bundle: true, platform: 'node', format: 'cjs'
+    entryPoints: [resolve('apps/server/src/valence/tracker.ts')], outfile: bundle, bundle: true, platform: 'node', format: 'cjs'
   })
   const barrier = new SharedArrayBuffer(4)
   const code = `

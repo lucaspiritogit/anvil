@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { internalTrackerFixture } from './fixtures/internal-valence'
-import { Store } from '../src/server/store'
+import { Store } from '../apps/server/src/store'
 import { testHome } from './issue-tracker-doubles'
 import { onTestCleanup, cleanupTestResources } from './test-cleanup'
 
@@ -14,7 +14,7 @@ describe('Vitest runtime', () => {
     expect(process.env.ANVIL_DATA_DIR).toBeUndefined()
     expect(process.env.ANVIL_TEST_NODE).toBe(process.execPath)
     const store = new Store(join(testHome, '.anvil-composer', 'config.json'), {
-      migrationsFolder: join(process.cwd(), 'src/server/db/migrations')
+      migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations')
     })
     onTestCleanup(() => store.close())
     const project = join(testHome, 'project')

@@ -4,8 +4,8 @@ import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitDeliveryManager } from '../src/server/git'
-import { githubRepository } from '../src/shared/github-repository'
+import { GitDeliveryManager } from '../apps/server/src/git'
+import { githubRepository } from '@anvil/protocol/github-repository'
 
 test('previews and pushes real repositories while preserving checkout, authorship and remote guards', async () => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'anvil-github-git-')))

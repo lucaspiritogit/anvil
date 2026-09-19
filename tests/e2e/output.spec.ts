@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { TaskEvent } from '../../src/shared/types'
+import type { TaskEvent } from '@anvil/protocol/types'
 
 for (const viewport of [{ width: 1100, height: 700 }, { width: 900, height: 500 }, { width: 1400, height: 900 }]) {
   test(`output fits its container and scrolls at ${viewport.width}x${viewport.height}`, async ({ page }) => {
@@ -112,7 +112,7 @@ test('shell commands and paths are not MCP tool calls', async ({ page }) => {
   }, detail)
   await emit({
     id: 'tool-use:shell-path', taskId: 'output', ts: Date.now(), stream: 'stdout', kind: 'output',
-    category: 'tool_use', text: 'npm run tests -- src/server/agents/output.ts'
+    category: 'tool_use', text: 'npm run tests -- apps/server/src/agents/output.ts'
   })
   await emit({
     id: 'tool-result:shell-path', taskId: 'output', ts: Date.now(), stream: 'stdout', kind: 'output',

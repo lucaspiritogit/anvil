@@ -1,5 +1,5 @@
 {
-  "include": ["package.json", "src/components/dither-kit/**/*", "src/client/renderer/src/**/*", "src/client/preload/**/*", "src/shared/**/*", "tests/e2e/fixture/app.tsx", "tests/e2e/fixture/accounts.ts", "tests/e2e/fixture/task-events.ts"],
+  "include": ["package.json", "apps/web/**/*", "packages/client-api/**/*", "packages/protocol/**/*", "tests/e2e/fixture/app.tsx", "tests/e2e/fixture/accounts.ts", "tests/e2e/fixture/task-events.ts"],
   "compilerOptions": {
     "composite": true,
     "target": "ES2022",
@@ -15,9 +15,10 @@
     "isolatedModules": true,
     "noEmit": true,
     "paths": {
-      "@dither-kit/*": ["./src/components/dither-kit/*"],
-      "@shared/*": ["./src/shared/*"],
-      "@renderer/*": ["./src/client/renderer/src/*"],
+      "@anvil/client-api": ["./packages/client-api/src/index.ts"],
+      "@anvil/protocol/*": ["./packages/protocol/src/*"],
+      "@dither-kit/*": ["./apps/web/src/components/dither-kit/*"],
+      "@renderer/*": ["./apps/web/src/*"],
       "@public/*": ["./public/*"]
     }
   }

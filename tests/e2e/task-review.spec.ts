@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { TaskIssueSnapshot } from '../../src/shared/types'
+import type { TaskIssueSnapshot } from '@anvil/protocol/types'
 
 type ReviewCall = { kind: string; detail: Record<string, unknown> }
 
@@ -503,7 +503,7 @@ async function deferredReview(page: import('@playwright/test').Page) {
           checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] }
       ]
     }
-    const issueResponses: Array<(diff: import('../../src/shared/types').TaskDiff) => void> = []
+    const issueResponses: Array<(diff: import('@anvil/protocol/types').TaskDiff) => void> = []
     const taskResponses: typeof issueResponses = []
     const patch = (file: string) => file ? `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Finalized change\n` : ''
     const publish = () => {

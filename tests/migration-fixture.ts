@@ -4,7 +4,7 @@ import { migrate } from 'drizzle-orm/node-sqlite/migrator'
 import { cpSync, mkdirSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-export const migrationsFolder = join(process.cwd(), 'src/server/db/migrations')
+export const migrationsFolder = join(process.cwd(), 'apps/server/src/db/migrations')
 
 /** Build a real historical database without running today's Store against an old schema. */
 export function migrateBefore(databaseFile: string, migrationIndex: number): void {

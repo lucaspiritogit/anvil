@@ -1,8 +1,8 @@
 import { testWorkspace } from './workspace-fixture'
 import { expect, test } from 'vitest'
 import { existsSync } from 'node:fs'
-import { draftCommitMessage } from '../src/server/agents/commit-message-draft'
-import type { Task, TaskDiff } from '../src/shared/types'
+import { draftCommitMessage } from '../apps/server/src/agents/commit-message-draft'
+import type { Task, TaskDiff } from '@anvil/protocol/types'
 
 test('drafts a commit message from the working-tree diff with validation and cleanup', async () => {
   const prompts: string[] = []

@@ -3,7 +3,7 @@
   "include": [
     "vitest.config.mts",
     "tests/**/*.ts",
-    "src/client/renderer/src/env.d.ts"
+    "apps/web/src/env.d.ts"
   ],
   "exclude": [
     "tests/e2e/**"
@@ -20,9 +20,11 @@
       "vitest/importMeta"
     ],
     "paths": {
-      "@shared/*": [
-        "./src/shared/*"
-      ]
+      "@anvil/app-data": ["./packages/app-data/src/index.ts"],
+      "@anvil/client-api": ["./packages/client-api/src/index.ts"],
+      "@anvil/protocol/*": ["./packages/protocol/src/*"],
+      "@dither-kit/*": ["./apps/web/src/components/dither-kit/*"],
+      "@renderer/*": ["./apps/web/src/*"]
     }
   }
 }

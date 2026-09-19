@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import type { TaskIssueSnapshot } from '../../src/shared/types'
+import type { TaskIssueSnapshot } from '@anvil/protocol/types'
 
 const snapshot: TaskIssueSnapshot = {
   parent: { id: 'parent', title: 'Plan the task', description: 'Parent summary' },

@@ -4,15 +4,15 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { Store } from '../src/server/store'
-import { registerReviewHandlers } from '../src/server/handlers/review'
-import { createHandlerRegistry } from '../src/server/handler-registry'
-import type { Project, Task } from '../src/shared/types'
+import { Store } from '../apps/server/src/store'
+import { registerReviewHandlers } from '../apps/server/src/handlers/review'
+import { createHandlerRegistry } from '../apps/server/src/handler-registry'
+import type { Project, Task } from '@anvil/protocol/types'
 
 function setup() {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'anvil-quick-delivery-')))
   onTestCleanup(() => rmSync(home, { recursive: true, force: true }))
-  const store = new Store(join(home, `${randomUUID()}`, 'config.json'), { migrationsFolder: join(process.cwd(), 'src/server/db/migrations') })
+  const store = new Store(join(home, `${randomUUID()}`, 'config.json'), { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   onTestCleanup(() => store.close())
   const project: Project = {
     id: 'project', name: 'Project', path: home, createdAt: 0,

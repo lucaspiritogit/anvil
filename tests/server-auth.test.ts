@@ -2,7 +2,7 @@ import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
-import { SERVER_AUTH_FILENAME, ServerAuth } from '../src/server/server-auth'
+import { SERVER_AUTH_FILENAME, ServerAuth } from '../apps/server/src/server-auth'
 
 const directories: string[] = []
 

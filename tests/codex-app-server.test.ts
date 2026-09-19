@@ -6,13 +6,13 @@ import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
-import { CodexAppServerClient } from '../src/server/agents/codex-app-server'
-import { AgentProcessManager, type ExitInfo } from '../src/server/agents/process-manager'
-import { getAgent } from '../src/server/agents/registry'
-import type { TaskEvent, TaskInput } from '../src/server/agents/agent-executor'
-import { codexAdapter } from '../src/server/agents/adapters'
-import { invalidateWorkspaceModels, listModels } from '../src/server/agents/models'
-import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../src/server/agents/workspace-execution'
+import { CodexAppServerClient } from '../apps/server/src/agents/codex-app-server'
+import { AgentProcessManager, type ExitInfo } from '../apps/server/src/agents/process-manager'
+import { getAgent } from '../apps/server/src/agents/registry'
+import type { TaskEvent, TaskInput } from '../apps/server/src/agents/agent-executor'
+import { codexAdapter } from '../apps/server/src/agents/adapters'
+import { invalidateWorkspaceModels, listModels } from '../apps/server/src/agents/models'
+import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from '../apps/server/src/agents/workspace-execution'
 
 interface ProfileLaunch {
   pid: number
@@ -618,7 +618,7 @@ test('sends exact inline image data to Codex and rejects models without vision',
 })
 
 test('native account RPC stores only in the selected profile and supports subscription cancellation and logout', async () => {
-  const { CodexAppServerConnection } = await import('../src/server/agents/codex-app-server-connection')
+  const { CodexAppServerConnection } = await import('../apps/server/src/agents/codex-app-server-connection')
   const work = testWorkspace('native-auth-work')
   const personal = testWorkspace('native-auth-personal')
   const global = testWorkspace('native-auth-global')

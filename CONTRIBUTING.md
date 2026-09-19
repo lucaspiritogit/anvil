@@ -55,8 +55,8 @@ database. Each parent references the real Anvil task through
 
 | Database | Schema | Generate migrations |
 | --- | --- | --- |
-| App state | `src/server/db/schema.ts` | `npm run db:generate` |
-| Project memory | `src/server/memory/schema.ts` | `npm run memory:generate` |
+| App state | `apps/server/src/db/schema.ts` | `npm run db:generate` |
+| Project memory | `apps/server/src/memory/schema.ts` | `npm run memory:generate` |
 
 Commit schema changes and generated migrations together. Anvil applies pending
 SQLite migrations on startup. To apply them without opening Anvil, quit the app

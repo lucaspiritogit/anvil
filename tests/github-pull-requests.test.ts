@@ -3,10 +3,10 @@ import { onTestCleanup } from './test-cleanup'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitHubClient } from '../src/server/github-client'
-import { GitHubCredentials } from '../src/server/github-credentials'
-import { GitHubPullRequests } from '../src/server/github-pull-requests'
-import type { PullRequestPreview } from '../src/shared/types'
+import { GitHubClient } from '../apps/server/src/github-client'
+import { GitHubCredentials } from '../apps/server/src/github-credentials'
+import { GitHubPullRequests } from '../apps/server/src/github-pull-requests'
+import type { PullRequestPreview } from '@anvil/protocol/types'
 
 test('stores encrypted credentials and creates or recovers PRs with account and failure guards', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'anvil-github-'))
