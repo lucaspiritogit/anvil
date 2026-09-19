@@ -18,9 +18,13 @@ asarUnpack:
   - node_modules/@electric-sql/pglite/**
   - node_modules/@electric-sql/pglite-pgvector/**
 mac:
-  identity: null
+  identity: "Anvil Self-Signed"
   category: public.app-category.developer-tools
   target: dmg
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
 win:

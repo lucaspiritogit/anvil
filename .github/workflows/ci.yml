@@ -55,12 +55,12 @@ jobs:
         include:
           - name: macos-arm64
             os: macos-15
-            arguments: --mac dmg --arm64 -c.mac.identity="-"
+            arguments: --mac dmg --arm64 -c.forceCodeSigning=true
             artifact: release/*.dmg
             server_artifact: release/Anvil-server-*-macos-arm64.tar.gz
           - name: macos-x64
             os: macos-15-intel
-            arguments: --mac dmg --x64 -c.mac.identity="-"
+            arguments: --mac dmg --x64 -c.forceCodeSigning=true
             artifact: release/*.dmg
             server_artifact: release/Anvil-server-*-macos-x64.tar.gz
           - name: windows-x64
@@ -74,8 +74,6 @@ jobs:
             arguments: --linux AppImage --x64
             artifact: release/*.AppImage
             server_artifact: release/Anvil-server-*-linux-x64.tar.gz
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,6 +84,70 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:node-pty
+      - name: Import macOS signing identity
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          SIGNING_P12_BASE64: ${{ secrets.ANVIL_SIGNING_P12_BASE64 }}
+          SIGNING_P12_PASSWORD: ${{ secrets.ANVIL_SIGNING_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$SIGNING_P12_BASE64" ]]; then
+            echo "ANVIL_SIGNING_P12_BASE64 is not configured" >&2
+            exit 1
+          fi
+          if [[ -z "$SIGNING_P12_PASSWORD" ]]; then
+            echo "ANVIL_SIGNING_P12_PASSWORD is not configured" >&2
+            exit 1
+          fi
+
+          signing_p12="$RUNNER_TEMP/anvil-signing.p12"
+          signing_cert="$RUNNER_TEMP/anvil-signing.pem"
+          signing_keychain="$RUNNER_TEMP/anvil-signing.keychain-db"
+          signing_keychain_password="$(openssl rand -hex 32)"
+
+          echo "::add-mask::$signing_keychain_password"
+          trap 'rm -f "$signing_p12" "$signing_cert"' EXIT
+
+          printf '%s' "$SIGNING_P12_BASE64" |
+            /usr/bin/base64 -D > "$signing_p12"
+
+          security create-keychain \
+            -p "$signing_keychain_password" "$signing_keychain"
+          security set-keychain-settings \
+            -lut 21600 "$signing_keychain"
+          security unlock-keychain \
+            -p "$signing_keychain_password" "$signing_keychain"
+
+          security import "$signing_p12" \
+            -k "$signing_keychain" \
+            -P "$SIGNING_P12_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$signing_keychain_password" \
+            "$signing_keychain"
+          security list-keychains -d user -s \
+            "$signing_keychain" \
+            "$HOME/Library/Keychains/login.keychain-db"
+
+          security find-certificate \
+            -c "Anvil Self-Signed" \
+            -p "$signing_keychain" > "$signing_cert"
+          security add-trusted-cert \
+            -r trustRoot \
+            -p codeSign \
+            -k "$signing_keychain" \
+            "$signing_cert"
+
+          signing_identities="$(security find-identity -v -p codesigning "$signing_keychain")"
+          printf '%s\n' "$signing_identities"
+          if [[ "$signing_identities" != *'"Anvil Self-Signed"'* ]]; then
+            echo "Anvil Self-Signed is not a valid code-signing identity" >&2
+            exit 1
+          fi
       - run: npm run build
       - run: npx electron-builder ${{ matrix.arguments }} --publish never
       - name: Verify macOS app signature
@@ -137,7 +199,7 @@ jobs:
         run: |
           cat > release-notes.md <<'NOTES'
           Download the desktop app or the Anvil server archive for your platform below.
-          macOS desktop builds are ad-hoc signed but are not notarized by Apple.
+          macOS desktop builds use Anvil's self-signed certificate and are not notarized by Apple.
           macOS may require an explicit security override on first launch.
 
           Server archives include Node.js and the browser UI. Extract one and run `anvil-server` for local access, `anvil-server --lan` for password-protected LAN access, or `anvil-server --tailscale` for private Tailscale HTTPS access.
