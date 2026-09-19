@@ -1,6 +1,7 @@
 import type { Issue, ParentIssue } from './valence'
 import type { Keybindings } from './keybindings'
 import type { ThinkingLevel } from './reasoning-levels'
+import type { DiffThemes } from './diff-themes'
 
 export type { Issue } from './valence'
 
@@ -657,6 +658,8 @@ export interface Settings {
   tailscaleHttps: boolean
   /** Accelerator per shortcut, e.g. `{ toggleSidebar: 'Mod+B' }`. */
   keybindings: Keybindings
+  /** Shiki themes used to highlight diffs, one per colour scheme. */
+  diffThemes: DiffThemes
 }
 
 export interface AgentAccountTarget {

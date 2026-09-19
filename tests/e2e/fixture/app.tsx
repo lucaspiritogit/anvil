@@ -5,6 +5,7 @@ import { useTaskIssues } from '../../../apps/web/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
 import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, ProjectDirectoryListing, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure, TaskResultNotice, TaskResultNoticeChange } from '@anvil/protocol/types'
 import { DEFAULT_KEYBINDINGS } from '@anvil/protocol/keybindings'
+import { DEFAULT_DIFF_THEMES } from '@anvil/protocol/diff-themes'
 import { canSettleTask } from '@anvil/protocol/task-settlement'
 import type { IpcRequests } from '@anvil/protocol/ipc-requests'
 import type { DesktopServerConnectionState } from '@anvil/protocol/desktop-requests'
@@ -205,7 +206,7 @@ window.outputTest = {
   release: (fail = false) => { releaseOutput?.(fail); releaseOutput = null }
 }
 
-let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-embed-large', ollamaBaseUrl: 'http://localhost:11434/v1', fontSize: 14, overviewBackgroundMode: 'color', overviewBackgroundColor: '#0d0f12', overviewWallpaperId: null, defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, caffeineMode: false, allowOtherDevices: false, tailscaleHttps: false, keybindings: DEFAULT_KEYBINDINGS }
+let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-embed-large', ollamaBaseUrl: 'http://localhost:11434/v1', fontSize: 14, overviewBackgroundMode: 'color', overviewBackgroundColor: '#0d0f12', overviewWallpaperId: null, defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, caffeineMode: false, allowOtherDevices: false, tailscaleHttps: false, keybindings: DEFAULT_KEYBINDINGS, diffThemes: DEFAULT_DIFF_THEMES }
 
 declare global {
   interface Window {

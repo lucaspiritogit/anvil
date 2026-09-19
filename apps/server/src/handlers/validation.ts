@@ -2,6 +2,7 @@ import { MAX_TASK_EVENT_PAGE_SIZE, MERGE_CONFLICT_MAX_FILE_BYTES } from '@anvil/
 import { MIN_FONT_SIZE, MAX_FONT_SIZE, OVERVIEW_COLOR_PATTERN, WALLPAPER_ID_PATTERN } from '@anvil/protocol/appearance'
 import { hasTaskContent, parseTaskImages } from '@anvil/protocol/task-images'
 import { isOllamaBaseUrl } from '@anvil/protocol/memory-settings'
+import { isDiffThemeName } from '@anvil/protocol/diff-themes'
 import type { IpcChannel, IpcRequests } from '@anvil/protocol/ipc-requests'
 
 // Contracts only check representation. Existence, ownership and task state belong to handlers.
@@ -105,7 +106,17 @@ const settingsPatch = object<IpcRequests['settings:set']['patch']>({
   rebaseMode: optional(oneOf('manual', 'agent')), confirmRebase: optional(boolean), caffeineMode: optional(boolean),
   allowOtherDevices: optional(boolean),
   tailscaleHttps: optional(boolean),
-  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false), cycleTaskStyle: text(128, false), cycleReviewPolicy: text(128, false), cycleThinking: text(128, false) }))
+  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false), cycleTaskStyle: text(128, false), cycleReviewPolicy: text(128, false), cycleThinking: text(128, false) })),
+  diffThemes: optional(object({
+    dark: (value, field) => {
+      if (!isDiffThemeName(value)) invalid(field, 'must name a diff theme')
+      return value
+    },
+    light: (value, field) => {
+      if (!isDiffThemeName(value)) invalid(field, 'must name a diff theme')
+      return value
+    }
+  }))
 })
 
 const workspaceId = text(36, true, /^(default|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/)

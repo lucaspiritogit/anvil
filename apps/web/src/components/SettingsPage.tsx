@@ -2,7 +2,7 @@ import { WorkspaceAgentAccounts } from './WorkspaceAgentAccounts'
 import { version } from '../../package.json'
 import type { JSX } from 'react'
 import { SETTINGS_SECTIONS } from '../settings-sections'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ProviderPicker } from './ProviderPicker'
 import { ProviderModelSelect } from './ProviderModelSelect'
 import { OverviewBackgroundPicker, type OverviewAppearance } from './OverviewBackgroundPicker'
@@ -18,9 +18,14 @@ import { DEFAULT_KEYBINDINGS, formatAccelerator, SHORTCUTS } from '@anvil/protoc
 import type { Keybindings, ShortcutDefinition } from '@anvil/protocol/keybindings'
 import { DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE, normalizeFontSize } from '@anvil/protocol/appearance'
 import { DEFAULT_EMBEDDING_MODEL, DEFAULT_OLLAMA_BASE_URL } from '@anvil/protocol/memory-settings'
+import { DEFAULT_DIFF_THEMES, DIFF_THEME_NAMES, type DiffThemes } from '@anvil/protocol/diff-themes'
 import { serverAddress, type ServerTarget } from '@anvil/protocol/server-address'
 import type { DesktopServerConnectionState } from '@anvil/protocol/desktop-requests'
 import type { ConnectionsStatus, RebaseMode, Settings } from '@anvil/protocol/types'
+
+const DiffThemePreview = lazy(async () => ({
+  default: (await import('./DiffThemePreview')).DiffThemePreview
+}))
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
@@ -432,6 +437,7 @@ export function SettingsPage(): JSX.Element {
   const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(DEFAULT_EMBEDDING_MODEL)
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState(DEFAULT_OLLAMA_BASE_URL)
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE)
+  const [diffThemes, setDiffThemes] = useState<DiffThemes>(DEFAULT_DIFF_THEMES)
   const selectProject = useStore((s) => s.setSettingsProject)
   const settings = useStore((s) => s.settings)
   const agents = useStore((s) => s.agents)
@@ -475,6 +481,7 @@ export function SettingsPage(): JSX.Element {
     setMemoryEmbeddingModel(hydrated.memoryEmbeddingModel)
     setOllamaBaseUrl(hydrated.ollamaBaseUrl)
     setFontSize(hydrated.fontSize)
+    setDiffThemes(hydrated.diffThemes ?? DEFAULT_DIFF_THEMES)
     setDefaultAgentId(hydrated.defaultAgentId)
     setDefaultModel(hydrated.defaultModel)
     setRebaseMode(hydrated.rebaseMode)
@@ -689,6 +696,37 @@ export function SettingsPage(): JSX.Element {
                 <p className="font-medium">Your next task starts here.</p>
                 <p className="mt-1 text-dim">Add a feature or fix a bug.</p>
               </div>
+              <section className="mb-7" aria-labelledby="diff-themes-heading">
+                <h3 id="diff-themes-heading" className="mb-1 font-medium">Diff themes</h3>
+                <p className="mb-4 text-xs text-dim">Choose the Shiki theme used to highlight code changes. The dark theme applies when the system is dark and the light theme when it is light.</p>
+                <div className="grid gap-4 min-[560px]:grid-cols-2">
+                  <label className={field.wrap}>
+                    <span className={field.label}>Dark diff theme</span>
+                    <Select aria-label="Dark diff theme" value={diffThemes.dark} onChange={(event) => {
+                      const value = { ...diffThemes, dark: event.target.value }
+                      setDiffThemes(value)
+                      persist({ diffThemes: value })
+                    }}>
+                      {DIFF_THEME_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
+                    </Select>
+                  </label>
+                  <label className={field.wrap}>
+                    <span className={field.label}>Light diff theme</span>
+                    <Select aria-label="Light diff theme" value={diffThemes.light} onChange={(event) => {
+                      const value = { ...diffThemes, light: event.target.value }
+                      setDiffThemes(value)
+                      persist({ diffThemes: value })
+                    }}>
+                      {DIFF_THEME_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
+                    </Select>
+                  </label>
+                </div>
+                <div className="mt-4" aria-label="Diff theme preview">
+                  <Suspense fallback={<p className="text-xs text-dim">Loading diff preview…</p>}>
+                    <DiffThemePreview themes={diffThemes} />
+                  </Suspense>
+                </div>
+              </section>
               {settings && <OverviewBackgroundPicker value={appearance} onChange={(value) => {
                 setAppearance(value)
                 persist(Object.fromEntries(Object.entries(value).filter(([key, next]) => next !== appearance[key as keyof OverviewAppearance])))

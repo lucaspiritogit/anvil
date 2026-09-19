@@ -73,10 +73,13 @@ test('rejects invalid wallpaper and settings payloads', () => {
   for (const patch of [{ memoryEnabled: 'true' }, { memoryEmbeddingModel: '' }, { memoryEmbeddingModel: 'bad model' }, { ollamaBaseUrl: 'file:///tmp' }, { ollamaBaseUrl: 'http://user:password@localhost/v1' }]) {
     expect(() => call('settings:set', patch)).toThrow(/Invalid IPC request/)
   }
+  for (const patch of [{ diffThemes: null }, { diffThemes: { dark: 'github-dark' } }, { diffThemes: { dark: 'bad theme', light: 'github-light' } }, { diffThemes: { dark: 'github-dark', light: 'bad theme' } }]) {
+    expect(() => call('settings:set', patch)).toThrow(/Invalid IPC request/)
+  }
 })
 
 test('persists settings and wallpaper selection across restarts', async () => {
-  call('settings:set', { fontSize: 16, memoryEnabled: true, memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://127.0.0.1:11434/v1', allowOtherDevices: true })
+  call('settings:set', { fontSize: 16, memoryEnabled: true, memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://127.0.0.1:11434/v1', allowOtherDevices: true, diffThemes: { dark: 'github-dark', light: 'github-light' } })
   writeFileSync(join(root, 'wallpaper', 'test.png'), imageFixture())
   expect(await call('wallpapers:list')).toStrictEqual([{ id: 'test.png', name: 'test.png', width: 4, height: 3 }])
   expect(await call('wallpapers:read', 'test.png')).toMatch(/^data:image\/png;base64,/)
@@ -96,6 +99,7 @@ test('persists settings and wallpaper selection across restarts', async () => {
   expect(store.getSettings().overviewWallpaperId).toBe('test.png')
   expect(store.getSettings().caffeineMode, 'Existing settings survive').toBe(true)
   expect(store.getSettings().allowOtherDevices).toBe(true)
+  expect(store.getSettings().diffThemes).toEqual({ dark: 'github-dark', light: 'github-light' })
   store.setSettings({ overviewWallpaperId: null })
   store.close()
   store = new Store(database, options)

@@ -2,6 +2,7 @@ import { UnresolvedFile, type FileContents } from '@pierre/diffs'
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { Task, TaskMergeConflict, TaskMergeConflictFile } from '@anvil/protocol/types'
+import { DEFAULT_DIFF_THEMES, type DiffThemes } from '@anvil/protocol/diff-themes'
 import { useStore } from '../state/store'
 import { btn, cn, field } from '../ui'
 
@@ -18,8 +19,9 @@ const UNSUPPORTED_REASON: Record<Extract<TaskMergeConflictFile, { support: 'unsu
   unsupported_status: 'This Git conflict status is not supported by the text editor.'
 }
 
-function PierreConflictFile({ file, disabled, onResolve }: {
+function PierreConflictFile({ file, themes, disabled, onResolve }: {
   file: Extract<TaskMergeConflictFile, { support: 'text' }>
+  themes: DiffThemes
   disabled: boolean
   onResolve: (file: FileContents) => void
 }): JSX.Element {
@@ -31,7 +33,8 @@ function PierreConflictFile({ file, disabled, onResolve }: {
     const host = hostRef.current
     if (!host) return
     const unresolved = new UnresolvedFile({
-      themeType: 'dark',
+      theme: themes,
+      themeType: 'system',
       overflow: 'wrap',
       disableFileHeader: true,
       mergeConflictActionsType: 'default',
@@ -42,7 +45,7 @@ function PierreConflictFile({ file, disabled, onResolve }: {
       file: { name: file.path, contents: file.contents, cacheKey: file.contentsHash }
     })
     return () => unresolved.cleanUp()
-  }, [file.contents, file.contentsHash, file.path])
+  }, [file.contents, file.contentsHash, file.path, themes])
 
   return <div aria-busy={disabled} className={cn('min-w-0', disabled && 'pointer-events-none opacity-60')} ref={hostRef} />
 }
@@ -56,6 +59,7 @@ export function TaskMergeConflictOutput({ task, conflict, visible }: {
     ? store.mergeConflictState
     : null)
   const load = useStore((store) => store.loadMergeConflict)
+  const themes = useStore((store) => store.settings?.diffThemes ?? DEFAULT_DIFF_THEMES)
   const save = useStore((store) => store.saveMergeConflict)
   const complete = useStore((store) => store.completeMergeConflict)
   const fix = useStore((store) => store.fixMergeConflictWithAgent)
@@ -152,6 +156,7 @@ export function TaskMergeConflictOutput({ task, conflict, visible }: {
             ? <PierreConflictFile
               key={`${conflict.id}:${selectedFile.path}:${selectedFile.contentsHash}:${state.revision}`}
               file={selectedFile}
+              themes={themes}
               disabled={busy}
               onResolve={(resolved) => void save(task.id, conflict.id, selectedFile.path, resolved.contents, selectedFile.contentsHash)}
             />

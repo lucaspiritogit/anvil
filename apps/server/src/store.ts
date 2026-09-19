@@ -21,6 +21,7 @@ import { DEFAULT_KEYBINDINGS, normalizeKeybindings } from '@anvil/protocol/keybi
 import type { Project, Task, TaskComment, TaskEvent, Settings, TaskExecutionState, Workspace, WorkspacePreferences, ComposerPreferences, TaskResultNotice, TaskResultNoticeChange, TaskResultNoticeKind } from '@anvil/protocol/types'
 import { DEFAULT_FONT_SIZE, normalizeFontSize, DEFAULT_OVERVIEW_COLOR, OVERVIEW_COLOR_PATTERN, isWallpaperId } from '@anvil/protocol/appearance'
 import { DEFAULT_OLLAMA_BASE_URL, DEFAULT_EMBEDDING_MODEL, isOllamaBaseUrl } from '@anvil/protocol/memory-settings'
+import { DEFAULT_DIFF_THEMES, normalizeDiffThemes, isDiffThemeName } from '@anvil/protocol/diff-themes'
 
 const DEFAULT_SETTINGS: Settings = {
   autoCompactContext: true,
@@ -39,7 +40,8 @@ const DEFAULT_SETTINGS: Settings = {
   caffeineMode: false,
   allowOtherDevices: false,
   tailscaleHttps: false,
-  keybindings: DEFAULT_KEYBINDINGS
+  keybindings: DEFAULT_KEYBINDINGS,
+  diffThemes: DEFAULT_DIFF_THEMES
 }
 
 const ANALYTICS_TASK_STATUSES: TaskStatus[] = ['pending', 'running', 'succeeded', 'failed', 'cancelled']
@@ -83,6 +85,7 @@ const SETTING_KEYS = [
   'allowOtherDevices',
   'tailscaleHttps',
   'keybindings',
+  'diffThemes',
   'overviewBackgroundMode',
   'overviewBackgroundColor',
   'overviewWallpaperId'
@@ -91,6 +94,7 @@ const SETTING_KEYS = [
 function encodeSetting(key: keyof Settings, value: Settings[keyof Settings]): string {
   if (key === 'autoCompactContext' || key === 'confirmRebase' || key === 'caffeineMode' || key === 'memoryEnabled' || key === 'allowOtherDevices' || key === 'tailscaleHttps') return String(value === true)
   if (key === 'keybindings') return JSON.stringify(value)
+  if (key === 'diffThemes') return JSON.stringify(value)
   if (key === 'overviewWallpaperId') return isWallpaperId(value) ? value : ''
   return String(value)
 }
@@ -100,6 +104,14 @@ function decodeKeybindings(value: string): Settings['keybindings'] {
     return normalizeKeybindings(JSON.parse(value))
   } catch {
     return structuredClone(DEFAULT_KEYBINDINGS)
+  }
+}
+
+function decodeDiffThemes(value: string): Settings['diffThemes'] {
+  try {
+    return normalizeDiffThemes(JSON.parse(value))
+  } catch {
+    return structuredClone(DEFAULT_DIFF_THEMES)
   }
 }
 
@@ -592,6 +604,7 @@ export class Store {
           else if (row.key === 'contextCompactionThreshold') current.contextCompactionThreshold = Number(row.value) >= 1 && Number(row.value) <= 100 ? Number(row.value) : 75
           else if (row.key === 'fontSize') current.fontSize = normalizeFontSize(Number(row.value))
           else if (row.key === 'keybindings') current.keybindings = decodeKeybindings(row.value)
+          else if (row.key === 'diffThemes') current.diffThemes = decodeDiffThemes(row.value)
           else if (row.key === 'rebaseMode') {
             current.rebaseMode = row.value === 'agent' ? 'agent' : 'manual'
           } else if (row.key === 'defaultAgentId' || row.key === 'defaultModel') {
@@ -610,6 +623,7 @@ export class Store {
     if (next.tailscaleHttps !== undefined && typeof next.tailscaleHttps !== 'boolean') throw new Error('Tailscale HTTPS must be a boolean')
     if (next.allowOtherDevices !== undefined && typeof next.allowOtherDevices !== 'boolean') throw new Error('Allow other devices must be a boolean')
     if (next.contextCompactionThreshold !== undefined && (!Number.isInteger(next.contextCompactionThreshold) || next.contextCompactionThreshold < 1 || next.contextCompactionThreshold > 100)) throw new Error('Context threshold must be an integer from 1 to 100')
+    if (next.diffThemes !== undefined && (!next.diffThemes || typeof next.diffThemes !== 'object' || !isDiffThemeName(next.diffThemes.dark) || !isDiffThemeName(next.diffThemes.light))) throw new Error('Diff themes must name a dark and a light theme')
     const rows = SETTING_KEYS.filter((key) => next[key] !== undefined).map((key) => ({
       workspaceId,
       key,

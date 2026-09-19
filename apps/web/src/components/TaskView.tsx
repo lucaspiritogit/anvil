@@ -18,6 +18,8 @@ import { useTaskIssues } from '../hooks/use-task-issues'
 import { TaskOutput } from './TaskOutput'
 import { QuickCommitActions } from './QuickCommitActions'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
+import type { DiffThemes } from '@anvil/protocol/diff-themes'
+import { DEFAULT_DIFF_THEMES } from '@anvil/protocol/diff-themes'
 import { isTaskSettled } from '@anvil/protocol/task-settlement'
 import type {
   DeliveryStatus,
@@ -48,6 +50,7 @@ interface PatchFilesProps {
   patch: string
   comments: TaskComment[]
   draft: CommentDraft | null
+  themes: DiffThemes
   trailing?: ReactNode
   onSelectLine: (draft: CommentDraft | null) => void
   onSubmit: (draft: CommentDraft, body: string) => void
@@ -69,6 +72,7 @@ const PatchFiles = lazy(async () => {
       patch,
       comments,
       draft,
+      themes,
       trailing,
       onSelectLine,
       onSubmit,
@@ -171,7 +175,8 @@ const PatchFiles = lazy(async () => {
                         )
                       }
                       options={{
-                        themeType: 'dark',
+                        theme: themes,
+                        themeType: 'system',
                         diffStyle: 'unified',
                         overflow: 'wrap',
                         disableFileHeader: true,
@@ -781,6 +786,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                 patch={issueDiff.patch}
                 comments={pending}
                 draft={draft}
+                themes={settings?.diffThemes ?? DEFAULT_DIFF_THEMES}
                 trailing={issue.status === 'review' && pending.length === 0 && <span>Select a line to comment</span>}
                 onSelectLine={issue.status === 'review' && !reviewDisabled ? setDraft : () => {}}
                 onSubmit={(target, body) => {
@@ -807,6 +813,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                 patch={diff.patch}
                 comments={comments ?? []}
                 draft={draft}
+                themes={settings?.diffThemes ?? DEFAULT_DIFF_THEMES}
                 trailing={<>
                   {!approved && <span>{pending.length ? `${pending.length} comment${pending.length === 1 ? '' : 's'} pending` : 'Select a line to comment'}</span>}
                   {work && <CommitsMenu diff={diff} disabled={approved} rebasing={rebasing} onRebase={rebase} />}

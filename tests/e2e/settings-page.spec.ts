@@ -40,6 +40,25 @@ test('settings sidebar separates controls and retains drafts across sections', a
   await expect(page.getByLabel('Font size', { exact: true })).toHaveValue('18')
 })
 
+test('Display previews and persists the light and dark diff themes', async ({ page }, testInfo) => {
+  await page.goto(fixture)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Display', exact: true }).click()
+  const preview = page.getByLabel('Diff theme preview')
+  await expect(preview.getByText('dark', { exact: true })).toBeVisible()
+  await expect(preview.getByText('light', { exact: true })).toBeVisible()
+  await expect(preview.getByText('pierre-dark', { exact: true })).toBeVisible()
+  await expect(preview.getByText('pierre-light', { exact: true })).toBeVisible()
+  await page.getByLabel('Dark diff theme', { exact: true }).selectOption('github-dark')
+  await page.getByLabel('Light diff theme', { exact: true }).selectOption('github-light')
+  await expect(preview.getByText('github-dark', { exact: true })).toBeVisible()
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => window.anvil.settings.get())).toMatchObject({
+    diffThemes: { dark: 'github-dark', light: 'github-light' }
+  })
+  await page.screenshot({ path: testInfo.outputPath('settings-diff-themes.png') })
+})
+
 test('Command+, opens settings on macOS and shortcuts remain editable', async ({ page }, testInfo) => {
   await page.goto(`${fixture}?platform=darwin`)
   await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()

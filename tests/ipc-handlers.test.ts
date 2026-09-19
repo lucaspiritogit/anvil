@@ -402,7 +402,7 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
     for (const patch of [{ side: 'left' }, { lineNumber: 0 }, { lineNumber: NaN }, { lineNumber: 1.5 }, { file: '/etc/passwd' }, { file: '../outside' }, { file: 'a/../b' }, { file: 'C:\\outside' }, { file: '' }, { body: ' ' }, { body: 'x'.repeat(20_001) }]) {
       await invalidRequest('comments:add', { ...comment, ...patch })
     }
-    for (const patch of [{ defaultAgentId: null }, { rebaseMode: 'shell' }, { confirmRebase: 1 }, { keybindings: [] }, { keybindings: { toggleSidebar: 'x' } }, { unexpected: true }]) await invalidRequest('settings:set', patch)
+    for (const patch of [{ defaultAgentId: null }, { rebaseMode: 'shell' }, { confirmRebase: 1 }, { keybindings: [] }, { keybindings: { toggleSidebar: 'x' } }, { diffThemes: { dark: 'bad theme', light: 'github-light' } }, { unexpected: true }]) await invalidRequest('settings:set', patch)
     for (const patch of [{ prompt: ' ' }, { prompt: 'x'.repeat(100_001) }, { style: 'chat' }, { reviewPolicy: 'always' }, { model: [] }, { reasoningEffort: 42 }]) await invalidRequest('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Task', ...patch })
     await invalidRequest('tasks:issues', { taskId: 'task', projectPath: '/outside', parentIssueId: 'other' })
     await invalidRequest('tasks:steer', { taskId: 'task', message: ' ' })
