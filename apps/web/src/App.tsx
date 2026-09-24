@@ -134,6 +134,12 @@ export function App(): JSX.Element {
   }, [load])
 
   useEffect(() => {
+    if (ready || !workspaceError) return
+    const retry = window.setTimeout(() => { void load() }, 1500)
+    return () => window.clearTimeout(retry)
+  }, [ready, workspaceError, load])
+
+  useEffect(() => {
     const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
     const root = document.getElementById('root')!
     root.style.zoom = String(scale)
@@ -268,10 +274,7 @@ export function App(): JSX.Element {
     }
   }, [applyEvent, applyTaskUpdate, applyTaskResultNoticeChange])
 
-  if (!ready) {
-    if (!workspaceError) return <AppSkeleton />
-    return <div className="grid place-items-center h-full text-dim"><p role="alert">{workspaceError}</p><button onClick={() => void load()}>Retry</button></div>
-  }
+  if (!ready) return <AppSkeleton />
 
   // Collapsing closes the grid column while the sidebar slides out behind it,
   // so the workspace grows in step with the panel leaving.

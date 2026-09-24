@@ -13,13 +13,23 @@ test('paints the shell skeleton until main reports readiness', async ({ page }) 
   await expect(skeleton).toHaveCount(0)
 })
 
-test('surfaces an initialization failure and recovers through Retry', async ({ page }) => {
-  await page.goto(`${fixture}?servicesFailure`)
-  const alert = page.getByRole('alert')
-  await expect(alert).toHaveText('Anvil services failed to start')
+test('keeps the skeleton visible and retries after a disconnected startup request', async ({ page }) => {
+  await page.goto(`${fixture}?snapshotFailure`)
+  const skeleton = page.getByRole('status', { name: 'Loading Anvil' })
+  await expect(skeleton).toBeVisible()
   await expect(page.getByRole('main')).toHaveCount(0)
+  await expect(page.getByRole('alert')).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Retry', exact: true }).click()
   await expect(page.getByRole('main')).toBeVisible()
-  await expect(alert).toHaveCount(0)
+  await expect(skeleton).toHaveCount(0)
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
+test('keeps the skeleton visible after an initialization failure', async ({ page }) => {
+  await page.goto(`${fixture}?servicesFailure`)
+  const skeleton = page.getByRole('status', { name: 'Loading Anvil' })
+  await expect(skeleton).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('main')).toBeVisible()
+  await expect(skeleton).toHaveCount(0)
 })

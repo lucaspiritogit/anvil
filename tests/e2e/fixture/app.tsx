@@ -17,6 +17,7 @@ import '../../../apps/web/src/styles.css'
 const noop = () => {}
 const subscribe = () => noop
 const query = new URLSearchParams(location.search)
+let failFirstSnapshot = query.has('snapshotFailure')
 
 // Mirror the preload readiness latch: buffer the signal so a late App effect
 // still observes it, and schedule delivery asynchronously so the skeleton can
@@ -684,7 +685,14 @@ window.anvil = {
   },
   workspaces: {
     list: async () => structuredClone(workspaceRows),
-    snapshot: async () => { if (query.has('settingsLoading')) await settingsLoaded; return snapshot() },
+    snapshot: async () => {
+      if (failFirstSnapshot) {
+        failFirstSnapshot = false
+        throw new Error('Disconnected from Anvil server. Reconnecting…')
+      }
+      if (query.has('settingsLoading')) await settingsLoaded
+      return snapshot()
+    },
     create: async (name) => {
       if (query.has('workspaceDelay')) await new Promise((resolve) => setTimeout(resolve, 300))
       if (query.has('workspaceCreateFailure')) throw new Error('Could not create workspace. Try again.')
