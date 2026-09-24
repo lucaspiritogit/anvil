@@ -544,7 +544,9 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
 
   loadGitStatus: async (id) => {
+    const generation = workspaceGeneration
     const status = await window.anvil.projects.gitStatus(id)
+    if (generation !== workspaceGeneration || get().workspaceSwitching) return
     set((s) => ({ gitStatusByProject: { ...s.gitStatusByProject, [id]: status } }))
   },
 

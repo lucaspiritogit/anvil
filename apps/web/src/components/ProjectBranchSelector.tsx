@@ -22,6 +22,8 @@ type OpenPicker = 'project' | 'location' | 'branch' | null
 
 const triggerClass = 'inline-flex min-w-0 max-w-full items-center gap-1.5 px-2 py-1.5 text-sm text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-45 aria-disabled:cursor-wait aria-disabled:opacity-45'
 const BRANCH_RECOVERY_INTERVAL_MS = 60_000
+const BRANCH_RETRY_INTERVAL_MS = 1_000
+const BRANCH_RETRY_LIMIT = 5
 
 export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBranch, startBase, disabled,
   onCheckoutModeChange, onStartBaseChange, onTransitioning }: Props): JSX.Element {
@@ -37,19 +39,23 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
     .map((task) => [task.id, task.branchName, task.status, task.deliveryStatus, task.settledAt, task.restackState].join(':'))
     .join('|'))
   const loadGitStatus = useStore((state) => state.loadGitStatus)
+  const workspaceSwitching = useStore((state) => state.workspaceSwitching)
   const [open, setOpen] = useState<OpenPicker>(null)
   const projectRef = useRef<HTMLButtonElement>(null)
   const locationRef = useRef<HTMLButtonElement>(null)
   const branchRef = useRef<HTMLButtonElement>(null)
   const [branches, setBranches] = useState<ProjectBranches | null>(null)
   const [branchError, setBranchError] = useState<string | null>(null)
+  const [statusError, setStatusError] = useState<string | null>(null)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newBranch, setNewBranch] = useState('')
-  const error = checkoutError ?? branchError
+  const error = checkoutError ?? branchError ?? statusError
   const [transitioning, setTransitioning] = useState(false)
   const changing = useRef(false)
   const request = useRef(0)
+  const retryTimer = useRef<number | null>(null)
+  const retryCount = useRef(0)
 
   const setTransition = (value: boolean): void => {
     setTransitioning(value)
@@ -57,29 +63,50 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
   }
 
   const refresh = async (): Promise<void> => {
-    if (changing.current || !projectId || !isRepository) return
+    if (changing.current || workspaceSwitching || !projectId || !isRepository) return
     const version = ++request.current
     try {
       const result = await window.anvil.projects.branches(projectId)
       if (version === request.current) {
+        retryCount.current = 0
+        if (retryTimer.current !== null) window.clearTimeout(retryTimer.current)
+        retryTimer.current = null
         setBranches(result)
         setBranchError(null)
       }
     } catch (error) {
-      if (version === request.current) setBranchError(error instanceof Error ? error.message : String(error))
+      if (version !== request.current) return
+      retryCount.current += 1
+      if (retryCount.current > BRANCH_RETRY_LIMIT) setBranchError(error instanceof Error ? error.message : String(error))
+      if (retryTimer.current !== null) window.clearTimeout(retryTimer.current)
+      retryTimer.current = window.setTimeout(() => { void refresh() }, retryCount.current > BRANCH_RETRY_LIMIT ? 5_000 : BRANCH_RETRY_INTERVAL_MS)
     }
   }
 
   useEffect(() => {
-    if (!projectId) return
+    if (!projectId || workspaceSwitching) return
     let active = true
-    void loadGitStatus(projectId).catch((error: unknown) => {
-      if (active) setBranchError(error instanceof Error ? error.message : String(error))
-    })
-    return () => { active = false }
-  }, [projectId, loadGitStatus])
+    let attempts = 0
+    let timer: number | null = null
+    const load = (): void => {
+      void loadGitStatus(projectId).then(() => {
+        if (active) setStatusError(null)
+      }).catch((error: unknown) => {
+        if (!active) return
+        attempts += 1
+        if (attempts > BRANCH_RETRY_LIMIT) setStatusError(error instanceof Error ? error.message : String(error))
+        timer = window.setTimeout(load, attempts > BRANCH_RETRY_LIMIT ? 5_000 : BRANCH_RETRY_INTERVAL_MS)
+      })
+    }
+    load()
+    return () => {
+      active = false
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }, [projectId, workspaceSwitching, loadGitStatus])
 
   useEffect(() => {
+    if (workspaceSwitching) return
     void refresh()
     const update = (): void => { if (document.visibilityState === 'visible') void refresh() }
     window.addEventListener('focus', update)
@@ -87,11 +114,14 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
     const timer = window.setInterval(update, BRANCH_RECOVERY_INTERVAL_MS)
     return () => {
       ++request.current
+      retryCount.current = 0
+      if (retryTimer.current !== null) window.clearTimeout(retryTimer.current)
+      retryTimer.current = null
       window.removeEventListener('focus', update)
       unsubscribe()
       window.clearInterval(timer)
     }
-  }, [projectId, isRepository, taskRevision])
+  }, [projectId, isRepository, taskRevision, workspaceSwitching])
 
   useEffect(() => {
     if (style !== 'work' && checkoutMode !== 'worktree') return
