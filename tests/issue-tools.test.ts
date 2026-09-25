@@ -154,6 +154,7 @@ test('tools preserve ownership, dependency scheduling and developer review', () 
   addTask('task-b')
   const other = call('task-b', 'anvil_create_issue', input) as Issue
   expect(() => call('task-a', 'anvil_update_issue', { id: other.id, patch: { title: 'Hijack' } })).toThrow(/another task/)
+  expect(() => call('task-a', 'anvil_delete_issue', { id: other.id })).toThrow(/another task/)
   expect(() => call('task-a', 'anvil_create_issue', { ...input, dependencies: [other.id] })).toThrow(/another task/)
   expect(() => call('task-a', 'anvil_create_issue', { ...input, parentId: other.parentId })).toThrow(/Unsupported/)
   expect(() => call('task-a', 'anvil_update_issue', { id: first.id, patch: { parentId: other.parentId } })).toThrow(/Unsupported/)
@@ -161,7 +162,11 @@ test('tools preserve ownership, dependency scheduling and developer review', () 
   call('task-a', 'anvil_update_issue', { id: second.id, patch: { title: 'Dependent change' } })
   issues.finishPlanning('task-a')
   issues.claim('task-a')
-  expect(() => call('task-a', 'anvil_create_issue', input)).toThrow(/planning/)
+  const added = call('task-a', 'anvil_create_issue', input) as Issue
+  expect(store.getTaskExecution('task-a')?.issueIds).toContain(added.id)
+  expect(call('task-a', 'anvil_update_issue', { id: first.id, patch: { title: 'Changed during work' } })).toMatchObject({ title: 'Changed during work' })
+  expect(call('task-a', 'anvil_delete_issue', { id: added.id })).toMatchObject({ id: added.id })
+  expect(store.getTaskExecution('task-a')?.issueIds).not.toContain(added.id)
   expect(() => call('task-a', 'anvil_block_issue', { id: second.id })).toThrow(/current issue/)
   expect(() => call('task-a', 'anvil_submit_review', { id: first.id, checklist: [false], evidence: 'Failed' })).toThrow(/checklist/)
   expect(() => call('task-a', 'anvil_submit_review', { id: first.id, checklist: [true], evidence: '' })).toThrow(/evidence/)
@@ -207,6 +212,24 @@ test('task data tools summarize tasks and page and search output', () => {
   expect(call('task-a', 'anvil_get_task', { taskId: 'task-b' })).toMatchObject({ task: { id: 'task-b' } })
   expect(() => call('task-a', 'anvil_get_task_events', { taskId: 'task-a', cursor: -1 })).toThrow(/Cursor/)
   expect(() => call('task-a', 'anvil_search_task_output', { taskId: 'task-a', query: '' })).toThrow(/Query/)
+})
+
+test('issues can be changed during work and deleted without leaving stale schedule IDs', () => {
+  const { store, issues, call } = fixture()
+  const first = call('task-a', 'anvil_create_issue', input) as Issue
+  issues.finishPlanning('task-a')
+  issues.claim('task-a', 'base')
+  const later = call('task-a', 'anvil_create_issue', { ...input, title: 'Later' }) as Issue
+  expect(issues.list('task-a').map((issue) => issue.id)).toEqual([first.id, later.id])
+  expect(call('task-a', 'anvil_update_issue', { id: first.id, patch: { checklist: ['New check'], expectedFiles: ['src/new.ts'] } }))
+    .toMatchObject({ status: 'working', checklist: ['New check'] })
+  expect(store.getTask('task-a')?.expectedFiles).toEqual(['src/new.ts'])
+  expect(call('task-a', 'anvil_delete_issue', { id: first.id })).toMatchObject({ id: first.id })
+  expect(store.getTaskExecution('task-a')).toMatchObject({ phase: 'working', currentIssueId: null, issueIds: [later.id] })
+  expect(issues.claim('task-a')?.id).toBe(later.id)
+  expect(call('task-a', 'anvil_delete_issue', { id: later.id })).toMatchObject({ id: later.id })
+  expect(store.getTaskExecution('task-a')).toMatchObject({ phase: 'complete', currentIssueId: null, issueIds: [] })
+  expect(store.getTask('task-a')?.expectedFiles).toEqual([])
 })
 
 test('only matching internal finalization can complete the submitted current issue and recovery advances once', () => {
@@ -262,7 +285,8 @@ test('MCP discovery and calls stay in the captured workspace and expire with the
   })
   expect(review.inputSchema.properties?.checklist).toHaveProperty('description', expect.stringContaining('in the order'))
 
-  expect(tools.tools.some((tool) => /approve|delete|claim/.test(tool.name))).toBe(false)
+  expect(tools.tools.some((tool) => /approve|claim/.test(tool.name))).toBe(false)
+  expect(tools.tools.some((tool) => tool.name === 'anvil_delete_issue')).toBe(true)
   const work = store.createWorkspace('Work')
   store.selectWorkspace(work.id)
   addTask('task-b')

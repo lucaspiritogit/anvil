@@ -150,8 +150,6 @@ export class IssueTracker {
   update(id: string, patch: UpdateIssue): Issue {
     return sqliteTransaction(this.connection, () => {
       const current = this.get(id)
-      if (current.status !== 'queued' && current.status !== 'blocked')
-        throw new Error('Only queued or blocked issues can be updated')
       if (!patch || typeof patch !== 'object' || Array.isArray(patch))
         throw new Error('Expected an issue update object')
       const { parentId, title, description, checklist, validation, labels, priority, dependencies, expectedFiles } = current
@@ -179,6 +177,14 @@ export class IssueTracker {
       this.database.update(issues).set(fields).where(eq(issues.id, id)).run()
       this.replaceDependencies(id, nextDependencies)
       return this.get(id)
+    }, 'immediate')
+  }
+
+  delete(id: string): Issue {
+    return sqliteTransaction(this.connection, () => {
+      const issue = this.get(id)
+      this.database.delete(issues).where(eq(issues.id, id)).run()
+      return issue
     }, 'immediate')
   }
 

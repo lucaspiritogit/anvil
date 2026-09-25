@@ -30,8 +30,9 @@ export const ISSUE_TOOLS: Tool[] = [
   { name: 'anvil_search_task_output', description: 'Search task output text without loading the entire transcript. Results are ordered and paginated; use nextCursor to continue.', inputSchema: { type: 'object', properties: { taskId, query: { type: 'string', minLength: 1 }, cursor }, required: ['taskId', 'query'], additionalProperties: false } },
   { name: 'anvil_get_plan', description: 'Read the current Anvil task, branchName, canNameBranch eligibility, parent issue, execution phase and all its issues. Call this before resuming work.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'anvil_set_task_branch', description: 'Choose one descriptive Git branch name when anvil_get_plan reports task.canNameBranch. Anvil supplies task/workspace ownership, renames the managed checkout and saves the accepted name. Retry invalid or colliding choices; repeating the accepted name is safe. Established branches cannot be renamed.', inputSchema: { type: 'object', properties: { branchName: { type: 'string', description: 'Proposed literal short Git branch name, outside the reserved anvil-tmp/ namespace.' } }, required: ['branchName'], additionalProperties: false } },
-  { name: 'anvil_create_issue', description: 'Add a queued issue to the current task during planning. Parent and workspace are supplied by Anvil. Dependencies must belong to this task.', inputSchema: { type: 'object', properties: fields, required: ['title', 'description', 'checklist', 'validation'], additionalProperties: false } },
-  { name: 'anvil_update_issue', description: 'Update an issue in the current task during planning. Ownership cannot change.', inputSchema: { type: 'object', properties: { id, patch: { type: 'object', properties: fields, additionalProperties: false } }, required: ['id', 'patch'], additionalProperties: false } },
+  { name: 'anvil_create_issue', description: 'Add a queued issue to the current task at any phase. Parent and workspace are supplied by Anvil. Dependencies must belong to this task.', inputSchema: { type: 'object', properties: fields, required: ['title', 'description', 'checklist', 'validation'], additionalProperties: false } },
+  { name: 'anvil_update_issue', description: 'Update an issue in the current task at any phase. Ownership cannot change.', inputSchema: { type: 'object', properties: { id, patch: { type: 'object', properties: fields, additionalProperties: false } }, required: ['id', 'patch'], additionalProperties: false } },
+  { name: 'anvil_delete_issue', description: 'Delete an issue from the current task at any phase. Deleting the current issue ends its work slot when this agent turn exits.', inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false } },
   { name: 'anvil_submit_review', description: 'Request completion of only the current issue in working status after validating and committing any changes. No empty commit is needed. Blocked issues must be requeued and started first. Success records the submission in review status, pending turn finalization. After the agent stops, Anvil verifies a clean worktree and finalized issue diff: empty changes complete automatically; changed work pauses for developer approval. This does not approve the issue.', inputSchema: { type: 'object', properties: { id, checklist: { type: 'array', description: 'Exactly one true confirmation per issue checklist item, in the order returned by anvil_get_plan. All items must be satisfied.', items: { type: 'boolean' } }, evidence: { type: 'string', description: 'Non-empty actual validation evidence: commands run and their results, plus any required manual checks. Never claim unperformed checks passed.' } }, required: ['id', 'checklist', 'evidence'], additionalProperties: false } },
   { name: 'anvil_block_issue', description: 'Block an unfinished issue in the current task. Explain the blocker in your response.', inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false } },
   { name: 'anvil_requeue_issue', description: 'Requeue a blocked planning issue or the current interrupted issue. Never take over another task.', inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false } },
@@ -108,18 +109,32 @@ export function callIssueTool(store: Store, taskId: string, workspaceId: string,
       if (!Array.isArray(value)) throw new Error('Dependencies must be an array')
       for (const dependency of value) ownIssue(dependency)
     }
+    const syncExpectedFiles = (): void => {
+      store.updateTask(taskId, { expectedFiles: [...new Set(tracker.list(parent.id).flatMap((issue) => issue.expectedFiles ?? []))] })
+    }
     if (name === 'anvil_create_issue') {
-      if (!planning) throw new Error('Issues can only be created during planning')
       checkDependencies(args.dependencies)
-      return tracker.create({ ...args, parentId: parent.id } as unknown as CreateIssue)
+      const created = tracker.create({ ...args, parentId: parent.id } as unknown as CreateIssue)
+      if (state.phase !== 'planning') store.saveTaskExecution({ ...state, issueIds: [...state.issueIds, created.id], phase: state.phase === 'complete' ? 'working' : state.phase })
+      syncExpectedFiles()
+      return created
     }
     const issueId = ownIssue(args.id)
     if (name === 'anvil_update_issue') {
-      if (!planning) throw new Error('Issues can only be edited during planning')
       const patch = object(args.patch)
       keys(patch, Object.keys(fields))
       checkDependencies(patch.dependencies)
-      return tracker.update(issueId, patch as UpdateIssue)
+      const updated = tracker.update(issueId, patch as UpdateIssue)
+      syncExpectedFiles()
+      return updated
+    }
+    if (name === 'anvil_delete_issue') {
+      const deleted = tracker.delete(issueId)
+      store.saveTaskExecution({ ...state, issueIds: state.issueIds.filter((id) => id !== issueId),
+        currentIssueId: state.currentIssueId === issueId ? null : state.currentIssueId,
+        phase: state.currentIssueId === issueId && state.issueIds.length === 1 ? 'complete' : state.phase })
+      syncExpectedFiles()
+      return deleted
     }
     const unblockingPlan = state.phase === 'recovering' && !state.currentIssueId &&
       state.issueIds.includes(issueId) && name === 'anvil_requeue_issue' && tracker.get(issueId).status === 'blocked'

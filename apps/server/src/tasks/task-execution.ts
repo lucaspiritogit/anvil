@@ -318,9 +318,15 @@ export function registerTaskExecution(
       return
     }
     if (state.phase === 'reviewing' && !info.cancelled) return
-    if (!quick && state.phase === 'working' && !state.currentIssueId && !info.cancelled) return
     if (agentProcesses.isRunning(info.taskId)) return
-    if (info.result?.issueId && info.result.issueId !== state.currentIssueId) return
+    if (!quick && state.phase === 'working' && !state.currentIssueId && !info.cancelled) {
+      if (info.result?.issueId) {
+        clearRetry(info.taskId)
+        setImmediate(() => { void startNextTurn(info.taskId) })
+      }
+      return
+    }
+    if (info.result?.issueId && info.result.issueId !== state.currentIssueId && state.phase !== 'complete') return
     // Duplicate exit notifications must not consume the retry budget or timers.
     if (retries.get(info.taskId)?.timer && !info.cancelled) return
     finishing.add(info.taskId)

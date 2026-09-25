@@ -47,7 +47,6 @@ export class TaskIssues {
       const issues = tracker.list(state.parentIssueId)
       if (issues.some((issue) => issue.status !== 'queued')) throw new Error('Every planned issue must be queued in Valence')
       this.store.updateTask(taskId, { expectedFiles: [...new Set(issues.flatMap((issue) => issue.expectedFiles ?? []))] })
-      // Snapshot the plan's IDs so later additions cannot expand the running task.
       this.store.saveTaskExecution({
         ...state, phase: issues.length ? 'working' : 'complete', issueIds: issues.map((issue) => issue.id)
       })
