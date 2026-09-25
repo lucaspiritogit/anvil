@@ -19,6 +19,7 @@ import { TASK_STYLES, TASK_STYLE_LABELS } from '@anvil/protocol/task-style'
 import type { TaskCheckoutMode, TaskReviewPolicy } from '@anvil/protocol/types'
 
 const compactSelect = 'min-w-0 field-sizing-content appearance-none bg-transparent py-1.5 pl-2 pr-6 text-sm text-dim outline-none hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45'
+const successDuration = 1800
 export function TaskComposer(): JSX.Element {
   const projectId = useStore((state) => state.activeProjectId)
   const workspaceId = useStore((state) => state.activeWorkspaceId)
@@ -59,7 +60,18 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const [checkoutMode, setCheckoutMode] = useState<TaskCheckoutMode>('local')
   const [startBase, setStartBase] = useState<string>()
   const [error, setError] = useState<string | null>(null)
+  const [showSuccess, setShowSuccess] = useState(false)
+  const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const restorePromptFocus = useRef(false)
   const submitting = useRef(false)
+  useEffect(() => () => {
+    if (successTimer.current) clearTimeout(successTimer.current)
+  }, [])
+  useEffect(() => {
+    if (busy || (!showSuccess && !error) || !restorePromptFocus.current) return
+    restorePromptFocus.current = false
+    if (document.activeElement === document.body) promptRef.current?.focus()
+  }, [busy, showSuccess, error])
   const catalogue = useAgentModels(agentId)
   const capabilities = catalogue?.reasoningByModel?.[model]
   const loadingEfforts = Boolean(agentId) && !catalogue
@@ -90,6 +102,10 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const submit = async (): Promise<void> => {
     if (!projectId || useStore.getState().activeProjectId !== projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || switchingBranch || (isolated && isRepository === false) || submitting.current) return
     submitting.current = true
+    restorePromptFocus.current = document.activeElement === promptRef.current
+    if (successTimer.current) clearTimeout(successTimer.current)
+    successTimer.current = null
+    setShowSuccess(false)
     setBusy(true)
     setError(null)
     try {
@@ -112,6 +128,11 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         attachments.reset()
         setParentTaskId('')
         setStyle('quick')
+        setShowSuccess(true)
+        successTimer.current = setTimeout(() => {
+          successTimer.current = null
+          setShowSuccess(false)
+        }, successDuration)
       }
     } catch (error) {
       if (mounted.current) setError(error instanceof Error ? error.message : String(error))
@@ -152,7 +173,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       <form
         ref={composerRef}
         aria-label="Start a task"
-        className="@container/composer overflow-hidden border border-line bg-raised shadow-[0_12px_40px_rgba(0,0,0,0.2)] focus-within:border-accent/50 transition-colors"
+        className={cn('@container/composer relative overflow-hidden border border-line bg-raised shadow-[0_12px_40px_rgba(0,0,0,0.2)] focus-within:border-accent/50 transition-colors', showSuccess && 'task-composer-success')}
         onSubmit={(event) => {
           event.preventDefault()
           void submit()
@@ -290,6 +311,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         </fieldset>
         {error && <p role="alert" className="px-5 pb-4 text-xs text-danger max-[700px]:px-4">{error}</p>}
       </form>
+      {showSuccess && <p role="status" aria-label="Task created" className="sr-only">Task created</p>}
     </div>
   )
 }

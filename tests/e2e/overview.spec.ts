@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { chooseProvider, restoreComposerSelection } from './composer-setup'
+import { chooseProject, chooseProvider, restoreComposerSelection } from './composer-setup'
 
 test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
@@ -42,11 +42,55 @@ test('Send dispatches the prompt and selected model to the current project', asy
   await expect(page.getByRole('log', { name: 'Task output' })).toBeVisible()
 })
 
+test('Quick and Work starts show a brief composer confirmation that can replay', async ({ page }, testInfo) => {
+  await page.goto(fixture)
+  const overview = page.getByTestId('project-overview')
+  const composer = overview.getByRole('form', { name: 'Start a task' })
+  const prompt = composer.getByRole('textbox', { name: 'Task prompt' })
+  const status = overview.getByRole('status', { name: 'Task created' })
+  await expect(composer).not.toHaveClass(/task-composer-success/)
+  await prompt.fill('First quick task')
+  await prompt.press('Enter')
+  await expect(composer).toHaveClass(/task-composer-success/)
+  await expect(status).toBeAttached()
+  await expect(prompt).toBeFocused()
+  await expect(overview).toBeVisible()
+  await expect(page.getByRole('log', { name: 'Task output' })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('composer-success-desktop.png') })
+  await expect(composer).not.toHaveClass(/task-composer-success/, { timeout: 3000 })
+  await expect(status).toHaveCount(0)
+
+  await page.setViewportSize({ width: 600, height: 800 })
+  await composer.getByRole('combobox', { name: 'Task style' }).selectOption('work')
+  await prompt.fill('Second work task')
+  await prompt.press('Enter')
+  await expect(composer).toHaveClass(/task-composer-success/)
+  await expect(status).toBeAttached()
+  await expect(composer).toBeInViewport()
+  await expect(page.getByRole('log', { name: 'Task output' })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('composer-success-compact.png') })
+  await expect.poll(async () => (await page.evaluate(() => window.anvil.tasks.list())).filter((task) => task.id.startsWith('started-')).map((task) => task.style).sort())
+    .toEqual(['quick', 'work'])
+})
+
+test('reduced motion keeps the composer confirmation static', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.setViewportSize({ width: 600, height: 800 })
+  await page.goto(fixture)
+  const composer = page.getByRole('form', { name: 'Start a task' })
+  await composer.getByRole('textbox', { name: 'Task prompt' }).fill('Reduced motion task')
+  await composer.getByRole('textbox', { name: 'Task prompt' }).press('Enter')
+  await expect(composer).toHaveClass(/task-composer-success/)
+  expect(await composer.evaluate((element) => getComputedStyle(element, '::after').animationName)).toBe('none')
+  await expect(page.getByRole('status', { name: 'Task created' })).toBeAttached()
+  await page.screenshot({ path: testInfo.outputPath('composer-success-reduced-motion.png') })
+  await expect(composer).not.toHaveClass(/task-composer-success/, { timeout: 3000 })
+})
+
 for (const modifier of ['Meta', 'Control']) {
   test(`${modifier}+Enter dispatches once, while Shift+Enter adds a newline`, async ({ page }) => {
     await page.goto(fixture)
-    await page.getByRole('combobox', { name: 'Project', exact: true }).click()
-    await page.getByRole('option').filter({ hasText: '/tmp/workbench' }).click()
+    await chooseProject(page.getByRole('button', { name: 'Project', exact: true }), 'work', 'Workbench')
     const composer = page.getByRole('form', { name: 'Start a task' })
     const prompt = composer.getByRole('textbox')
     await chooseProvider(composer.getByRole('button', { name: /^(Choose a model|Model:)/ }), 'opencode')
@@ -122,7 +166,6 @@ test('the composer shortcut does not steal focus from a deletion confirmation', 
 test('switching projects clears the previous project draft', async ({ page }) => {
   await page.goto(fixture)
   await page.getByRole('textbox', { name: 'Task prompt' }).fill('Only for Anvil')
-  await page.getByRole('combobox', { name: 'Project', exact: true }).click()
-  await page.getByRole('option').filter({ hasText: '/tmp/workbench' }).click()
+  await chooseProject(page.getByRole('button', { name: 'Project', exact: true }), 'work', 'Workbench')
   await expect(page.getByRole('textbox', { name: 'Task prompt' })).toHaveValue('')
 })

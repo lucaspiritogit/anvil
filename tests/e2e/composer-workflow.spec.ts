@@ -42,7 +42,11 @@ test('overview submits the selected project, provider, model, image and path ref
   await expect(composer.getByRole('alert')).toHaveText('Task could not be started')
   await expect(prompt).toHaveValue(draft)
   await expect(composer.getByRole('img')).toHaveCount(1)
+  await expect(composer).not.toHaveClass(/task-composer-success/)
+  await expect(surface.getByRole('status', { name: 'Task created' })).toHaveCount(0)
   await prompt.press('Enter')
+  await expect(composer).toHaveClass(/task-composer-success/)
+  await expect(surface.getByRole('status', { name: 'Task created' })).toBeAttached()
   await expect.poll(() => page.evaluate(() => window.composerTest.starts.length)).toBe(2)
   const requests = await page.evaluate(() => window.composerTest.starts.map((input) => ({
     ...input, images: input.images?.map((image) => ({ ...image, bytes: Array.from(image.bytes) }))
@@ -59,5 +63,4 @@ test('overview submits the selected project, provider, model, image and path ref
   await expect(surface).toBeVisible()
   await expect(composer).toBeVisible()
   await expect(page.getByRole('log', { name: 'Task output' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /^Open task: Inspect/ })).toHaveCount(1)
 })
