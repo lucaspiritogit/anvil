@@ -69,8 +69,14 @@ type Row =
   | { kind: 'tool'; use: TaskEvent; result: TaskEvent }
 
 const MCP_TOOL_NAME = /^(?:anvil_issue_tracker|anvil_browser)(?:[/_]|$)/
+type OutputFilterCategory = TaskEventCategory | 'mcp_tool'
+const OUTPUT_FILTER_CATEGORIES: OutputFilterCategory[] = [...TASK_EVENT_CATEGORIES, 'mcp_tool']
 function isMcpTool(event: TaskEvent): boolean {
   return event.category === 'tool_use' && MCP_TOOL_NAME.test(event.text.split('\n', 1)[0].trim())
+}
+
+function outputFilterCategory(event: TaskEvent): OutputFilterCategory {
+  return isMcpTool(event) ? 'mcp_tool' : event.category
 }
 
 /* A tool call and the result snapshot that follows it form one row: the result
@@ -123,7 +129,7 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
   const pending = useRef<Direction | null>(null)
   const needsHistory = history === null
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
-  const [silentCategories, setSilentCategories] = useState<ReadonlySet<TaskEventCategory>>(new Set())
+  const [silentCategories, setSilentCategories] = useState<ReadonlySet<OutputFilterCategory>>(new Set())
   const [query, setQuery] = useState('')
   const [newCount, setNewCount] = useState(0)
   const tailBaseline = useRef(0)
@@ -144,16 +150,19 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
   const normalizedQuery = query.trim().toLowerCase()
   const filtering = silentCategories.size > 0 || normalizedQuery.length > 0
   const eventHidden = useCallback((event: TaskEvent): boolean => {
-    if (silentCategories.has(event.category)) return true
+    if (silentCategories.has(outputFilterCategory(event))) return true
     return normalizedQuery.length > 0 && !event.text.toLowerCase().includes(normalizedQuery)
   }, [silentCategories, normalizedQuery])
   const displayedRows = useMemo(() => rows.filter((row) => !eventHidden(row.kind === 'tool' ? row.use : row.event)), [rows, eventHidden])
   const visibleCount = useMemo(() =>
-    (events ?? []).reduce((count, event) => count + (eventHidden(event) ? 0 : 1), 0),
-  [events, eventHidden])
+    displayedRows.reduce((count, row) => count + (row.kind === 'tool' && !eventHidden(row.result) ? 2 : 1), 0),
+  [displayedRows, eventHidden])
   const categoryCounts = useMemo(() => {
-    const counts = new Map<TaskEventCategory, number>()
-    for (const event of events ?? []) counts.set(event.category, (counts.get(event.category) ?? 0) + 1)
+    const counts = new Map<OutputFilterCategory, number>()
+    for (const event of events ?? []) {
+      const category = outputFilterCategory(event)
+      counts.set(category, (counts.get(category) ?? 0) + 1)
+    }
     return counts
   }, [events])
   const getItemKey = useCallback((index: number) => {
@@ -307,10 +316,11 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
           <span role="status" className="text-dim">{history?.loading ? 'Loading output…' : history?.loaded ? `${filtering ? `${visibleCount} of ` : ''}${events?.length ?? 0} events · ${history.followingLatest ? 'Latest' : 'History'}` : ''}</span>
         </nav>
         <div role="toolbar" aria-label="Output filters" className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-5 py-1.5">
-          {TASK_EVENT_CATEGORIES.map((category) => {
+          {OUTPUT_FILTER_CATEGORIES.map((category) => {
             const silent = silentCategories.has(category)
+            const label = category === 'mcp_tool' ? 'mcp_tool' : CATEGORY_LABEL[category]
             return <button key={category} aria-pressed={!silent}
-              title={`${silent ? 'Show' : 'Hide'} ${CATEGORY_LABEL[category]} events`}
+              title={`${silent ? 'Show' : 'Hide'} ${label} events`}
               className={cn('flex items-center gap-1.5 border px-2 py-0.5 text-[11px] transition-colors',
                 silent ? 'border-line/50 text-dim/40' : 'border-line text-dim hover:text-fg')}
               onClick={() => setSilentCategories((current) => {
@@ -319,8 +329,8 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
                 else next.add(category)
                 return next
               })}>
-              <span aria-hidden className={cn('size-[6px] rounded-full', CATEGORY_DOT[category])} />
-              {CATEGORY_LABEL[category]}
+              <span aria-hidden className={cn('size-[6px] rounded-full', category === 'mcp_tool' ? 'bg-orange-300' : CATEGORY_DOT[category])} />
+              {label}
               <span aria-hidden className="text-dim/60">{categoryCounts.get(category) ?? 0}</span>
             </button>
           })}
