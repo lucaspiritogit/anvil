@@ -54,7 +54,7 @@ test('loads earlier events on demand and preserves the reader position', async (
   await expect.poll(async () => Math.abs((await rowTop()) - before)).toBeLessThanOrEqual(1)
 })
 
-test('follows the live tail, preserves a reader through snapshots and hidden panels, and reloads latest', async ({ page }) => {
+test('follows the live tail, preserves a reader through snapshots, and returns to the tail on re-entry', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&historySize=600&steering=1&running=1')
   await eventTotal(page, 500)
   await emit(page, 'live', 'Live tail')
@@ -69,13 +69,30 @@ test('follows the live tail, preserves a reader through snapshots and hidden pan
   await expect(page.getByRole('form', { name: 'Steer task' })).toBeVisible()
   await emit(page, 'live-2', 'Output while changes are open')
   await page.getByRole('tab', { name: 'Output', exact: true }).click()
-  await expectAnchor(page, before)
+  await expect(output(page).locator('[data-event-id="live-2"]')).toContainText('Output while changes are open')
+  await expect.poll(() => atBottom(page)).toBe(true)
   await emit(page, 'live-3', 'Persisted while browsing history')
   await eventTotal(page, 503)
-  await page.getByRole('button', { name: /new events/ }).click()
   await expect(output(page).locator('[data-event-id="live-3"]')).toContainText('Persisted while browsing history')
   await expect.poll(() => atBottom(page)).toBe(true)
   await expect(page.getByRole('status', { name: 'Agent activity' })).toContainText('Writing a response')
+})
+
+test('re-entering from an older history window loads the latest page and settles at the bottom', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=output&historySize=4500&steering=1&running=1')
+  await eventTotal(page, 500)
+  await expect.poll(() => atBottom(page)).toBe(true)
+  await scrollTo(page, 0)
+  await page.getByRole('button', { name: 'Load earlier events' }).click()
+  await eventTotal(page, 1000)
+  await expect(history(page)).toContainText('History')
+  await page.getByRole('tab', { name: /^Changes/ }).click()
+  await page.getByRole('tab', { name: 'Output', exact: true }).click()
+  await eventTotal(page, 500)
+  await expect(history(page)).toContainText('Latest')
+  await expect.poll(() => atBottom(page)).toBe(true)
+  await expect(output(page).locator('[data-event-id="history-4500"]')).toBeVisible()
+  expect(await page.evaluate(() => window.outputTest.requests.at(-1))).toEqual({ taskId: 'output', limit: 500 })
 })
 
 test('initial and latest loading failures retain output and retry the failed request', async ({ page }) => {

@@ -118,6 +118,9 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
   const anchor = useRef<Anchor | null>(null)
   const anchorFrame = useRef(0)
   const restoringAnchor = useRef(false)
+  const wasVisible = useRef(false)
+  const entering = useRef(false)
+  const settlingEntry = useRef(false)
   const [follow, setFollow] = useState(true)
   const attempt = useRef<Direction>('initial')
   const pending = useRef<Direction | null>(null)
@@ -207,7 +210,57 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
 
   useLayoutEffect(() => {
     const output = outputRef.current
-    if (!output || !visible) return
+    if (!visible) {
+      wasVisible.current = false
+      return
+    }
+    if (!output) return
+    if (!wasVisible.current) {
+      wasVisible.current = true
+      entering.current = true
+      settlingEntry.current = false
+      window.cancelAnimationFrame(anchorFrame.current)
+      restoringAnchor.current = false
+      anchor.current = null
+      pending.current = null
+      setFollow(true)
+      setNewCount(0)
+    }
+    if (entering.current) {
+      if (!history?.loaded || history.loading || history.error || settlingEntry.current) return
+      if (!history.followingLatest || history.hasNewer) {
+        attempt.current = 'latest'
+        pending.current = 'latest'
+        void loadTaskEvents(task.id, 'latest')
+        return
+      }
+      settlingEntry.current = true
+      restoringAnchor.current = true
+      let stableFrames = 0
+      let previousHeight = -1
+      const settle = (): void => {
+        const current = outputRef.current
+        if (!current || !wasVisible.current) {
+          settlingEntry.current = false
+          restoringAnchor.current = false
+          return
+        }
+        current.scrollTop = current.scrollHeight
+        stableFrames = current.scrollHeight === previousHeight ? stableFrames + 1 : 0
+        previousHeight = current.scrollHeight
+        if (stableFrames < 3) {
+          anchorFrame.current = window.requestAnimationFrame(settle)
+          return
+        }
+        entering.current = false
+        settlingEntry.current = false
+        restoringAnchor.current = false
+        pending.current = null
+        anchor.current = null
+      }
+      anchorFrame.current = window.requestAnimationFrame(settle)
+      return
+    }
     const completed = pending.current && !history?.loading
     const jump = completed && !history?.error && pending.current === 'latest'
     if (jump) {
@@ -260,7 +313,7 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
     if (completed) pending.current = null
     if (jump || (follow && history?.followingLatest)) anchor.current = null
     else captureAnchor()
-  }, [events, history, follow, visible, task.status, task.deliveryStatus, presentation, displayedRows])
+  }, [events, history, follow, visible, task.id, task.status, task.deliveryStatus, presentation, displayedRows, loadTaskEvents])
 
   // Rows animate in only when they arrive live at the tail; history pages and
   // in-place snapshot updates reuse existing IDs and stay still.
