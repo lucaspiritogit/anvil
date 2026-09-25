@@ -607,7 +607,6 @@ export const useStore = create<AnvilState>((set, get) => ({
     const projectId = requestedProjectId ?? get().activeProjectId
     if (!projectId) throw new Error('Choose a project before starting a task')
     if (get().activeProjectId !== projectId) throw new Error('The selected project changed. Review the task and try again.')
-    const view = get().view
     const task = await window.anvil.tasks.start({
       workspaceId: get().activeWorkspaceId ?? undefined,
       projectId, style, reviewPolicy, checkoutMode, parentTaskId, agentId, prompt, model,
@@ -620,10 +619,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     set((s) => ({
       // SSE may deliver preparation, cancellation, or failure before the RPC
       // response arrives. The creation snapshot must not undo those updates.
-      tasks: [s.tasks.find((item) => item.id === task.id) ?? task, ...s.tasks.filter((item) => item.id !== task.id)],
-      ...(s.activeProjectId === projectId && s.view === view
-        ? { ...evictTaskEvents(), view: { kind: 'task' as const, taskId: task.id } }
-        : {})
+      tasks: [s.tasks.find((item) => item.id === task.id) ?? task, ...s.tasks.filter((item) => item.id !== task.id)]
     }))
   },
 

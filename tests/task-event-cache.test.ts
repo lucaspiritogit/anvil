@@ -69,7 +69,6 @@ const exits: [string, () => void | Promise<void>][] = [
   ['project removal', () => state().removeProject('project')],
   ['project addition', () => state().addProject('/tmp/added')],
   ['task deletion', () => state().deleteTask('a')],
-  ['task creation navigation', () => state().startTask({ agentId: 'codex', prompt: 'new' })],
   ['workspace switch', () => state().selectWorkspace('other')],
   ['workspace snapshot', () => state().applyWorkspaceSnapshot(snapshot())],
   ['snapshot removal', () => state().applyWorkspaceSnapshot({ ...snapshot('default'), tasks: [] })]
@@ -281,6 +280,37 @@ test('inactive starts and comment sends never seed or replace the active cache',
   expect(Object.keys(state().eventsByTask)).toEqual(['b'])
   expect(cached('b')).toBe(retained)
   expect(state().view).toEqual({ kind: 'task', taskId: 'b' })
+})
+
+test('starting a task keeps the overview and inserts one sidebar task', async () => {
+  await state().startTask({ agentId: 'codex', prompt: 'new' })
+  expect(state().view).toEqual({ kind: 'home' })
+  expect(state().activeProjectId).toBe('project')
+  expect(state().tasks.filter((item) => item.id === 'created')).toHaveLength(1)
+  await state().openTask('created')
+  expect(state().view).toEqual({ kind: 'task', taskId: 'created' })
+})
+
+test('starting a task leaves the current task output and event history intact', async () => {
+  await state().openTask('a')
+  const retained = state().taskEventHistory
+  await state().startTask({ agentId: 'codex', prompt: 'new' })
+  expect(state().view).toEqual({ kind: 'task', taskId: 'a' })
+  expect(state().taskEventHistory).toBe(retained)
+  expect(state().tasks.filter((item) => item.id === 'created')).toHaveLength(1)
+})
+
+test('a pending start leaves a newer project selection and view intact', async () => {
+  const start = deferred<Task>()
+  vi.mocked(window.anvil.tasks.start).mockReturnValueOnce(start.promise)
+  const pending = state().startTask({ agentId: 'codex', prompt: 'new' })
+  state().selectProject('other')
+  await state().openTask('b')
+  start.resolve(task('created'))
+  await pending
+  expect(state().activeProjectId).toBe('other')
+  expect(state().view).toEqual({ kind: 'task', taskId: 'b' })
+  expect(state().tasks.filter((item) => item.id === 'created')).toHaveLength(1)
 })
 
 for (const direction of ['older', 'newer', 'latest'] as const) test(`${direction} responses are rejected after deletion and retry cleanly after errors`, async () => {
