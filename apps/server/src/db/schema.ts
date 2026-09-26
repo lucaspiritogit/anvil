@@ -327,13 +327,3 @@ export const issueDependencies = sqliteTable('issue_dependencies', {
   check('issue_dependencies_position_valid', sql`${table.position} >= 0`),
   check('issue_dependencies_not_self', sql`${table.issueId} <> ${table.dependencyId}`)
 ])
-
-// Historical import receipts retained for schema compatibility. Runtime tracker
-// access uses only Anvil's embedded plans and never reads or writes these receipts.
-export const valenceImports = sqliteTable('valence_imports', {
-  sourcePath: text('source_path').primaryKey(),
-  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  fingerprint: text('fingerprint').notNull(),
-  parents: text('parents', { mode: 'json' }).$type<Record<string, string>>().notNull(),
-  importedAt: integer('imported_at').notNull()
-})
