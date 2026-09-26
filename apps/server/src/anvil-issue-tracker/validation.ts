@@ -1,5 +1,4 @@
-// Adapted from @lpirito/valence 0.1.0, by lpirito. Maintained in Anvil.
-import type { CreateIssue, CreateParentIssue } from '@anvil/protocol/valence'
+import type { CreateIssue, CreateParentIssue } from '@anvil/protocol/anvil-issue-tracker'
 
 export function requiredText(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim())

@@ -1,6 +1,6 @@
 import { createNotificationDelivery, type NotificationApi, type NotificationDeliveryOptions } from './notification-delivery'
 import type { Task, TaskExecutionState, TaskStatus } from '@anvil/protocol/types'
-import type { Issue } from '@anvil/protocol/valence'
+import type { Issue } from '@anvil/protocol/anvil-issue-tracker'
 
 interface NotificationStore {
   getTasks(): Task[]

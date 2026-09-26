@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { onTestCleanup } from './test-cleanup'
 import { TaskIssues } from '../apps/server/src/tasks/task-issues'
-import { IssueTracker } from '../apps/server/src/valence/tracker'
+import { IssueTracker } from '../apps/server/src/anvil-issue-tracker/tracker'
 import { Store } from '../apps/server/src/store'
 import { registerTestIpc } from './test-ipc'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
@@ -29,14 +29,14 @@ test('cascades task-owned plans on project removal', async () => {
   store.addTask(unrelatedTask)
   const unrelated = tracker.create({ ...input, parentId: tracker.createParent({ anvilTaskId: unrelatedTask.id, title: 'External work' }).id })
   const issue = tracker.list().find((entry) => entry.title === 'App change')
-  expect.assert(issue, 'Anvil-created issues must be visible to another Valence client')
+  expect.assert(issue, 'Anvil-created issues must be visible to another issue tracker client')
   expect(issue.status).toBe('working')
   expect(tracker.get(unrelated.id).status, 'Anvil must not claim unrelated higher-priority issues').toBe('queued')
   // Model an agent submitting through the issue tool and the developer approving before the turn report arrives.
   tracker.submitForReview(issue.id, { checklist: [true], evidence: 'Focused validation passed' })
   tracker.approve(issue.id)
   const completedAt = tracker.get(issue.id).completedAt
-  agentProcesses.finishTurn(task.id, 'Finished. See Valence for validation evidence.')
+  agentProcesses.finishTurn(task.id, 'Finished. See the Anvil issue tracker for validation evidence.')
   await tick()
   expect(tracker.get(issue.id).evidence).toBe('Focused validation passed')
   expect(tracker.get(issue.id).completedAt).toBe(completedAt)
@@ -259,7 +259,7 @@ test('reopened storage restores child snapshots and tagged history alongside leg
     ...expectedSnapshot,
     execution: {
       phase: 'blocked', currentIssueId: null,
-      error: 'Interrupted by app restart. Inspect Valence work before requeueing.'
+      error: 'Interrupted by app restart. Inspect the Anvil issue tracker before requeueing.'
     }
   })
   expect(reopened.readEvents(taskId)).toEqual(expectedEvents)

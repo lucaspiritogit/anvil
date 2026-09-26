@@ -51,7 +51,7 @@ export function deliveryTone(status: DeliveryStatus): string {
   return DELIVERY_TONE[status] ?? 'text-dim'
 }
 
-/** Sub-task badges: a Valence review pauses the agent until the developer answers. */
+/** Sub-task badges: an Anvil issue tracker review pauses the agent until the developer answers. */
 export const ISSUE_STATUS: Record<Issue['status'], { label: string; tone: string }> = {
   queued: { label: 'Queued', tone: 'text-dim' },
   working: { label: 'Working', tone: 'text-accent' },

@@ -8,7 +8,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { Store } from '../apps/server/src/store'
 import { TaskIssues } from '../apps/server/src/tasks/task-issues'
 import { callIssueTool, IssueToolServer } from '../apps/server/src/issue-tools/server'
-import type { Issue } from '@anvil/protocol/valence'
+import type { Issue } from '@anvil/protocol/anvil-issue-tracker'
 import { CodexAppServerClient } from '../apps/server/src/agents/codex-app-server'
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'

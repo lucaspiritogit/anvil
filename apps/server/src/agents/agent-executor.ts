@@ -8,7 +8,7 @@ export interface AgentMcpServer {
   required: boolean
 }
 
-/** One Anvil agent turn. Issue persistence and validation belong to Valence. */
+/** One Anvil agent turn. Issue persistence and validation belong to the Anvil issue tracker. */
 export interface TaskInput {
   taskId: string
   workspace: WorkspaceExecutionContext
@@ -18,7 +18,7 @@ export interface TaskInput {
   images?: TaskImageAttachment[]
   /** Absolute task working directory. */
   cwd: string
-  /** Project owning the Valence tracker. */
+  /** Project owning the Anvil issue tracker. */
   projectPath?: string
   model?: string
   /** Selected agent/model option ID; adapters translate it to their wire protocol. */

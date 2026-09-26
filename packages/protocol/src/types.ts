@@ -1,9 +1,9 @@
-import type { Issue, ParentIssue } from './valence'
+import type { Issue, ParentIssue } from './anvil-issue-tracker'
 import type { Keybindings } from './keybindings'
 import type { ThinkingLevel } from './reasoning-levels'
 import type { DiffThemes } from './diff-themes'
 
-export type { Issue } from './valence'
+export type { Issue } from './anvil-issue-tracker'
 
 /** Live display data only; never persisted or used to expand execution scope. */
 export interface TaskIssueSnapshot {
@@ -13,7 +13,7 @@ export interface TaskIssueSnapshot {
   reviewReady?: boolean
 }
 
-/** Anvil execution metadata only. Issue records belong to Valence. */
+/** Anvil execution metadata only. Issue records belong to the Anvil issue tracker. */
 export interface TaskExecutionState {
   taskId: string
   projectPath: string
@@ -335,7 +335,7 @@ export interface TaskEvent {
   /** Stable for tool snapshots: a repeated ID replaces the previous event in place. */
   id: string
   taskId: string
-  /** Owning Valence issue captured at turn start; absent for task-level and legacy output. */
+  /** Owning Anvil issue tracker issue captured at turn start; absent for task-level and legacy output. */
   issueId?: string
   ts: number
   stream: StreamName

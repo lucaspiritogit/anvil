@@ -1,4 +1,4 @@
-import { IssueTracker } from './valence/tracker'
+import { IssueTracker } from './anvil-issue-tracker/tracker'
 import { WorkspaceStorage, type AnvilDatabase, type WorkspaceConnection } from './workspace-storage'
 import { sqliteTransaction } from './sqlite-transaction'
 import { moveWorkspaceDirectory, relocateTaskPaths } from './workspace-directories'
@@ -914,7 +914,7 @@ export class Store {
     return ownedTask
   }
 
-  /** Foreign keys cascade to task-owned Valence plans, execution metadata, output, and comments. */
+  /** Foreign keys cascade to task-owned Anvil issue tracker plans, execution metadata, output, and comments. */
   deleteTaskCascade(taskId: string): void {
     const task = this.getTask(taskId)
     if (!task) return
@@ -1205,7 +1205,7 @@ export class Store {
       new TaskImageStorage(join(this.getWorkspaceDirectory(workspaceId), 'anvil.db.images')).prune(
         new Set(this.getTasks(workspaceId).filter((task) => task.status !== 'cancelled' && task.deliveryStatus !== 'failed').map((task) => task.id))
       )
-      // Restart stops Anvil execution, not other clients sharing Valence storage.
+      // Restart stops Anvil execution, not other clients sharing the Anvil issue tracker storage.
       for (const row of connection.db.select().from(schema.taskExecutions).all()) {
         const task = this.getTask(row.state.taskId)
         if (task && isQueuedStackTask(task)) continue
@@ -1214,7 +1214,7 @@ export class Store {
           this.saveTaskExecution({
             ...row.state,
             phase: 'blocked',
-            error: quick ? 'Interrupted by app restart. Send a follow-up to continue.' : 'Interrupted by app restart. Inspect Valence work before requeueing.'
+            error: quick ? 'Interrupted by app restart. Send a follow-up to continue.' : 'Interrupted by app restart. Inspect the Anvil issue tracker before requeueing.'
           })
         }
       }

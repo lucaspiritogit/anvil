@@ -24,9 +24,9 @@ are separate. Development starts with an empty project list.
 
 For self-development, use the installed app to run an agent on the Anvil repo
 and `npm run dev` to try its changes after merging the task branch. Both apps
-can stay open. Tasks use separate worktrees while Valence issues belong to the
-project checkout. A configured external PostgreSQL memory database also needs a
-separate URL if you want to isolate it.
+can stay open. Tasks use separate worktrees while issues in the Anvil issue
+tracker belong to the project checkout. A configured external PostgreSQL memory
+database also needs a separate URL if you want to isolate it.
 
 `npm run build` followed by `npm start` is still an unpackaged development run.
 The split uses Electron's `app.isPackaged`, not Vite's build mode. For
@@ -48,9 +48,9 @@ suite unless asked.
 App state lives in `~/.anvil-composer-dev/workspaces/<name>/anvil.db` during
 development and `~/.anvil-composer/workspaces/<name>/anvil.db` in packaged apps,
 via Drizzle on Node's built-in SQLite driver: projects, tasks, events, comments,
-settings, and execution metadata. Valence is Anvil's internal issue tracker. Its
-parents, issues, dependencies and validation evidence share this SQLite
-database. Each parent references the real Anvil task through
+settings, and execution metadata. The Anvil issue tracker stores its parents,
+issues, dependencies, and validation evidence in this SQLite database. Each
+parent references the real Anvil task through
 `parent_issues.anvil_task_id`. Project memory has its own database.
 
 | Database | Schema | Generate migrations |

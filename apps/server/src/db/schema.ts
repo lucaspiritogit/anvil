@@ -1,7 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm'
 import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH } from '@anvil/protocol/types'
 import type { ComposerPreferences, TaskCheckoutMode, TaskReviewPolicy } from '@anvil/protocol/types'
-import type { Issue } from '@anvil/protocol/valence'
+import type { Issue } from '@anvil/protocol/anvil-issue-tracker'
 import { type AnySQLiteColumn, check, foreignKey, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
 import type {
@@ -276,8 +276,8 @@ export const taskPullRequests = sqliteTable('task_pull_requests', {
   targetBranch: text('target_branch').notNull()
 })
 
-// Valence ownership is parent -> task -> project. Do not duplicate project_id.
-// Sequence keys replace Valence's implicit rowid ordering and are never reused.
+// Anvil issue tracker ownership is parent -> task -> project. Do not duplicate project_id.
+// Sequence keys replace implicit rowid ordering and are never reused.
 export const parentIssues = sqliteTable('parent_issues', {
   sequence: integer('sequence').primaryKey({ autoIncrement: true }),
   id: text('id').notNull().unique(),
