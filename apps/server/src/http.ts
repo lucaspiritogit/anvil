@@ -18,6 +18,7 @@ export interface HttpServerAuth {
 
 // 20 MiB of images expands to about 27 MiB in base64, plus prompt and metadata.
 export const RPC_BODY_LIMIT = 32 * 1024 * 1024
+export const PROJECT_IMPORT_CHUNK_LIMIT = 4 * 1024 * 1024
 const EVENT_BACKLOG_LIMIT = 8 * 1024 * 1024
 
 interface EventClient {
@@ -115,6 +116,11 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: {
     context.header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
     return context.body(null, 204)
   })
+  app.options('/project-import/:importId/:index', (context) => {
+    context.header('Access-Control-Allow-Methods', 'POST')
+    context.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Import-Offset')
+    return context.body(null, 204)
+  })
   app.get('/health', (context) => context.json({
     ok: true,
     service: 'anvil',
@@ -196,6 +202,34 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: {
         })
       }
       return context.json(result ?? null)
+    }
+  )
+  app.post('/project-import/:importId/:index',
+    bodyLimit({ maxSize: PROJECT_IMPORT_CHUNK_LIMIT, onError: async (context) => {
+      try {
+        await runtime.invoke('projects:import-cancel', context.req.param('importId'))
+      } catch {}
+      return context.json({ error: 'Import chunk exceeds 4 MiB' }, 413)
+    } }),
+    async (context) => {
+      const { importId, index } = context.req.param()
+      try {
+        if (context.req.header('content-type') !== 'application/octet-stream') throw new HTTPException(415, { message: 'Expected application/octet-stream' })
+        const offset = context.req.header('x-import-offset')
+        if (!/^[a-f0-9-]{36}$/.test(importId) || !/^(0|[1-9]\d*)$/.test(index) || !offset || !/^(0|[1-9]\d*)$/.test(offset)) {
+          throw new HTTPException(400, { message: 'Invalid import chunk address or offset' })
+        }
+        const bytes = new Uint8Array(await context.req.arrayBuffer())
+        await runtime.invoke('projects:import-chunk', { importId, index: Number(index), offset: Number(offset), bytes }, {
+          deferUntilResponse: () => {}, remoteAddress: getConnInfo(context).remote.address
+        })
+        return context.json({ ok: true })
+      } catch (error) {
+        try {
+          await runtime.invoke('projects:import-cancel', importId)
+        } catch {}
+        throw error
+      }
     }
   )
   if (options.rendererDirectory) {

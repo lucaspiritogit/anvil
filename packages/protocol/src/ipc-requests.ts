@@ -34,6 +34,10 @@ export interface IpcRequests {
   'projects:list': undefined
   'projects:browse': { path?: string }
   'projects:add': { path: string; workspaceId?: string }
+  'projects:import-begin': { workspaceId: string; name: string; entries: Array<{ path: string; type: 'file' | 'directory'; size: number; executable?: boolean }> }
+  'projects:import-chunk': { importId: string; index: number; offset: number; bytes: Uint8Array }
+  'projects:import-finish': string
+  'projects:import-cancel': string
   'projects:clone': { url: string; workspaceId?: string }
   'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean }
   'projects:remove': string

@@ -230,7 +230,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     invalidateWorkspaceModels(workspaceId)
     broadcast('agents:models:changed', workspaceId)
   })
-  registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask,
+  const closeProjectImports = registerProjectHandlers(ipc, { store, gitDelivery, agentProcesses, stopTask: execution.stopTask,
     deferTaskCleanup: execution.deferTaskCleanup, skipTaskCleanup: execution.skipTaskCleanup, projectMemory, projectsChanged: (workspaceId) => {
     if (workspaceId === store.getActiveWorkspace().id) broadcast('projects:changed', store.getProjects(workspaceId))
   } })
@@ -293,6 +293,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
       stopRememberingWorktreeOwners()
       stopTaskResultNotices()
       const results = await Promise.allSettled([
+        closeProjectImports(),
         connections.close(),
         Promise.resolve().then(() => terminals.disposeAll()),
         Promise.resolve().then(() => agentProcesses.close()),

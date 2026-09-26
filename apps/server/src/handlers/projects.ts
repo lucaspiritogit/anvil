@@ -11,6 +11,7 @@ import { listProjectFiles, projectFileError } from '../project-files'
 import { usesManagedWorktree, usesProjectCheckout } from '../tasks/checkout'
 import { taskOperationKind } from '../tasks/operations'
 import { git } from '../git/command'
+import { createProjectImporter } from './project-import'
 
 interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDelivery' | 'agentProcesses'> {
   stopTask: TaskExecution['stopTask']
@@ -54,7 +55,12 @@ async function cloneHttpsRepository(url: string, destination: string): Promise<v
 export function registerProjectHandlers(ipc: HandlerRegistry, {
   store, gitDelivery, agentProcesses, stopTask, deferTaskCleanup, skipTaskCleanup, projectMemory, projectsChanged,
   cloneRepository = cloneHttpsRepository
-}: ProjectHandlerDependencies): void {
+}: ProjectHandlerDependencies): () => Promise<void> {
+  const importer = createProjectImporter(store, projectsChanged)
+  ipc.handle('projects:import-begin', (input) => importer.begin(input))
+  ipc.handle('projects:import-chunk', (input) => importer.chunk(input))
+  ipc.handle('projects:import-finish', (importId) => importer.finish(importId))
+  ipc.handle('projects:import-cancel', (importId) => importer.cancel(importId))
   const requireCheckoutAvailable = (projectId: string): void => {
     if (store.getTasks().some((task) => task.projectId === projectId &&
       (task.deliveryStatus === 'merge_conflict' || task.mergeConflict))) {
@@ -239,4 +245,5 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     projectsChanged?.(workspaceId)
     return result
   })
+  return () => importer.close()
 }
