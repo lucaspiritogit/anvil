@@ -49,7 +49,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   const tracker = store.issueTracker('project')
   expect(tracker.databasePath).toBe(workspaceDatabase)
   expect(tracker.getParent(store.getTaskExecution(taskId)!.parentIssueId).anvilTaskId).toBe(taskId)
-  expect(existsSync(join(testHome, '.valence')), 'Starting a task must not create project-local storage').toBe(false)
+  expect(existsSync(join(testHome, '.anvil-issue-tracker')), 'Starting a task must not create project-local storage').toBe(false)
   expect(agentProcesses.starts[0].projectPath).toBe(testHome)
   expect(handlers.has('board:review')).toBe(false)
   const { key: _key, ...fields } = issue

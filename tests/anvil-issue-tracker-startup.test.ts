@@ -51,20 +51,20 @@ test('initializes task-owned parents in Anvil before planning without standalone
   const connection = new DatabaseSync(tracker.databasePath)
   onTestCleanup(() => connection.close())
   expect(connection.prepare("SELECT name FROM sqlite_master WHERE name = 'valence_imports'").get()).toBeUndefined()
-  expect(existsSync(join(projectPath, '.valence'))).toBe(false)
-  expect(existsSync(join(homedir(), '.config/valence', projectId))).toBe(false)
+  expect(existsSync(join(projectPath, '.anvil-issue-tracker'))).toBe(false)
+  expect(existsSync(join(homedir(), '.config/anvil-issue-tracker', projectId))).toBe(false)
 })
 
 test('starts and completes tasks while preserving unrelated standalone files', async () => {
   const { store, agents, projectId, projectPath, start } = fixture()
-  const directories = [join(projectPath, '.valence'), join(homedir(), '.config/valence', projectId)]
+  const directories = [join(projectPath, '.external-tracker'), join(homedir(), '.config/external-tracker', projectId)]
   const originals = new Map<string, Buffer>()
   for (const standaloneDirectory of directories) {
     mkdirSync(standaloneDirectory, { recursive: true })
     onTestCleanup(() => rmSync(standaloneDirectory, { recursive: true, force: true }))
     const standalonePath = join(standaloneDirectory, 'sqlite.db')
     if (standaloneDirectory === directories[0]) {
-  const standalone = new DatabaseSync(standalonePath)
+      const standalone = new DatabaseSync(standalonePath)
       try {
         // A foreign database must not be inspected, imported, or changed.
         standalone.exec('CREATE TABLE unrelated (value TEXT); INSERT INTO unrelated VALUES (\'Preserve me\')')
