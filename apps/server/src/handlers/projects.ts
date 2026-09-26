@@ -1,8 +1,7 @@
 import type { HandlerRegistry } from '../handler-registry'
 import { randomUUID } from 'node:crypto'
-import { homedir } from 'node:os'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
-import { mkdir, readdir, rm, stat } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join } from 'node:path'
+import { mkdir, rm, stat } from 'node:fs/promises'
 import type { ProjectMemory } from '../memory/project-memory'
 import type { TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
@@ -71,25 +70,6 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     throw new Error('Wait for the active task using this project checkout to finish')
   }
   ipc.handle('projects:list', () => store.getProjects())
-  ipc.handle('projects:browse', async ({ path }) => {
-    if (path && !isAbsolute(path)) throw new Error('Project browser paths must be absolute')
-    const directory = resolve(path?.trim() || homedir())
-    if (!(await stat(directory)).isDirectory()) throw new Error('Project browser path must be a directory')
-    const entries = await readdir(directory, { withFileTypes: true })
-    const directories = (await Promise.all(entries.map(async (entry) => {
-      const entryPath = join(directory, entry.name)
-      if (entry.isDirectory()) return { name: entry.name, path: entryPath }
-      if (!entry.isSymbolicLink()) return null
-      try {
-        return (await stat(entryPath)).isDirectory() ? { name: entry.name, path: entryPath } : null
-      } catch {
-        return null
-      }
-    }))).filter((entry): entry is { name: string; path: string } => entry !== null)
-      .sort((left, right) => left.name.localeCompare(right.name))
-    const parent = dirname(directory)
-    return { path: directory, parentPath: parent === directory ? null : parent, directories }
-  })
   ipc.handle('projects:files', async ({ projectId }) => {
     const project = store.getProjects().find((item) => item.id === projectId)
     if (!project) return projectFileError(projectId, 'project-not-found', 'Project not found.')

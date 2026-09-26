@@ -196,38 +196,85 @@ test('branch loading and discovery errors recover on refresh', async ({ page }) 
   await expect(surface.getByRole('alert')).toHaveCount(0)
 })
 
-test('project picker browses server folders, clones repositories and retains the draft when adding fails', async ({ page }) => {
+test('project picker imports from disk, handles cancel and failure, and clones without losing the draft', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/')
   const composer = page.getByRole('form', { name: 'Start a task' })
   const prompt = composer.getByRole('textbox')
+  const style = composer.getByRole('combobox', { name: 'Task style' })
   const project = page.getByRole('button', { name: 'Project', exact: true })
   await prompt.fill('Keep this project draft')
+  await style.selectOption('work')
   await page.evaluate(() => {
-    const add = window.anvil.projects.add
-    window.addEventListener('fixture:restore-add', () => { window.anvil.projects.add = add }, { once: true })
-    window.anvil.projects.add = async () => { throw new Error('Folder picker unavailable') }
+    const original = window.anvil.projects.importFromDisk
+    let attempts = 0
+    window.anvil.projects.importFromDisk = async (workspaceId, onProgress) => {
+      attempts += 1
+      if (attempts === 1) return null
+      if (attempts === 2) throw new Error('Cannot read selected folder; check file permissions')
+      window.anvil.projects.importFromDisk = original
+      return original(workspaceId, onProgress)
+    }
   })
   await project.click()
   await page.getByRole('dialog', { name: 'Choose project' }).getByRole('button', { name: 'Add project', exact: true }).click()
-  const addProject = page.getByRole('dialog', { name: 'Add project' })
-  await expect(addProject.getByRole('textbox', { name: 'Server folder path' })).toHaveValue('/srv/projects')
-  await addProject.getByRole('button', { name: 'Add this folder' }).click()
-  await expect(addProject.getByRole('alert')).toHaveText('Folder picker unavailable')
+  const picker = page.getByRole('dialog', { name: 'Add project' })
+  await expect(picker.getByRole('button', { name: 'Add from disk' })).toBeVisible()
+  await expect(picker.getByRole('button', { name: 'Clone from git' })).toBeVisible()
+  await expect(picker.getByRole('textbox')).toHaveCount(0)
+  await picker.getByRole('button', { name: 'Add from disk' }).click()
+  await expect(picker.getByRole('button', { name: 'Add from disk' })).toBeEnabled()
+  await expect(project).toHaveAccessibleDescription('Anvil, /tmp/anvil')
+  await picker.getByRole('button', { name: 'Add from disk' }).click()
+  await expect(picker.getByRole('alert')).toHaveText('Cannot read selected folder; check file permissions')
   await expect(prompt).toHaveValue('Keep this project draft')
-  await page.evaluate(() => window.dispatchEvent(new Event('fixture:restore-add')))
-  await addProject.getByRole('button', { name: 'treq' }).click()
-  await expect(addProject.getByRole('textbox', { name: 'Server folder path' })).toHaveValue('/srv/projects/treq')
-  await addProject.getByRole('button', { name: 'Add this folder' }).click()
-  await expect(project).toHaveAccessibleDescription('treq, /srv/projects/treq')
+  await expect(style).toHaveValue('work')
+  await picker.getByRole('button', { name: 'Add from disk' }).click()
+  await expect(project).toHaveAccessibleDescription('local-app, /fixture/workspaces/default/projects/local-app')
   await expect(project).toBeFocused()
+  await expect(prompt).toHaveValue('Keep this project draft')
+  await expect(style).toHaveValue('work')
 
   await project.click()
   await page.getByRole('dialog', { name: 'Choose project' }).getByRole('button', { name: 'Add project', exact: true }).click()
   const cloneProject = page.getByRole('dialog', { name: 'Add project' })
-  await cloneProject.getByRole('button', { name: 'Clone Git repository' }).click()
+  await page.evaluate(() => {
+    const original = window.anvil.projects.clone
+    window.anvil.projects.clone = async () => { window.anvil.projects.clone = original; throw new Error('Clone unavailable') }
+  })
+  await cloneProject.getByRole('button', { name: 'Clone from git' }).click()
   await cloneProject.getByRole('textbox', { name: 'HTTPS repository URL' }).fill('https://github.com/acme/remote-app.git')
   await cloneProject.getByRole('button', { name: 'Clone repository', exact: true }).click()
+  await expect(cloneProject.getByRole('alert')).toHaveText('Clone unavailable')
+  await expect(prompt).toHaveValue('Keep this project draft')
+  await cloneProject.getByRole('button', { name: 'Clone repository', exact: true }).click()
   await expect(project).toHaveAccessibleDescription('remote-app, /fixture/workspaces/default/projects/remote-app')
+  await expect(prompt).toHaveValue('Keep this project draft')
+  await expect(style).toHaveValue('work')
+})
+
+test('project import keeps the initiating workspace when the user switches workspaces', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/')
+  await page.evaluate(() => {
+    let release: (() => void) | undefined
+    window.anvil.projects.importFromDisk = async (workspaceId, onProgress) => {
+      window.localStorage.setItem('fixture:import-workspace', workspaceId)
+      onProgress(1, 2)
+      await new Promise<void>((resolve) => { release = resolve })
+      return { id: 'late-import', name: 'late', path: `/fixture/workspaces/${workspaceId}/projects/late`, createdAt: Date.now(),
+        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' }
+    }
+    window.addEventListener('fixture:release-import', () => release?.())
+  })
+  await page.getByRole('button', { name: 'Project', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Choose project' }).getByRole('button', { name: 'Add project', exact: true }).click()
+  const picker = page.getByRole('dialog', { name: 'Add project' })
+  await picker.getByRole('button', { name: 'Add from disk' }).click()
+  await expect(picker.getByRole('status')).toHaveText('Uploading project… 50%')
+  await expect(picker.getByRole('button', { name: 'Add from disk' })).toBeDisabled()
+  await page.evaluate(() => window.workspaceTest.create('Second'))
+  await page.evaluate(() => window.dispatchEvent(new Event('fixture:release-import')))
+  expect(await page.evaluate(() => window.localStorage.getItem('fixture:import-workspace'))).toBe('default')
+  await expect(page.getByRole('button', { name: 'Project', exact: true })).toHaveAccessibleDescription('Anvil, /tmp/anvil')
 })
 
 test('Quick can run in an isolated worktree without switching the local checkout', async ({ page }) => {

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '@anvil/protocol/types'
 import { hydrateComposer } from './composer-preferences'
+import { carryTaskComposerPrompt } from './task-composer-drafts'
 import { enqueueWorkspaceRequest } from './workspace-requests'
 import type { SettingsSectionId } from '../settings-sections'
 import type {
@@ -181,7 +182,7 @@ interface AnvilState {
   settleTask: (taskId: string) => Promise<void>
 
   load: () => Promise<void>
-  addProject: (path: string) => Promise<Project | null>
+  importProject: (onProgress: (done: number, total: number) => void) => Promise<Project | null>
   cloneProject: (url: string) => Promise<Project | null>
   removeProject: (id: string) => Promise<void>
   updateProject: (
@@ -471,16 +472,19 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  addProject: async (path) => {
+  importProject: async (onProgress) => {
     const workspaceId = get().activeWorkspaceId
+    if (!workspaceId) throw new Error('Select a workspace before adding a project')
+    const sourceProjectId = get().activeProjectId
     const generation = workspaceGeneration
-    const project = await window.anvil.projects.add(path, workspaceId ?? undefined)
-    if (workspaceId) await enqueueWorkspaceRequest(() => window.anvil.workspaces.setPreferences(workspaceId, { lastProjectId: project.id }))
+    const project = await window.anvil.projects.importFromDisk(workspaceId, onProgress)
+    if (!project) return null
+    await enqueueWorkspaceRequest(() => window.anvil.workspaces.setPreferences(workspaceId, { lastProjectId: project.id }))
     if (generation !== workspaceGeneration) return null
+    carryTaskComposerPrompt(workspaceId, sourceProjectId, project.id)
     set((s) => ({
       projects: s.projects.some((p) => p.id === project.id) ? s.projects : [...s.projects, project],
       activeProjectId: project.id,
-      taskComposerStyle: 'quick',
       ...evictTaskEvents(),
       view: { kind: 'home' }
     }))
@@ -489,14 +493,15 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   cloneProject: async (url) => {
     const workspaceId = get().activeWorkspaceId
+    const sourceProjectId = get().activeProjectId
     const generation = workspaceGeneration
     const project = await window.anvil.projects.clone(url, workspaceId ?? undefined)
     if (workspaceId) await enqueueWorkspaceRequest(() => window.anvil.workspaces.setPreferences(workspaceId, { lastProjectId: project.id }))
     if (generation !== workspaceGeneration) return null
+    if (workspaceId) carryTaskComposerPrompt(workspaceId, sourceProjectId, project.id)
     set((s) => ({
       projects: s.projects.some((p) => p.id === project.id) ? s.projects : [...s.projects, project],
       activeProjectId: project.id,
-      taskComposerStyle: 'quick',
       ...evictTaskEvents(),
       view: { kind: 'home' }
     }))

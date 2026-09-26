@@ -7,7 +7,7 @@ import { TaskImageStorage } from '../apps/server/src/task-image-storage'
 import { taskImages } from './task-image-fixture'
 import { MERGE_CONFLICT_MAX_FILE_BYTES, TASK_IMAGE_LIMITS } from '@anvil/protocol/types'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { taskState } from './task-state'
 import type { AgentProcessManager as RealAgentProcessManager } from '../apps/server/src/agents/process-manager'
@@ -459,24 +459,12 @@ test('updates projects, validates task references and selects supported agents a
   expect(codexSettings.defaultModel).toBe('selected-model')
 })
 
-test('browses server folders and clones HTTPS repositories into the selected workspace', async () => {
+test('clones HTTPS repositories into the selected workspace', async () => {
   const clones: { url: string; destination: string }[] = []
   const { store, call } = setupIpc(undefined, async (url, destination) => {
     clones.push({ url, destination })
     writeFileSync(join(destination, 'README.md'), '# Cloned')
   })
-  const browseRoot = mkdtempSync(join(testHome, 'project-browser-'))
-  mkdirSync(join(browseRoot, 'Zulu'))
-  mkdirSync(join(browseRoot, 'alpha'))
-  writeFileSync(join(browseRoot, 'file.txt'), 'not a directory')
-  await expect(call('projects:browse', { path: 'relative/path' })).rejects.toThrow(/must be absolute/)
-  await expect(call('projects:browse', { path: join(browseRoot, 'file.txt') })).rejects.toThrow(/must be a directory/)
-  await expect(call('projects:browse', { path: browseRoot })).resolves.toMatchObject({
-    path: browseRoot,
-    parentPath: join(browseRoot, '..'),
-    directories: [{ name: 'alpha', path: join(browseRoot, 'alpha') }, { name: 'Zulu', path: join(browseRoot, 'Zulu') }]
-  })
-
   const workspace = await call('workspaces:create', 'Remote projects')
   await call('workspaces:select', workspace.id)
   const project: Project = await call('projects:clone', { url: 'https://github.com/acme/remote-app.git' })

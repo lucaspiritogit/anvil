@@ -3,7 +3,7 @@ import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
 import { useTaskIssues } from '../../../apps/web/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
-import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, ProjectDirectoryListing, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure, TaskResultNotice, TaskResultNoticeChange } from '@anvil/protocol/types'
+import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure, TaskResultNotice, TaskResultNoticeChange } from '@anvil/protocol/types'
 import { DEFAULT_KEYBINDINGS } from '@anvil/protocol/keybindings'
 import { DEFAULT_DIFF_THEMES } from '@anvil/protocol/diff-themes'
 import { canSettleTask } from '@anvil/protocol/task-settlement'
@@ -539,12 +539,12 @@ window.anvil = {
       return () => window.removeEventListener('fixture:projects-changed', receive)
     },
     list: async () => projects,
-    browse: async (path?: string): Promise<ProjectDirectoryListing> => {
-      const current = path ?? '/srv/projects'
-      const directories = current === '/srv/projects'
-        ? [{ name: 'anvil', path: '/srv/projects/anvil' }, { name: 'treq', path: '/srv/projects/treq' }]
-        : []
-      return { path: current, parentPath: current === '/' ? null : current.split('/').slice(0, -1).join('/') || '/', directories }
+    importFromDisk: async (workspaceId: string, onProgress: (done: number, total: number) => void) => {
+      onProgress(1, 1)
+      const project: Project = { id: 'imported-project', name: 'local-app', path: `/fixture/workspaces/${workspaceId}/projects/local-app`, createdAt: now,
+        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' }
+      projects = [...projects.filter((item) => item.id !== project.id), project]
+      return project
     },
     add: async (path: string) => {
       const name = path.split('/').filter(Boolean).at(-1) ?? path

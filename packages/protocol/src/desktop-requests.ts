@@ -8,6 +8,9 @@ export interface DesktopServerConnectionState {
 
 export interface DesktopRequests {
   'desktop:pick-wallpaper': undefined
+  'desktop:pick-project-folder': undefined
+  'desktop:read-project-file': { token: string; index: number; offset: number; length: number }
+  'desktop:release-project-folder': string
   'desktop:open-path': string
   'desktop:open-pr-url': string
   'desktop:open-login-url': string
@@ -54,10 +57,20 @@ function serverTarget(value: unknown): value is ServerTarget {
   return input.mode === 'remote' && keys.length === 2 && keys.includes('mode') && keys.includes('url') && text(input.url)
 }
 
+function projectFileRead(value: unknown): value is DesktopRequests['desktop:read-project-file'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const input = value as Partial<DesktopRequests['desktop:read-project-file']>
+  return Object.keys(input).length === 4 && Object.keys(input).every((key) => ['token', 'index', 'offset', 'length'].includes(key)) &&
+    text(input.token) && Number.isSafeInteger(input.index) && input.index! >= 0 && input.index! < 20_000 &&
+    Number.isSafeInteger(input.offset) && input.offset! >= 0 && Number.isSafeInteger(input.length) && input.length! > 0 && input.length! <= 4 * 1024 * 1024
+}
+
 export function isDesktopRequest<C extends keyof DesktopRequests>(channel: C, value: unknown): value is DesktopRequests[C] {
   switch (channel) {
     case 'desktop:pick-wallpaper':
+    case 'desktop:pick-project-folder':
     case 'desktop:server-target': return value === undefined
+    case 'desktop:read-project-file': return projectFileRead(value)
     case 'desktop:browser-layout': return browserLayout(value)
     case 'desktop:browser-viewport': return browserViewport(value)
     case 'desktop:set-server-target': return serverTarget(value)

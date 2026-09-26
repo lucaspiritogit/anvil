@@ -76,3 +76,67 @@ test('terminal writes stay ordered while other requests can proceed', async () =
   })])
   client.close()
 })
+
+test('project import uploads a client folder to the connected server with a fixed workspace', async () => {
+  vi.stubGlobal('EventSource', FakeEventSource)
+  vi.stubGlobal('window', { addEventListener: vi.fn() })
+  const { createAnvilApi } = await import('@anvil/client-api')
+  const contents = new TextEncoder().encode('local checkout')
+  const release = vi.fn(async () => {})
+  const host: import('@anvil/client-api').ClientHost = {
+    platform: 'linux', onSettingsOpen: () => () => {}, pickWallpaper: async () => null,
+    pickProjectFolder: async () => ({ name: 'checkout', entries: [{ path: '.git/HEAD', type: 'file', size: contents.length,
+      read: async (offset, length) => contents.slice(offset, offset + length) }], dispose: release }),
+    openPath: async () => '', openPullRequest: async () => {}, openLoginUrl: async () => {},
+    browserState: async (taskId) => ({ taskId, open: false, viewport: 'desktop' }),
+    browserLayout: async () => {}, browserViewport: async ({ taskId, viewport }) => ({ taskId, open: false, viewport }),
+    onBrowserChanged: () => () => {}
+  }
+  const requests: Array<{ url: string; input: RequestInit }> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, input: RequestInit) => {
+    requests.push({ url, input })
+    if (url.endsWith('/project-import/import-id/0')) return Response.json({ ok: true })
+    const { channel } = JSON.parse(input.body as string) as { channel: string }
+    if (channel === 'projects:import-begin') return Response.json({ importId: 'import-id' })
+    if (channel === 'projects:import-finish') return Response.json({ id: 'imported', name: 'checkout' })
+    return Response.json(null)
+  }))
+  const api = createAnvilApi('https://remote.example', host)
+  const progress = vi.fn()
+  expect(await api.projects.importFromDisk('workspace-one', progress)).toMatchObject({ id: 'imported' })
+  expect(JSON.parse(requests[0].input.body as string)).toEqual({ channel: 'projects:import-begin', input: {
+    workspaceId: 'workspace-one', name: 'checkout', entries: [{ path: '.git/HEAD', type: 'file', size: contents.length }] } })
+  expect(requests[1].url).toBe('https://remote.example/project-import/import-id/0')
+  expect(new Uint8Array(requests[1].input.body as ArrayBuffer)).toEqual(contents)
+  expect(progress).toHaveBeenLastCalledWith(contents.length, contents.length)
+  expect(release).toHaveBeenCalledOnce()
+})
+
+test('project import cancellation does not start a transfer and a failed chunk cancels it', async () => {
+  vi.stubGlobal('EventSource', FakeEventSource)
+  vi.stubGlobal('window', { addEventListener: vi.fn() })
+  const { createAnvilApi } = await import('@anvil/client-api')
+  let selection: import('@anvil/client-api').ProjectFolderSelection | null = null
+  const release = vi.fn(async () => {})
+  const host: import('@anvil/client-api').ClientHost = {
+    platform: 'linux', onSettingsOpen: () => () => {}, pickWallpaper: async () => null,
+    pickProjectFolder: async () => selection, openPath: async () => '', openPullRequest: async () => {}, openLoginUrl: async () => {},
+    browserState: async (taskId) => ({ taskId, open: false, viewport: 'desktop' }),
+    browserLayout: async () => {}, browserViewport: async ({ taskId, viewport }) => ({ taskId, open: false, viewport }),
+    onBrowserChanged: () => () => {}
+  }
+  const channels: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, input: RequestInit) => {
+    if (url.includes('/project-import/')) return Response.json({ error: 'Transfer interrupted' }, { status: 500 })
+    const { channel } = JSON.parse(input.body as string) as { channel: string }
+    channels.push(channel)
+    return Response.json(channel === 'projects:import-begin' ? { importId: 'import-id' } : null)
+  }))
+  const api = createAnvilApi('https://remote.example', host)
+  expect(await api.projects.importFromDisk('workspace-one', vi.fn())).toBeNull()
+  expect(channels).toEqual([])
+  selection = { name: 'checkout', entries: [{ path: 'README.md', type: 'file', size: 1, read: async () => new Uint8Array([1]) }], dispose: release }
+  await expect(api.projects.importFromDisk('workspace-one', vi.fn())).rejects.toThrow('Transfer interrupted')
+  expect(channels).toEqual(['projects:import-begin', 'projects:import-cancel'])
+  expect(release).toHaveBeenCalledOnce()
+})

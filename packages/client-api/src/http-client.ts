@@ -56,6 +56,15 @@ export function createHttpClient(url: string, onReady: () => void, onFailure: (m
     terminalRequests.delete(sessionId)
   }
   return {
+    async uploadProjectChunk(importId: string, index: number, offset: number, bytes: Uint8Array): Promise<void> {
+      const response = await fetch(`${url}/project-import/${importId}/${index}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Import-Offset': String(offset) }, body: new Uint8Array(bytes).buffer
+      })
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({})) as { error?: string }
+        throw new Error(result.error ?? `Project transfer failed (${response.status})`)
+      }
+    },
     invoke<C extends IpcInvokeChannel, T>(channel: C, ...args: IpcArgs<C>): Promise<T> {
       const input = args[0]
       if ((channel === 'terminals:write' || channel === 'terminals:resize') && input && typeof input === 'object' && 'sessionId' in input) {

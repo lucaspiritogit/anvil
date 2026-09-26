@@ -1,2 +1,2 @@
-export { createAnvilApi, type AnvilApi, type ClientHost } from './api'
+export { createAnvilApi, type AnvilApi, type ClientHost, type ProjectFolderSelection } from './api'
 export { createHttpClient } from './http-client'

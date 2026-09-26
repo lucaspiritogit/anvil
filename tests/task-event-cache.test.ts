@@ -40,7 +40,7 @@ beforeEach(() => {
     tasks: { eventsPage: vi.fn(async (input: TaskEventsRequest) => page([event(1, input.taskId)], input)),
       delete: vi.fn(async () => {}), start: vi.fn(async () => task('created')) },
     comments: { send: vi.fn(async (id: string) => ({ task: task(id), comments: [] })) },
-    projects: { remove: vi.fn(async () => [project('other')]), add: vi.fn(async () => project('added')) },
+    projects: { remove: vi.fn(async () => [project('other')]), importFromDisk: vi.fn(async () => project('added')) },
     workspaces: { select: vi.fn(async () => snapshot()), setPreferences: vi.fn(async () => {}) }
   } })
 })
@@ -67,7 +67,7 @@ const exits: [string, () => void | Promise<void>][] = [
   ['task switch', () => state().openTask('b')],
   ['project selection', () => state().selectProject('other')],
   ['project removal', () => state().removeProject('project')],
-  ['project addition', () => state().addProject('/tmp/added')],
+  ['project addition', () => state().importProject(() => {})],
   ['task deletion', () => state().deleteTask('a')],
   ['workspace switch', () => state().selectWorkspace('other')],
   ['workspace snapshot', () => state().applyWorkspaceSnapshot(snapshot())],

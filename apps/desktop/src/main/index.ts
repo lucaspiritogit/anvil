@@ -13,6 +13,7 @@ import { resolveAppDataDirectory } from '@anvil/app-data'
 import type { ServerTarget } from '@anvil/protocol/server-address'
 import { BrowserSessionManager } from './browser-sessions'
 import { BrowserToolServer } from './browser-tools'
+import { pickProjectFolder, readProjectFile, releaseProjectFolder } from './project-folder'
 
 const dataDirectory = resolveAppDataDirectory(app.getPath('home'), app.isPackaged, process.env.ANVIL_DATA_DIR)
 if (!app.isPackaged || process.env.ANVIL_DATA_DIR) {
@@ -252,6 +253,9 @@ if (ownsInstance) app.whenReady().then(async () => {
         filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })
       return result.canceled ? null : result.filePaths[0] ?? null
     })
+    desktop.handle('desktop:pick-project-folder', pickProjectFolder)
+    desktop.handle('desktop:read-project-file', readProjectFile)
+    desktop.handle('desktop:release-project-folder', releaseProjectFolder)
     desktop.handle('desktop:open-path', (path) => shell.openPath(path))
     desktop.handle('desktop:open-pr-url', openExternalPullRequest)
     desktop.handle('desktop:open-login-url', openExternalCodexLogin)
