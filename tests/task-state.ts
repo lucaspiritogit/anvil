@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
-import { IssueTracker } from '../apps/server/src/valence/tracker'
+import { IssueTracker } from '../apps/server/src/anvil-issue-tracker/tracker'
 import { testHome } from './issue-tracker-doubles'
 import type { Store } from '../apps/server/src/store'
 

@@ -1,5 +1,5 @@
-import type { Issue } from '@anvil/protocol/valence'
-import type { IssueTracker } from '../valence/tracker'
+import type { Issue } from '@anvil/protocol/anvil-issue-tracker'
+import type { IssueTracker } from '../anvil-issue-tracker/tracker'
 import type { IssueDiffSource } from '../git'
 import type { TaskExecutionState, TaskIssueSnapshot } from '@anvil/protocol/types'
 import type { Store } from '../store'
@@ -11,7 +11,7 @@ export interface VerifiedNoChanges {
   headCommit: string
 }
 
-/** Runs task-owned Valence plans on the Store connection. */
+/** Runs task-owned Anvil issue tracker plans on the Store connection. */
 export class TaskIssues {
   private readonly ownedClaims = new Map<string, string>()
   private readonly resumedBlockedClaims = new Map<string, string>()
@@ -45,7 +45,7 @@ export class TaskIssues {
     if (state.phase !== 'planning' || state.issueIds.length) throw new Error('This task already has a plan')
     this.withTracker(state, (tracker) => {
       const issues = tracker.list(state.parentIssueId)
-      if (issues.some((issue) => issue.status !== 'queued')) throw new Error('Every planned issue must be queued in Valence')
+      if (issues.some((issue) => issue.status !== 'queued')) throw new Error('Every planned issue must be queued in the Anvil issue tracker')
       this.store.updateTask(taskId, { expectedFiles: [...new Set(issues.flatMap((issue) => issue.expectedFiles ?? []))] })
       this.store.saveTaskExecution({
         ...state, phase: issues.length ? 'working' : 'complete', issueIds: issues.map((issue) => issue.id)
@@ -79,7 +79,7 @@ export class TaskIssues {
     return this.withTracker(state, (tracker) => state.issueIds.map((id) => tracker.get(id)))
   }
 
-  /** Null means an existing task has no Valence association yet. Errors are not empty plans. */
+  /** Null means an existing task has no Anvil issue tracker association yet. Errors are not empty plans. */
   snapshot(taskId: string): TaskIssueSnapshot | null {
     if (!this.store.getTask(taskId)) throw new Error('Task not found')
     const state = this.store.getTaskExecution(taskId)
@@ -95,7 +95,7 @@ export class TaskIssues {
 
   /**
    * Close the claimed turn. The agent must have submitted the issue for review
-   * in Valence; verified empty changes complete automatically, otherwise pause for review.
+   * in the Anvil issue tracker; verified empty changes complete automatically, otherwise pause for review.
    * A developer approval that landed before turn end advances directly.
    */
   finishIssue(taskId: string, headCommit?: string, noChanges?: VerifiedNoChanges): boolean {
@@ -109,8 +109,8 @@ export class TaskIssues {
       }
       if (issue.status !== 'complete') {
         throw new Error(issue.status === 'working'
-          ? `Issue ${issue.id} is still working in Valence. The agent must submit it for review through anvil_submit_review.`
-          : `Issue ${issue.id} is ${issue.status} in Valence, not submitted for review. The agent must submit it for review through anvil_submit_review.`)
+          ? `Issue ${issue.id} is still working in the Anvil issue tracker. The agent must submit it for review through anvil_submit_review.`
+          : `Issue ${issue.id} is ${issue.status} in the Anvil issue tracker, not submitted for review. The agent must submit it for review through anvil_submit_review.`)
       }
       const complete = state.issueIds.every((id) => tracker.get(id).status === 'complete')
       this.store.saveTaskExecution({ ...state, currentIssueId: null, phase: complete ? 'complete' : 'working', error: null })
@@ -205,7 +205,7 @@ export class TaskIssues {
     const state = this.requireState(taskId)
     this.withTracker(state, (tracker) => {
       // A user message must not bypass the original checklist or finish work
-      // based on an assistant's claim. Valence remains authoritative.
+      // based on an assistant's claim. The Anvil issue tracker remains authoritative.
       const current = state.currentIssueId
         ? this.finalizeIssue(tracker, state.currentIssueId, headCommit, noChanges)
         : undefined
@@ -215,7 +215,7 @@ export class TaskIssues {
         return
       }
       if (current && current.status !== 'complete') {
-        throw new Error(`Issue ${current.id} is ${current.status} in Valence, not submitted for review. The agent must submit it for review through anvil_submit_review.`)
+        throw new Error(`Issue ${current.id} is ${current.status} in the Anvil issue tracker, not submitted for review. The agent must submit it for review through anvil_submit_review.`)
       }
       const complete = state.issueIds.every((id) => tracker.get(id).status === 'complete')
       this.store.saveTaskExecution({ ...state, currentIssueId: null, phase: complete ? 'complete' : 'working', error: null })
@@ -237,7 +237,7 @@ export class TaskIssues {
         }
       })
     } catch (storageError) {
-      error += ` Could not block the Valence issue: ${storageError instanceof Error ? storageError.message : String(storageError)}`
+      error += ` Could not block the issue in the Anvil issue tracker: ${storageError instanceof Error ? storageError.message : String(storageError)}`
     }
     this.ownedClaims.delete(taskId)
     this.resumedBlockedClaims.delete(taskId)

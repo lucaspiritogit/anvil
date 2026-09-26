@@ -1,4 +1,4 @@
-/** Local Valence API contract. Storage sequence keys are internal to SQLite. */
+/** Local Anvil issue tracker API contract. Storage sequence keys are internal to SQLite. */
 export interface ParentIssue {
   id: string
   anvilTaskId: string

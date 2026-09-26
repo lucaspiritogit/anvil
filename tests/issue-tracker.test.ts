@@ -3,7 +3,7 @@ import { rendererEvent } from './renderer-fixture'
 import { expect, test, vi } from 'vitest'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { BatchIssue } from '@anvil/protocol/valence'
+import type { BatchIssue } from '@anvil/protocol/anvil-issue-tracker'
 import { Store } from '../apps/server/src/store'
 import { registerTestIpc } from './test-ipc'
 import { taskState } from './task-state'
@@ -49,7 +49,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   const tracker = store.issueTracker('project')
   expect(tracker.databasePath).toBe(workspaceDatabase)
   expect(tracker.getParent(store.getTaskExecution(taskId)!.parentIssueId).anvilTaskId).toBe(taskId)
-  expect(existsSync(join(testHome, '.valence')), 'Starting a task must not create project-local storage').toBe(false)
+  expect(existsSync(join(testHome, '.anvil-issue-tracker')), 'Starting a task must not create project-local storage').toBe(false)
   expect(agentProcesses.starts[0].projectPath).toBe(testHome)
   expect(handlers.has('board:review')).toBe(false)
   const { key: _key, ...fields } = issue
@@ -68,7 +68,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   expect(dependent.dependencies).toStrictEqual([prerequisite.id])
   expect(prerequisite.labels).toStrictEqual(['backend'])
   expect(prerequisite.parentId).toBe(store.getTaskExecution(taskId)!.parentIssueId)
-  expect(independent.status, 'Valence chooses priority among ready task issues').toBe('working')
+  expect(independent.status, 'Anvil issue tracker chooses priority among ready task issues').toBe('working')
   expect(dependent.status, 'Dependencies override priority').toBe('queued')
   expect(tracker.get(unrelated.id).status).toBe('queued')
   expect(tracker.get(otherIssue.id).status, 'Do not adopt another concurrent plan').toBe('queued')
@@ -248,7 +248,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
   const blocker = 'git commit denied index.lock; Vite listen EPERM'
   agentProcesses.finishTurn(blockedId, blocker)
   await tick()
-  expect(store.getTask(blockedId)!.error!).toMatch(/blocked in Valence/)
+  expect(store.getTask(blockedId)!.error!).toMatch(/blocked in the Anvil issue tracker/)
   expect(store.readEvents(blockedId).some((event) => event.text === blocker), 'Plain-text failure details remain visible').toBeTruthy()
   expect(tracker.get(blockedIssueId).status).toBe('blocked')
 

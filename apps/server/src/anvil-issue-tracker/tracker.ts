@@ -1,4 +1,3 @@
-// Adapted from @lpirito/valence 0.1.0, by lpirito. Maintained in Anvil.
 import { randomBytes } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { and, eq, inArray } from 'drizzle-orm'
@@ -8,7 +7,7 @@ import { requiredText, validateIssueInput, validateParentInput } from './validat
 import type {
   ParentIssue, CreateParentIssue, UpdateParentIssue, Issue, CreateIssue, UpdateIssue,
   BatchIssue, IssueSelection, Completion
-} from '@anvil/protocol/valence'
+} from '@anvil/protocol/anvil-issue-tracker'
 import { sqliteTransaction } from '../sqlite-transaction'
 
 /** Project-scoped core over an already migrated Anvil database.

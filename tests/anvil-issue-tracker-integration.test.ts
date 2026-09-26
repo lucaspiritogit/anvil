@@ -2,11 +2,11 @@ import { rendererEvent } from './renderer-fixture'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { join } from 'node:path'
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { onTestCleanup } from './test-cleanup'
 import { TaskIssues } from '../apps/server/src/tasks/task-issues'
-import { IssueTracker } from '../apps/server/src/valence/tracker'
+import { IssueTracker } from '../apps/server/src/anvil-issue-tracker/tracker'
 import { Store } from '../apps/server/src/store'
 import { registerTestIpc } from './test-ipc'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
@@ -29,14 +29,14 @@ test('cascades task-owned plans on project removal', async () => {
   store.addTask(unrelatedTask)
   const unrelated = tracker.create({ ...input, parentId: tracker.createParent({ anvilTaskId: unrelatedTask.id, title: 'External work' }).id })
   const issue = tracker.list().find((entry) => entry.title === 'App change')
-  expect.assert(issue, 'Anvil-created issues must be visible to another Valence client')
+  expect.assert(issue, 'Anvil-created issues must be visible to another issue tracker client')
   expect(issue.status).toBe('working')
   expect(tracker.get(unrelated.id).status, 'Anvil must not claim unrelated higher-priority issues').toBe('queued')
   // Model an agent submitting through the issue tool and the developer approving before the turn report arrives.
   tracker.submitForReview(issue.id, { checklist: [true], evidence: 'Focused validation passed' })
   tracker.approve(issue.id)
   const completedAt = tracker.get(issue.id).completedAt
-  agentProcesses.finishTurn(task.id, 'Finished. See Valence for validation evidence.')
+  agentProcesses.finishTurn(task.id, 'Finished. See the Anvil issue tracker for validation evidence.')
   await tick()
   expect(tracker.get(issue.id).evidence).toBe('Focused validation passed')
   expect(tracker.get(issue.id).completedAt).toBe(completedAt)
@@ -102,7 +102,7 @@ test('claims and completes work despite unrelated historical execution metadata'
   expect(tracker.get(child.id).evidence).toBe('Verified in Anvil')
 })
 
-test('recovers embedded plans after restart without the original standalone storage', () => {
+test('recovers embedded plans after restart without legacy import receipts', () => {
   const { directory, store, taskId, issues } = snapshotFixture()
   const state = issues.initialize(taskId, directory)
   const projectId = store.getTask(taskId)!.projectId
@@ -112,12 +112,6 @@ test('recovers embedded plans after restart without the original standalone stor
     description: 'Already stored in Anvil', checklist: ['Verify'], validation: 'Resume after restart' })
   issues.finishPlanning(taskId)
   issues.claim(taskId)
-  const sourcePath = join(directory, '.valence/sqlite.db')
-  const connection = new DatabaseSync(tracker.databasePath)
-  onTestCleanup(() => { connection.close() })
-  connection.prepare('INSERT INTO valence_imports (source_path, project_id, fingerprint, parents, imported_at) VALUES (?, ?, ?, ?, ?)')
-    .run(sourcePath, projectId, 'old-fingerprint', JSON.stringify({ [state.parentIssueId]: taskId }), 1)
-  const receipt = connection.prepare('SELECT * FROM valence_imports').all()
   store.close()
 
   const reopened = new Store(join(testHome, '.anvil-composer/config.json'), { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
@@ -132,7 +126,52 @@ test('recovers embedded plans after restart without the original standalone stor
   recovered.finishRecovery(taskId)
   expect(reopened.getTaskExecution(taskId)?.phase).toBe('complete')
   expect(recovered.snapshot(taskId)?.children[0].evidence).toBe('Completed through issue tool')
-  expect(connection.prepare('SELECT * FROM valence_imports').all()).toEqual(receipt)
+})
+
+test('upgrades a database from the prior migration set without losing projects, tasks, or issues', () => {
+  const directory = mkdtempSync(join(testHome, 'migration-'))
+  onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
+  const migrations = join(process.cwd(), 'apps/server/src/db/migrations')
+  const priorMigrations = join(directory, 'prior-migrations')
+  mkdirSync(priorMigrations)
+  for (const name of readdirSync(migrations)) {
+    if (name < '20260926170242_spotty_raza') {
+      cpSync(join(migrations, name), join(priorMigrations, name), { recursive: true })
+    }
+  }
+  const configFile = join(directory, 'config.json')
+  const projectId = randomUUID()
+  const taskId = randomUUID()
+  const old = new Store(configFile, { migrationsFolder: priorMigrations })
+  old.addProject({ id: projectId, name: 'Preserved project', path: directory, createdAt: 0,
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  old.addTask({
+    id: taskId, projectId, title: 'Preserved task', prompt: 'Keep issue data', cwd: directory,
+    agentId: 'codex', agentLabel: 'Codex', status: 'pending', deliveryStatus: 'working', startedAt: 0,
+    inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,
+    filesChanged: 0, additions: 0, deletions: 0
+  })
+  const tracker = old.issueTracker(projectId)
+  const parent = tracker.createParent({ anvilTaskId: taskId, title: 'Preserved plan' })
+  const issue = tracker.create({ parentId: parent.id, title: 'Preserved issue',
+    description: 'Keep this issue', checklist: ['Verify'], validation: 'Reopen database' })
+  const databasePath = tracker.databasePath
+  const legacy = new DatabaseSync(databasePath)
+  legacy.prepare('INSERT INTO valence_imports (source_path, project_id, fingerprint, parents, imported_at) VALUES (?, ?, ?, ?, ?)')
+    .run(join(directory, 'old.db'), projectId, 'fingerprint', '{}', 1)
+  legacy.close()
+  old.close()
+
+  const upgraded = new Store(configFile, { migrationsFolder: migrations })
+  onTestCleanup(() => upgraded.close())
+  expect(upgraded.getProjects().find((project) => project.id === projectId)?.name).toBe('Preserved project')
+  expect(upgraded.getTask(taskId)?.title).toBe('Preserved task')
+  const upgradedTracker = upgraded.issueTracker(projectId)
+  expect(upgradedTracker.get(issue.id).title).toBe('Preserved issue')
+  expect(upgradedTracker.getParent(parent.id).anvilTaskId).toBe(taskId)
+  const connection = new DatabaseSync(databasePath)
+  onTestCleanup(() => connection.close())
+  expect(connection.prepare("SELECT name FROM sqlite_master WHERE name = 'valence_imports'").get()).toBeUndefined()
 })
 
 test('snapshot reads current parent children during planning and after the execution scope freezes', () => {
@@ -259,7 +298,7 @@ test('reopened storage restores child snapshots and tagged history alongside leg
     ...expectedSnapshot,
     execution: {
       phase: 'blocked', currentIssueId: null,
-      error: 'Interrupted by app restart. Inspect Valence work before requeueing.'
+      error: 'Interrupted by app restart. Inspect the Anvil issue tracker before requeueing.'
     }
   })
   expect(reopened.readEvents(taskId)).toEqual(expectedEvents)

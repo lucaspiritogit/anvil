@@ -155,7 +155,7 @@ export function registerTaskExecution(
       const images = state.hasImages ? store.taskImages.read(taskId) : undefined
       if (state.hasImages && !images) throw new Error('The original task images were cleared. Start a new task and attach the images again.')
       const issue = issues.claim(taskId, baseCommit)
-      if (!issue) throw new Error('No task issue is ready in Valence. Inspect dependencies and work claimed by other clients.')
+      if (!issue) throw new Error('No task issue is ready in the Anvil issue tracker. Inspect dependencies and work claimed by other clients.')
       const running = store.updateTask(taskId, {
         cwd, endedAt: undefined, error: undefined, exitCode: null,
         deliveryStatus: 'working', deliveryError: undefined

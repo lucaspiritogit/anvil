@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { createAdaptorServer, type HttpBindings, type ServerType } from '@hono/node-server'
 import { Hono } from 'hono'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
-import type { CreateIssue, UpdateIssue, Completion } from '@anvil/protocol/valence'
+import type { CreateIssue, UpdateIssue, Completion } from '@anvil/protocol/anvil-issue-tracker'
 import type { Store } from '../store'
 import { taskBranchNaming, type TaskBranches } from '../tasks/task-branch'
 

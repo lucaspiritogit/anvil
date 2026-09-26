@@ -18,7 +18,6 @@ for (const filename of candidates) {
   for (const directory of ['db', 'memory']) {
     assert(entries.some((entry) => entry.startsWith(`/out/server/${directory}/migrations/`) && entry.endsWith('.sql')), `Missing ${directory} migrations`)
   }
-  assert(!entries.some((entry) => /^\/out\/valence(?:\/|$)/.test(entry) || entry.endsWith('/valence-cli.js')), 'Obsolete tracker distribution is packaged')
   const server = extractFile(archive, join('out', 'server', 'index.js')).toString()
   assert(server.includes('anvil_get_plan'), 'Server must include issue tools')
   assert(!/importLegacyPlans|Legacy parent missing|legacy-import\.ts/.test(server), 'Obsolete tracker importer is packaged')

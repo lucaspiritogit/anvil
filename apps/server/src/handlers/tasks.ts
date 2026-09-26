@@ -147,7 +147,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       if (agentProcesses.isRunning(taskId)) agentProcesses.cancel(taskId)
       await stacks.restackChildren(taskId, true)
     }
-    // Release only this process's claim; the independent Valence records survive deletion.
+    // Release only this process's claim; the independent Anvil issue tracker records survive deletion.
     const running = agentProcesses.isRunning(taskId)
     if (running && project && deletedTask?.branchName && usesManagedWorktree(deletedTask)) deferTaskCleanup(taskId, project.path, deletedTask.branchName)
     else if (running && deletedTask && !usesManagedWorktree(deletedTask)) skipTaskCleanup(taskId)
@@ -206,7 +206,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
     async (input) => {
       const workspaceId = store.getActiveWorkspace().id
       if (input.workspaceId !== undefined && input.workspaceId !== workspaceId) throw new Error('Workspace changed before task creation. Retry.')
-      // Decode before task/Valence/worktree creation. Text-only calls keep their synchronous preparation.
+      // Decode before task/Anvil issue tracker/worktree creation. Text-only calls keep their synchronous preparation.
       const images = input.images?.length ? await validateTaskImages(input.images) : undefined
       const project = store.getProjects(workspaceId).find((project) => project.id === input.projectId)
       if (!project) throw new Error('Project not found')

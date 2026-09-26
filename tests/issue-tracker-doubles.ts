@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { BatchIssue, Completion, Issue } from '@anvil/protocol/valence'
+import type { BatchIssue, Completion, Issue } from '@anvil/protocol/anvil-issue-tracker'
 import { openTaskTracker as openIssueTracker } from './task-state'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -75,7 +75,7 @@ export class AgentProcessManager extends EventEmitter {
     const tracker = openIssueTracker(this.starts.findLast((start) => start.taskId === taskId).projectPath, this.starts.findLast((start) => start.taskId === taskId).workspace ? join(this.starts.findLast((start) => start.taskId === taskId).workspace.directory, 'anvil.db') : this.databasePath)
     try {
       const parentId = tracker.listParents().find((parent) => parent.anvilTaskId === taskId)?.id
-      if (!parentId) throw new Error('Task has no Valence parent')
+      if (!parentId) throw new Error('Task has no Anvil issue tracker parent')
       return tracker.createMany(inputs.map((input) => ({ ...input, parentId })))
     } finally {
       tracker.close()
@@ -83,7 +83,7 @@ export class AgentProcessManager extends EventEmitter {
   }
   plan(taskId: string, inputs: Omit<BatchIssue, 'parentId'>[]): void {
     this.createPlan(taskId, inputs)
-    this.finishTurn(taskId, 'Plan created in Valence.')
+    this.finishTurn(taskId, 'Plan created in the Anvil issue tracker.')
   }
   completeIssue(taskId: string, issueId: string, completion: Completion): void {
     const tracker = openIssueTracker(this.starts.findLast((start) => start.taskId === taskId).projectPath, this.starts.findLast((start) => start.taskId === taskId).workspace ? join(this.starts.findLast((start) => start.taskId === taskId).workspace.directory, 'anvil.db') : this.databasePath)

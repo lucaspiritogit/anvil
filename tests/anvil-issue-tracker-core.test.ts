@@ -6,12 +6,12 @@ import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
 import { build } from 'esbuild'
 import { Store } from '../apps/server/src/store'
-import { IssueTracker } from '../apps/server/src/valence/tracker'
-import type { CreateIssue, CreateParentIssue, IssueSelection, UpdateIssue, UpdateParentIssue } from '@anvil/protocol/valence'
+import { IssueTracker } from '../apps/server/src/anvil-issue-tracker/tracker'
+import type { CreateIssue, CreateParentIssue, IssueSelection, UpdateIssue, UpdateParentIssue } from '@anvil/protocol/anvil-issue-tracker'
 import { onTestCleanup } from './test-cleanup'
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), 'anvil-valence-core-'))
+  const directory = mkdtempSync(join(tmpdir(), 'anvil-issue-tracker-core-'))
   onTestCleanup(() => rmSync(directory, { recursive: true, force: true }))
   const registryPath = join(directory, 'config.json')
   const store = new Store(registryPath, { migrationsFolder: resolve('apps/server/src/db/migrations') })
@@ -328,7 +328,7 @@ test('independent SQLite connections contend and claim each issue exactly once',
   const issues = a.createMany(Array.from({ length: 30 }, (_, index) => ({ ...input(), key: `${index}` })))
   const bundle = join(directory, 'tracker.cjs')
   await build({
-    entryPoints: [resolve('apps/server/src/valence/tracker.ts')], outfile: bundle, bundle: true, platform: 'node', format: 'cjs'
+    entryPoints: [resolve('apps/server/src/anvil-issue-tracker/tracker.ts')], outfile: bundle, bundle: true, platform: 'node', format: 'cjs'
   })
   const barrier = new SharedArrayBuffer(4)
   const code = `

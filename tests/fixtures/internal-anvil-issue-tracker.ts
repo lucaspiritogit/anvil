@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { join, resolve } from 'node:path'
 import { Store } from '../../apps/server/src/store'
-import { IssueTracker } from '../../apps/server/src/valence/tracker'
+import { IssueTracker } from '../../apps/server/src/anvil-issue-tracker/tracker'
 import { onTestCleanup } from '../test-cleanup'
 
 export function internalTrackerFixture(project: string) {

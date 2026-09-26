@@ -7,7 +7,6 @@ directories:
 files:
   # Package current entry points only; old build directories can remain locally.
   - out/main/**
-  - "!out/main/valence-cli.js"
   - out/preload/**
   - package.json
   - out/server/**
