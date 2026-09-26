@@ -26,13 +26,24 @@ const api = createAnvilApi(url, {
   pickWallpaper: () => ipcRenderer.invoke('desktop:pick-wallpaper'),
   pickProjectFolder: async () => {
     const selected = await ipcRenderer.invoke('desktop:pick-project-folder') as {
-      token: string; name: string; entries: Array<{ path: string; type: 'file' | 'directory'; size: number; executable?: boolean }>
+      token: string
+      name: string
+      entries: Array<{ path: string; type: 'file' | 'directory'; size: number; executable?: boolean }>
     } | null
     if (!selected) return null
-    return { name: selected.name, entries: selected.entries.map((entry, index) => ({
-      ...entry, ...(entry.type === 'file' ? { read: (offset: number, length: number): Promise<Uint8Array> =>
-        ipcRenderer.invoke('desktop:read-project-file', { token: selected.token, index, offset, length }) } : {})
-    })), dispose: (): Promise<void> => ipcRenderer.invoke('desktop:release-project-folder', selected.token) }
+    return {
+      name: selected.name,
+      entries: selected.entries.map((entry, index) => ({
+        ...entry,
+        ...(entry.type === 'file' ? {
+          read: (offset: number, length: number): Promise<Uint8Array> => ipcRenderer.invoke(
+            'desktop:read-project-file',
+            { token: selected.token, index, offset, length }
+          )
+        } : {})
+      })),
+      dispose: (): Promise<void> => ipcRenderer.invoke('desktop:release-project-folder', selected.token)
+    }
   },
   openPath: (path) => ipcRenderer.invoke('desktop:open-path', path),
   openPullRequest: (value) => ipcRenderer.invoke('desktop:open-pr-url', value),

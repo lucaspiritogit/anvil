@@ -62,9 +62,19 @@ export interface ClientHost {
 
 export interface ProjectFolderSelection {
   name: string
-  entries: Array<{ path: string; type: 'file' | 'directory'; size: number; executable?: boolean; read?: (offset: number, length: number) => Promise<Uint8Array> }>
+  entries: ProjectFolderEntry[]
   dispose?: () => Promise<void>
 }
+
+export interface ProjectFolderEntry {
+  path: string
+  type: 'file' | 'directory'
+  size: number
+  executable?: boolean
+  read?: (offset: number, length: number) => Promise<Uint8Array>
+}
+
+const PROJECT_IMPORT_CHUNK_SIZE = 4 * 1024 * 1024
 
 export function createAnvilApi(url: string, host: ClientHost) {
   const appReadiness = createEventLatch<AppReadiness>()
@@ -76,6 +86,51 @@ export function createAnvilApi(url: string, host: ClientHost) {
     void host.openLoginUrl(value).catch((error) => console.error('Could not open sign-in:', error))
   })
   window.addEventListener('unload', () => client.close())
+
+  const importProjectFromDisk = async (
+    workspaceId: string,
+    onProgress: (done: number, total: number) => void
+  ): Promise<Project | null> => {
+    const folder = await host.pickProjectFolder()
+    if (!folder) return null
+
+    let importId: string | undefined
+    try {
+      const entries = folder.entries.map(({ path, type, size, executable }) => ({ path, type, size, executable }))
+      const total = entries.reduce((size, entry) => size + (entry.type === 'file' ? entry.size : 0), 0)
+      const started: { importId: string } = await invoke('projects:import-begin', {
+        workspaceId,
+        name: folder.name,
+        entries
+      })
+      importId = started.importId
+      let uploaded = 0
+      onProgress(uploaded, total)
+
+      for (const [index, entry] of folder.entries.entries()) {
+        if (entry.type !== 'file') continue
+        if (!entry.read) throw new Error(`Cannot read ${entry.path} from the selected folder`)
+
+        for (let offset = 0; offset < entry.size; offset += PROJECT_IMPORT_CHUNK_SIZE) {
+          const length = Math.min(PROJECT_IMPORT_CHUNK_SIZE, entry.size - offset)
+          const bytes = await entry.read(offset, length)
+          if (bytes.length !== length) throw new Error(`Could not read all of ${entry.path}`)
+          await client.uploadProjectChunk(importId, index, offset, bytes)
+          uploaded += bytes.length
+          onProgress(uploaded, total)
+        }
+      }
+
+      const project: Project = await invoke('projects:import-finish', importId)
+      importId = undefined
+      return project
+    } catch (error) {
+      if (importId) await invoke('projects:import-cancel', importId).catch(() => {})
+      throw error
+    } finally {
+      await folder.dispose?.().catch(() => {})
+    }
+  }
 
   return {
     /** Drives the platform-dependent half of the keyboard shortcuts. */
@@ -173,38 +228,7 @@ export function createAnvilApi(url: string, host: ClientHost) {
     projects: {
       onChanged: (handler: (projects: Project[]) => void): (() => void) => subscribe('projects:changed', handler),
       list: (): Promise<Project[]> => invoke('projects:list'),
-      importFromDisk: async (workspaceId: string, onProgress: (done: number, total: number) => void): Promise<Project | null> => {
-        const folder = await host.pickProjectFolder()
-        if (!folder) return null
-        let importId: string | undefined
-        try {
-          const entries = folder.entries.map(({ path, type, size, executable }) => ({ path, type, size, executable }))
-          const total = entries.reduce((sum, entry) => sum + (entry.type === 'file' ? entry.size : 0), 0)
-          const begun: { importId: string } = await invoke('projects:import-begin', { workspaceId, name: folder.name, entries })
-          importId = begun.importId
-          let done = 0
-          onProgress(done, total)
-          for (const [index, entry] of folder.entries.entries()) {
-            if (entry.type !== 'file') continue
-            if (!entry.read) throw new Error(`Cannot read ${entry.path} from the selected folder`)
-            for (let offset = 0; offset < entry.size; offset += 4 * 1024 * 1024) {
-              const bytes = await entry.read(offset, Math.min(4 * 1024 * 1024, entry.size - offset))
-              if (bytes.length !== Math.min(4 * 1024 * 1024, entry.size - offset)) throw new Error(`Could not read all of ${entry.path}`)
-              await client.uploadProjectChunk(importId, index, offset, bytes)
-              done += bytes.length
-              onProgress(done, total)
-            }
-          }
-          const project: Project = await invoke('projects:import-finish', importId)
-          importId = undefined
-          return project
-        } catch (error) {
-          if (importId) await invoke('projects:import-cancel', importId).catch(() => {})
-          throw error
-        } finally {
-          await folder.dispose?.().catch(() => {})
-        }
-      },
+      importFromDisk: importProjectFromDisk,
       add: (path: string, workspaceId?: string): Promise<Project> => invoke('projects:add', { path, ...(workspaceId ? { workspaceId } : {}) }),
       clone: (url: string, workspaceId?: string): Promise<Project> => invoke('projects:clone', { url, ...(workspaceId ? { workspaceId } : {}) }),
       update: (input: IpcRequests['projects:update']): Promise<Project | undefined> => invoke('projects:update', input),

@@ -10,21 +10,39 @@ function pickProjectFolder(): Promise<ProjectFolderSelection | null> {
     input.multiple = true
     input.style.display = 'none'
     document.body.append(input)
-    const finish = (selection: ProjectFolderSelection | null): void => { input.remove(); resolve(selection) }
+
+    const finish = (selection: ProjectFolderSelection | null): void => {
+      input.remove()
+      resolve(selection)
+    }
+    const fail = (message: string): void => {
+      input.remove()
+      reject(new Error(message))
+    }
+
     input.addEventListener('cancel', () => finish(null), { once: true })
     input.addEventListener('change', () => {
       const files = Array.from(input.files ?? [])
-      if (!files.length) { input.remove(); reject(new Error('Choose a folder that contains project files')); return }
-      const name = files[0].webkitRelativePath.split('/')[0]
-      if (!name || files.some((file) => !file.webkitRelativePath.startsWith(`${name}/`))) {
-        input.remove()
-        reject(new Error('The browser did not provide folder paths. Try another browser.'))
+      if (!files.length) {
+        fail('Choose a folder that contains project files')
         return
       }
-      finish({ name, entries: files.map((file) => ({
-        path: file.webkitRelativePath.slice(name.length + 1), type: 'file' as const, size: file.size,
-        read: async (offset, length) => new Uint8Array(await file.slice(offset, offset + length).arrayBuffer())
-      })) })
+
+      const name = files[0].webkitRelativePath.split('/')[0]
+      if (!name || files.some((file) => !file.webkitRelativePath.startsWith(`${name}/`))) {
+        fail('The browser did not provide folder paths. Try another browser.')
+        return
+      }
+
+      finish({
+        name,
+        entries: files.map((file) => ({
+          path: file.webkitRelativePath.slice(name.length + 1),
+          type: 'file' as const,
+          size: file.size,
+          read: async (offset, length) => new Uint8Array(await file.slice(offset, offset + length).arrayBuffer())
+        }))
+      })
     }, { once: true })
     input.click()
   })

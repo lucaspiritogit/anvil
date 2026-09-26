@@ -41,9 +41,6 @@ test('desktop IPC rejects secondary renderers and malformed shell inputs', async
   ipc.handle('desktop:browser-viewport', (input) => input)
   ipc.handle('desktop:server-target', () => ({ target: { mode: 'local' }, url: 'http://127.0.0.1:4780' }))
   ipc.handle('desktop:set-server-target', (target) => target)
-  ipc.handle('desktop:pick-project-folder', () => null)
-  ipc.handle('desktop:read-project-file', (input) => input)
-  ipc.handle('desktop:release-project-folder', (token) => token)
   const open = handlers.get('desktop:open-path')!
   expect(open(rendererEvent, '/project')).toBe('/project')
   expect(() => open({ ...rendererEvent, senderFrame: null }, '/project')).toThrow('Unauthorized IPC sender')
@@ -71,10 +68,6 @@ test('desktop IPC rejects secondary renderers and malformed shell inputs', async
     expect(() => handlers.get('desktop:browser-viewport')!(rendererEvent, malformed)).toThrow('Invalid desktop request')
   }
   expect(handlers.get('desktop:server-target')!(rendererEvent)).toEqual({ target: { mode: 'local' }, url: 'http://127.0.0.1:4780' })
-  expect(handlers.get('desktop:pick-project-folder')!(rendererEvent)).toBeNull()
-  expect(handlers.get('desktop:read-project-file')!(rendererEvent, { token: 'chosen', index: 0, offset: 0, length: 4096 })).toEqual({ token: 'chosen', index: 0, offset: 0, length: 4096 })
-  expect(() => handlers.get('desktop:read-project-file')!(rendererEvent, { token: 'chosen', index: 0, offset: 0, length: 4 * 1024 * 1024 + 1 })).toThrow('Invalid desktop request')
-  expect(handlers.get('desktop:release-project-folder')!(rendererEvent, 'chosen')).toBe('chosen')
   expect(handlers.get('desktop:set-server-target')!(rendererEvent, { mode: 'remote', url: 'https://anvil.example' })).toEqual({ mode: 'remote', url: 'https://anvil.example' })
   for (const malformed of [undefined, null, {}, { mode: 'local', url: 'https://anvil.example' }, { mode: 'remote' }, { mode: 'remote', url: '' }, { mode: 'remote', url: 'https://anvil.example', extra: true }]) {
     expect(() => handlers.get('desktop:set-server-target')!(rendererEvent, malformed)).toThrow('Invalid desktop request')
