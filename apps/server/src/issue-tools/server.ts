@@ -69,7 +69,7 @@ export function callIssueTool(store: Store, taskId: string, workspaceId: string,
       if (!requested || requested.workspaceId !== workspaceId) throw new Error('Task not found in the owning workspace')
       const execution = store.getTaskExecution(requested.id)
       if (name === 'anvil_get_task') {
-        const issues = execution ? store.issueTracker(requested.projectId, workspaceId).list(execution.parentIssueId) : []
+        const issues = execution?.parentIssueId && requested.projectId ? store.issueTracker(requested.projectId, workspaceId).list(execution.parentIssueId) : []
         return {
           task: requested,
           execution: execution ? { phase: execution.phase, currentIssueId: execution.currentIssueId, error: execution.error } : null,
@@ -93,7 +93,7 @@ export function callIssueTool(store: Store, taskId: string, workspaceId: string,
       return store.readTaskOutput(requested.id, { cursor: parsedCursor as number, limit: limit as number, kinds: args.kinds as string[] | undefined })
     }
     const state = store.getTaskExecution(taskId)
-    if (!state) throw new Error('Task has no issue plan')
+    if (!state || !state.parentIssueId || task.projectId === undefined) throw new Error('Task has no issue plan')
     const tracker = store.issueTracker(task.projectId, workspaceId)
     const parent = tracker.getParent(state.parentIssueId)
     if (parent.anvilTaskId !== taskId) throw new Error('Task does not own this plan')

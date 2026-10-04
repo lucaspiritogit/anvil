@@ -21,6 +21,7 @@ export function AgentIcon({
   size?: number
 }): JSX.Element {
   if (agentId === 'codex') return <ProviderIcon company="OpenAI" size={size} />
+  if (agentId === 'claude') return <ProviderIcon company="Claude" size={size} />
   const mark = MARKS[agentId]
   const style = { width: size, height: size }
   if (mark) return <img className="flex-none" src={mark} alt="" style={style} />

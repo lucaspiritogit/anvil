@@ -6,12 +6,14 @@ import opencodeMark from '@public/agents/opencode.svg'
 import deepseekMark from '@public/providers/deepseek.svg'
 import kimiMark from '@public/providers/kimi.svg'
 import grokMark from '@public/providers/grok.svg'
-import anthropicMark from '@public/providers/anthropic.svg'
+import claudeMark from '@public/agents/claude.svg'
 import googleMark from '@public/providers/google.svg'
 
 const COLOR_MARKS: Record<string, string> = {
   'OpenCode Go': opencodeMark,
   'OpenCode Zen': opencodeMark,
+  Anthropic: claudeMark,
+  Claude: claudeMark,
   DeepSeek: deepseekMark,
   'Moonshot AI': kimiMark
 }
@@ -20,7 +22,6 @@ const MONOCHROME_MARKS: Record<string, string> = {
   OpenAI: openaiMark,
   OpenRouter: openrouterMark,
   Codex: openaiMark,
-  Anthropic: anthropicMark,
   Google: googleMark,
   xAI: grokMark
 }

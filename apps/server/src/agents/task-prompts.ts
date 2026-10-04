@@ -26,7 +26,7 @@ export function implementationPrompt(task: string, issue: Issue, _projectPath: s
 
 export function quickTaskPrompt(_style: Exclude<TaskStyle, 'work'>, task: string): string {
   return [
-    'Answer or complete the request directly in the current project checkout in one turn.',
+    'Answer or complete the request directly in the current working directory in one turn.',
     'Do not create an issue plan or another worktree. Do not commit or push unless the request explicitly asks for it.',
     `Request: ${task}`
   ].join('\n')

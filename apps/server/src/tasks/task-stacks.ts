@@ -156,7 +156,7 @@ export class TaskStacks {
             // Save the rewritten ranges before releasing the repository lock.
             store.transaction(() => {
               const state = store.getTaskExecution(taskId)
-              if (state?.currentIssueId) {
+              if (state?.currentIssueId && current.projectId !== undefined) {
                 const tracker = store.issueTracker(current.projectId, current.workspaceId)
                 try { tracker.recordCommits(state.currentIssueId, { baseCommit: target.commit, headCommit: result.headCommit }) }
                 finally { tracker.close() }

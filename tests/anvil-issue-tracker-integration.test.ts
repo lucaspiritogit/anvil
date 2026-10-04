@@ -74,13 +74,13 @@ function snapshotFixture() {
   })
   registerTestIpc()
   const read = () => handlers.get('tasks:issues')!(rendererEvent, taskId)
-  return { directory, worktree, store, taskId, read, issues: new TaskIssues(store) }
+  return { directory, worktree, store, projectId, taskId, read, issues: new TaskIssues(store) }
 }
 
 test('claims and completes work despite unrelated historical execution metadata', () => {
-  const { directory, store, taskId, issues } = snapshotFixture()
+  const { directory, store, projectId, taskId, issues } = snapshotFixture()
   const state = issues.initialize(taskId, directory)
-  const tracker = store.issueTracker(store.getTask(taskId)!.projectId)
+  const tracker = store.issueTracker(projectId)
   onTestCleanup(() => tracker.close())
   const child = tracker.create({ parentId: state.parentIssueId, title: 'Current work',
     description: 'Use embedded storage', checklist: ['Verify'], validation: 'Run test' })
@@ -103,9 +103,8 @@ test('claims and completes work despite unrelated historical execution metadata'
 })
 
 test('recovers embedded plans after restart without legacy import receipts', () => {
-  const { directory, store, taskId, issues } = snapshotFixture()
+  const { directory, store, projectId, taskId, issues } = snapshotFixture()
   const state = issues.initialize(taskId, directory)
-  const projectId = store.getTask(taskId)!.projectId
   const tracker = store.issueTracker(projectId)
   onTestCleanup(() => tracker.close())
   const child = tracker.create({ parentId: state.parentIssueId, title: 'Imported work',
@@ -175,9 +174,9 @@ test('upgrades a database from the prior migration set without losing projects, 
 })
 
 test('snapshot reads current parent children during planning and after the execution scope freezes', () => {
-  const { directory, store, taskId, read, issues } = snapshotFixture()
+  const { directory, store, projectId, taskId, read, issues } = snapshotFixture()
   const state = issues.initialize(taskId, directory)
-  const tracker = store.issueTracker(store.getTask(taskId)!.projectId)
+  const tracker = store.issueTracker(projectId)
   onTestCleanup(() => tracker.close())
   const input = { title: 'Planned', description: 'Summary', checklist: ['Check'], validation: 'Test' }
   const otherTaskId = randomUUID()
@@ -221,9 +220,9 @@ test('snapshot reads current parent children during planning and after the execu
 })
 
 test('subtask snapshots expose persisted start and completion timestamps without changing the parent', () => {
-  const { directory, store, taskId, issues, read } = snapshotFixture()
+  const { directory, store, projectId, taskId, issues, read } = snapshotFixture()
   const state = issues.initialize(taskId, directory)
-  const tracker = store.issueTracker(store.getTask(taskId)!.projectId)
+  const tracker = store.issueTracker(projectId)
   onTestCleanup(() => tracker.close())
   const child = tracker.create({ parentId: state.parentIssueId, title: 'Timed issue',
     description: 'Expose lifecycle timestamps', checklist: ['Verify'], validation: 'Run test' })
@@ -273,9 +272,9 @@ test('snapshot closes trackers on successful reads and failed parent or child re
 })
 
 test('reopened storage restores child snapshots and tagged history alongside legacy parent events', () => {
-  const { directory, store, taskId, issues } = snapshotFixture()
+  const { directory, store, projectId, taskId, issues } = snapshotFixture()
   const state = issues.initialize(taskId, directory)
-  const tracker = store.issueTracker(store.getTask(taskId)!.projectId)
+  const tracker = store.issueTracker(projectId)
   onTestCleanup(() => tracker.close())
   const child = tracker.create({ parentId: state.parentIssueId, title: 'Persisted child',
     description: 'Survive restart', checklist: ['Checked'], validation: 'Reopen storage' })
@@ -308,8 +307,8 @@ test('reopened storage restores child snapshots and tagged history alongside leg
 })
 
 test('initialization and claiming roll back together and retries retain task ownership', () => {
-  const { directory, store, taskId, issues } = snapshotFixture()
-  const tracker = store.issueTracker(store.getTask(taskId)!.projectId)
+  const { directory, store, projectId, taskId, issues } = snapshotFixture()
+  const tracker = store.issueTracker(projectId)
   const save = vi.spyOn(store, 'saveTaskExecution')
   save.mockImplementationOnce(() => { throw new Error('Execution write failed') })
   expect(() => issues.initialize(taskId, directory)).toThrow('Execution write failed')
@@ -359,7 +358,7 @@ test('initialization and claiming roll back together and retries retain task own
 })
 
 test('deleting a task preserves other tasks and project plans', () => {
-  const { directory, store, taskId, issues } = snapshotFixture()
+  const { directory, store, projectId: originalProjectId, taskId, issues } = snapshotFixture()
   const task = store.getTask(taskId)!
   const otherId = randomUUID()
   const projectId = randomUUID()
@@ -369,23 +368,23 @@ test('deleting a task preserves other tasks and project plans', () => {
   const remoteId = randomUUID()
   store.addTask({ ...task, id: remoteId, projectId })
   const states = [
-    issues.initialize(taskId, directory),
-    issues.initialize(otherId, directory),
-    issues.initialize(remoteId, directory + '/other')
+    { state: issues.initialize(taskId, directory), projectId: originalProjectId },
+    { state: issues.initialize(otherId, directory), projectId: originalProjectId },
+    { state: issues.initialize(remoteId, directory + '/other'), projectId }
   ]
-  const children = states.map((state) => store.issueTracker(store.getTask(state.taskId)!.projectId).create({
+  const children = states.map(({ state, projectId }) => store.issueTracker(projectId).create({
     parentId: state.parentIssueId, title: state.taskId, description: 'Keep ownership',
     checklist: ['Check'], validation: 'Delete task'
   }))
   store.deleteTaskCascade(taskId)
-  expect(() => store.issueTracker(task.projectId).get(children[0].id)).toThrow(/not found/)
+  expect(() => store.issueTracker(originalProjectId).get(children[0].id)).toThrow(/not found/)
   expect(issues.snapshot(otherId)?.children).toEqual([children[1]])
   expect(issues.snapshot(remoteId)?.children).toEqual([children[2]])
 })
 
 test('reuses an existing task parent and recovers a persisted interrupted claim', () => {
-  const { directory, store, taskId, issues } = snapshotFixture()
-  const tracker = store.issueTracker(store.getTask(taskId)!.projectId)
+  const { directory, store, projectId, taskId, issues } = snapshotFixture()
+  const tracker = store.issueTracker(projectId)
   const parent = tracker.createParent({ anvilTaskId: taskId, title: 'Existing plan' })
   expect(issues.initialize(taskId, directory).parentIssueId).toBe(parent.id)
   const child = tracker.create({ parentId: parent.id, title: 'Interrupted work',
@@ -400,7 +399,7 @@ test('reuses an existing task parent and recovers a persisted interrupted claim'
   const recovered = new TaskIssues(reopened)
   expect(reopened.getTaskExecution(taskId)?.phase).toBe('blocked')
   expect(reopened.getTaskExecution(taskId)?.currentIssueId).toBe(child.id)
-  const client = reopened.issueTracker(reopened.getTask(taskId)!.projectId)
+  const client = reopened.issueTracker(projectId)
   expect(client.get(child.id).status).toBe('working')
   recovered.resume(taskId)
   expect(() => recovered.finishRecovery(taskId)).toThrow(/not submitted for review/)

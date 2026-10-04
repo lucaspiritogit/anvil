@@ -60,6 +60,7 @@ export interface CodexAppServerRequests {
       data: Array<{
         id: string
         model: string
+        displayName?: string
         inputModalities?: string[]
         isDefault?: boolean
         supportedReasoningEfforts: Array<{ reasoningEffort: string; description: string }>
@@ -216,6 +217,7 @@ export function validateCodexResponse(method: keyof CodexAppServerRequests, valu
       const model = codexObject(value)
       codexId(model.id)
       codexId(model.model)
+      if (model.displayName !== undefined) codexString(model.displayName)
       if (model.inputModalities !== undefined && (!Array.isArray(model.inputModalities) || model.inputModalities.some((item) => typeof item !== 'string'))) {
         throw new Error('Expected Codex model input modalities')
       }

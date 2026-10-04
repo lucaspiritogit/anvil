@@ -38,7 +38,7 @@ export function registerTaskNotifications(
   const snapshot = (): Map<string, Snapshot> => new Map(store.getTasks().map((task) => {
     const state = store.getTaskExecution(task.id)
     let issues: Issue[] = []
-    if (state) {
+    if (state?.parentIssueId && task.projectId) {
       const tracker = store.issueTracker(task.projectId, task.workspaceId)
       try { issues = tracker.list(state.parentIssueId) } finally { tracker.close() }
     }

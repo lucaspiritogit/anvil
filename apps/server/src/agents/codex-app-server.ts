@@ -103,15 +103,20 @@ export class CodexAppServerClient implements AgentExecutor {
     }
   }
 
-  async listModels(_cwd: string): Promise<Pick<ProviderModelList, 'models' | 'reasoningByModel'>> {
+  async listModels(_cwd: string): Promise<Pick<ProviderModelList, 'models' | 'displayByModel' | 'reasoningByModel'>> {
     const connection = await this.connection()
     await this.requireAuthentication(connection)
     const reasoning = new Map<string, ModelReasoningCapabilities>()
+    const displayByModel: NonNullable<ProviderModelList['displayByModel']> = {}
     const cursors = new Set<string>()
     let cursor: string | undefined
     do {
       const page = await connection.request('model/list', { cursor })
       for (const model of page.data) {
+        displayByModel[model.model] = {
+          ...(model.displayName ? { name: model.displayName } : {}),
+          resolvedModel: model.model
+        }
         const options = canonicalReasoningOptions(model.supportedReasoningEfforts.map((option) => option.reasoningEffort))
         reasoning.set(model.model, {
           options,
@@ -124,7 +129,7 @@ export class CodexAppServerClient implements AgentExecutor {
         cursors.add(cursor)
       }
     } while (cursor !== undefined)
-    return { models: [...reasoning.keys()], reasoningByModel: Object.fromEntries(reasoning) }
+    return { models: [...reasoning.keys()], displayByModel, reasoningByModel: Object.fromEntries(reasoning) }
   }
 
   compact(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult> {

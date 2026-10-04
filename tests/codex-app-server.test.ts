@@ -214,7 +214,11 @@ test('requires workspace authentication before migrated-session recovery or mode
   expect(requests.find((entry) => entry.method === 'turn/start')?.params.input).toEqual([{ type: 'text', text: input.resumeFallbackPrompt, text_elements: [] }])
   expect(events.some((event) => event.type === 'output' && event.event.text.includes('previous conversation history was not restored'))).toBe(true)
   expect((await client.launches()).map((launch) => launch.account)).toEqual([null, null, null, 'new-work-account'])
-  expect(await client.executor.listModels(fixture.directory)).toEqual({ models: ['new-work-account'], reasoningByModel: { 'new-work-account': { options: [] } } })
+  expect(await client.executor.listModels(fixture.directory)).toEqual({
+    models: ['new-work-account'],
+    displayByModel: { 'new-work-account': { resolvedModel: 'new-work-account' } },
+    reasoningByModel: { 'new-work-account': { options: [] } }
+  })
 })
 
 test('rejects unsupported or enforced credential stores before account access and cleans up failed servers', async () => {
@@ -265,6 +269,10 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
     const discoveryClient = client('models')
     expect(await discoveryClient.listModels(directory)).toStrictEqual({
       models: ['reasoner', 'plain'],
+      displayByModel: {
+        reasoner: { name: 'Reasoner 5.1', resolvedModel: 'reasoner' },
+        plain: { name: 'Plain 1', resolvedModel: 'plain' }
+      },
       reasoningByModel: {
         reasoner: { options: [
           { id: 'minimal', level: 'fast' },
@@ -284,7 +292,7 @@ test('handles Codex threads, turns, permissions, steering and recovery', async (
     expect(sharedExecution.status).toBe('succeeded')
     expect((await requests()).filter((entry) => entry.method === 'initialize').length, 'Discovery and execution reuse the server').toBe(1)
     await discoveryClient.close()
-    expect(await client('models-empty').listModels(directory)).toStrictEqual({ models: [], reasoningByModel: {} })
+    expect(await client('models-empty').listModels(directory)).toStrictEqual({ models: [], displayByModel: {}, reasoningByModel: {} })
     await expect(client('models-error').listModels(directory)).rejects.toThrow(/Discovery unavailable/)
     await expect(client('models-malformed').listModels(directory)).rejects.toThrow(/string|reasoning/)
     await expect(client('models-cycle').listModels(directory)).rejects.toThrow(/pagination cursor/)

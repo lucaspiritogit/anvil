@@ -24,6 +24,11 @@ afterAll(async () => {
 
 const expected = {
   models: ['openrouter/deepseek/deepseek-v4', 'openai/plain', 'openai/custom'],
+  displayByModel: {
+    'openrouter/deepseek/deepseek-v4': { name: 'DeepSeek V4', resolvedModel: 'deepseek/deepseek-v4' },
+    'openai/plain': { resolvedModel: 'plain' },
+    'openai/custom': { name: 'Custom 1.1', resolvedModel: 'custom' }
+  },
   reasoningByModel: {
     'openrouter/deepseek/deepseek-v4': { options: [
       { id: 'fast', level: 'fast' },
@@ -45,17 +50,17 @@ const expected = {
     'openai/plain': { imageInput: false },
     'openai/custom': { imageInput: true }
   }
-} satisfies Pick<ProviderModelList, 'models' | 'reasoningByModel' | 'capabilitiesByModel'>
+} satisfies Pick<ProviderModelList, 'models' | 'displayByModel' | 'reasoningByModel' | 'capabilitiesByModel'>
 
 test('normalizes SDK model metadata for reasoning and image validation', () => {
   const providers = {
     all: [
       { id: 'openrouter', models: {
-        'deepseek/deepseek-v4': { id: 'deepseek/deepseek-v4', variants: { max: {}, low: {}, fast: {}, xhigh: {}, medium: {}, high: {} }, capabilities: { input: { image: true } } }
+        'deepseek/deepseek-v4': { id: 'deepseek/deepseek-v4', name: 'DeepSeek V4', variants: { max: {}, low: {}, fast: {}, xhigh: {}, medium: {}, high: {} }, capabilities: { input: { image: true } } }
       } },
       { id: 'openai', models: {
         plain: { id: 'plain', variants: {}, capabilities: { input: { image: false } } },
-        custom: { id: 'custom', variants: { high: {}, 'custom-effort': {}, low: {}, medium: {} }, modalities: { input: ['text', 'image'] } }
+        custom: { id: 'custom', name: 'Custom 1.1', variants: { high: {}, 'custom-effort': {}, low: {}, medium: {} }, modalities: { input: ['text', 'image'] } }
       } }
     ],
     default: {},
@@ -112,6 +117,10 @@ test('discovers adapter models, preserves cached metadata and reports failures',
     const codex = { ...agent, id: 'codex-fixture', command: process.execPath, args: [join(process.cwd(), 'tests/fixtures/codex-app-server.cjs'), 'models', join(directory, 'codex.jsonl')], models: { kind: 'adapter' as const, adapterId: 'codex' } }
     const codexModels = await listModels(codex, testWorkspace())
     expect(codexModels.models).toStrictEqual(['reasoner', 'plain'])
+    expect(codexModels.displayByModel).toStrictEqual({
+      reasoner: { name: 'Reasoner 5.1', resolvedModel: 'reasoner' },
+      plain: { name: 'Plain 1', resolvedModel: 'plain' }
+    })
     expect(codexModels.reasoningByModel?.reasoner).toStrictEqual({
       options: [
         { id: 'minimal', level: 'fast' },
@@ -154,5 +163,6 @@ test('coalesces concurrent catalogue discovery and reuses reasoning metadata', a
   expect(await second).toStrictEqual(catalogue)
   expect(await listModels(agent, testWorkspace())).toStrictEqual(catalogue)
   expect(catalogue.reasoningByModel).toStrictEqual(expected.reasoningByModel)
+  expect(catalogue.displayByModel).toStrictEqual(expected.displayByModel)
   expect(discover).toHaveBeenCalledTimes(1)
 })

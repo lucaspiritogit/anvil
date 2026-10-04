@@ -5,6 +5,7 @@ import { registerAnalyticsHandlers } from '../apps/server/src/handlers/analytics
 import { Store } from '../apps/server/src/store'
 import { migrationsFolder } from './migration-fixture'
 import { onTestCleanup } from './test-cleanup'
+import { describeModel } from '../apps/web/src/model-options'
 
 function fixture() {
   const store = new Store(':memory:', { migrationsFolder })
@@ -167,6 +168,21 @@ test('aggregates the inclusive/exclusive range and scopes it to the active works
     additions: 30,
     deletions: 15
   })
+})
+
+test('retains Claude attribution for native model aliases without guessing for mixed agents', () => {
+  const { store, analytics } = fixture()
+  addProject(store, 'project-a')
+  addTask(store, { id: 'claude-default', startedAt: 100, agentId: 'claude', agentLabel: 'Claude', model: 'default' })
+  const nativeModel = analytics(100, 200).breakdowns.models[0]
+  expect(nativeModel).toMatchObject({ key: 'default', agentId: 'claude', taskCount: 1 })
+  expect(describeModel(nativeModel.key, nativeModel.agentId ?? '').company).toBe('Anthropic')
+
+  addTask(store, { id: 'other-default', startedAt: 150, agentId: 'other', model: 'default' })
+  const sharedModel = analytics(100, 200).breakdowns.models[0]
+  expect(sharedModel).toMatchObject({ key: 'default', taskCount: 2 })
+  expect(sharedModel.agentId).toBeUndefined()
+  expect(describeModel(sharedModel.key, sharedModel.agentId ?? '').company).toBe('')
 })
 
 test('groups daily chart values by the local task start date', () => {

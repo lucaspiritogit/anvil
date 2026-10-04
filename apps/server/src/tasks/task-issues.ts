@@ -23,10 +23,10 @@ export class TaskIssues {
       const task = this.store.getTask(taskId)
       if (!task) throw new Error('Task not found')
       const project = this.store.getProjects(task?.workspaceId).find((entry) => entry.id === task.projectId)
-      if (project?.path !== projectPath) throw new Error('Task project does not match execution project')
+      if (!project || project.path !== projectPath) throw new Error('Task project does not match execution project')
       const existing = this.store.getTaskExecution(taskId)
       if (existing) return this.withTracker(existing, () => existing)
-      const tracker = this.store.issueTracker(task.projectId, task.workspaceId)
+      const tracker = this.store.issueTracker(project.id, task.workspaceId)
       try {
         const parent = tracker.listParents().find((entry) => entry.anvilTaskId === taskId)
           ?? tracker.createParent({ anvilTaskId: taskId, title: task.title, description: task.prompt })
@@ -275,8 +275,8 @@ export class TaskIssues {
       const task = this.store.getTask(state.taskId)
       if (!task) throw new Error('Task not found')
       const project = this.store.getProjects(task?.workspaceId).find((entry) => entry.id === task.projectId)
-      if (project?.path !== state.projectPath) throw new Error('Task project does not match execution project')
-      const tracker = this.store.issueTracker(task.projectId, task.workspaceId)
+      if (!project || project.path !== state.projectPath) throw new Error('Task project does not match execution project')
+      const tracker = this.store.issueTracker(project.id, task.workspaceId)
       try {
         if (tracker.getParent(state.parentIssueId).anvilTaskId !== task.id) {
           throw new Error('Parent issue belongs to another task')

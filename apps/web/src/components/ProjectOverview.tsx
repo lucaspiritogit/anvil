@@ -69,9 +69,7 @@ export function ProjectOverview({ project }: Props): JSX.Element {
         {project && <GitAlert project={project} />}
         <TaskComposer key={project?.id ?? 'no-project'} />
       </div>
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 px-8 pb-4 max-[980px]:px-[22px] max-[700px]:px-3">
-        <WorkspaceUsageLimits className="pointer-events-auto" />
-      </div>
+      <WorkspaceUsageLimits className="mt-8 shrink-0" />
     </div>
   )
 }

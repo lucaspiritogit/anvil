@@ -15,7 +15,7 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
   const mounted = useRef(true)
   const accountRef = useRef(account)
   accountRef.current = account
-  const label = agentId === 'codex' ? 'Codex' : 'OpenCode'
+  const label = agentId === 'codex' ? 'Codex' : agentId === 'claude' ? 'Claude' : 'OpenCode'
   const target = { workspaceId, agentId }
   const refresh = async (): Promise<void> => {
     try {
@@ -63,7 +63,7 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
         {!account
           ? <p>Reading account…</p>
           : account.status === 'connected'
-            ? agentId === 'codex'
+            ? agentId === 'codex' || agentId === 'claude'
               ? <button type="button" aria-pressed={revealed} title={revealed ? 'Hide email' : 'Reveal email'}
                   className={cn('cursor-pointer text-left transition-[filter] duration-150 focus-visible:outline focus-visible:outline-accent', !revealed && 'select-none blur-[3px]')}
                   onClick={() => setRevealed((value) => !value)}>
@@ -96,6 +96,7 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
         {accountType === 'chatgpt' && chatgptSignInFlow === 'deviceCode' && <p className="my-2 text-xs text-dim">Open the verification link from any device and enter the one-time code in the terminal panel. This signs Codex in with your ChatGPT subscription.</p>}
       </>}
       {agentId === 'opencode' && <p className="my-2 text-xs text-dim">Choose an API key or a subscription in the native provider prompts. Subscription availability depends on the provider.</p>}
+      {agentId === 'claude' && <p className="my-2 text-xs text-dim">Sign in with your Claude subscription through Claude Code. Complete the browser sign-in and enter its code in the terminal panel when prompted.</p>}
       <div className="flex flex-wrap items-center gap-2">
         <button className={btn.primary} aria-label={`Connect ${label} for ${workspaceName}`}
           disabled={disabled || (agentId === 'codex' && accountType === 'apiKey' && !apiKey.trim())} onClick={connect}>Connect</button>
@@ -106,7 +107,7 @@ function AccountCard({ workspaceId, workspaceName, agentId }: AgentAccountTarget
         {pending && account.sessionId && <button className={btn.ghost} aria-label={`Cancel ${label} for ${workspaceName}`}
           onClick={() => void run(() => window.anvil.accounts.cancel({ ...target, sessionId: account.sessionId! }))}>Cancel</button>}
       </div>
-      {pending && agentId === 'opencode' && <p className="mt-3 text-xs text-dim">Complete sign-in or sign-out in the terminal panel. Cancelling stops the command.</p>}
+      {pending && (agentId === 'opencode' || agentId === 'claude') && <p className="mt-3 text-xs text-dim">Complete sign-in or sign-out in the terminal panel. Cancelling stops the command.</p>}
       {pending && account.terminalSessionId && <GhosttyTerminal key={account.terminalSessionId} sessionId={account.terminalSessionId} className="mt-3 h-[180px]" />}
     </section>
   )
@@ -119,6 +120,6 @@ export function WorkspaceAgentAccounts(): JSX.Element {
   return <div className="mt-6">
     <h2 className="font-medium">Accounts for {workspaceName}</h2>
     <p className="mt-1 text-xs text-dim">Account changes apply immediately to this workspace. Credentials stay in the agent's workspace profile.</p>
-    {(['codex', 'opencode'] as const).map((agentId) => <AccountCard key={`${workspaceId}:${agentId}`} workspaceId={workspaceId} workspaceName={workspaceName} agentId={agentId} />)}
+    {(['codex', 'claude', 'opencode'] as const).map((agentId) => <AccountCard key={`${workspaceId}:${agentId}`} workspaceId={workspaceId} workspaceName={workspaceName} agentId={agentId} />)}
   </div>
 }

@@ -10,8 +10,9 @@ type CurrentOpenCodeModel = OpenCodeProviderModel & Partial<Pick<Model, 'capabil
 
 /** Convert the SDK provider response into the agent-neutral catalogue cached by Anvil. */
 export function openCodeModelCatalogue(providers: ProviderListResponse): Pick<ProviderModelList,
-  'models' | 'reasoningByModel' | 'capabilitiesByModel'> {
+  'models' | 'displayByModel' | 'reasoningByModel' | 'capabilitiesByModel'> {
   const models: string[] = []
+  const displayByModel: NonNullable<ProviderModelList['displayByModel']> = {}
   const reasoningByModel: NonNullable<ProviderModelList['reasoningByModel']> = {}
   const capabilitiesByModel: NonNullable<ProviderModelList['capabilitiesByModel']> = {}
   const seen = new Set<string>()
@@ -22,6 +23,10 @@ export function openCodeModelCatalogue(providers: ProviderListResponse): Pick<Pr
       if (seen.has(modelId)) continue
       seen.add(modelId)
       models.push(modelId)
+      displayByModel[modelId] = {
+        ...(providerModel.name ? { name: providerModel.name } : {}),
+        resolvedModel: providerModel.id
+      }
 
       const model = providerModel as CurrentOpenCodeModel
       const variants = model.variants && !Array.isArray(model.variants) ? Object.keys(model.variants) : []
@@ -36,7 +41,7 @@ export function openCodeModelCatalogue(providers: ProviderListResponse): Pick<Pr
     }
   }
 
-  return { models, reasoningByModel, capabilitiesByModel }
+  return { models, displayByModel, reasoningByModel, capabilitiesByModel }
 }
 
 /** ACP has no per-model image field, so use the SDK catalogue captured during discovery. */

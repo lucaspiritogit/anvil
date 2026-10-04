@@ -1,5 +1,5 @@
 import type { AnvilApi } from '@anvil/client-api'
-import type { AgentAccountTarget, WorkspaceAgentAccount } from '@anvil/protocol/types'
+import type { AgentAccountTarget, AgentRateLimitTarget, AgentRateLimitsByAgent, WorkspaceAgentAccount } from '@anvil/protocol/types'
 
 export function fixtureAccounts(name: (id: string) => string, busy: boolean): AnvilApi['accounts'] {
   const states = new Map<string, WorkspaceAgentAccount>()
@@ -18,18 +18,29 @@ export function fixtureAccounts(name: (id: string) => string, busy: boolean): An
     const state = current({ workspaceId, agentId })
     if (state.status !== 'pending') return
     publish({ ...state, status: success ? 'connected' : 'error', sessionId: undefined, terminalSessionId: undefined,
-      accounts: success ? [agentId === 'codex' ? 'ChatGPT: fixture@example.test (plus)' : method === 'api' ? 'OpenAI: API key' : 'OpenAI: subscription'] : [], message: success ? undefined : 'Sign-in failed. Retry the connection.' })
+      accounts: success ? [agentId === 'codex' ? 'ChatGPT: fixture@example.test (plus)' : agentId === 'claude' ? 'Claude: fixture@example.test (max)' : method === 'api' ? 'OpenAI: API key' : 'OpenAI: subscription'] : [], message: success ? undefined : 'Sign-in failed. Retry the connection.' })
   })
   return {
     status: async (target) => current(target),
-    rateLimits: async () => ({
-      rateLimits: {
-        limitId: 'codex', limitName: null,
-        primary: { usedPercent: 18, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
-        secondary: { usedPercent: 26, windowDurationMins: 10_080, resetsAt: Math.floor(Date.now() / 1000) + 86_400 },
-        rateLimitReachedType: null
+    rateLimits: async <Agent extends keyof AgentRateLimitsByAgent>(target: AgentRateLimitTarget<Agent>): Promise<AgentRateLimitsByAgent[Agent]> => {
+      const resetsAt = Math.floor(Date.now() / 1000)
+      const providers: AgentRateLimitsByAgent = {
+        codex: {
+          rateLimits: {
+            limitId: 'codex', limitName: null,
+            primary: { usedPercent: 18, windowDurationMins: 300, resetsAt: resetsAt + 3600 },
+            secondary: { usedPercent: 26, windowDurationMins: 10_080, resetsAt: resetsAt + 86_400 },
+            rateLimitReachedType: null
+          }
+        },
+        claude: {
+          fiveHour: { usedPercent: 18, resetsAt: resetsAt + 3600 },
+          weeklyAll: { usedPercent: 26, resetsAt: resetsAt + 86_400 },
+          weeklyFable: { usedPercent: 12, resetsAt: resetsAt + 86_400 }
+        }
       }
-    }),
+      return providers[target.agentId]
+    },
     onChanged: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     connect: async (input) => {
       const state = current(input)
@@ -40,7 +51,7 @@ export function fixtureAccounts(name: (id: string) => string, busy: boolean): An
       }
       const sessionId = crypto.randomUUID()
       const deviceAuth = input.agentId === 'codex' && input.method === 'deviceAuth'
-      return publish({ ...state, status: 'pending', sessionId, terminalSessionId: input.agentId === 'opencode' || deviceAuth ? `auth-${sessionId}` : undefined,
+      return publish({ ...state, status: 'pending', sessionId, terminalSessionId: input.agentId === 'opencode' || input.agentId === 'claude' || deviceAuth ? `auth-${sessionId}` : undefined,
         message: deviceAuth ? 'Complete Codex sign-in in the terminal panel: open the link and enter the one-time code.' : 'Complete the native sign-in for this workspace.' })
     },
     cancel: async (input) => {

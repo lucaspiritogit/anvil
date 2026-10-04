@@ -11,6 +11,7 @@ import { validateIpcRequest } from '../apps/server/src/handlers/validation'
 import { testWorkspace } from './workspace-fixture'
 import { onTestCleanup } from './test-cleanup'
 import { getAgent } from '../apps/server/src/agents/registry'
+import type { ClaudeAccountStatus } from '../apps/server/src/agents/claude-account'
 
 vi.mock('../apps/server/src/agents/resolve', () => ({ resolveCommand: () => ({ command: '/fake/opencode', prefixArgs: [], viaShell: false }) }))
 
@@ -32,6 +33,7 @@ const personal: AgentAccountTarget = { workspaceId: 'personal', agentId: 'codex'
 
 function fixture() {
   const profiles = new Map<string, CodexAccount | null>()
+  const claudeProfiles = new Map<string, ClaudeAccountStatus>()
   const connections: Array<{ workspaceId: string; handlers: ConnectionHandlers; close: ReturnType<typeof vi.fn>; loginId: string }> = []
   const active = new Set<string>()
   const locked = new Set<string>()
@@ -40,12 +42,24 @@ function fixture() {
   const openBrowser = vi.fn(async () => {})
   const createOpenCodeAuth = vi.fn<TerminalSessionManager['createOpenCodeAuth']>(() => ({ sessionId: 'auth-terminal' }))
   const createCodexAuth = vi.fn<TerminalSessionManager['createCodexAuth']>(() => ({ sessionId: 'codex-terminal' }))
+  const createClaudeAuth = vi.fn<TerminalSessionManager['createClaudeAuth']>(() => ({ sessionId: 'claude-terminal' }))
   const dispose = vi.fn(async () => {})
   let readGate: Promise<void> | undefined
   const readOpenCode = vi.fn(async (workspace: { workspaceId: string }): Promise<string> => {
     if (readGate) await readGate
     return profiles.has(workspace.workspaceId) ? '● OpenAI oauth\n1 credential' : '0 credentials'
   })
+  const readClaude = vi.fn(async (workspace: { workspaceId: string }): Promise<ClaudeAccountStatus> => {
+    if (readGate) await readGate
+    return claudeProfiles.get(workspace.workspaceId) ?? { loggedIn: false, subscription: false, email: null, subscriptionType: null }
+  })
+  const claudeInitialize = vi.fn(async () => ({}))
+  const claudeRequest = vi.fn(async () => ({ rate_limits_available: true, rate_limits: {
+    five_hour: { utilization: 18, resets_at: '2026-10-04T18:00:00Z' },
+    seven_day: { utilization: 25, resets_at: '2026-10-10T18:00:00Z' },
+    model_scoped: [{ display_name: 'Fable', utilization: 40, resets_at: '2026-10-10T18:00:00Z' }]
+  } }))
+  const claudeClose = vi.fn(async () => {})
   let rejectKey = false
   let early = false
   const requests: string[] = []
@@ -59,7 +73,8 @@ function fixture() {
       return () => { locked.delete(id) }
     },
     busy: (id) => active.has(id), invalidate, changed, openBrowser,
-    readOpenCode, terminals: { createOpenCodeAuth, createCodexAuth, dispose },
+    readOpenCode, readClaude, terminals: { createOpenCodeAuth, createCodexAuth, createClaudeAuth, dispose },
+    claudeConnection: () => ({ initialize: claudeInitialize, request: claudeRequest, close: claudeClose, failure: new Promise<never>(() => {}) }),
     connection: (workspace, handlers) => {
       const connection = { workspaceId: workspace.workspaceId, handlers, close: vi.fn(async () => {}), loginId: `login-${connections.length}` }
       connections.push(connection)
@@ -104,7 +119,7 @@ function fixture() {
     }
   })
   onTestCleanup(() => accounts.close())
-  return { accounts, profiles, connections, locked, active, changed, invalidate, openBrowser, createOpenCodeAuth, createCodexAuth, dispose, readOpenCode, requests,
+  return { accounts, profiles, claudeProfiles, connections, locked, active, changed, invalidate, openBrowser, createOpenCodeAuth, createCodexAuth, createClaudeAuth, dispose, readOpenCode, readClaude, claudeInitialize, claudeRequest, claudeClose, requests,
     rejectKey: () => { rejectKey = true }, early: () => { early = true }, setReadGate: (gate?: Promise<void>) => { readGate = gate } }
 }
 
@@ -124,6 +139,52 @@ test('does not expose Codex rate limits for non-ChatGPT accounts', async () => {
   await expect(f.accounts.rateLimits(work)).rejects.toThrow('require a ChatGPT account')
   expect(f.requests).not.toContain('account/rateLimits/read')
   expect(f.connections.at(-1)?.close).toHaveBeenCalledOnce()
+})
+
+test('reads Claude subscription status and limits only from the requested workspace', async () => {
+  const f = fixture()
+  const target = { workspaceId: 'work', agentId: 'claude' as const }
+  f.claudeProfiles.set('work', { loggedIn: true, subscription: true, email: 'work@example.test', subscriptionType: 'pro' })
+  await expect(f.accounts.status(target)).resolves.toMatchObject({ status: 'connected', accounts: ['Claude: work@example.test (pro)'] })
+  await expect(f.accounts.status({ workspaceId: 'personal', agentId: 'claude' })).resolves.toMatchObject({ status: 'signed-out', accounts: [] })
+  await expect(f.accounts.rateLimits(target)).resolves.toMatchObject({
+    fiveHour: { usedPercent: 18 }, weeklyAll: { usedPercent: 25 }, weeklyFable: { usedPercent: 40 }
+  })
+  expect(f.readClaude.mock.lastCall?.[0]).toMatchObject({ workspaceId: 'work', claudeHome: expect.stringContaining(join('work', 'claude')) })
+  expect(f.claudeInitialize).toHaveBeenCalledOnce()
+  expect(f.claudeRequest).toHaveBeenCalledWith('get_usage', { skip_behaviors: true })
+  expect(f.claudeClose).toHaveBeenCalledOnce()
+  expect(f.requests).not.toContain('account/rateLimits/read')
+})
+
+test('rejects Claude usage for signed-out and API-key profiles and closes failed usage readers', async () => {
+  const f = fixture()
+  const target = { workspaceId: 'work', agentId: 'claude' as const }
+  await expect(f.accounts.rateLimits(target)).rejects.toThrow('require a Claude subscription')
+  f.claudeProfiles.set('work', { loggedIn: true, subscription: false, email: null, subscriptionType: null })
+  await expect(f.accounts.status(target)).resolves.toMatchObject({ status: 'signed-out', accounts: [] })
+  await expect(f.accounts.rateLimits(target)).rejects.toThrow('require a Claude subscription')
+  expect(f.claudeRequest).not.toHaveBeenCalled()
+  f.claudeProfiles.set('work', { loggedIn: true, subscription: true, email: null, subscriptionType: 'max' })
+  f.claudeRequest.mockRejectedValueOnce(new Error('Usage unavailable'))
+  await expect(f.accounts.rateLimits(target)).rejects.toThrow('Usage unavailable')
+  expect(f.claudeClose).toHaveBeenCalledOnce()
+})
+
+test('deduplicates concurrent Claude usage reads without caching completed reads', async () => {
+  const f = fixture()
+  const target = { workspaceId: 'work', agentId: 'claude' as const }
+  f.claudeProfiles.set('work', { loggedIn: true, subscription: true, email: null, subscriptionType: 'pro' })
+  const gate = deferred()
+  f.setReadGate(gate.promise)
+  const first = f.accounts.rateLimits(target)
+  const second = f.accounts.rateLimits(target)
+  gate.resolve()
+  await Promise.all([first, second])
+  expect(f.claudeRequest).toHaveBeenCalledOnce()
+  f.setReadGate()
+  await f.accounts.rateLimits(target)
+  expect(f.claudeRequest).toHaveBeenCalledTimes(2)
 })
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
@@ -148,6 +209,10 @@ const terminalAuthCases: TerminalAuthCase[] = [
   {
     name: 'OpenCode native auth', target: { ...work, agentId: 'opencode' }, connect: { ...work, agentId: 'opencode', method: 'native' }, terminalSessionId: 'auth-terminal',
     exit: (f, exitCode) => { f.createOpenCodeAuth.mock.lastCall![2](exitCode) }
+  },
+  {
+    name: 'Claude subscription auth', target: { ...work, agentId: 'claude' }, connect: { ...work, agentId: 'claude', method: 'native' }, terminalSessionId: 'claude-terminal',
+    exit: (f, exitCode) => { f.createClaudeAuth.mock.lastCall![2](exitCode) }
   }
 ]
 
@@ -159,8 +224,9 @@ test.each(terminalAuthCases)('$name detaches its terminal before delayed cleanup
   const pending = await f.accounts.connect(connect)
   const readsBeforeFinish = target.agentId === 'opencode'
     ? f.readOpenCode.mock.calls.length
-    : f.requests.filter((method) => method === 'account/read').length
+    : target.agentId === 'claude' ? f.readClaude.mock.calls.length : f.requests.filter((method) => method === 'account/read').length
   f.profiles.set(target.workspaceId, { type: 'apiKey' })
+  f.claudeProfiles.set(target.workspaceId, { loggedIn: true, subscription: true, email: 'work@example.test', subscriptionType: 'pro' })
   f.setReadGate(refresh.promise)
   const changesBeforeFinish = f.changed.mock.calls.length
 
@@ -183,7 +249,7 @@ test.each(terminalAuthCases)('$name detaches its terminal before delayed cleanup
   await vi.waitFor(() => {
     const reads = target.agentId === 'opencode'
       ? f.readOpenCode.mock.calls.length
-      : f.requests.filter((method) => method === 'account/read').length
+      : target.agentId === 'claude' ? f.readClaude.mock.calls.length : f.requests.filter((method) => method === 'account/read').length
     expect(reads).toBe(readsBeforeFinish + 1)
   })
   expect((await f.accounts.status(target)).terminalSessionId).toBeUndefined()
@@ -567,4 +633,86 @@ test('accounts:connect validator rejects deviceAuth for opencode and native for 
   expect(() => validateIpcRequest('accounts:connect', [{ ...target, agentId: 'codex', method: 'native' }])).toThrow('unsupported agent login method')
   expect(() => validateIpcRequest('accounts:connect', [{ ...target, agentId: 'opencode', method: 'deviceAuth' }])).toThrow('unsupported agent login method')
   expect(() => validateIpcRequest('accounts:connect', [{ ...target, agentId: 'opencode', method: 'native' }])).not.toThrow()
+})
+
+test('Claude login waits for fresh authentication and completes after a credential metadata change', async () => {
+  vi.useFakeTimers()
+  onTestCleanup(() => { vi.useRealTimers() })
+  const f = fixture()
+  const target = { workspaceId: 'work', agentId: 'claude' as const }
+  f.claudeProfiles.set('work', { loggedIn: true, subscription: true, email: 'work@example.test', subscriptionType: 'pro' })
+  const pending = await f.accounts.connect({ ...target, method: 'native' })
+  expect(pending).toMatchObject({ status: 'pending', terminalSessionId: 'claude-terminal' })
+  expect(f.createClaudeAuth).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'work' }), false, expect.any(Function))
+  await vi.advanceTimersByTimeAsync(3000)
+  expect(await f.accounts.status(target)).toMatchObject({ status: 'pending', sessionId: pending.sessionId })
+  const workspace = testWorkspace('work')
+  writeFileSync(join(workspace.claudeHome, '.credentials.json'), '{}')
+  await vi.advanceTimersByTimeAsync(3000)
+  await vi.waitFor(() => expect(f.locked.has('work')).toBe(false))
+  expect(await f.accounts.status(target)).toMatchObject({ status: 'connected' })
+  expect(f.dispose).toHaveBeenCalledWith('claude-terminal')
+  expect(f.invalidate.mock.calls.every(([id]) => id === 'work')).toBe(true)
+})
+
+test('Claude same-account reconnect ignores general config writes and waits for native auth completion', async () => {
+  vi.useFakeTimers()
+  onTestCleanup(() => { vi.useRealTimers() })
+  const f = fixture()
+  const target = { workspaceId: 'work', agentId: 'claude' as const }
+  f.claudeProfiles.set('work', { loggedIn: true, subscription: true, email: 'work@example.test', subscriptionType: 'pro' })
+  const pending = await f.accounts.connect({ ...target, method: 'native' })
+  writeFileSync(join(testWorkspace('work').claudeHome, '.claude.json'), '{"numStartups":1}')
+  await vi.advanceTimersByTimeAsync(3000)
+  expect(await f.accounts.status(target)).toMatchObject({
+    status: 'pending', sessionId: pending.sessionId, terminalSessionId: 'claude-terminal'
+  })
+  expect(f.dispose).not.toHaveBeenCalled()
+  expect(f.locked.has('work')).toBe(true)
+  f.createClaudeAuth.mock.lastCall![2](0)
+  await vi.waitFor(() => expect(f.locked.has('work')).toBe(false))
+  expect(await f.accounts.status(target)).toMatchObject({ status: 'connected', accounts: ['Claude: work@example.test (pro)'] })
+  expect(f.dispose).toHaveBeenCalledWith('claude-terminal')
+})
+
+test('Claude logout, failed auth, cancellation and timeout retain workspace ownership', async () => {
+  vi.useFakeTimers()
+  onTestCleanup(() => { vi.useRealTimers() })
+  const f = fixture()
+  const target = { workspaceId: 'work', agentId: 'claude' as const }
+  f.active.add('work')
+  expect(await f.accounts.connect({ ...target, method: 'native' })).toMatchObject({ status: 'busy' })
+  f.active.delete('work')
+  f.claudeProfiles.set('work', { loggedIn: true, subscription: true, email: null, subscriptionType: 'pro' })
+  await f.accounts.disconnect(target)
+  expect(f.createClaudeAuth).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: 'work' }), true, expect.any(Function))
+  f.claudeProfiles.delete('work')
+  await vi.advanceTimersByTimeAsync(3000)
+  await vi.waitFor(() => expect(f.locked.has('work')).toBe(false))
+  expect(await f.accounts.status(target)).toMatchObject({ status: 'signed-out' })
+  const failed = await f.accounts.connect({ ...target, method: 'native' })
+  f.createClaudeAuth.mock.lastCall![2](1)
+  await vi.waitFor(() => expect(f.locked.has('work')).toBe(false))
+  expect(f.changed.mock.lastCall?.[0]).toMatchObject({ status: 'error' })
+  expect(f.changed.mock.lastCall?.[0].sessionId).toBeUndefined()
+  expect((await f.accounts.cancel(target, failed.sessionId!)).status).toBe('signed-out')
+  const cancelled = await f.accounts.connect({ ...target, method: 'native' })
+  expect(await f.accounts.cancel(target, 'stale')).toMatchObject({ status: 'pending', sessionId: cancelled.sessionId })
+  expect(await f.accounts.cancel(target, cancelled.sessionId!)).toMatchObject({ status: 'cancelled' })
+  await f.accounts.connect({ ...target, method: 'native' })
+  await vi.advanceTimersByTimeAsync(10 * 60_000)
+  await vi.waitFor(() => expect(f.locked.has('work')).toBe(false))
+  expect(f.changed.mock.lastCall?.[0]).toMatchObject({ status: 'error', message: 'Account connection timed out. Retry when ready.' })
+  expect(await f.accounts.status({ workspaceId: 'personal', agentId: 'claude' })).toMatchObject({ status: 'signed-out' })
+})
+
+test('Claude account IPC accepts only native subscription login and supported usage targets', () => {
+  const target = { workspaceId: 'default', agentId: 'claude' }
+  expect(() => validateIpcRequest('accounts:connect', [{ ...target, method: 'native' }])).not.toThrow()
+  for (const method of ['apiKey', 'chatgpt', 'deviceAuth']) {
+    expect(() => validateIpcRequest('accounts:connect', [{ ...target, method, ...(method === 'apiKey' ? { apiKey: 'secret' } : {}) }])).toThrow('unsupported agent login method')
+  }
+  expect(() => validateIpcRequest('accounts:connect', [{ ...target, method: 'native', apiKey: 'secret' }])).toThrow('requires a key only')
+  expect(() => validateIpcRequest('accounts:rate-limits', [target])).not.toThrow()
+  expect(() => validateIpcRequest('accounts:rate-limits', [{ ...target, agentId: 'opencode' }])).toThrow('Invalid IPC')
 })

@@ -149,7 +149,7 @@ function toTask(row: TaskRow): Task {
     reviewPolicy: row.reviewPolicy,
     checkoutMode: row.checkoutMode,
     ...(row.startBase === null ? {} : { startBase: row.startBase }),
-    projectId: row.projectId,
+    ...(row.projectId === null ? {} : { projectId: row.projectId }),
     workspaceId: row.workspaceId,
     agentId: row.agentId,
     agentLabel: row.agentLabel,
@@ -199,7 +199,7 @@ function toTaskResultNotice(row: TaskResultNoticeRow): TaskResultNotice {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
-    projectId: row.projectId,
+    ...(row.projectId === null ? {} : { projectId: row.projectId }),
     taskId: row.taskId,
     resultVersion: row.resultVersion,
     kind: row.kind,
@@ -266,6 +266,7 @@ function toTaskEvent(row: TaskEventRow): TaskEvent {
 function toTaskRow(task: Task): typeof tasks.$inferInsert {
   return {
     ...withoutPullRequest(task),
+    projectId: task.projectId ?? null,
     reviewPolicy: task.reviewPolicy ?? 'review_each_issue',
     checkoutMode: task.checkoutMode ?? 'worktree',
     startBase: task.startBase ?? null,
@@ -734,11 +735,13 @@ export class Store {
     const models = db.select({
       key: tasks.model,
       label: tasks.model,
+      agentId: sql<string | null>`case when count(distinct ${tasks.agentId}) = 1 then min(${tasks.agentId}) else null end`,
       ...groupedTotals()
     }).from(tasks).where(and(scope, isNotNull(tasks.model), sql`trim(${tasks.model}) <> ''`))
       .groupBy(tasks.model).all()
       .filter((row): row is typeof row & { key: string; label: string } => row.key !== null && row.label !== null)
-      .map(toBreakdown).sort(compareAnalyticsBreakdown)
+      .map(({ agentId, ...row }) => ({ ...toBreakdown(row), ...(agentId ? { agentId } : {}) }))
+      .sort(compareAnalyticsBreakdown)
     const statuses = db.select({
       key: tasks.status,
       label: tasks.status,
@@ -746,10 +749,10 @@ export class Store {
     }).from(tasks).where(scope).groupBy(tasks.status).all()
       .map(toBreakdown).sort(compareAnalyticsBreakdown)
     const projectBreakdown = db.select({
-      key: tasks.projectId,
-      label: projects.name,
+      key: sql<string>`coalesce(${tasks.projectId}, 'no-project')`,
+      label: sql<string>`coalesce(${projects.name}, 'No project')`,
       ...groupedTotals()
-    }).from(tasks).innerJoin(projects, eq(tasks.projectId, projects.id)).where(scope)
+    }).from(tasks).leftJoin(projects, eq(tasks.projectId, projects.id)).where(scope)
       .groupBy(tasks.projectId, projects.name).all()
       .map(toBreakdown).sort(compareAnalyticsBreakdown)
     const dailyByDate = new Map<string, AnalyticsDailyPoint>()
@@ -897,9 +900,9 @@ export class Store {
   addTask(task: Omit<Task, 'workspaceId'> & { workspaceId?: string }): Task {
     const ownedTask: Task = {
       ...task,
-      style: task.style ?? 'work',
+      style: task.style ?? (task.projectId === undefined ? 'quick' : 'work'),
       reviewPolicy: task.reviewPolicy ?? 'review_each_issue',
-      checkoutMode: task.checkoutMode ?? 'worktree',
+      checkoutMode: task.checkoutMode ?? (task.projectId === undefined ? 'local' : 'worktree'),
       workspaceId: task.workspaceId ?? this.getActiveWorkspace().id,
       ...advanceTaskWorkingTime({ workingTimeMs: task.workingTimeMs }, isTaskWorking(task), Date.now())
     }
@@ -976,7 +979,7 @@ export class Store {
           .where(eq(taskResultNotices.taskId, id)).orderBy(desc(taskResultNotices.resultVersion)).limit(1).get()
         const createdAt = Date.now()
         const row: TaskResultNoticeRow = {
-          id: randomUUID(), workspaceId: next.workspaceId, projectId: next.projectId, taskId: next.id,
+          id: randomUUID(), workspaceId: next.workspaceId, projectId: next.projectId ?? null, taskId: next.id,
           resultVersion: (latest?.resultVersion ?? 0) + 1, kind: result.kind,
           headCommit: result.headCommit ?? null, createdAt, seenAt: null,
           dismissedAt: result.kind === 'reviewable' && next.settledAt !== undefined ? createdAt : null

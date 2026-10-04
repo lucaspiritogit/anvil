@@ -45,7 +45,7 @@ test('captures immutable profiles without inheriting provider credentials or glo
   const { store, work, personal } = fixture()
   const inherited = { PATH: '/runtime/bin', HTTPS_PROXY: 'http://proxy:8080', LANG: 'en_US.UTF-8',
     ANVIL_DATABASE_PATH: '/anvil.db', HOME: '/real-home', CODEX_HOME: '/global-codex',
-    OPENAI_API_KEY: 'work-secret', ANTHROPIC_API_KEY: 'other-secret', AWS_PROFILE: 'work',
+    OPENAI_API_KEY: 'work-secret', ANTHROPIC_API_KEY: 'other-secret', CLAUDE_CODE_OAUTH_TOKEN: 'global-secret', CLAUDE_CONFIG_DIR: '/global-claude', AWS_PROFILE: 'work',
     AWS_ACCESS_KEY_ID: 'cloud-secret', GOOGLE_APPLICATION_CREDENTIALS: '/cloud.json',
     OPENCODE_CONFIG: '/global.json', OPENCODE_CONFIG_CONTENT: '{"key":"secret"}',
     XDG_DATA_HOME: '/global-data', NODE_OPTIONS: '--require=/global.js', GIT_CONFIG_GLOBAL: '/global-git' }
@@ -55,8 +55,8 @@ test('captures immutable profiles without inheriting provider credentials or glo
   inherited.OPENAI_API_KEY = 'changed-secret'
   expect(context.workspaceId).toBe(work)
   expect(context.environment).toMatchObject({ PATH: '/runtime/bin', HTTPS_PROXY: 'http://proxy:8080',
-    LANG: 'en_US.UTF-8', HOME: context.home, CODEX_HOME: context.codexHome })
-  for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AWS_PROFILE', 'AWS_ACCESS_KEY_ID',
+    LANG: 'en_US.UTF-8', HOME: context.home, CODEX_HOME: context.codexHome, CLAUDE_CONFIG_DIR: context.claudeHome })
+  for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'AWS_PROFILE', 'AWS_ACCESS_KEY_ID',
     'GOOGLE_APPLICATION_CREDENTIALS', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_CONTENT', 'NODE_OPTIONS', 'GIT_CONFIG_GLOBAL']) {
     expect(context.environment[key], key).toBeUndefined()
   }
@@ -64,12 +64,70 @@ test('captures immutable profiles without inheriting provider credentials or glo
   expect(Object.isFrozen(context)).toBe(true)
   expect(Object.isFrozen(context.environment)).toBe(true)
   expect(resolveWorkspaceExecution(store, personal).home).not.toBe(context.home)
+  expect(resolveWorkspaceExecution(store, personal).claudeHome).not.toBe(context.claudeHome)
   expect(() => resolveWorkspaceExecution(store, '../escape')).toThrow()
   const globalGit = join(testHome, 'global-gitconfig')
   await writeFile(globalGit, '[user]\nname = Shared Author\nemail = shared@example.invalid\n[credential]\nhelper = private-helper\n')
   const identity = resolveWorkspaceExecution(store, store.createWorkspace('Identity').id, { ...process.env, GIT_CONFIG_GLOBAL: globalGit })
   expect(await readFile(join(identity.home, '.gitconfig'), 'utf8')).not.toContain('credential')
   expect(execFileSync('git', ['config', '--global', '--get', 'user.email'], { env: identity.environment, encoding: 'utf8' }).trim()).toBe('shared@example.invalid')
+})
+
+test('Claude profiles retain their stable workspace identity across workspace rename', () => {
+  const { store, work, personal, task } = fixture()
+  store.updateTask(task.id, { status: 'succeeded' })
+  const before = resolveWorkspaceExecution(store, work)
+  store.renameWorkspace(work, 'Renamed work')
+  const after = resolveWorkspaceExecution(store, work)
+  expect(after.directory).not.toBe(before.directory)
+  expect(after.claudeHome).toBe(before.claudeHome)
+  expect(after.environment.CLAUDE_CONFIG_DIR).toBe(before.environment.CLAUDE_CONFIG_DIR)
+  expect(resolveWorkspaceExecution(store, personal).claudeHome).not.toBe(after.claudeHome)
+})
+
+test('Claude account changes invalidate only their owning workspace after a rename', async () => {
+  const { store, work, personal, task } = fixture()
+  store.updateTask(task.id, { status: 'succeeded' })
+  const changes: string[] = []
+  const stop = watchWorkspaceAuthChanges(store, (workspaceId) => changes.push(workspaceId))
+  onTestCleanup(stop)
+  const workspace = resolveWorkspaceExecution(store, work)
+  store.renameWorkspace(work, 'Renamed work')
+  await writeFile(join(workspace.claudeHome, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'work-account' } }))
+  await expect.poll(() => changes.includes(work)).toBe(true)
+  expect(changes).not.toContain(personal)
+})
+
+test('Claude model discovery cache writes do not invalidate authentication', async () => {
+  const { store, work } = fixture()
+  const workspace = resolveWorkspaceExecution(store, work)
+  const configuration = join(workspace.claudeHome, '.claude.json')
+  const oauthAccount = { accountUuid: 'work-account', subscriptionType: 'max' }
+  await writeFile(configuration, JSON.stringify({ oauthAccount: { ...oauthAccount, profileFetchedAt: 1 }, numStartups: 1 }))
+  const changed = vi.fn()
+  onTestCleanup(watchWorkspaceAuthChanges(store, changed))
+  await writeFile(configuration, JSON.stringify({ oauthAccount: { ...oauthAccount, profileFetchedAt: 2 }, numStartups: 2,
+    cachedGrowthBookFeatures: { availableModels: ['fable'] }, cachedExperimentData: {},
+    cachedGrowthBookFeaturesAt: Date.now(), cachedUsageUtilization: { fiveHour: 10 }
+  }))
+  await new Promise((resolve) => setTimeout(resolve, 1_500))
+  expect(changed).not.toHaveBeenCalled()
+  await writeFile(join(workspace.claudeHome, '.credentials.json'), '{}')
+  await expect.poll(() => changed.mock.calls.some(([workspaceId]) => workspaceId === work)).toBe(true)
+})
+
+test('Claude bookkeeping-only profile creation preserves authentication while API key changes invalidate it', async () => {
+  const { store, work, personal } = fixture()
+  const workspace = resolveWorkspaceExecution(store, work)
+  const configuration = join(workspace.claudeHome, '.claude.json')
+  const changed = vi.fn()
+  onTestCleanup(watchWorkspaceAuthChanges(store, changed))
+  await writeFile(configuration, JSON.stringify({ numStartups: 1, cachedUsageUtilization: {} }))
+  await new Promise((resolve) => setTimeout(resolve, 1_500))
+  expect(changed).not.toHaveBeenCalled()
+  await writeFile(configuration, JSON.stringify({ primaryApiKey: 'workspace-api-key', numStartups: 2 }))
+  await expect.poll(() => changed.mock.calls.some(([workspaceId]) => workspaceId === work)).toBe(true)
+  expect(changed.mock.calls.some(([workspaceId]) => workspaceId === personal)).toBe(false)
 })
 
 test('keeps concurrent Work and Personal turns, steering and metadata on their owner, then closes every client', async () => {

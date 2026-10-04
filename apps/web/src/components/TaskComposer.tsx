@@ -13,8 +13,8 @@ import { useComposerImages } from '../state/composer-images'
 import { cn } from '../ui'
 import { ComposerModelPicker } from './ComposerModelPicker'
 import { ComposerOverflowOptions } from './ComposerOverflowOptions'
+import { ComposerOptionTooltip } from './ComposerOptionTooltip'
 import { ProjectBranchSelector } from './ProjectBranchSelector'
-import { TaskStyleBadge } from './TaskStyleBadge'
 import { TASK_STYLES, TASK_STYLE_LABELS } from '@anvil/protocol/task-style'
 import type { TaskCheckoutMode, TaskReviewPolicy } from '@anvil/protocol/types'
 
@@ -35,7 +35,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const agents = useStore((state) => state.agents)
   const startTask = useStore((state) => state.startTask)
   const taskComposerFocusRequest = useStore((state) => state.taskComposerFocusRequest)
-  const style = useStore((state) => state.taskComposerStyle)
+  const style = useStore((state) => projectId ? state.taskComposerStyle : 'quick')
   const setStyle = useStore((state) => state.setTaskComposerStyle)
   const isRepository = useStore((state) => projectId ? state.gitStatusByProject[projectId]?.isRepository : false)
   const promptRef = useRef<HTMLTextAreaElement>(null)
@@ -98,9 +98,19 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     prompt.setSelectionRange(prompt.value.length, prompt.value.length)
   }, [taskComposerFocusRequest])
 
-  const isolated = style === 'work' || checkoutMode === 'worktree'
+  const isolated = Boolean(projectId) && (style === 'work' || checkoutMode === 'worktree')
+  const styleDescription = style === 'work'
+    ? 'Delegate planned work on a task branch. Changes wait for you to merge them.'
+    : !projectId
+      ? 'Ask a question or start a task without a project.'
+      : checkoutMode === 'worktree'
+        ? 'Ask a question or make a focused change in an isolated worktree.'
+        : 'Ask a question or make a focused change in the current checkout.'
+  const reviewDescription = reviewPolicy === 'review_at_task_end'
+    ? 'Runs unattended until the final review. Merge and push still wait for you.'
+    : 'Pause after every step to review its changes before continuing.'
   const submit = async (): Promise<void> => {
-    if (!projectId || useStore.getState().activeProjectId !== projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || switchingBranch || (isolated && isRepository === false) || submitting.current) return
+    if (useStore.getState().activeProjectId !== projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || switchingBranch || (isolated && isRepository === false) || submitting.current) return
     submitting.current = true
     restorePromptFocus.current = document.activeElement === promptRef.current
     if (successTimer.current) clearTimeout(successTimer.current)
@@ -114,7 +124,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         style,
         reviewPolicy: style === 'work' ? reviewPolicy : 'review_each_issue',
         agentId,
-        checkoutMode: style === 'quick' ? checkoutMode : undefined,
+        checkoutMode: projectId ? style === 'quick' ? checkoutMode : undefined : 'local',
         parentTaskId: style === 'work' ? parentTaskId || undefined : undefined,
         ...(isolated && !parentTaskId && startBase ? { startBase } : {}),
         prompt: prompt.trim(),
@@ -145,9 +155,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   return (
     <div>
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
-      {style === 'quick' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-dim"><TaskStyleBadge style="quick" /> {checkoutMode === 'worktree' ? 'Ask a question or make a focused change in an isolated worktree.' : 'Ask a question or make a focused change in the current checkout.'}</p>}
-      {style === 'work' && <p className="-mt-2 mb-3 flex items-center gap-2 text-xs text-dim"><TaskStyleBadge style="work" /> Delegate planned work on a task branch. Changes wait for you to merge them.</p>}
-      {style === 'work' && reviewPolicy === 'review_at_task_end' && <p className="-mt-2 mb-3 flex items-center gap-1.5 pl-2.5 text-xs text-warn"><Icon icon="moon-star" size={12} className="shrink-0" /> Runs unattended until the final review. Merge and push still wait for you.</p>}
       {style === 'work' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">Work requires a Git repository so Anvil can create an isolated branch and worktree.</p>}
       {style === 'quick' && checkoutMode === 'worktree' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">An isolated worktree requires a Git repository. Use the current checkout instead.</p>}
       {style === 'work' && parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
@@ -237,32 +244,42 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 event.currentTarget.value = ''
               }}
             />
-            <label className="relative flex min-w-0 items-center overflow-hidden" title="Task style">
-              <span className="sr-only">Task style</span>
-              <Icon icon={style === 'quick' ? 'rabbit' : 'anvil'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
-              <select
-                aria-label="Task style"
-                className={cn(compactSelect, 'pl-8')}
-                value={style}
-                onChange={(event) => setStyle(event.target.value as typeof style)}
-              >
-                {TASK_STYLES.map((option) => <option className="bg-raised text-fg" key={option} value={option}>{TASK_STYLE_LABELS[option]}</option>)}
-              </select>
-              <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
-            </label>
-            {style === 'work' && <label className="relative flex min-w-0 items-center overflow-hidden" title={reviewPolicy === 'review_at_task_end' ? 'Run through issue reviews and stop at the final task review' : 'Pause after every issue for review'}>
-              <Icon icon={reviewPolicy === 'review_at_task_end' ? 'moon-star' : 'table-of-contents'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
-              <select
-                aria-label="Review policy"
-                className={cn(compactSelect, 'pl-8')}
-                value={reviewPolicy}
-                onChange={(event) => preferences.setReviewPolicy(event.target.value as TaskReviewPolicy)}
-              >
-                <option className="bg-raised text-fg" value="review_each_issue">Review each step</option>
-                <option className="bg-raised text-fg" value="review_at_task_end">Review at the end</option>
-              </select>
-              <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
-            </label>}
+            <ComposerOptionTooltip title={TASK_STYLE_LABELS[style]} description={styleDescription} disabled={busy}>
+              {(tooltipId) => (
+                <label className="relative flex min-w-0 items-center overflow-hidden">
+                  <span className="sr-only">Task style</span>
+                  <Icon icon={style === 'quick' ? 'rabbit' : 'anvil'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
+                  <select
+                    aria-label="Task style"
+                    aria-describedby={tooltipId}
+                    className={cn(compactSelect, 'pl-8')}
+                    value={style}
+                    onChange={(event) => setStyle(event.target.value as typeof style)}
+                  >
+                    {TASK_STYLES.map((option) => <option className="bg-raised text-fg" key={option} value={option} disabled={!projectId && option === 'work'}>{TASK_STYLE_LABELS[option]}</option>)}
+                  </select>
+                  <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
+                </label>
+              )}
+            </ComposerOptionTooltip>
+            {style === 'work' && <ComposerOptionTooltip title={reviewPolicy === 'review_at_task_end' ? 'Review at the end' : 'Review each step'} description={reviewDescription} disabled={busy}>
+              {(tooltipId) => (
+                <label className="relative flex min-w-0 items-center overflow-hidden">
+                  <Icon icon={reviewPolicy === 'review_at_task_end' ? 'moon-star' : 'table-of-contents'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
+                  <select
+                    aria-label="Review policy"
+                    aria-describedby={tooltipId}
+                    className={cn(compactSelect, 'pl-8')}
+                    value={reviewPolicy}
+                    onChange={(event) => preferences.setReviewPolicy(event.target.value as TaskReviewPolicy)}
+                  >
+                    <option className="bg-raised text-fg" value="review_each_issue">Review each step</option>
+                    <option className="bg-raised text-fg" value="review_at_task_end">Review at the end</option>
+                  </select>
+                  <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
+                </label>
+              )}
+            </ComposerOptionTooltip>}
             <ComposerModelPicker
               agentId={agentId}
               agents={agents}
@@ -292,7 +309,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 aria-label="Attach image"
                 title="Attach image"
                 className="grid w-8 shrink-0 place-items-center text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
-                disabled={!projectId || busy}
+                disabled={busy}
                 onClick={() => imageInputRef.current?.click()}
               >
                 <Icon icon="paperclip" size={17} aria-hidden="true" />
@@ -302,7 +319,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 aria-label={busy ? 'Starting…' : 'Send'}
                 title={busy ? 'Starting…' : 'Send'}
                 className="grid w-8 shrink-0 place-items-center bg-accent text-canvas transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
-                disabled={!projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || busy || switchingBranch || (isolated && isRepository === false)}
+                disabled={!hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || busy || switchingBranch || (isolated && isRepository === false)}
               >
                 <Icon icon="chevron-up" size={18} aria-hidden="true" />
               </button>

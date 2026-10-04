@@ -14,7 +14,8 @@ import type {
   WorkspaceSettingsChange,
   AgentDefinition,
   AnalyticsRange,
-  CodexRateLimits,
+  AgentRateLimitsByAgent,
+  AgentRateLimitTarget,
   GitHubCredentialStatus,
   ConnectionsStatus,
   ConnectionsStatusChange,
@@ -210,7 +211,7 @@ export function createAnvilApi(url: string, host: ClientHost) {
     },
     accounts: {
       status: (input: IpcRequests['accounts:status']): Promise<WorkspaceAgentAccount> => invoke('accounts:status', input),
-      rateLimits: (input: IpcRequests['accounts:rate-limits']): Promise<CodexRateLimits> => invoke('accounts:rate-limits', input),
+      rateLimits: <Agent extends keyof AgentRateLimitsByAgent>(input: AgentRateLimitTarget<Agent>): Promise<AgentRateLimitsByAgent[Agent]> => invoke('accounts:rate-limits', input),
       connect: (input: IpcRequests['accounts:connect']): Promise<WorkspaceAgentAccount> => invoke('accounts:connect', input),
       disconnect: (input: IpcRequests['accounts:disconnect']): Promise<WorkspaceAgentAccount> => invoke('accounts:disconnect', input),
       cancel: (input: IpcRequests['accounts:cancel']): Promise<WorkspaceAgentAccount> => invoke('accounts:cancel', input),

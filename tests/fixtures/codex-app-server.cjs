@@ -171,9 +171,9 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     if (scenario === 'models-empty') return respond(message.id, { data: [], nextCursor: null })
     if (scenario === 'models-hang') return
     const data = message.params.cursor ? [{
-      id: 'plain-id', model: 'plain', supportedReasoningEfforts: [], defaultReasoningEffort: 'none'
+      id: 'plain-id', model: 'plain', displayName: 'Plain 1', supportedReasoningEfforts: [], defaultReasoningEffort: 'none'
     }] : [{
-      id: 'catalogue-id', model: 'reasoner', inputModalities: ['text', 'image'],
+      id: 'catalogue-id', model: 'reasoner', displayName: 'Reasoner 5.1', inputModalities: ['text', 'image'],
       supportedReasoningEfforts: [
         { reasoningEffort: 'max', description: 'Maximum possible reasoning' },
         { reasoningEffort: 'high', description: 'Greater reasoning depth for complex problems' },

@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { Store } from '../store'
+import type { Task } from '@anvil/protocol/types'
 
 /** Main-owned paths and environment, captured before any asynchronous preparation. */
 export interface WorkspaceExecutionContext {
@@ -9,6 +10,7 @@ export interface WorkspaceExecutionContext {
   readonly directory: string
   readonly home: string
   readonly codexHome: string
+  readonly claudeHome: string
   readonly environment: Readonly<NodeJS.ProcessEnv>
 }
 
@@ -37,6 +39,11 @@ function seedGitIdentity(home: string, inherited: NodeJS.ProcessEnv): void {
   writeFileSync(path, lines.join('\n') + '\n', { flag: 'wx', mode: 0o600 })
 }
 
+export function claudeWorkspaceProfile(directory: string, workspaceId: string): string {
+  if (!/^[a-zA-Z0-9_-]+$/.test(workspaceId)) throw new Error('Invalid workspace identifier')
+  return join(dirname(dirname(directory)), 'agent-profiles', workspaceId, 'claude')
+}
+
 export function resolveWorkspaceExecution(
   store: Pick<Store, 'getWorkspaceDirectory'>,
   workspaceId: string,
@@ -45,6 +52,7 @@ export function resolveWorkspaceExecution(
   const directory = store.getWorkspaceDirectory(workspaceId)
   const home = join(directory, 'home')
   const codexHome = join(directory, 'codex')
+  const claudeHome = claudeWorkspaceProfile(directory, workspaceId)
   const environment: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(inherited)) {
     if (RUNTIME_VARIABLE.test(key) && value !== undefined) environment[key] = value
@@ -53,6 +61,7 @@ export function resolveWorkspaceExecution(
     HOME: home,
     USERPROFILE: home,
     CODEX_HOME: codexHome,
+    CLAUDE_CONFIG_DIR: claudeHome,
     XDG_CONFIG_HOME: join(directory, 'config'),
     XDG_DATA_HOME: join(directory, 'data'),
     XDG_CACHE_HOME: join(directory, 'cache'),
@@ -61,15 +70,25 @@ export function resolveWorkspaceExecution(
     LOCALAPPDATA: join(directory, 'data'),
     OPENCODE_DISABLE_AUTOUPDATE: 'true'
   })
-  for (const path of [home, codexHome, environment.XDG_CONFIG_HOME!, environment.XDG_DATA_HOME!, environment.XDG_CACHE_HOME!, environment.XDG_STATE_HOME!]) {
+  for (const path of [home, codexHome, claudeHome, environment.XDG_CONFIG_HOME!, environment.XDG_DATA_HOME!, environment.XDG_CACHE_HOME!, environment.XDG_STATE_HOME!]) {
     mkdirSync(path, { recursive: true, mode: 0o700 })
   }
   seedGitIdentity(home, inherited)
-  return Object.freeze({ workspaceId, directory, home, codexHome, environment: Object.freeze(environment) })
+  return Object.freeze({ workspaceId, directory, home, codexHome, claudeHome, environment: Object.freeze(environment) })
 }
 
 export function resolveTaskWorkspace(store: Store, taskId: string): WorkspaceExecutionContext {
   const task = store.getTask(taskId)
   if (!task) throw new Error('Task not found')
   return resolveWorkspaceExecution(store, task.workspaceId)
+}
+
+export function resolveProjectlessTaskDirectory(
+  store: Pick<Store, 'getWorkspaceDirectory'>,
+  task: Pick<Task, 'id' | 'workspaceId'>
+): string {
+  if (!/^[a-zA-Z0-9_-]+$/.test(task.id)) throw new Error('Invalid task directory identifier')
+  const directory = join(store.getWorkspaceDirectory(task.workspaceId), 'tasks', task.id)
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  return directory
 }

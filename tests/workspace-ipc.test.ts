@@ -190,3 +190,28 @@ test('last selected projects are independent and restored with the workspace sna
   expect(useStore.getState().activeProjectId).toBe('second')
   expect(store.getWorkspacePreferences(work.id).lastProjectId).toBe('first')
 })
+
+test('an explicit no-project choice survives workspace switching, hydration and SQLite restart', async () => {
+  store.addProject({
+    id: 'project', name: 'Project', path: join(testHome, 'project'), createdAt: 0,
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+  })
+  rendererBridge()
+  await useStore.getState().load()
+  useStore.getState().selectProject('project')
+  useStore.getState().selectProject(null)
+  const work = store.createWorkspace('Work')
+  await useStore.getState().selectWorkspace(work.id)
+  await useStore.getState().selectWorkspace('default')
+  expect(store.getWorkspacePreferences('default').lastProjectId).toBeNull()
+  expect(useStore.getState().projects).toHaveLength(1)
+  expect(useStore.getState().activeProjectId).toBeNull()
+  await useStore.getState().load()
+  expect(useStore.getState().activeProjectId).toBeNull()
+  store.close()
+  store = new Store(database, options)
+  rendererBridge()
+  await useStore.getState().load()
+  expect(useStore.getState().projects).toHaveLength(1)
+  expect(useStore.getState().activeProjectId).toBeNull()
+})

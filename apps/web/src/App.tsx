@@ -26,7 +26,7 @@ export function App(): JSX.Element {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [mobileNavigation, setMobileNavigation] = useState(() => window.matchMedia('(max-width: 700px)').matches)
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
-  const projectId = useStore((s) => s.activeProjectId ?? s.projects[0]?.id)
+  const projectId = useStore((s) => s.activeProjectId)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mobileNavigationButtonRef = useRef<HTMLButtonElement>(null)
   const mobileNavigationCloseRef = useRef<HTMLButtonElement>(null)
@@ -154,13 +154,14 @@ export function App(): JSX.Element {
     const offWorkspaces = window.anvil.workspaces.onChanged((workspaces) => useStore.setState({ workspaces }))
     const offProjects = window.anvil.projects.onChanged((projects) => {
       useStore.setState((state) => {
-        const tasks = state.tasks.filter((task) => projects.some((project) => project.id === task.projectId))
+        const tasks = state.tasks.filter((task) => task.projectId === undefined || projects.some((project) => project.id === task.projectId))
         const view = state.view
         return {
           projects,
           tasks,
-          taskResultNotices: state.taskResultNotices.filter((notice) => projects.some((project) => project.id === notice.projectId)),
-          activeProjectId: projects.some((project) => project.id === state.activeProjectId) ? state.activeProjectId : projects[0]?.id ?? null,
+          taskResultNotices: state.taskResultNotices.filter((notice) => notice.projectId === undefined || projects.some((project) => project.id === notice.projectId)),
+          activeProjectId: state.activeProjectId === null || projects.some((project) => project.id === state.activeProjectId)
+            ? state.activeProjectId : projects[0]?.id ?? null,
           view: view.kind === 'task' && !tasks.some((task) => task.id === view.taskId) ? { kind: 'home' } : view
         }
       })

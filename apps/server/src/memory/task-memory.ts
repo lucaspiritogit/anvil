@@ -35,6 +35,7 @@ export function createTaskMemory(
   }
 
   const rememberCompletedTask = async (task: Task, projectPath: string): Promise<void> => {
+    if (task.projectId === undefined) return
     const memory = memoryForWorkspace?.(task.workspaceId) ?? projectMemory
     if (!store.getSettings(task.workspaceId).memoryEnabled || !memory || task.status !== 'succeeded') return
     const execution = store.getTaskExecution(task.id)

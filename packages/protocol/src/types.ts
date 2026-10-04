@@ -59,7 +59,7 @@ export type TaskResultNoticeKind = 'reviewable' | 'no_changes' | 'completed'
 export interface TaskResultNotice {
   id: string
   workspaceId: string
-  projectId: string
+  projectId?: string
   taskId: string
   resultVersion: number
   kind: TaskResultNoticeKind
@@ -71,7 +71,7 @@ export interface TaskResultNotice {
 
 export interface TaskResultNoticeChange {
   workspaceId: string
-  projectId: string
+  projectId?: string
   noticeId: string
   notice?: TaskResultNotice
 }
@@ -259,6 +259,11 @@ export interface ProviderModelCapabilities {
   imageInput: boolean
 }
 
+export interface ProviderModelDisplay {
+  name?: string
+  resolvedModel?: string
+}
+
 /**
  * The models one agent offers, spelled the way that agent's CLI expects them.
  * Deliberately generic: anything that can produce an array of strings — a
@@ -267,6 +272,7 @@ export interface ProviderModelCapabilities {
 export interface ProviderModelList {
   agentId: string
   models: string[]
+  displayByModel?: Record<string, ProviderModelDisplay>
   /** Missing entries mean discovery is unavailable, never an empty option list. */
   reasoningByModel?: Record<string, ModelReasoningCapabilities>
   /** Provider-reported input capabilities used by the server before dispatch. */
@@ -291,7 +297,7 @@ export interface AgentDefinition {
   /** How to enumerate this agent's models. Omitted when the CLI takes none. */
   models?: ModelSource
   /** Omitted for legacy CLI execution. OpenCode uses ACP; Codex uses its own server protocol. */
-  executionProtocol?: 'acp' | 'codex-app-server'
+  executionProtocol?: 'acp' | 'codex-app-server' | 'claude-code'
   /** The adapter can inject user input into an active turn without restarting it. */
   supportsCompaction?: boolean
   supportsSteering?: boolean
@@ -447,7 +453,7 @@ export interface Task {
 
   id: string
   readonly workspaceId: string
-  projectId: string
+  projectId?: string
   agentId: string
   agentLabel: string
   model?: string
@@ -567,6 +573,7 @@ export interface AnalyticsCodeChangeTotals {
 export interface AnalyticsBreakdown {
   key: string
   label: string
+  agentId?: string
   taskCount: number
   totalTokens: number
   reportedCostUsd: number
@@ -658,7 +665,7 @@ export interface Settings {
 
 export interface AgentAccountTarget {
   workspaceId: string
-  agentId: 'codex' | 'opencode'
+  agentId: 'codex' | 'opencode' | 'claude'
 }
 
 export interface AgentAccountConnect extends AgentAccountTarget {
@@ -693,4 +700,25 @@ export interface CodexRateLimit {
 export interface CodexRateLimits {
   rateLimits: CodexRateLimit | null
   rateLimitsByLimitId?: Record<string, CodexRateLimit>
+}
+
+export interface ClaudeRateLimitWindow {
+  usedPercent: number
+  resetsAt: number | null
+}
+
+export interface ClaudeRateLimits {
+  fiveHour: ClaudeRateLimitWindow | null
+  weeklyAll: ClaudeRateLimitWindow | null
+  weeklyFable: ClaudeRateLimitWindow | null
+}
+
+export interface AgentRateLimitsByAgent {
+  codex: CodexRateLimits
+  claude: ClaudeRateLimits
+}
+
+export interface AgentRateLimitTarget<Agent extends keyof AgentRateLimitsByAgent = keyof AgentRateLimitsByAgent> {
+  workspaceId: string
+  agentId: Agent
 }

@@ -25,7 +25,7 @@ function setup(options: NotificationDeliveryOptions = {}) {
       notifications.push(this)
     }
   }
-  const task: Task = {
+  const task: Task & { projectId: string } = {
     workspaceId: 'default', id: 'task', projectId: 'project',
     title: 'Back up files', prompt: 'Back up files', agentId: 'codex', agentLabel: 'Codex',
     cwd: store.getWorkspaceDirectory('default'), status: 'pending', deliveryStatus: 'preparing', startedAt: 1,
@@ -76,6 +76,19 @@ test('tracks tasks in background workspaces without notifying for workspace sele
   store.deleteTaskCascade('other')
   store.setSettings({ caffeineMode: true })
   expect(notifications).toHaveLength(2)
+})
+
+test('notifies completion of tasks without a project without opening an issue tracker', () => {
+  const { store, task, notifications } = setup()
+  store.addTask({ ...task, id: 'unassigned', projectId: undefined, style: 'quick', checkoutMode: 'local',
+    deliveryStatus: 'unavailable' })
+  const tracker = vi.spyOn(store, 'issueTracker')
+  store.saveTaskExecution({ taskId: 'unassigned', projectPath: task.cwd, style: 'quick',
+    parentIssueId: '', phase: 'working', issueIds: [], currentIssueId: null, error: null })
+  store.updateTask('unassigned', { status: 'running' })
+  store.updateTask('unassigned', { status: 'succeeded' })
+  expect(tracker).not.toHaveBeenCalled()
+  expect(notifications.map((notification) => notification.options.title)).toEqual(['Task running', 'Task completed'])
 })
 
 test('unsupported platforms and notification failures do not interrupt task updates or retry old transitions', () => {

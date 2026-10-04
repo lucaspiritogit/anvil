@@ -195,7 +195,8 @@ export class AgentProcessManager extends EventEmitter {
     const key = JSON.stringify([workspace.workspaceId, agent.id])
     let client = this.clients.get(key)
     if (!client) {
-      client = (agent.id === 'codex' ? this.codexClient : this.openCodeClient) ?? this.createExecutor(agent.id, workspace, () => listModels(agent, workspace))
+      const injected = agent.executionProtocol === 'codex-app-server' ? this.codexClient : agent.executionProtocol === 'acp' ? this.openCodeClient : undefined
+      client = injected ?? this.createExecutor(agent.id, workspace, () => listModels(agent, workspace))
       this.clients.set(key, client)
     }
     return client
@@ -205,7 +206,7 @@ export class AgentProcessManager extends EventEmitter {
   async generateText(options: Pick<StartOptions, 'agent' | 'prompt' | 'cwd' | 'model' | 'reasoningEffort' | 'workspace'>): Promise<string> {
     if (this.shutdown) throw new Error('Agent processes are shutting down')
     this.requireAccountReady(options.workspace.workspaceId)
-    const client = ['codex', 'opencode'].includes(options.agent.id) ? this.executor(options.agent, options.workspace) : undefined
+    const client = options.agent.executionProtocol ? this.executor(options.agent, options.workspace) : undefined
     if (!client) throw new Error('This agent does not support PR drafting')
     const taskId = `pr-draft-${randomUUID()}`
     const controller = new AbortController()
@@ -486,8 +487,8 @@ export class AgentProcessManager extends EventEmitter {
       const owner = this.taskWorkspace(opts.taskId)
       if (owner.workspaceId !== opts.workspace.workspaceId) throw new Error('Task workspace does not match its persisted owner')
     }
-    if (opts.images?.length && !['acp', 'codex-app-server'].includes(opts.agent.executionProtocol ?? '')) {
-      throw new Error(`${opts.agent.label} does not support image attachments. Choose Codex or OpenCode with an image-capable model.`)
+    if (opts.images?.length && !['acp', 'codex-app-server', 'claude-code'].includes(opts.agent.executionProtocol ?? '')) {
+      throw new Error(`${opts.agent.label} does not support image attachments. Choose an agent with an image-capable model.`)
     }
     this.requireAccountReady(opts.workspace.workspaceId)
     opts.beforeDispatch?.()
@@ -497,6 +498,10 @@ export class AgentProcessManager extends EventEmitter {
       return
     }
     if (opts.agent.executionProtocol === 'codex-app-server') {
+      this.startServer(opts, this.executor(opts.agent, opts.workspace))
+      return
+    }
+    if (opts.agent.executionProtocol === 'claude-code') {
       this.startServer(opts, this.executor(opts.agent, opts.workspace))
       return
     }

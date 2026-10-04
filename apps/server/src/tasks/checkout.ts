@@ -3,14 +3,15 @@ import { taskCheckoutMode } from '@anvil/protocol/task-checkout'
 import type { Store } from '../store'
 
 export function usesProjectCheckout(task: Task): boolean {
-  return taskCheckoutMode(task) === 'local'
+  return task.projectId !== undefined && taskCheckoutMode(task) === 'local'
 }
 
 export function usesManagedWorktree(task: Task): boolean {
-  return taskCheckoutMode(task) === 'worktree'
+  return task.projectId !== undefined && taskCheckoutMode(task) === 'worktree'
 }
 
 export function requireProjectCheckoutAvailable(store: Store, task: Task, force = false): void {
+  if (task.projectId === undefined) return
   if (!force && !usesProjectCheckout(task)) return
   if (store.getTasks(task.workspaceId).some((candidate) => candidate.id !== task.id &&
     candidate.projectId === task.projectId &&

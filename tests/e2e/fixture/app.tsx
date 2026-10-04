@@ -163,6 +163,7 @@ const conflictSnapshot = (): TaskMergeConflictSnapshot => ({
 })
 const beginConflict = (taskId: string, requestedAction: TaskMergeConflict['requestedAction']): Task => {
   const task = tasks.find((entry) => entry.id === taskId)!
+  if (!task.projectId) throw new Error('A merge requires a project')
   activeConflictFiles = conflictFiles()
   conflictReads = 0
   activeConflict = {
@@ -863,7 +864,7 @@ window.anvil = {
     list: async () => tasks.filter((task) => task.workspaceId === selectedWorkspace),
     start: async (input: IpcRequests['tasks:start']) => {
       for (const path of input.fileReferences ?? []) {
-        if (!window.fileMentionTest.paths[input.projectId]?.includes(path)) throw new Error(`Referenced file is missing or unavailable: ${JSON.stringify(path)}. Remove the reference or choose the file again.`)
+        if (!input.projectId || !window.fileMentionTest.paths[input.projectId]?.includes(path)) throw new Error(`Referenced file is missing or unavailable: ${JSON.stringify(path)}. Remove the reference or choose the file again.`)
       }
       window.composerTest.starts.push(input)
       await new Promise((resolve) => setTimeout(resolve, 200))
@@ -874,19 +875,23 @@ window.anvil = {
       if (query.has('startFailure')) throw new Error('Task could not be started')
       const id = `started-${tasks.length}`
       const parent = tasks.find((task) => task.id === input.parentTaskId)
-      const project = projects.find((project) => project.id === input.projectId)!
-      const localBranch = projectBranches[input.projectId] ?? 'main'
-      const worktreeBase = ((await window.anvil.projects.branches(input.projectId)).worktreeBases ?? [])
-        .find((candidate) => candidate.ref === input.startBase)?.name ?? 'origin/main'
-      const localCheckout = input.checkoutMode ? input.checkoutMode === 'local' : input.style === 'quick'
+      const project = projects.find((project) => project.id === input.projectId)
+      const localBranch = input.projectId ? projectBranches[input.projectId] ?? 'main' : undefined
+      const worktreeBase = input.projectId
+        ? ((await window.anvil.projects.branches(input.projectId)).worktreeBases ?? [])
+          .find((candidate) => candidate.ref === input.startBase)?.name ?? 'origin/main'
+        : undefined
+      const localCheckout = !project || (input.checkoutMode ? input.checkoutMode === 'local' : input.style === 'quick')
       const task: Task = {
         ...base, ...input, workspaceId: input.workspaceId ?? selectedWorkspace, id, title: input.prompt || 'Image task',
+        projectId: input.projectId,
+        style: input.style ?? (project ? 'work' : 'quick'),
         checkoutMode: localCheckout ? 'local' : 'worktree',
-        status: 'running', deliveryStatus: 'working', endedAt: undefined, reviewedAt: undefined,
+        status: 'running', deliveryStatus: project ? 'working' : 'unavailable', endedAt: undefined, reviewedAt: undefined,
         startedAt: Date.now(), workingStartedAt: Date.now(), filesChanged: 0, additions: 0, deletions: 0,
         branchName: localCheckout ? localBranch : `anvil/${id}`,
         baseBranch: localCheckout ? localBranch : parent?.branchName ?? worktreeBase,
-        cwd: localCheckout ? project.path : `/tmp/anvil-worktrees/${id}`
+        cwd: !project ? `/tmp/anvil-workspaces/${selectedWorkspace}/tasks/${id}` : localCheckout ? project.path : `/tmp/anvil-worktrees/${id}`
       }
       tasks = [task, ...tasks]
       return task

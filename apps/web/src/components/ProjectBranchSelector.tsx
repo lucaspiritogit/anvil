@@ -177,7 +177,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
     window.requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-project-selector]')?.focus())
   }
 
-  const chooseProject = (id: string): void => {
+  const chooseProject = (id: string | null): void => {
     selectProject(id)
     focusProjectTrigger()
   }
@@ -215,19 +215,19 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
           data-project-selector
           type="button"
           aria-label="Project"
-          aria-description={project ? `${project.name}, ${project.path}` : 'Choose a project'}
+          aria-description={project ? `${project.name}, ${project.path}` : 'No project, Quick task in this workspace'}
           aria-haspopup="dialog"
           aria-expanded={open === 'project'}
-          title={project?.path ?? 'Choose or add a project'}
+          title={project?.path ?? 'No project. Choose or add a project'}
           className={triggerClass}
           disabled={controlsDisabled}
           onClick={() => setOpen('project')}
         >
           <Icon icon="folder" size={15} className="shrink-0" aria-hidden="true" />
-          <span data-testid="composer-project-name" className="max-w-56 truncate font-medium text-fg">{project?.name ?? 'Choose project'}</span>
+          <span data-testid="composer-project-name" className="max-w-56 truncate font-medium text-fg">{project?.name ?? 'No project'}</span>
           <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
         </button>
-        {work ? <span aria-label="Execution location" className="inline-flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-sm text-dim" title="Work runs on a dedicated branch in an isolated worktree">
+        {projectId && (work ? <span aria-label="Execution location" className="inline-flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-sm text-dim" title="Work runs on a dedicated branch in an isolated worktree">
           <Icon icon="layers" size={15} className="shrink-0" aria-hidden="true" />
           <span className="truncate">{locationLabel}</span>
           <span aria-hidden="true">·</span>
@@ -249,8 +249,8 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
           <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
         </button>
         <span aria-hidden="true" className="text-sm text-dim">·</span>
-        </>}
-        <button
+        </>)}
+        {projectId && <button
           ref={branchRef}
           type="button"
           aria-label="Project branch"
@@ -270,7 +270,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
           <Icon icon="git-branch" size={14} className="shrink-0" aria-hidden="true" />
           <span className="max-w-64 truncate">{branchLabel}</span>
           <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
-        </button>
+        </button>}
       </div>
       {open === 'project' && <ProjectPicker
         anchorRef={projectRef}

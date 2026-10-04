@@ -86,7 +86,7 @@ test('migrates interrupted tasks while retaining sessions, output and execution 
   const legacyDb = new DatabaseSync(database)
   onTestCleanup(() => { if (legacyDb.isOpen) legacyDb.close() })
   legacyDb.prepare("INSERT INTO projects (id, name, path, created_at) VALUES ('project', 'Test', ?, 0)").run(testHome)
-  const base: Task = {
+  const base: Task & { projectId: string } = {
     workspaceId: 'default',
     id: 'running', projectId: 'project', title: 'Task', prompt: 'Task', agentId: 'codex', agentLabel: 'Codex',
     cwd: testHome, status: 'running', deliveryStatus: 'working', startedAt: 1,

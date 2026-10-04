@@ -9,6 +9,7 @@ import type { TerminalSnapshot } from '@anvil/protocol/terminal'
 import type { WorkspaceExecutionContext } from './agents/workspace-execution'
 import { openCodeWorkspaceCommand } from './agents/opencode-workspace'
 import { resolveCommand } from './agents/resolve'
+import { claudeWorkspaceEnvironment } from './agents/claude-workspace'
 
 const requireForNodePty = createRequire(import.meta.url)
 
@@ -71,6 +72,14 @@ export class TerminalSessionManager {
     return this.create('auth', workspace.workspaceId, resolved.command,
       [...resolved.prefixArgs, 'login', '--device-auth', '-c', 'cli_auth_credentials_store="file"'],
       workspace.home, workspace.environment, 80, 10, onExit)
+  }
+
+  createClaudeAuth(workspace: WorkspaceExecutionContext, logout: boolean, onExit: (exitCode: number) => void): { sessionId: string } {
+    const resolved = resolveCommand('claude')
+    if (!resolved || resolved.viaShell) throw new Error('Claude Code requires a directly executable CLI')
+    const args = logout ? ['auth', 'logout'] : ['auth', 'login', '--claudeai']
+    return this.create('auth', workspace.workspaceId, resolved.command, [...resolved.prefixArgs, ...args],
+      workspace.home, claudeWorkspaceEnvironment(workspace), 80, 10, onExit)
   }
 
   private create(kind: Session['kind'], workspaceId: string, command: string, args: string[], cwd: string,

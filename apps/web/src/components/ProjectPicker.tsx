@@ -118,7 +118,7 @@ export function ProjectPicker({ anchorRef, projects, value, onChange, onImport, 
   anchorRef: RefObject<HTMLButtonElement | null>
   projects: Project[]
   value: string | null
-  onChange: (id: string) => void
+  onChange: (id: string | null) => void
   onImport: (onProgress: (done: number, total: number) => void) => Promise<Project | null>
   onClone: (url: string) => Promise<Project | null>
   onRemove: (id: string) => Promise<void>
@@ -137,11 +137,15 @@ export function ProjectPicker({ anchorRef, projects, value, onChange, onImport, 
 
   return <ChoicePickerDialog
     anchorRef={anchorRef} label="Choose project" noun="projects" value={value ?? ''}
-    choices={projects.map((project) => ({ id: project.id, label: project.name, description: project.path,
-      icon: <Icon icon="folder" size={16} className="shrink-0 text-dim" />, onDelete: () => setDeleting(project) }))}
+    choices={[
+      ...projects.map((project) => ({ id: project.id, label: project.name, description: project.path,
+        icon: <Icon icon="folder" size={16} className="shrink-0 text-dim" />, onDelete: () => setDeleting(project) })),
+      { id: '', label: 'No project', description: 'Start a Quick task in this workspace',
+        icon: <Icon icon="pencil" size={16} className="shrink-0 text-dim" /> }
+    ]}
     footer={<div className="border-t border-line p-2"><button type="button" className="flex w-full items-center gap-3 px-3 py-3 text-left text-xs hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent" onClick={() => setView('add')}>
       <Icon icon="folder-plus" size={16} /> Add project
     </button></div>}
-    onClose={onClose} onSelect={(id) => { onClose(); onChange(id) }}
+    onClose={onClose} onSelect={(id) => { onClose(); onChange(id || null) }}
   />
 }

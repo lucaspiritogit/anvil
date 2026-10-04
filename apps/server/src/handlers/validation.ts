@@ -167,12 +167,12 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'settings:set': object({ workspaceId, patch: settingsPatch }),
   'connections:status': optional(workspaceId),
   'connections:configure': object({ workspaceId, allowOtherDevices: boolean, tailscaleHttps: optional(boolean), password: optional(text(1024)) }),
-  'accounts:status': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
-  'accounts:rate-limits': object({ workspaceId, agentId: oneOf('codex') }),
-  'accounts:disconnect': object({ workspaceId, agentId: oneOf('codex', 'opencode') }),
-  'accounts:cancel': object({ workspaceId, agentId: oneOf('codex', 'opencode'), sessionId: id }),
+  'accounts:status': object({ workspaceId, agentId: oneOf('codex', 'opencode', 'claude') }),
+  'accounts:rate-limits': object({ workspaceId, agentId: oneOf('codex', 'claude') }),
+  'accounts:disconnect': object({ workspaceId, agentId: oneOf('codex', 'opencode', 'claude') }),
+  'accounts:cancel': object({ workspaceId, agentId: oneOf('codex', 'opencode', 'claude'), sessionId: id }),
   'accounts:connect': (value, field) => {
-    const input = object<IpcRequests['accounts:connect']>({ workspaceId, agentId: oneOf('codex', 'opencode'), method: oneOf('apiKey', 'chatgpt', 'deviceAuth', 'native'), apiKey: optional(text(8192, true, /^[^\s]+$/)) })(value, field)
+    const input = object<IpcRequests['accounts:connect']>({ workspaceId, agentId: oneOf('codex', 'opencode', 'claude'), method: oneOf('apiKey', 'chatgpt', 'deviceAuth', 'native'), apiKey: optional(text(8192, true, /^[^\s]+$/)) })(value, field)
     if (input.agentId === 'codex'
       ? !['apiKey', 'chatgpt', 'deviceAuth'].includes(input.method)
       : input.method !== 'native') invalid(field, 'has an unsupported agent login method')
@@ -231,7 +231,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:diff': id,
   'tasks:issue-diff': object({ taskId: id, issueId: id }),
   'tasks:start': (value, field) => {
-    const input = object<IpcRequests['tasks:start']>({ style: optional(oneOf('work', 'quick')), reviewPolicy: optional(oneOf('review_each_issue', 'review_at_task_end')), checkoutMode: optional(oneOf('worktree', 'local')), startBase: optional(branch), parentTaskId: optional(id), workspaceId: optional(id), projectId: id, agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
+    const input = object<IpcRequests['tasks:start']>({ style: optional(oneOf('work', 'quick')), reviewPolicy: optional(oneOf('review_each_issue', 'review_at_task_end')), checkoutMode: optional(oneOf('worktree', 'local')), startBase: optional(branch), parentTaskId: optional(id), workspaceId: optional(id), projectId: optional(id), agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
     if (!hasTaskContent(input.prompt, input.images)) invalid(field, 'requires a prompt or an image')
     return input
   },

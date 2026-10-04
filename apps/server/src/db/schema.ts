@@ -103,7 +103,6 @@ export const tasks = sqliteTable(
     workspaceId: text('workspace_id').notNull().default(DEFAULT_WORKSPACE_ID)
       .references(() => workspaces.id, { onDelete: 'restrict' }),
     projectId: text('project_id')
-      .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     agentId: text('agent_id').notNull(),
     agentLabel: text('agent_label').notNull(),
@@ -158,6 +157,7 @@ export const tasks = sqliteTable(
     index('tasks_workspace_started_idx').on(table.workspaceId, table.startedAt),
     index('tasks_project_started_idx').on(table.projectId, table.startedAt),
     index('tasks_parent_idx').on(table.parentTaskId),
+    uniqueIndex('tasks_workspace_ownership_unique').on(table.workspaceId, table.id),
     uniqueIndex('tasks_ownership_unique').on(table.workspaceId, table.projectId, table.id),
     check('tasks_restack_state_valid', oneOf(table.restackState, ['pending', 'conflict'])),
     check('tasks_style_valid', oneOf(table.style, TASK_STYLES)),
@@ -174,7 +174,7 @@ export const taskResultNotices = sqliteTable(
     id: text('id').primaryKey(),
     workspaceId: text('workspace_id').notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
-    projectId: text('project_id').notNull()
+    projectId: text('project_id')
       .references(() => projects.id, { onDelete: 'cascade' }),
     taskId: text('task_id').notNull(),
     resultVersion: integer('result_version').notNull(),
@@ -185,6 +185,11 @@ export const taskResultNotices = sqliteTable(
     dismissedAt: integer('dismissed_at')
   },
   (table) => [
+    foreignKey({
+      columns: [table.workspaceId, table.taskId],
+      foreignColumns: [tasks.workspaceId, tasks.id],
+      name: 'task_result_notices_workspace_task_fk'
+    }).onDelete('cascade'),
     foreignKey({
       columns: [table.workspaceId, table.projectId, table.taskId],
       foreignColumns: [tasks.workspaceId, tasks.projectId, tasks.id],

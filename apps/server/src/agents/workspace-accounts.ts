@@ -4,14 +4,24 @@ import type { Store } from '../store'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { TerminalSessionManager } from '../terminal-sessions'
-import type { AgentAccountTarget, AgentAccountConnect, CodexRateLimits, WorkspaceAgentAccount } from '@anvil/protocol/types'
+import type { AgentAccountTarget, AgentAccountConnect, AgentRateLimitTarget, AgentRateLimitsByAgent, CodexRateLimits, ClaudeRateLimits, WorkspaceAgentAccount } from '@anvil/protocol/types'
 import { CodexAppServerConnection, type ConnectionHandlers } from './codex-app-server-connection'
 import { codexRateLimits, type CodexAppServerProtocol, type CodexObject } from './codex-app-server-protocol'
 import { resolveWorkspaceExecution, type WorkspaceExecutionContext } from './workspace-execution'
 import { openCodeWorkspaceCommand } from './opencode-workspace'
 import { resolveCommand } from './resolve'
+import { ClaudeCodeConnection } from './claude-code-connection'
+import { readNativeClaudeAccount, type ClaudeAccountStatus } from './claude-account'
+import { parseClaudeRateLimits } from './claude-usage'
 
 interface AccountConnection extends CodexAppServerProtocol {
+  close(): Promise<void>
+  failure: Promise<never>
+}
+
+interface ClaudeAccountConnection {
+  initialize(): Promise<Record<string, unknown>>
+  request(subtype: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>
   close(): Promise<void>
   failure: Promise<never>
 }
@@ -23,7 +33,9 @@ export interface AccountDependencies {
   openBrowser(url: string): Promise<void>
   connection?(workspace: WorkspaceExecutionContext, handlers: ConnectionHandlers): AccountConnection
   readOpenCode?(workspace: WorkspaceExecutionContext): Promise<string>
-  terminals: Pick<TerminalSessionManager, 'createOpenCodeAuth' | 'createCodexAuth' | 'dispose'>
+  readClaude?(workspace: WorkspaceExecutionContext): Promise<ClaudeAccountStatus>
+  claudeConnection?(workspace: WorkspaceExecutionContext): ClaudeAccountConnection
+  terminals: Pick<TerminalSessionManager, 'createOpenCodeAuth' | 'createCodexAuth' | 'createClaudeAuth' | 'dispose'>
   changed?(state: WorkspaceAgentAccount): void
 }
 
@@ -83,7 +95,7 @@ export class WorkspaceAccounts {
   private closed = false
   private closing?: Promise<void>
   private readonly reads = new Map<string, Promise<WorkspaceAgentAccount>>()
-  private readonly rateLimitReads = new Map<string, Promise<CodexRateLimits>>()
+  private readonly rateLimitReads = new Map<string, Promise<CodexRateLimits | ClaudeRateLimits>>()
   private readonly paused = new Set<string>()
 
   async pauseWorkspace(workspaceId: string): Promise<() => void> {
@@ -134,6 +146,13 @@ export class WorkspaceAccounts {
       const accounts = parseOpenCodeAccounts(await (this.dependencies.readOpenCode ?? readNativeOpenCode)(workspace))
       return this.state(target, { status: accounts.length ? 'connected' : 'signed-out', accounts })
     }
+    if (target.agentId === 'claude') {
+      const account = await (this.dependencies.readClaude ?? readNativeClaudeAccount)(workspace)
+      const accounts = account.subscription
+        ? [`Claude${account.email ? `: ${account.email}` : ''}${account.subscriptionType ? ` (${account.subscriptionType})` : ''}`]
+        : []
+      return this.state(target, { status: account.subscription ? 'connected' : 'signed-out', accounts })
+    }
     const connection = this.connectCodex(workspace)
     try {
       await this.initialize(connection)
@@ -144,8 +163,10 @@ export class WorkspaceAccounts {
     } finally { await connection.close() }
   }
 
-  async rateLimits(target: AgentAccountTarget): Promise<CodexRateLimits> {
-    if (target.agentId !== 'codex') throw new Error('Rate limits are only available for Codex')
+  rateLimits<K extends keyof AgentRateLimitsByAgent>(target: AgentRateLimitTarget<K>): Promise<AgentRateLimitsByAgent[K]>
+  rateLimits(target: AgentAccountTarget): Promise<CodexRateLimits | ClaudeRateLimits>
+  async rateLimits(target: AgentAccountTarget): Promise<CodexRateLimits | ClaudeRateLimits> {
+    if (target.agentId !== 'codex' && target.agentId !== 'claude') throw new Error('Rate limits are only available for Codex and Claude')
     this.workspace(target)
     const key = this.key(target)
     const existing = this.rateLimitReads.get(key)
@@ -155,7 +176,21 @@ export class WorkspaceAccounts {
     return read
   }
 
-  private async readRateLimits(target: AgentAccountTarget): Promise<CodexRateLimits> {
+  private async readRateLimits(target: AgentAccountTarget): Promise<CodexRateLimits | ClaudeRateLimits> {
+    if (target.agentId === 'claude') {
+      const workspace = this.workspace(target)
+      const account = await (this.dependencies.readClaude ?? readNativeClaudeAccount)(workspace)
+      if (!account.subscription) throw new Error('Claude rate limits require a Claude subscription account')
+      const connection = this.dependencies.claudeConnection?.(workspace) ?? new ClaudeCodeConnection({
+        workspace, cwd: workspace.home, noSessionPersistence: true, safeMode: true, readOnly: true, requestTimeoutMs: 30_000
+      }, { message: () => {} })
+      try {
+        await connection.initialize()
+        return parseClaudeRateLimits(await connection.request('get_usage', { skip_behaviors: true }))
+      } finally {
+        await connection.close()
+      }
+    }
     const connection = this.connectCodex(this.workspace(target))
     try {
       await this.initialize(connection)
@@ -204,6 +239,7 @@ export class WorkspaceAccounts {
     const key = this.key(target)
     if (target.agentId === 'codex' && !logout && !['apiKey', 'chatgpt', 'deviceAuth'].includes(input.method ?? '')) throw new Error('Unsupported Codex login method')
     if (target.agentId === 'opencode' && !logout && input.method !== 'native') throw new Error('Use native OpenCode login')
+    if (target.agentId === 'claude' && !logout && input.method !== 'native') throw new Error('Use native Claude subscription login')
     let release: () => void
     try { release = this.dependencies.acquire(target.workspaceId) }
     catch { return this.state(target, { status: 'busy', busy: true, message: 'Wait for active work or the pending account change in this workspace to finish.' }) }
@@ -257,6 +293,23 @@ export class WorkspaceAccounts {
           if (early) return this.finish(operation, early.success === true ? undefined : 'Sign-in failed or was cancelled. Retry the connection.')
           operation.earlyNotifications = []
         }
+      } else if (target.agentId === 'claude') {
+        const before = await (this.dependencies.readClaude ?? readNativeClaudeAccount)(workspace)
+        const revision = await this.claudeAuthRevision(workspace)
+        if (operation.finishing) return operation.finishing
+        if (logout && !before.loggedIn) return this.finish(operation)
+        const terminal = this.dependencies.terminals.createClaudeAuth(workspace, logout, (exitCode) => {
+          if (!operation.finishing) void this.finish(operation, exitCode === 0 ? undefined : 'Claude authentication stopped. Retry the connection.')
+        })
+        operation.terminalSessionId = terminal.sessionId
+        if (operation.finishing) {
+          await this.dependencies.terminals.dispose(terminal.sessionId)
+          return operation.finishing
+        }
+        this.publish(this.state(target, { status: 'pending', sessionId: operation.sessionId,
+          terminalSessionId: terminal.sessionId,
+          message: `Complete Claude ${logout ? 'sign-out' : 'subscription sign-in'} in the terminal panel. Anvil checks account status every 3 seconds.` }))
+        this.pollClaude(operation, workspace, before, revision, logout)
       } else {
         const before = parseOpenCodeAccounts(await (this.dependencies.readOpenCode ?? readNativeOpenCode)(workspace))
         const revision = await this.openCodeAuthRevision(workspace)
@@ -286,6 +339,33 @@ export class WorkspaceAccounts {
       const file = await stat(join(workspace.directory, 'data', 'opencode', 'auth.json'), { bigint: true })
       return `${file.ino}:${file.mtimeNs}:${file.ctimeNs}:${file.size}`
     } catch { return '' }
+  }
+
+  private async claudeAuthRevision(workspace: WorkspaceExecutionContext): Promise<string> {
+    try {
+      const file = await stat(join(workspace.claudeHome, '.credentials.json'), { bigint: true })
+      return `${file.ino}:${file.mtimeNs}:${file.ctimeNs}:${file.size}`
+    } catch {
+      return ''
+    }
+  }
+
+  private pollClaude(operation: PendingAccount, workspace: WorkspaceExecutionContext, before: ClaudeAccountStatus, revision: string, logout: boolean): void {
+    const active = (): boolean => this.pending.get(this.key(operation.target)) === operation && !operation.finishing
+    operation.pollTimer = setTimeout(() => {
+      void (async () => {
+        if (!active()) return
+        try {
+          const account = await (this.dependencies.readClaude ?? readNativeClaudeAccount)(workspace)
+          const currentRevision = await this.claudeAuthRevision(workspace)
+          if (!active()) return
+          const changed = currentRevision !== revision || account.email !== before.email || account.subscriptionType !== before.subscriptionType
+          const complete = logout ? before.loggedIn && !account.loggedIn : account.subscription && (!before.subscription || changed)
+          if (complete) { void this.finish(operation); return }
+        } catch {}
+        if (active()) this.pollClaude(operation, workspace, before, revision, logout)
+      })()
+    }, 3000)
   }
 
   private pollOpenCode(operation: PendingAccount, workspace: WorkspaceExecutionContext, before: string[], revision: string, logout: boolean): void {

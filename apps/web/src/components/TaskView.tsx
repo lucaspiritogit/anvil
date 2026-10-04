@@ -717,14 +717,14 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
           </div>
         </div>
         <div className="mt-1.5 text-[11.5px] text-dim @max-[760px]:hidden">
-          <TaskDetails task={task} workspaceName={workspaceName} projectName={project?.name ?? 'Tasks'} projectPath={project?.path} now={now} />
+          <TaskDetails task={task} workspaceName={workspaceName} projectName={project?.name ?? 'No project'} projectPath={project?.path} now={now} />
         </div>
         <details className="group mt-1.5 hidden text-[11.5px] text-dim @max-[760px]:block">
           <summary className="flex w-fit cursor-pointer select-none list-none items-center gap-1 py-1 font-medium text-dim hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
             Details
             <Icon icon="chevron-down" size={14} className="transition-transform group-open:rotate-180" aria-hidden="true" />
           </summary>
-          <TaskDetails task={task} workspaceName={workspaceName} projectName={project?.name ?? 'Tasks'} projectPath={project?.path} now={now} mobile />
+          <TaskDetails task={task} workspaceName={workspaceName} projectName={project?.name ?? 'No project'} projectPath={project?.path} now={now} mobile />
         </details>
       </header>
 

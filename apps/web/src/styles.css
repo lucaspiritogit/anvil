@@ -123,6 +123,35 @@
 }
 
 @layer components {
+  .composer-option-tooltip {
+    opacity: 0;
+    transform: translateY(4px);
+    transition:
+      opacity 160ms ease-out,
+      transform 160ms ease-out,
+      display 160ms allow-discrete,
+      overlay 160ms allow-discrete;
+  }
+
+  .composer-option-tooltip:popover-open {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @starting-style {
+    .composer-option-tooltip:popover-open {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .composer-option-tooltip {
+      transition: none;
+      transform: none;
+    }
+  }
+
   .task-composer-success::after {
     content: '';
     position: absolute;

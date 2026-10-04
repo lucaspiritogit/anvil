@@ -8,7 +8,7 @@ import type { AgentDefinition } from '@anvil/protocol/types'
 import { AgentIcon } from './AgentIcon'
 import { ProviderIcon } from './ProviderIcon'
 
-import { describeModel, groupModelsBySubscription, modelMatchesQuery, type ModelOption } from '../model-options'
+import { catalogueModelOptions, describeModel, groupModelsBySubscription, modelMatchesQuery, type ModelOption } from '../model-options'
 
 export function ComposerModelPicker({ agents, agentId, selectedModels, value, onChange }: {
   agents: AgentDefinition[]
@@ -19,7 +19,8 @@ export function ComposerModelPicker({ agents, agentId, selectedModels, value, on
 }): JSX.Element {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const selected = describeModel(value.trim(), agentId)
+  const catalogue = useAgentModels(agentId)
+  const selected = describeModel(value.trim(), agentId, catalogue?.displayByModel?.[value.trim()])
   const agent = agents.find((candidate) => candidate.id === agentId)
 
   return (
@@ -81,8 +82,7 @@ export function ModelPickerDialog({ anchorRef, agentId, agents, selectedModels, 
   const value = selectedModels[providerId]?.trim() ?? ''
   const models = catalogue?.models
   const allowCustom = !models?.length && !loading
-  const options = useMemo(() => [...new Set(value ? [value, ...(models ?? [])] : models ?? [])]
-    .map((model) => describeModel(model, providerId)), [providerId, models, value])
+  const options = useMemo(() => catalogueModelOptions(catalogue, providerId, value), [providerId, catalogue, value])
   const selectModel = (model: string): void => onSelect(providerId, model)
 
   const browseProvider = (id: string): void => {

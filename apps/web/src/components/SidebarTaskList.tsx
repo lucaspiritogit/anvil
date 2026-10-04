@@ -1,45 +1,49 @@
 import { isQueuedStackTask } from '@anvil/protocol/task-stacks'
 import type { JSX } from 'react'
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useLayoutEffect, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import type { Project, Task, TaskIssueSnapshot } from '@anvil/protocol/types'
+import type { TaskIssueSnapshot } from '@anvil/protocol/types'
 import type { CenterView } from '../state/store'
-import { sidebarTaskStacks } from './sidebar-task-stacks'
+import { Icon } from '../icons'
+import { cn } from '../ui'
+import type { SidebarTaskEntry } from './sidebar-task-projects'
 import { SidebarTask } from './SidebarTask'
 
 interface Props {
-  id?: string
-  tasks: Task[]
+  entries: SidebarTaskEntry[]
   snapshots: Map<string, TaskIssueSnapshot | null>
-  projectById: Map<string, Project>
   now: number
   view: CenterView
-  compact?: boolean
-  emptyMessage: string
+  activeProjectId: string | null
+  onSelectProject: (projectId: string) => void
+  onToggleProject: (projectId: string, expanded: boolean) => void
+  onToggleSettled: (groupId: string, expanded: boolean) => void
   onNavigate?: () => void
 }
 
-export function SidebarTaskList({ id, tasks, snapshots, projectById, now, view, compact = false, emptyMessage, onNavigate }: Props): JSX.Element {
+export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId, onSelectProject, onToggleProject, onToggleSettled, onNavigate }: Props): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const entries = useMemo(() => sidebarTaskStacks(tasks), [tasks])
-  const layoutKey = JSON.stringify([compact, entries.map(({ task, stackStart, stackEnd }) => [
-    task.id, task.restackTarget?.parentTaskId ?? task.parentTaskId, isQueuedStackTask(task), stackStart, stackEnd
-  ])])
+  const layoutKey = JSON.stringify(entries.map((entry) => entry.kind === 'task' ? [
+    entry.task.id, entry.task.restackTarget?.parentTaskId ?? entry.task.parentTaskId,
+    isQueuedStackTask(entry.task), entry.compact, entry.stackStart, entry.stackEnd
+  ] : entry.key))
   const previousLayoutKey = useRef(layoutKey)
   const previousRows = useRef(new Map<string, { top: number; height: number }>())
-  const getItemKey = useCallback((index: number) => entries[index].task.id, [entries])
+  const getItemKey = useCallback((index: number) => entries[index].key, [entries])
   const virtualizer = useVirtualizer({
-    count: tasks.length,
+    count: entries.length,
     getScrollElement: () => scrollRef.current,
     getItemKey,
     estimateSize: (index) => {
-      const { task, stackStart, stackEnd } = entries[index]
+      const entry = entries[index]
+      if (entry.kind !== 'task') return entry.kind === 'empty' ? 44 : 36
+      const { task, compact, stackStart, stackEnd } = entry
       const queuedStack = isQueuedStackTask(task)
       const height = queuedStack ? 36 : compact ? 36 + (snapshots.get(task.id)?.children.length ?? 0) * 32 : 96
       return height + (stackStart ? 28 : 0) + (stackEnd ? 28 : 0)
     },
     overscan: 3,
-    gap: compact ? 4 : 6
+    gap: 6
   })
 
   useLayoutEffect(() => {
@@ -80,27 +84,62 @@ export function SidebarTaskList({ id, tasks, snapshots, projectById, now, view, 
   })
 
   return (
-    <div id={id} ref={scrollRef} className="min-h-0 overflow-y-auto overscroll-contain pb-1" style={{ overflowAnchor: 'none' }}>
+    <div ref={scrollRef} className="min-h-0 overflow-y-auto overscroll-contain pb-1" style={{ overflowAnchor: 'none' }}>
       <ul className="relative" style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((row) => {
-          const { task, stackStart, stackEnd } = entries[row.index]
-          return <SidebarTask key={task.id} task={task} snapshot={snapshots.get(task.id)} project={projectById.get(task.projectId)}
-            now={now} compact={compact} stackStart={stackStart} stackEnd={stackEnd} active={view.kind === 'task' && view.taskId === task.id}
-            onNavigate={onNavigate}
-            rowProps={{
-              ref: virtualizer.measureElement,
-              'data-index': row.index,
-              'data-task-id': task.id,
-              'data-stack-moving': !stackEnd && Boolean(task.restackTarget?.parentTaskId ?? task.parentTaskId),
-              'data-row-start': row.start,
-              'aria-posinset': row.index + 1,
-              'aria-setsize': tasks.length,
-              className: 'absolute left-0 top-0 w-full flow-root',
-              style: { transformOrigin: 'top center', transform: `translateY(${row.start}px)` }
-            }} />
+          const entry = entries[row.index]
+          const rowProps = {
+            ref: virtualizer.measureElement,
+            'data-index': row.index,
+            'data-row-start': row.start,
+            'aria-posinset': row.index + 1,
+            'aria-setsize': entries.length,
+            className: cn('absolute left-0 top-0 w-full flow-root', entry.kind !== 'project' && entry.indented && 'pl-5'),
+            style: { transformOrigin: 'top center', transform: `translateY(${row.start}px)` }
+          }
+          if (entry.kind === 'task') {
+            const { task, project, compact, stackStart, stackEnd } = entry
+            return <SidebarTask key={entry.key} task={task} snapshot={snapshots.get(task.id)} project={project}
+              now={now} compact={compact} stackStart={stackStart} stackEnd={stackEnd} active={view.kind === 'task' && view.taskId === task.id}
+              onNavigate={onNavigate}
+              rowProps={{ ...rowProps, 'data-task-id': task.id,
+                'data-stack-moving': !stackEnd && Boolean(task.restackTarget?.parentTaskId ?? task.parentTaskId) }} />
+          }
+          if (entry.kind === 'project') {
+            const { project, expanded, taskCount } = entry
+            return <li key={entry.key} {...rowProps}>
+              <div className={cn('flex min-h-9 items-center rounded-sm text-xs', activeProjectId === project.id ? 'text-fg' : 'text-dim')}>
+                <button type="button" aria-label={`${expanded ? 'Collapse' : 'Expand'} project: ${project.name}`}
+                  aria-expanded={expanded} onClick={() => onToggleProject(project.id, expanded)}
+                  className="grid size-7 shrink-0 place-items-center hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent">
+                  <Icon icon="chevron-down" size={14} className={cn('transition-transform', !expanded && '-rotate-90')} aria-hidden="true" />
+                </button>
+                <button type="button" aria-label={`Select project: ${project.name}`}
+                  aria-current={activeProjectId === project.id && view.kind === 'home' ? 'page' : undefined}
+                  onClick={() => onSelectProject(project.id)} title={project.path}
+                  className="flex min-w-0 flex-1 items-center gap-2 self-stretch px-1 pr-2 text-left hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent">
+                  <Icon icon="folder" size={16} className="shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
+                  <span className="shrink-0 text-[10px] text-dim/60">{taskCount}</span>
+                </button>
+              </div>
+            </li>
+          }
+          if (entry.kind === 'settled') {
+            return <li key={entry.key} {...rowProps}>
+              <button type="button" aria-label={entry.project ? `Settled tasks in ${entry.project.name}` : 'Settled tasks with no project'}
+                aria-expanded={entry.expanded} onClick={() => onToggleSettled(entry.groupId, entry.expanded)}
+                className="flex min-h-9 w-full items-center gap-2 px-2 text-[11px] text-dim hover:text-fg focus-visible:outline focus-visible:outline-accent">
+                <Icon icon="chevron-down" size={13} className={cn('transition-transform', !entry.expanded && '-rotate-90')} aria-hidden="true" />
+                <span>Settled</span>
+                <span className="text-dim/60">{entry.taskCount}</span>
+                <span className="h-px flex-1 bg-line" />
+              </button>
+            </li>
+          }
+          return <li key={entry.key} {...rowProps}><p className="px-2 py-3 text-xs text-dim">{entry.message}</p></li>
         })}
       </ul>
-      {!tasks.length && <p className="px-2 py-4 text-xs text-dim">{emptyMessage}</p>}
     </div>
   )
 }

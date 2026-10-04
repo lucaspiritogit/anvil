@@ -42,7 +42,7 @@ async function setup() {
   })
   const execution = registerTaskExecution({ ...context, ...events }, finish)
   const state = execution.initializeTask(task.id, testHome, { reasoningEffort: 'high' })
-  const tracker = store.issueTracker(task.projectId, task.workspaceId)
+  const tracker = store.issueTracker('project', task.workspaceId)
   onTestCleanup(() => tracker.close())
   const issue = tracker.create({ parentId: state.parentIssueId, title: 'Implement', description: 'Change source',
     checklist: ['Implemented'], validation: 'Targeted check', priority: 'medium', labels: [] })

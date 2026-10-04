@@ -154,7 +154,7 @@ test('captures immutable issue ownership for sequential CLI and server turns', a
   }
 })
 
-test('passes images intact to both server adapters and rejects text-only executors', async () => {
+test('passes images intact to native server adapters and rejects text-only executors', async () => {
   const images = [{ filename: 'image.png', mimeType: 'image/png' as const, bytes: new Uint8Array([0, 128, 255]) }]
   const received: import('../apps/server/src/agents/agent-executor').TaskInput[] = []
   const executor: import('../apps/server/src/agents/agent-executor').AgentExecutor = {
@@ -164,12 +164,12 @@ test('passes images intact to both server adapters and rejects text-only executo
       return { taskId: input.taskId, status: 'succeeded', output: 'Done', changedFiles: [] }
     }
   }
-  const manager = new AgentProcessManager(executor, executor)
+  const manager = new AgentProcessManager(executor, executor, () => executor)
   onTestCleanup(() => manager.close())
   const events: TaskEvent[] = []
   manager.on('event', (event) => events.push(event))
   const agent: AgentDefinition = { id: 'fixture', label: 'Fixture', description: '', command: process.execPath, args: [] }
-  for (const executionProtocol of ['acp', 'codex-app-server'] as const) {
+  for (const executionProtocol of ['acp', 'codex-app-server', 'claude-code'] as const) {
     const exit = once(manager, 'exit')
     manager.start({ workspace: testWorkspace(), taskId: executionProtocol, agent: { ...agent, executionProtocol }, prompt: 'Image task', images, cwd: process.cwd() })
     await exit
@@ -178,7 +178,7 @@ test('passes images intact to both server adapters and rejects text-only executo
     expect(manager.isRunning(executionProtocol)).toBe(false)
   }
   expect(() => manager.start({ workspace: testWorkspace(), taskId: 'unsupported', agent, prompt: 'Image task', images, cwd: process.cwd() })).toThrow(/does not support image attachments/)
-  expect(received).toHaveLength(2)
+  expect(received).toHaveLength(3)
   expect(events).toHaveLength(0)
 })
 
@@ -198,7 +198,7 @@ test('enables task tools for server turns and releases them after success, failu
       return { taskId: input.taskId, status: input.signal?.aborted ? 'cancelled' : 'succeeded', output: '', changedFiles: [] }
     }
   }
-  const manager = new AgentProcessManager(executor, executor, undefined, undefined, async (taskId) => {
+  const manager = new AgentProcessManager(executor, executor, () => executor, undefined, async (taskId) => {
     active.add(taskId)
     return { mcpServers: [
       { name: 'anvil_issue_tracker', url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: taskId }, required: true },
@@ -206,7 +206,7 @@ test('enables task tools for server turns and releases them after success, failu
     ], close: () => { active.delete(taskId) } }
   })
   onTestCleanup(() => manager.close())
-  for (const executionProtocol of ['acp', 'codex-app-server'] as const) {
+  for (const executionProtocol of ['acp', 'codex-app-server', 'claude-code'] as const) {
     for (const prompt of ['success', 'fail', 'cancel']) {
       const taskId = `${executionProtocol}-${prompt}`
       const exited = once(manager, 'exit')

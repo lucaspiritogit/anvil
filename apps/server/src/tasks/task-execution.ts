@@ -1,6 +1,6 @@
 import { TaskStacks, stackParentIsReady } from './task-stacks'
 import { shouldCompactContext } from '@anvil/protocol/task-context'
-import { resolveTaskWorkspace } from '../agents/workspace-execution'
+import { resolveProjectlessTaskDirectory, resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { implementationPrompt, taskRecoveryPrompt } from '../agents/task-prompts'
 import { taskStyle } from '@anvil/protocol/task-style'
@@ -245,7 +245,9 @@ export function registerTaskExecution(
           if (issue && issue.status !== 'working') throw new Error(`Issue ${issue.id} is ${issue.status}; recovery stopped.`)
           const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
           const agent = getAgent(task.agentId)
-          if (!project || project.path !== state.projectPath || !agent) throw new Error('Task project or agent is unavailable')
+          if ((task.projectId !== undefined && !project) || !agent) throw new Error('Task project or agent is unavailable')
+          const cwd = project?.path ?? resolveProjectlessTaskDirectory(store, task)
+          if (cwd !== state.projectPath) throw new Error('Task project or directory is unavailable')
           requireProjectCheckoutAvailable(store, task)
           if (!quick && (!usesManagedWorktree(task) || !task.branchName)) throw new Error('Work tasks require an isolated worktree')
           const guidance = quick ? '' : GIT_SYSTEM_PROMPT
@@ -253,7 +255,7 @@ export function registerTaskExecution(
           agentProcesses.start({
             taskId: task.id, issueId: state.currentIssueId ?? undefined,
             workspace: resolveTaskWorkspace(store, task.id), agent, cwd: task.cwd,
-            projectPath: project.path, model: task.model, reasoningEffort: state.reasoningEffort,
+            ...(project ? { projectPath: project.path } : {}), model: task.model, reasoningEffort: state.reasoningEffort,
             issueTracker: !quick,
             resumeSessionId: sessionId,
             autoCompact: shouldCompactContext(store.getTask(task.id) ?? task, store.getSettings(task.workspaceId)),

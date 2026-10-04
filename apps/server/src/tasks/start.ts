@@ -1,6 +1,6 @@
 import type { Task } from '@anvil/protocol/types'
 import { getAgent } from '../agents/registry'
-import { resolveWorkspaceExecution } from '../agents/workspace-execution'
+import { resolveProjectlessTaskDirectory, resolveWorkspaceExecution } from '../agents/workspace-execution'
 import { planningPrompt } from '../agents/task-prompts'
 import { quickTaskPrompt } from '../agents/task-prompts'
 import { taskStyle } from '@anvil/protocol/task-style'
@@ -41,7 +41,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
       }
       try {
         const project = store.getProjects(task.workspaceId).find((entry) => entry.id === task.projectId)
-        if (!project) throw new Error('Project not found')
+        if (task.projectId !== undefined && !project) throw new Error('Project not found')
         const agent = getAgent(task.agentId)
         if (!agent) throw new Error(`Unknown agent: ${task.agentId}`)
         const state = store.getTaskExecution(task.id)
@@ -50,6 +50,27 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         if (state.hasImages && !images) throw new Error('The original task images were cleared')
         const workspace = resolveWorkspaceExecution(store, task.workspaceId)
         const style = taskStyle(task)
+        if (!project) {
+          if (style !== 'quick' || taskCheckoutMode(task) !== 'local') throw new Error('Tasks without a project require Quick style and a local directory')
+          const cwd = resolveProjectlessTaskDirectory(store, task)
+          if (state.projectPath !== cwd) throw new Error('Task directory does not match its workspace')
+          requireRunningTask()
+          const preparedTask = store.updateTask(task.id, { cwd, deliveryStatus: 'unavailable' })!
+          send('task:updated', preparedTask)
+          agentProcesses.start({
+            workspace,
+            taskId: task.id,
+            agent,
+            prompt: quickTaskPrompt(style, task.prompt),
+            images,
+            model: task.model,
+            reasoningEffort: state.reasoningEffort,
+            cwd,
+            issueTracker: false,
+            beforeDispatch: requireRunningTask
+          })
+          return preparedTask
+        }
         const git = await gitDelivery.status(project.path)
         requireRunningTask()
         if (taskCheckoutMode(task) === 'local') {

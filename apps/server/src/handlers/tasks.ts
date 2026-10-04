@@ -1,5 +1,5 @@
 import { TaskStacks, requireStackParent } from '../tasks/task-stacks'
-import { resolveWorkspaceExecution } from '../agents/workspace-execution'
+import { resolveProjectlessTaskDirectory, resolveWorkspaceExecution } from '../agents/workspace-execution'
 import { promptWithFileReferences, validateTaskFileReferences } from '../task-file-references'
 import { validateTaskImages } from '../task-images'
 import type { HandlerRegistry } from '../handler-registry'
@@ -209,41 +209,50 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       // Decode before task/Anvil issue tracker/worktree creation. Text-only calls keep their synchronous preparation.
       const images = input.images?.length ? await validateTaskImages(input.images) : undefined
       const project = store.getProjects(workspaceId).find((project) => project.id === input.projectId)
-      if (!project) throw new Error('Project not found')
+      if (input.projectId !== undefined && !project) throw new Error('Project not found')
+      if (!project) {
+        if (input.style === 'work') throw new Error('Work tasks require a project')
+        if (input.checkoutMode === 'worktree') throw new Error('Worktree tasks require a project')
+        if (input.parentTaskId !== undefined) throw new Error('Stacked tasks require a project')
+        if (input.startBase !== undefined) throw new Error('Task start bases require a project')
+        if (input.fileReferences?.length) throw new Error('File references require a project')
+      }
 
-      if (input.fileReferences?.length) {
+      if (project && input.fileReferences?.length) {
         await validateTaskFileReferences(project.path, input.fileReferences)
         if (!store.getProjects(workspaceId).some((item) => item.id === project.id && item.path === project.path)) throw new Error('Project changed')
       }
-      const taskPrompt = promptWithFileReferences(input.prompt, project.path, input.fileReferences ?? [])
+      const taskPrompt = project ? promptWithFileReferences(input.prompt, project.path, input.fileReferences ?? []) : input.prompt
       const agent = getAgent(input.agentId)
       if (!agent) throw new Error(`Unknown agent: ${input.agentId}`)
 
-      if (images?.length && !['acp', 'codex-app-server'].includes(agent.executionProtocol ?? '')) {
-        throw new Error(`${agent.label} does not support image attachments. Choose Codex or OpenCode with an image-capable model.`)
+      if (images?.length && !['acp', 'codex-app-server', 'claude-code'].includes(agent.executionProtocol ?? '')) {
+        throw new Error(`${agent.label} does not support image attachments. Choose an agent with an image-capable model.`)
       }
       const model = input.model || agent.defaultModel
-      const style = input.style ?? 'work'
+      const style = input.style ?? (project ? 'work' : 'quick')
       const checkoutMode = input.checkoutMode ?? (style === 'quick' ? 'local' : 'worktree')
       if (style === 'work' && checkoutMode !== 'worktree') throw new Error('Work tasks require an isolated worktree')
       if (style !== 'work' && input.parentTaskId) throw new Error('Only Work tasks can be stacked')
       if (style !== 'work' && input.reviewPolicy === 'review_at_task_end') throw new Error('Only Work tasks can use end-of-task review')
       if (checkoutMode === 'local' && input.startBase !== undefined) throw new Error('Local checkout tasks cannot choose a worktree start base')
       if (input.parentTaskId && input.startBase !== undefined) throw new Error('Stacked tasks start from their parent task')
+      const taskId = randomUUID()
+      const cwd = project?.path ?? resolveProjectlessTaskDirectory(store, { id: taskId, workspaceId })
       const task: Task = {
-        id: randomUUID(),
+        id: taskId,
         style,
         reviewPolicy: style === 'work' ? input.reviewPolicy ?? 'review_each_issue' : 'review_each_issue',
         checkoutMode,
         ...(input.startBase === undefined ? {} : { startBase: input.startBase }),
         workspaceId,
-        projectId: project.id,
+        ...(project ? { projectId: project.id } : {}),
         agentId: agent.id,
         agentLabel: agent.label,
         model,
         prompt: taskPrompt,
         title: titleFor(input.prompt),
-        cwd: project.path,
+        cwd,
         status: 'running',
         startedAt: Date.now(),
         exitCode: null,
@@ -263,7 +272,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       store.addTask(task)
       try {
         if (images?.length) store.taskImages.save(task.id, images)
-        initializeTask(task.id, project.path, { reasoningEffort: input.reasoningEffort, ...(images?.length ? { hasImages: true } : {}) })
+        initializeTask(task.id, cwd, { reasoningEffort: input.reasoningEffort, ...(images?.length ? { hasImages: true } : {}) })
       } catch (error) {
         store.taskImages.remove(task.id)
         const message = error instanceof Error ? error.message : String(error)

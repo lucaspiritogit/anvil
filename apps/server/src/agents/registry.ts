@@ -38,6 +38,17 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     supportsCompaction: true,
     defaultModel: 'gpt-5.6-sol',
     models: { kind: 'adapter', adapterId: 'codex' }
+  },
+  {
+    id: 'claude',
+    label: 'Claude',
+    description: 'Native Claude Code streaming with your Claude subscription.',
+    command: 'claude',
+    args: [],
+    executionProtocol: 'claude-code',
+    supportsSteering: false,
+    supportsCompaction: true,
+    models: { kind: 'adapter', adapterId: 'claude' }
   }
 ]
 

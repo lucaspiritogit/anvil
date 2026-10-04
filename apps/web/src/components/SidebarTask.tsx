@@ -220,7 +220,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
               <span className="flex items-center justify-between gap-2 mb-2 text-xs text-dim">
                 <span className="flex min-w-0 items-center gap-2">
                   {statusIcon}
-                  <span className="truncate">{project?.name ?? 'Project'}</span>
+                  <span className="truncate">{project?.name ?? 'No project'}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1">
                   <span className={cn('shrink-0 text-[11px]', indicator?.tone, eligible && 'group-hover:invisible group-focus-within:invisible')}>

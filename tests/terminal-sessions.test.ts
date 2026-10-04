@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { TerminalSessionManager, ensureNodePtySpawnHelperExecutable } from '../apps/server/src/terminal-sessions'
 import { validateIpcRequest } from '../apps/server/src/handlers/validation'
 import type { Store } from '../apps/server/src/store'
+import { claudeWorkspaceEnvironment } from '../apps/server/src/agents/claude-workspace'
 
 const native = vi.hoisted(() => ({ spawn: vi.fn(), resolveCommand: vi.fn() }))
 vi.mock('node-pty', () => native)
@@ -41,7 +42,7 @@ function fixture() {
     onExit: vi.fn((callback) => { exit = callback; return subscription }) }
   native.spawn.mockReset().mockReturnValue(pty)
   native.resolveCommand.mockReset().mockImplementation((command: string) =>
-    ({ command: command === 'codex' ? '/bin/codex' : '/bin/opencode', prefixArgs: [], viaShell: false }))
+    ({ command: `/bin/${command}`, prefixArgs: [], viaShell: false }))
   const store = { getProjects: () => [{ id: 'project', path: '/project' }], getActiveWorkspace: () => ({ id: 'default' }) } as unknown as Store
   const broadcast = vi.fn()
   const manager = new TerminalSessionManager(store, broadcast)
@@ -70,7 +71,7 @@ test('project sessions resolve identity, buffer output, resize, exit and dispose
 test('auth spawns directly with only the isolated environment; disposeAll kills live sessions', async () => {
   const f = fixture()
   const onExit = vi.fn()
-  f.manager.createOpenCodeAuth({ workspaceId: 'work', directory: '/work', home: '/work/home', codexHome: '/work/codex', environment: { HOME: '/work/home', PATH: '/bin' } }, false, onExit)
+  f.manager.createOpenCodeAuth({ workspaceId: 'work', directory: '/work', home: '/work/home', codexHome: '/work/codex', claudeHome: '/profiles/work/claude', environment: { HOME: '/work/home', PATH: '/bin' } }, false, onExit)
   expect(native.spawn).toHaveBeenCalledWith('/bin/opencode', ['auth', 'login'], expect.objectContaining({ cwd: '/work/home', env: { HOME: '/work/home', PATH: '/bin' } }))
   await f.manager.disposeProjects()
   expect(f.pty.kill).not.toHaveBeenCalled()
@@ -84,7 +85,7 @@ test('auth spawns directly with only the isolated environment; disposeAll kills 
 test('codex auth spawns codex login --device-auth with the isolated codex home environment', () => {
   const f = fixture()
   const onExit = vi.fn()
-  const { sessionId } = f.manager.createCodexAuth({ workspaceId: 'work', directory: '/work', home: '/work/home', codexHome: '/work/codex', environment: { HOME: '/work/home', PATH: '/bin', CODEX_HOME: '/work/codex' } }, onExit)
+  const { sessionId } = f.manager.createCodexAuth({ workspaceId: 'work', directory: '/work', home: '/work/home', codexHome: '/work/codex', claudeHome: '/profiles/work/claude', environment: { HOME: '/work/home', PATH: '/bin', CODEX_HOME: '/work/codex' } }, onExit)
   expect(native.spawn).toHaveBeenCalledWith('/bin/codex',
     ['login', '--device-auth', '-c', 'cli_auth_credentials_store="file"'],
     expect.objectContaining({ cwd: '/work/home', env: { HOME: '/work/home', PATH: '/bin', CODEX_HOME: '/work/codex' }, cols: 80, rows: 10 }))
@@ -95,11 +96,30 @@ test('codex auth spawns codex login --device-auth with the isolated codex home e
 
 test('codex auth fails clearly when codex is missing or only a shell shim', () => {
   const f = fixture()
-  const workspace = { workspaceId: 'work', directory: '/work', home: '/work/home', codexHome: '/work/codex', environment: { HOME: '/work/home' } }
+  const workspace = { workspaceId: 'work', directory: '/work', home: '/work/home', codexHome: '/work/codex', claudeHome: '/profiles/work/claude', environment: { HOME: '/work/home' } }
   native.resolveCommand.mockReturnValue(null)
   expect(() => f.manager.createCodexAuth(workspace, vi.fn())).toThrow('Codex requires a directly executable CLI')
   native.resolveCommand.mockReturnValue({ command: 'C:\\Program Files\\codex\\codex.exe', prefixArgs: [], viaShell: true })
   expect(() => f.manager.createCodexAuth(workspace, vi.fn())).toThrow('Codex requires a directly executable CLI')
+})
+
+test('Claude auth delegates subscription login and logout to its isolated native CLI profile', () => {
+  const f = fixture()
+  const workspace = {
+    workspaceId: 'work', directory: '/work', home: '/work/home', codexHome: '/work/codex', claudeHome: '/profiles/work/claude',
+    environment: { HOME: '/work/home', PATH: '/bin', CLAUDE_CONFIG_DIR: '/profiles/work/claude' }
+  }
+  const exit = vi.fn()
+  f.manager.createClaudeAuth(workspace, false, exit)
+  expect(native.spawn).toHaveBeenCalledWith('/bin/claude', ['auth', 'login', '--claudeai'], expect.objectContaining({
+    cwd: '/work/home', env: claudeWorkspaceEnvironment(workspace)
+  }))
+  f.exit(0)
+  expect(exit).toHaveBeenCalledWith(0)
+  f.manager.createClaudeAuth(workspace, true, exit)
+  expect(native.spawn).toHaveBeenLastCalledWith('/bin/claude', ['auth', 'logout'], expect.objectContaining({ env: claudeWorkspaceEnvironment(workspace) }))
+  native.resolveCommand.mockReturnValue(null)
+  expect(() => f.manager.createClaudeAuth(workspace, false, exit)).toThrow('Claude Code requires a directly executable CLI')
 })
 
 test('terminal IPC rejects paths, commands, environment and invalid dimensions, but accepts control bytes', () => {

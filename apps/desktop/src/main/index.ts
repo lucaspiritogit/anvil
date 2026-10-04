@@ -64,7 +64,7 @@ function createRendererWindow(state: ServerConnectionState): BrowserWindow {
     backgroundColor: '#0d0f12',
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
-    trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 19 } : undefined,
+    trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 15 } : undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       additionalArguments: [`--anvil-server-url=${state.url}`],

@@ -1,6 +1,7 @@
-import { statSync, unwatchFile, watchFile, type BigIntStats } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, statSync, unwatchFile, watchFile, type BigIntStats } from 'node:fs'
+import { basename, join } from 'node:path'
 import type { Store } from '../store'
+import { claudeWorkspaceProfile } from './workspace-execution'
 
 const AUTH_FILES = [
   ['codex', 'auth.json'],
@@ -10,7 +11,40 @@ const AUTH_FILES = [
   ['config', 'opencode', 'opencode.jsonc']
 ]
 
-function revision(stats: BigIntStats | undefined): string {
+function workspaceAuthFiles(store: Store, workspaceId: string): string[] {
+  const directory = store.getWorkspaceDirectory(workspaceId)
+  const claudeHome = claudeWorkspaceProfile(directory, workspaceId)
+  return [
+    ...AUTH_FILES.map((file) => join(directory, ...file)),
+    ...['.claude.json', '.credentials.json', 'settings.json'].map((file) => join(claudeHome, file))
+  ]
+}
+
+function revision(path: string, stats: BigIntStats | undefined): string {
+  if (basename(path) === '.claude.json') {
+    try {
+      const configuration = !stats || stats.nlink === 0n ? {} : JSON.parse(readFileSync(path, 'utf8'))
+      const account = configuration.oauthAccount
+      return JSON.stringify({
+        primaryApiKey: configuration.primaryApiKey ?? null,
+        oauthAccount: account ? {
+          accountUuid: account.accountUuid,
+          emailAddress: account.emailAddress,
+          organizationUuid: account.organizationUuid,
+          billingType: account.billingType,
+          organizationType: account.organizationType,
+          organizationRateLimitTier: account.organizationRateLimitTier,
+          userRateLimitTier: account.userRateLimitTier,
+          subscriptionType: account.subscriptionType,
+          seatTier: account.seatTier,
+          planDisplayName: account.planDisplayName,
+          claudeCodeTrialEndsAt: account.claudeCodeTrialEndsAt
+        } : null
+      })
+    } catch {
+      return 'unavailable'
+    }
+  }
   if (!stats || stats.nlink === 0n) return 'missing'
   return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}`
 }
@@ -25,8 +59,7 @@ export function watchWorkspaceAuthChanges(
   const reconcile = (): void => {
     const paths = new Map<string, string>()
     for (const workspace of store.getWorkspaces()) {
-      const directory = store.getWorkspaceDirectory(workspace.id)
-      for (const file of AUTH_FILES) paths.set(join(directory, ...file), workspace.id)
+      for (const file of workspaceAuthFiles(store, workspace.id)) paths.set(file, workspace.id)
     }
     for (const [path, subscription] of subscriptions) {
       if (paths.get(path) === subscription.workspaceId) continue
@@ -35,14 +68,14 @@ export function watchWorkspaceAuthChanges(
     }
     for (const [path, workspaceId] of paths) {
       if (subscriptions.has(path)) continue
-      let previous = revision(statSync(path, { bigint: true, throwIfNoEntry: false }))
+      let previous = revision(path, statSync(path, { bigint: true, throwIfNoEntry: false }))
       const listener = (stats: BigIntStats): void => {
         if (closed || subscriptions.get(path)?.workspaceId !== workspaceId) return
-        const next = revision(stats)
+        const next = revision(path, stats)
         if (next === previous) return
         previous = next
         const workspace = store.getWorkspaces().find((workspace) => workspace.id === workspaceId)
-        if (workspace && AUTH_FILES.some((file) => join(store.getWorkspaceDirectory(workspaceId), ...file) === path)) {
+        if (workspace && workspaceAuthFiles(store, workspaceId).includes(path)) {
           changed(workspaceId)
         }
       }

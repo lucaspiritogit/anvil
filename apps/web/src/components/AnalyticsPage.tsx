@@ -274,8 +274,8 @@ function CodeChangesChart({ daily }: { daily: AnalyticsDailyPoint[] }): JSX.Elem
   )
 }
 
-function rankingCompany(entry: Pick<AnalyticsBreakdown, 'key' | 'label'>, modelNames: boolean): string {
-  if (modelNames) return describeModel(entry.key, '').company
+function rankingCompany(entry: Pick<AnalyticsBreakdown, 'key' | 'label' | 'agentId'>, modelNames: boolean): string {
+  if (modelNames) return describeModel(entry.key, entry.agentId ?? '').company
   if (entry.key === 'codex') return 'OpenAI'
   if (entry.key === 'opencode') return 'OpenCode Zen'
   if (entry.key === 'claude') return 'Anthropic'

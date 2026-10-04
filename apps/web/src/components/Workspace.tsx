@@ -1,5 +1,4 @@
 import type { JSX, RefObject } from 'react'
-import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@anvil/protocol/appearance'
 import { IS_MAC } from '../keys'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
@@ -7,6 +6,7 @@ import { cn } from '../ui'
 import { TaskView } from './TaskView'
 import { ProjectOverview } from './ProjectOverview'
 import { AnalyticsPage } from './AnalyticsPage'
+import { AnvilBrand, WindowTitlebar } from './WindowTitlebar'
 
 export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationButtonRef, onToggleNavigation }: {
   mobileNavigation: boolean
@@ -19,10 +19,8 @@ export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationBu
   const view = useStore((s) => s.view)
   const tasks = useStore((s) => s.tasks)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
-  const fontSize = useStore((s) => s.settings?.fontSize)
 
   const project = projects.find((p) => p.id === activeProjectId)
-  const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
 
   const activeTask = view.kind === 'task' ? tasks.find((r) => r.id === view.taskId) : undefined
 
@@ -36,9 +34,9 @@ export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationBu
       (IS_MAC || sidebarCollapsed || mobileNavigation) && page && 'py-11'
     )}>
       {(mobileNavigation || sidebarCollapsed) && (page
-        ? <div className="absolute inset-x-0 top-0"><NavigationHeader scale={scale} expanded={mobileNavigationOpen}
+        ? <div className="absolute inset-x-0 top-0"><NavigationHeader expanded={mobileNavigationOpen}
           mobileNavigation={mobileNavigation} buttonRef={navigationButtonRef} onToggle={onToggleNavigation} /></div>
-        : <NavigationHeader scale={scale} expanded={mobileNavigationOpen} mobileNavigation={mobileNavigation}
+        : <NavigationHeader expanded={mobileNavigationOpen} mobileNavigation={mobileNavigation}
           buttonRef={navigationButtonRef} onToggle={onToggleNavigation} />)}
       <section className="relative flex-1 min-w-0 min-h-0 overflow-hidden">
         {overview && (
@@ -57,22 +55,18 @@ export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationBu
  * the sidebar collapsed they land here instead, so a slim strip takes over as
  * the window's drag handle and keeps the gutter clear.
  */
-function NavigationHeader({ scale, expanded, mobileNavigation, buttonRef, onToggle }: {
-  scale: number
+function NavigationHeader({ expanded, mobileNavigation, buttonRef, onToggle }: {
   expanded: boolean
   mobileNavigation: boolean
   buttonRef: RefObject<HTMLButtonElement | null>
   onToggle: () => void
 }): JSX.Element {
   return (
-    <div
-      style={IS_MAC ? { height: 44 / scale, paddingLeft: 78 / scale } : undefined}
-      className={cn('flex shrink-0 items-center gap-3 h-11 px-4 text-[11px] font-semibold tracking-[0.12em] text-dim', IS_MAC && 'drag-region')}
-    >
-      ANVIL
+    <WindowTitlebar>
+      <AnvilBrand />
       <button
         ref={buttonRef}
-        className="no-drag grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent"
+        className="no-drag ml-3 grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent"
         aria-label={mobileNavigation ? 'Open navigation' : 'Expand sidebar'}
         title={mobileNavigation ? 'Open navigation' : 'Expand sidebar'}
         aria-controls="task-sidebar"
@@ -81,6 +75,6 @@ function NavigationHeader({ scale, expanded, mobileNavigation, buttonRef, onTogg
       >
         <Icon icon="arrow-right-to-line" size={18} aria-hidden="true" />
       </button>
-    </div>
+    </WindowTitlebar>
   )
 }

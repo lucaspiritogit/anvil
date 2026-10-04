@@ -64,7 +64,7 @@ async function turnFixture(issueCount = 2) {
   const finish = vi.fn(createTaskCompletion(context, () => {}, { rememberCompletedTask: async () => {} }))
   const execution = registerTaskExecution(context, finish)
   const state = execution.initializeTask(task.id, repo)
-  const tracker = store.issueTracker(task.projectId, task.workspaceId)
+  const tracker = store.issueTracker('project', task.workspaceId)
   onTestCleanup(() => tracker.close())
   const fields = { parentId: state.parentIssueId, title: 'First', description: 'Change files',
     checklist: ['Verified'], validation: 'Check files', priority: 'medium' as const, labels: [] }

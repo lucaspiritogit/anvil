@@ -7,8 +7,9 @@ import type { Store } from '../apps/server/src/store'
 /** Read both clients' public interfaces without querying either database directly. */
 export function taskState(store: Store, taskId: string) {
   const state = store.getTaskExecution(taskId)
-  if (!state) return undefined
-  const tracker = store.issueTracker(store.getTask(taskId)!.projectId, store.getTask(taskId)!.workspaceId)
+  const task = store.getTask(taskId)
+  if (!state || !task?.projectId) return undefined
+  const tracker = store.issueTracker(task.projectId, task.workspaceId)
   try {
     return { ...state, items: state.issueIds.map((id) => tracker.get(id)) }
   } finally {

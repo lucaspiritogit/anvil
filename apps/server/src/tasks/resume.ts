@@ -1,11 +1,12 @@
 import { requireStackParent, stackParentIsReady } from './task-stacks'
 import { shouldCompactContext } from '@anvil/protocol/task-context'
-import { resolveTaskWorkspace } from '../agents/workspace-execution'
+import { resolveProjectlessTaskDirectory, resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { taskStyle } from '@anvil/protocol/task-style'
 import type { Task, TaskExecutionState } from '@anvil/protocol/types'
 import type { TaskContext } from './context'
 import { requireProjectCheckoutAvailable, usesManagedWorktree } from './checkout'
+import { taskCheckoutMode } from '@anvil/protocol/task-checkout'
 
 interface ResumeOptions {
   check: (expected?: Task) => Task
@@ -40,7 +41,8 @@ export async function resumeTaskTurn(
   if (!agent) throw new Error(`Unknown agent: ${task.agentId}`)
   if (task.sessionId && !agent.executionProtocol && !agent.resumeArgs) throw new Error('This agent cannot resume its saved session')
   const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
-  if (!project) throw new Error('Project not found')
+  if (task.projectId !== undefined && !project) throw new Error('Project not found')
+  if (!project && (style !== 'quick' || taskCheckoutMode(task) !== 'local')) throw new Error('Tasks without a project require Quick style and a local directory')
   const guard = (): Task => {
     const current = check()
     validate(current)
@@ -55,14 +57,16 @@ export async function resumeTaskTurn(
     throw new Error('The original task images were cleared. Start a new task and attach the images again.')
   }
   try {
-    let location: Partial<Task> = { cwd: project.path }
-    const git = await gitDelivery.status(project.path)
+    const cwd = project?.path ?? resolveProjectlessTaskDirectory(store, task)
+    if (!project && savedState && savedState.projectPath !== cwd) throw new Error('Task directory does not match its workspace')
+    let location: Partial<Task> = { cwd }
+    const git = project ? await gitDelivery.status(project.path) : undefined
     if (style === 'work' && !usesManagedWorktree(task)) throw new Error('Work tasks require an isolated worktree')
-    if (style === 'work' && !git.isRepository) throw new Error('Work requires a Git repository so it can run in an isolated branch and worktree')
-    if (usesManagedWorktree(task) && task.branchName) {
+    if (style === 'work' && !git?.isRepository) throw new Error('Work requires a Git repository so it can run in an isolated branch and worktree')
+    if (project && usesManagedWorktree(task) && task.branchName) {
       const checkout = await gitDelivery.checkoutBranch(project.path, task.id, task.branchName, task.baseBranch, guard)
       location = { cwd: checkout.cwd }
-    } else if (usesManagedWorktree(task) && git.isRepository) {
+    } else if (project && usesManagedWorktree(task) && git?.isRepository) {
       guard()
       const parent = task.parentTaskId ? requireStackParent(store, task, task.parentTaskId) : undefined
       const base = parent
@@ -104,7 +108,7 @@ export async function resumeTaskTurn(
           requireProjectCheckoutAvailable(store, dispatching)
         },
         taskId: task.id, issueId: state?.currentIssueId ?? undefined, agent, cwd: running.cwd,
-        projectPath: project.path, model: current.model, reasoningEffort: state?.reasoningEffort,
+        ...(project ? { projectPath: project.path } : {}), model: current.model, reasoningEffort: state?.reasoningEffort,
         issueTracker: style === 'work',
         resumeSessionId: current.sessionId,
         autoCompact: shouldCompactContext(current, store.getSettings(current.workspaceId)),

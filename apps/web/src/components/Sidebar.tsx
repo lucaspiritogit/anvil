@@ -2,17 +2,29 @@ import type { JSX, RefObject } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '../icons'
 import { SETTINGS_SECTIONS } from '../settings-sections'
-import { IS_MAC } from '../keys'
-import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@anvil/protocol/appearance'
 import { useStore } from '../state/store'
 import { cn } from '../ui'
-import { taskAttentionRank, taskNeedsReview } from '@anvil/protocol/task-review'
+import { taskNeedsReview } from '@anvil/protocol/task-review'
 import { useSidebarIssueSnapshots } from '../hooks/use-task-issues'
 import { SidebarTaskList } from './SidebarTaskList'
 import { WorkspacePicker } from './WorkspacePicker'
 import { CaffeineToggle } from './CaffeineToggle'
+import { sidebarTaskProjects } from './sidebar-task-projects'
+import { AnvilBrand, WindowTitlebar } from './WindowTitlebar'
 
 const ICON_BUTTON = 'grid size-8 shrink-0 place-items-center text-dim hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent'
+const COLLAPSED_PROJECTS_STORAGE_KEY = 'anvil-sidebar-collapsed-projects'
+
+function loadCollapsedProjects(): Record<string, string[]> {
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(COLLAPSED_PROJECTS_STORAGE_KEY) ?? '{}')
+    if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return {}
+    return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string[]] =>
+      Array.isArray(entry[1]) && entry[1].every((projectId: unknown) => typeof projectId === 'string')))
+  } catch {
+    return {}
+  }
+}
 
 export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, mobileNavigationOpen,
   mobileNavigationCloseRef, onCloseMobileNavigation, onNavigate }: {
@@ -24,15 +36,12 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   onCloseMobileNavigation: () => void
   onNavigate: () => void
 }): JSX.Element {
-  const fontSize = useStore((state) => state.settings?.fontSize)
-  const scale = normalizeFontSize(fontSize) / DEFAULT_FONT_SIZE
-  // Native traffic lights do not scale with the renderer's font-size zoom.
-  const titlebarStyle = IS_MAC ? { height: 44 / scale, paddingLeft: 78 / scale } : undefined
   const workspaceId = useStore((state) => state.activeWorkspaceId)
   const projects = useStore((state) => state.projects)
   const tasks = useStore((state) => state.tasks)
   const taskSeenAt = useStore((state) => state.taskSeenAt)
   const activeProjectId = useStore((state) => state.activeProjectId)
+  const selectProject = useStore((state) => state.selectProject)
   const view = useStore((state) => state.view)
   const settingsOpen = useStore((state) => state.settingsOpen)
   const settingsSection = useStore((state) => state.settingsSection)
@@ -43,7 +52,8 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   const sidebarCollapsed = useStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useStore((state) => state.toggleSidebar)
   const [search, setSearch] = useState('')
-  const [settledOpen, setSettledOpen] = useState(false)
+  const [collapsedProjectsByWorkspace, setCollapsedProjectsByWorkspace] = useState(loadCollapsedProjects)
+  const [expandedSettledGroups, setExpandedSettledGroups] = useState<Set<string>>(() => new Set())
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
@@ -53,39 +63,51 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
 
   useEffect(() => {
     setSearch('')
-    setSettledOpen(false)
+    setExpandedSettledGroups(new Set())
   }, [workspaceId])
 
-  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(COLLAPSED_PROJECTS_STORAGE_KEY, JSON.stringify(collapsedProjectsByWorkspace))
+    } catch {}
+  }, [collapsedProjectsByWorkspace])
+
+  const collapsedProjects = useMemo(() => new Set(workspaceId ? collapsedProjectsByWorkspace[workspaceId] ?? [] : []),
+    [workspaceId, collapsedProjectsByWorkspace])
   const query = search.trim().toLowerCase()
   const snapshots = useSidebarIssueSnapshots(Boolean(query))
-  const { activeTasks, settledTasks } = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    const matching = tasks.filter((task) => {
-      return !query || [task.title, task.branchName, projectById.get(task.projectId)?.name,
-        ...(snapshots.get(task.id)?.children.map((issue) => issue.title) ?? [])]
-        .some((text) => text?.toLowerCase().includes(query))
-    })
-    return {
-      activeTasks: matching.filter((task) => task.settledAt === undefined)
-        .sort((first, second) =>
-          taskAttentionRank(first, taskSeenAt[first.id]) - taskAttentionRank(second, taskSeenAt[second.id])),
-      settledTasks: matching.filter((task) => task.settledAt !== undefined)
-        .sort((first, second) => second.settledAt! - first.settledAt!)
-    }
-  }, [tasks, search, projectById, snapshots, taskSeenAt])
+  const entries = useMemo(() => sidebarTaskProjects({
+    workspaceId, projects, tasks, query, snapshots, taskSeenAt, collapsedProjects, expandedSettledGroups
+  }), [workspaceId, projects, tasks, query, snapshots, taskSeenAt, collapsedProjects, expandedSettledGroups])
   const reviewCount = useMemo(() => tasks.filter((task) => taskNeedsReview(task, taskSeenAt[task.id])).length,
     [tasks, taskSeenAt])
   const listKey = JSON.stringify([workspaceId, search])
-  const matchingCount = activeTasks.length + settledTasks.length
-  const showSettled = settledOpen || Boolean(query)
   const sidebarHidden = mobileNavigation ? !mobileNavigationOpen : sidebarCollapsed
+  const toggleProject = (projectId: string, expanded: boolean): void => {
+    if (!workspaceId) return
+    if (query) setSearch('')
+    setCollapsedProjectsByWorkspace((previous) => {
+      const collapsed = new Set(previous[workspaceId] ?? [])
+      if (expanded) collapsed.add(projectId)
+      else collapsed.delete(projectId)
+      return { ...previous, [workspaceId]: [...collapsed] }
+    })
+  }
+  const toggleSettled = (groupId: string, expanded: boolean): void => {
+    if (query) setSearch('')
+    setExpandedSettledGroups((previous) => {
+      const next = new Set(previous)
+      if (expanded) next.delete(groupId)
+      else next.add(groupId)
+      return next
+    })
+  }
 
   if (settingsOpen) return (
     <aside aria-label="Sidebar" className="flex min-h-0 flex-col border-r border-line bg-canvas max-[700px]:border-b max-[700px]:border-r-0">
-      <header style={titlebarStyle} className="drag-region flex h-11 shrink-0 items-center px-4">
+      <WindowTitlebar>
         <h1 className="text-sm font-semibold">Settings</h1>
-      </header>
+      </WindowTitlebar>
       <nav aria-label="Settings sections" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3 max-[700px]:flex-row max-[700px]:overflow-x-auto">
         {SETTINGS_SECTIONS.map((section) => (
           <button key={section.id} aria-current={settingsSection === section.id ? 'page' : undefined}
@@ -117,8 +139,8 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
       inert={sidebarHidden}
       aria-hidden={sidebarHidden || undefined}
     >
-      <div style={titlebarStyle} className={cn('flex shrink-0 items-center h-11 px-4 text-[11px] font-semibold tracking-[0.12em] text-dim', IS_MAC && 'drag-region')}>
-        ANVIL
+      <WindowTitlebar>
+        <AnvilBrand />
         {reviewCount > 0 && (
           <span
             role="status"
@@ -141,14 +163,14 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
         >
           <Icon icon={mobileNavigation ? 'x' : 'arrow-left-to-line'} size={18} aria-hidden="true" />
         </button>
-      </div>
+      </WindowTitlebar>
 
       <div className="flex shrink-0 flex-col gap-2 px-2.5 pb-3">
         <button
           className="flex h-9 shrink-0 items-center gap-2 border border-line px-2.5 text-xs text-fg hover:bg-hover disabled:opacity-40 focus-visible:outline focus-visible:outline-accent"
           aria-label="New task"
           title="New task"
-          disabled={!activeProjectId}
+          disabled={!workspaceId}
           onClick={() => { focusTaskComposer(); if (mobileNavigation) onNavigate() }}
         >
           <Icon icon="pencil" size={16} aria-hidden="true" />
@@ -182,30 +204,12 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
         </div>
       </div>
 
-      <nav aria-label="Active tasks" className="flex flex-1 min-h-0 flex-col px-2.5 pb-2">
-        <SidebarTaskList key={listKey} tasks={activeTasks} snapshots={snapshots} projectById={projectById} now={now} view={view}
-          onNavigate={mobileNavigation ? onNavigate : undefined}
-          emptyMessage={matchingCount ? 'No active tasks.' : query ? 'No matching tasks.' : 'No tasks yet.'} />
+      <nav aria-label="Projects and tasks" className="flex flex-1 min-h-0 flex-col px-2.5 pb-2">
+        <SidebarTaskList key={listKey} entries={entries} snapshots={snapshots} now={now} view={view}
+          activeProjectId={activeProjectId} onToggleProject={toggleProject} onToggleSettled={toggleSettled}
+          onSelectProject={(projectId) => { selectProject(projectId); if (mobileNavigation) onNavigate() }}
+          onNavigate={mobileNavigation ? onNavigate : undefined} />
       </nav>
-
-      <section aria-label="Settled tasks" className="flex shrink-0 flex-col max-h-[35%] min-h-0 px-2.5">
-        <button
-          aria-expanded={showSettled}
-          aria-controls="settled-task-list"
-          onClick={() => { if (query) setSearch(''); setSettledOpen(!showSettled) }}
-          className="flex shrink-0 w-full items-center gap-2 px-2 py-3 text-[11px] text-dim hover:text-fg"
-        >
-          <Icon icon="chevron-down" size={13} className={cn('transition-transform', !showSettled && '-rotate-90')} aria-hidden="true" />
-          <span>Settled</span>
-          <span className="text-dim/60">{settledTasks.length}</span>
-          <span className="h-px flex-1 bg-line" />
-        </button>
-        {showSettled && (
-          <SidebarTaskList key={listKey} id="settled-task-list" tasks={settledTasks} snapshots={snapshots}
-            projectById={projectById} now={now} view={view} onNavigate={mobileNavigation ? onNavigate : undefined}
-            compact emptyMessage="No settled tasks." />
-        )}
-      </section>
 
       <CaffeineToggle />
 

@@ -27,13 +27,21 @@ const agents: Record<NonNullable<AgentDefinition['executionProtocol']>, AgentDef
   'codex-app-server': {
     id: 'codex', label: 'Codex', description: 'Recording Codex executor fixture',
     command: 'unused', args: [], executionProtocol: 'codex-app-server'
+  },
+  'claude-code': {
+    id: 'claude', label: 'Claude', description: 'Recording Claude executor fixture',
+    command: 'unused', args: [], executionProtocol: 'claude-code'
   }
 }
 
-test('forwards explicit and omitted reasoning effort to both protocols', async () => {
+test('forwards explicit and omitted reasoning effort to each native protocol', async () => {
   const acpExecutor = new RecordingExecutor()
   const codexExecutor = new RecordingExecutor()
-  const agentProcesses = new AgentProcessManager(acpExecutor, codexExecutor)
+  const claudeExecutor = new RecordingExecutor()
+  const agentProcesses = new AgentProcessManager(acpExecutor, codexExecutor, (agentId) => {
+    expect(agentId).toBe('claude')
+    return claudeExecutor
+  })
   onTestCleanup(async () => {
     await agentProcesses.close()
     agentProcesses.removeAllListeners()
@@ -57,6 +65,8 @@ test('forwards explicit and omitted reasoning effort to both protocols', async (
     run('codex-level', 'codex-app-server', 'native-max')
     run('acp-default', 'acp')
     run('codex-default', 'codex-app-server')
+    run('claude-level', 'claude-code', 'xhigh')
+    run('claude-default', 'claude-code')
     await Promise.all(exits)
 
     expect(acpExecutor.inputs.map((input) => [input.taskId, input.reasoningEffort])).toStrictEqual([
@@ -68,6 +78,10 @@ test('forwards explicit and omitted reasoning effort to both protocols', async (
     expect(acpExecutor.inputs.find((input) => input.taskId === 'acp-native-effort')?.reasoningEffort).toBe('native-max')
     expect(acpExecutor.inputs.every((input) => input.signal instanceof AbortSignal)).toBeTruthy()
     expect(codexExecutor.inputs.every((input) => input.signal instanceof AbortSignal)).toBeTruthy()
+    expect(claudeExecutor.inputs.map((input) => [input.taskId, input.reasoningEffort])).toStrictEqual([
+      ['claude-level', 'xhigh'], ['claude-default', undefined]
+    ])
+    expect(claudeExecutor.inputs.every((input) => input.signal instanceof AbortSignal)).toBeTruthy()
   } finally {
     await agentProcesses.close()
   }

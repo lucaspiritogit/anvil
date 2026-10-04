@@ -80,7 +80,7 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
       description: reasoningEffort ? reasoningOptions.find((option) => option.id === reasoningEffort)?.level : undefined,
       onClick: () => setNestedPicker('thinking') },
     { id: 'change-project', ref: projectRef, icon: 'folder-git-2', label: 'Change project',
-      description: activeProject?.name, onClick: () => setNestedPicker('project') },
+      description: activeProject?.name ?? 'No project', onClick: () => setNestedPicker('project') },
     { id: 'open-terminal', icon: 'terminal', label: 'Open terminal', disabled: !activeProject,
       description: activeProject ? activeProject.name : 'No active project',
       onClick: () => { close(); onOpenTerminal() } },
@@ -232,12 +232,14 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
         <ChoicePickerDialog
           anchorRef={projectRef}
           label="Choose project"
-          choices={projects.map((project) => ({ id: project.id, label: project.name, description: project.path }))}
-          selectedId={activeProjectId ?? undefined}
-          status={projects.length ? undefined : 'No projects available.'}
+          choices={[
+            ...projects.map((project) => ({ id: project.id, label: project.name, description: project.path })),
+            { id: '', label: 'No project', description: 'Start a Quick task in this workspace' }
+          ]}
+          selectedId={activeProjectId ?? ''}
           onClose={() => setNestedPicker(null)}
           onSelect={(projectId) => {
-            selectProject(projectId)
+            selectProject(projectId || null)
             setNestedPicker(null)
           }}
         />

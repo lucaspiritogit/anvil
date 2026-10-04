@@ -291,6 +291,50 @@ test('starting a task keeps the overview and inserts one sidebar task', async ()
   expect(state().view).toEqual({ kind: 'task', taskId: 'created' })
 })
 
+for (const projectId of [undefined, null]) test(`starting without a project ${projectId === null ? 'explicitly' : 'from the selection'} preserves workspace ownership`, async () => {
+  state().selectProject(null)
+  vi.mocked(window.anvil.tasks.start).mockResolvedValueOnce({ ...task('created'), projectId: undefined })
+  await state().startTask({ projectId, agentId: 'codex', prompt: 'new' })
+  const input = vi.mocked(window.anvil.tasks.start).mock.calls[0][0]
+  expect(input).toMatchObject({ workspaceId: 'default', agentId: 'codex', prompt: 'new' })
+  expect(input).not.toHaveProperty('projectId')
+  expect(state().activeProjectId).toBeNull()
+  expect(state().tasks.find((item) => item.id === 'created')?.projectId).toBeUndefined()
+})
+
+test('opening a task without a project clears the project and focuses its composer', async () => {
+  useStore.setState({ tasks: [...state().tasks, { ...task('unassigned'), projectId: undefined }] })
+  await state().openTask('unassigned')
+  expect(state().activeProjectId).toBeNull()
+  expect(state().view).toEqual({ kind: 'task', taskId: 'unassigned' })
+  const focusRequest = state().taskComposerFocusRequest
+  state().focusTaskComposer()
+  expect(state()).toMatchObject({ activeProjectId: null, view: { kind: 'home' }, taskComposerFocusRequest: focusRequest + 1 })
+  expect(state().eventsByTask).toEqual({})
+})
+
+test('tasks cannot start under a stale project or no-project selection', async () => {
+  state().selectProject(null)
+  await expect(state().startTask({ projectId: 'project', agentId: 'codex', prompt: 'new' })).rejects.toThrow('selected project changed')
+  state().selectProject('project')
+  await expect(state().startTask({ projectId: null, agentId: 'codex', prompt: 'new' })).rejects.toThrow('selected project changed')
+  expect(window.anvil.tasks.start).not.toHaveBeenCalled()
+})
+
+test('the composer can focus without projects and keeps tasks in Quick style', () => {
+  state().setTaskComposerStyle('work')
+  state().selectProject(null)
+  useStore.setState({ projects: [], view: { kind: 'analytics' } })
+  expect(state().taskComposerStyle).toBe('quick')
+  state().setTaskComposerStyle('work')
+  expect(state().taskComposerStyle).toBe('quick')
+  state().cycleTaskComposerStyle()
+  expect(state().taskComposerStyle).toBe('quick')
+  const focusRequest = state().taskComposerFocusRequest
+  state().focusTaskComposer()
+  expect(state()).toMatchObject({ view: { kind: 'home' }, taskComposerFocusRequest: focusRequest + 1 })
+})
+
 test('starting a task leaves the current task output and event history intact', async () => {
   await state().openTask('a')
   const retained = state().taskEventHistory

@@ -445,7 +445,7 @@ test('updates projects, validates task references and selects supported agents a
   expect(titleFor('a'.repeat(73))).toBe(`${'a'.repeat(71)}...`)
   expect(await memory.promptWithProjectMemory(project.id, 'Task')).toBe('Task')
   expect(call('projects:list')).toStrictEqual([project])
-  expect(call('agents:list').map((agent: { id: string }) => agent.id)).toStrictEqual(['opencode', 'codex'])
+  expect(call('agents:list').map((agent: { id: string }) => agent.id)).toStrictEqual(['opencode', 'codex', 'claude'])
   expect(() => call('agents:models', { agentId: 'missing' })).toThrow(/Unknown agent/)
   expect(() => call('agents:models', { agentId: 'pi' })).toThrow(/Unknown agent/)
   await expect(call('tasks:start', { projectId: project.id, agentId: 'pi', prompt: 'Unsupported agent' })).rejects.toThrow(/Unknown agent/)

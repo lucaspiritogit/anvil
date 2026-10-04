@@ -107,6 +107,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     requestedAction: TaskMergeConflict['requestedAction'],
     pushPreview?: TaskPushPreview
   ): Task => {
+    if (task.projectId === undefined) throw new Error('Git delivery requires a project')
     const mergeConflict: TaskMergeConflict = {
       id: randomUUID(),
       taskId: task.id,

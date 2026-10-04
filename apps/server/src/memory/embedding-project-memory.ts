@@ -48,6 +48,8 @@ export abstract class EmbeddingProjectMemory implements ProjectMemory {
   ): Promise<ProjectMemoryMatch[]>
 
   async rememberCompletedTask(input: CompletedTaskMemory): Promise<void> {
+    const projectId = input.task.projectId
+    if (projectId === undefined) return
     const content = memoryDocument(input)
     const embedding = await this.embed(content)
     const metadata: ProjectMemoryMetadata = {
@@ -62,7 +64,7 @@ export abstract class EmbeddingProjectMemory implements ProjectMemory {
       deletions: input.task.deletions
     }
     await this.upsert({
-      projectId: input.task.projectId,
+      projectId,
       sourceTaskId: input.task.id,
       content,
       contentHash: createHash('sha256').update(content).digest('hex'),
