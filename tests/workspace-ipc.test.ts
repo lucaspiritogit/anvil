@@ -12,6 +12,7 @@ import { onTestCleanup } from './test-cleanup'
 import type { ComposerPreferences, Settings, WorkspaceSnapshot } from '@anvil/protocol/types'
 import { useStore } from '../apps/web/src/state/store'
 import { useComposerPreferences } from '../apps/web/src/state/composer-preferences'
+import { enqueueWorkspaceRequest } from '../apps/web/src/state/workspace-requests'
 
 const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
 const composer: ComposerPreferences = {
@@ -110,6 +111,74 @@ function deferred<T>() {
   const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
   return { promise, resolve, reject }
 }
+
+test('provider and model selection update together and persist as the workspace session default', async () => {
+  store.setWorkspacePreferences({ composer })
+  rendererBridge()
+  await useStore.getState().load()
+  const save = vi.spyOn(window.anvil.workspaces, 'setPreferences')
+  const selections: Array<{ agentId: string; model: string }> = []
+  const unsubscribe = useComposerPreferences.subscribe((preferences) => {
+    selections.push({ agentId: preferences.agentId, model: preferences.modelsByAgent[preferences.agentId] })
+  })
+  useComposerPreferences.getState().setSelection('claude', 'claude-sonnet-4-6')
+  unsubscribe()
+  expect(selections).toEqual([{ agentId: 'claude', model: 'claude-sonnet-4-6' }])
+  await enqueueWorkspaceRequest(async () => {})
+  const selectedComposer = {
+    ...composer,
+    agentId: 'claude',
+    modelsByAgent: { ...composer.modelsByAgent, claude: 'claude-sonnet-4-6' }
+  }
+  expect(save).toHaveBeenCalledExactlyOnceWith('default', { composer: selectedComposer })
+  expect(store.getWorkspacePreferences('default').composer).toEqual(selectedComposer)
+  const work = store.createWorkspace('Work')
+  await useStore.getState().selectWorkspace(work.id)
+  expect(useComposerPreferences.getState()).toMatchObject({ workspaceId: work.id, agentId: '', modelsByAgent: {} })
+  await useStore.getState().selectWorkspace('default')
+  expect(useComposerPreferences.getState()).toMatchObject(selectedComposer)
+  store.close()
+  store = new Store(database, options)
+  registerWorkspaceHandlers(rendererIpc, store, broadcast)
+  rendererBridge()
+  await useStore.getState().load()
+  expect(useComposerPreferences.getState()).toMatchObject({ workspaceId: 'default', ...selectedComposer })
+  expect(store.getWorkspacePreferences(work.id).composer.modelsByAgent).toEqual({})
+})
+
+test('failed session default saves keep the selected value available for retry', async () => {
+  rendererBridge()
+  await useStore.getState().load()
+  vi.spyOn(window.anvil.workspaces, 'setPreferences').mockRejectedValueOnce(new Error('Could not write session default'))
+  useComposerPreferences.getState().setSelection('claude', 'claude-sonnet-4-6')
+  await enqueueWorkspaceRequest(async () => {})
+  expect(useComposerPreferences.getState()).toMatchObject({
+    agentId: 'claude', modelsByAgent: { claude: 'claude-sonnet-4-6' }, saveError: 'Could not write session default'
+  })
+  expect(store.getWorkspacePreferences('default').composer.modelsByAgent).toEqual({})
+  useComposerPreferences.getState().setSelection('claude', 'claude-sonnet-4-6')
+  await enqueueWorkspaceRequest(async () => {})
+  expect(useComposerPreferences.getState().saveError).toBeNull()
+  expect(store.getWorkspacePreferences('default').composer).toMatchObject({
+    agentId: 'claude', modelsByAgent: { claude: 'claude-sonnet-4-6' }
+  })
+})
+
+test('a delayed session default save failure cannot affect another workspace', async () => {
+  rendererBridge()
+  await useStore.getState().load()
+  const work = store.createWorkspace('Work')
+  const gate = deferred<never>()
+  vi.spyOn(window.anvil.workspaces, 'setPreferences').mockImplementationOnce(() => gate.promise)
+  useComposerPreferences.getState().setSelection('claude', 'claude-sonnet-4-6')
+  const selected = await call('workspaces:select', work.id)
+  useStore.getState().applyWorkspaceSnapshot(selected)
+  gate.reject(new Error('Previous workspace failed to save'))
+  await enqueueWorkspaceRequest(async () => {})
+  expect(useComposerPreferences.getState()).toMatchObject({ workspaceId: work.id, agentId: '', modelsByAgent: {}, saveError: null })
+  expect(store.getWorkspacePreferences('default').composer.modelsByAgent).toEqual({})
+  expect(store.getWorkspacePreferences(work.id).composer.modelsByAgent).toEqual({})
+})
 
 test('pending settings and composer writes retain their owner across rapid switches', async () => {
   rendererBridge()

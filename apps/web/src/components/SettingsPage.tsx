@@ -3,8 +3,7 @@ import { version } from '../../package.json'
 import type { JSX } from 'react'
 import { SETTINGS_SECTIONS } from '../settings-sections'
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ProviderPicker } from './ProviderPicker'
-import { ProviderModelSelect } from './ProviderModelSelect'
+import { ComposerModelPicker } from './ComposerModelPicker'
 import { OverviewBackgroundPicker, type OverviewAppearance } from './OverviewBackgroundPicker'
 import { GitHubSettings } from './GitHubSettings'
 import { Select } from './Select'
@@ -12,7 +11,7 @@ import { OptionCards, ToggleRow } from './settings-controls'
 import { acceleratorFromEvent, IS_MAC } from '../keys'
 import { autosave, retryAutosave, useSettingsAutosave } from '../state/settings-autosave'
 import { useStore } from '../state/store'
-import { useAgentModels } from '../state/agent-models'
+import { useComposerPreferences } from '../state/composer-preferences'
 import { btn, cn, field, hint, modal } from '../ui'
 import { DEFAULT_KEYBINDINGS, formatAccelerator, SHORTCUTS } from '@anvil/protocol/keybindings'
 import type { Keybindings, ShortcutDefinition } from '@anvil/protocol/keybindings'
@@ -441,13 +440,12 @@ export function SettingsPage(): JSX.Element {
   const selectProject = useStore((s) => s.setSettingsProject)
   const settings = useStore((s) => s.settings)
   const agents = useStore((s) => s.agents)
+  const composer = useComposerPreferences()
   const projects = useStore((s) => s.projects)
   const activeProjectId = useStore((s) => s.settingsProjectId)
   const removeProject = useStore((s) => s.removeProject)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
 
-  const [defaultAgentId, setDefaultAgentId] = useState(settings?.defaultAgentId ?? 'opencode')
-  const [defaultModel, setDefaultModel] = useState(settings?.defaultModel ?? '')
   const [autoCompactContext, setAutoCompactContext] = useState(settings?.autoCompactContext ?? true)
   const [contextCompactionThreshold, setContextCompactionThreshold] = useState(settings?.contextCompactionThreshold ?? 75)
   const [confirmRebase, setConfirmRebase] = useState(settings?.confirmRebase ?? true)
@@ -482,8 +480,6 @@ export function SettingsPage(): JSX.Element {
     setOllamaBaseUrl(hydrated.ollamaBaseUrl)
     setFontSize(hydrated.fontSize)
     setDiffThemes(hydrated.diffThemes ?? DEFAULT_DIFF_THEMES)
-    setDefaultAgentId(hydrated.defaultAgentId)
-    setDefaultModel(hydrated.defaultModel)
     setRebaseMode(hydrated.rebaseMode)
     setConfirmRebase(hydrated.confirmRebase)
     setAutoCompactContext(hydrated.autoCompactContext ?? true)
@@ -492,8 +488,6 @@ export function SettingsPage(): JSX.Element {
   }, [settings, workspaceId])
 
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? projects[0]
-
-  const catalogue = useAgentModels(defaultAgentId)
 
   const currentSection = SETTINGS_SECTIONS.find((item) => item.id === section)!
 
@@ -519,51 +513,63 @@ export function SettingsPage(): JSX.Element {
             </label>
           )}
           <fieldset className="min-w-0" disabled={!settings}>
-            {section === 'providers' && <>
+            {section === 'providers' && <div className="space-y-6">
+              <section aria-labelledby="session-default-title" className="border border-line px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 id="session-default-title" className="text-sm font-medium">Default for new sessions</h3>
+                    <p className="mt-1 text-xs text-dim">Provider and model used when you start a task in this workspace.</p>
+                  </div>
+                  <div className="min-w-0 max-w-full border border-line bg-canvas">
+                    <ComposerModelPicker
+                      agents={agents}
+                      agentId={composer.agentId}
+                      selectedModels={composer.modelsByAgent}
+                      value={composer.modelsByAgent[composer.agentId] ?? ''}
+                      onChange={composer.setSelection}
+                    />
+                  </div>
+                </div>
+                {composer.saveError && <p role="alert" className="mt-2 text-xs text-danger">{composer.saveError}</p>}
+              </section>
               <WorkspaceAgentAccounts />
-              <ToggleRow
-                title="Auto-compact task context"
-                description="Compacts the task's model session before resuming, without changing other tasks or the output log."
-                checked={autoCompactContext}
-                onChange={(checked) => {
-                  setAutoCompactContext(checked)
-                  persist({ autoCompactContext: checked })
-                }}
-              />
-              <label className={cn(field.wrap, 'ml-7')}>
-                <span className={field.label}>Context threshold (%)</span>
-                <input className={field.control} type="number" min={1} max={100} step={1} disabled={!autoCompactContext}
-                  value={contextCompactionThreshold} onChange={(event) => {
-                    const value = Number(event.target.value)
-                    if (!Number.isInteger(value) || value < 1 || value > 100) return
-                    setContextCompactionThreshold(value)
-                    persist({ contextCompactionThreshold: value })
-                  }} />
-              </label>
-              <div className={field.wrap}>
-                <span className={field.label}>Default agent</span>
-                <ProviderPicker agents={agents} value={defaultAgentId} onChange={(value) => {
-                  setDefaultAgentId(value)
-                  setDefaultModel('')
-                  persist({ defaultAgentId: value, defaultModel: '' })
-                }} label="Default agent" />
-              </div>
-
-              <label className={field.wrap}>
-                <span className={field.label}>Default model</span>
-                <ProviderModelSelect
-                  models={catalogue?.models ?? []}
-                  value={defaultModel}
-                  onChange={(value) => {
-                    setDefaultModel(value)
-                    persist({ defaultModel: value.trim() }, { defaultModel: value })
-                  }}
-                  loading={Boolean(defaultAgentId) && !catalogue}
-                  error={catalogue?.error}
-                />
-              </label>
-
-            </>}
+              <section aria-labelledby="session-context-title" className="border border-line">
+                <div className="px-4 py-3">
+                  <label className="flex cursor-pointer items-center justify-between gap-4">
+                    <span className="min-w-0">
+                      <span id="session-context-title" className="block text-sm font-medium">Auto-compact task context</span>
+                      <span className="mt-1 block text-xs text-dim">Compact the model session before resuming when it reaches the threshold.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      className="size-4 shrink-0 accent-accent"
+                      checked={autoCompactContext}
+                      onChange={(event) => {
+                        setAutoCompactContext(event.target.checked)
+                        persist({ autoCompactContext: event.target.checked })
+                      }}
+                    />
+                  </label>
+                </div>
+                <label className={cn('flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3', !autoCompactContext && 'opacity-50')}>
+                  <span className="text-xs text-dim">Context threshold</span>
+                  <span className="inline-flex h-8 w-28 shrink-0 items-center border border-line bg-canvas focus-within:border-accent">
+                    <input
+                      aria-label="Context threshold (%)"
+                      className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-right text-sm text-fg tabular-nums outline-none disabled:cursor-not-allowed"
+                      type="number" min={1} max={100} step={1} disabled={!autoCompactContext}
+                      value={contextCompactionThreshold} onChange={(event) => {
+                        const value = Number(event.target.value)
+                        if (!Number.isInteger(value) || value < 1 || value > 100) return
+                        setContextCompactionThreshold(value)
+                        persist({ contextCompactionThreshold: value })
+                      }}
+                    />
+                    <span aria-hidden="true" className="pr-2.5 text-xs text-dim">%</span>
+                  </span>
+                </label>
+              </section>
+            </div>}
             {section === 'general' && <>
               {activeProject && (
                 <div className="flex gap-3 items-center justify-between p-3 mt-2 text-xs text-dim border border-line">

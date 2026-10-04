@@ -308,6 +308,7 @@ export class WorkspaceAccounts {
         }
         this.publish(this.state(target, { status: 'pending', sessionId: operation.sessionId,
           terminalSessionId: terminal.sessionId,
+          authAction: logout ? 'sign-out' : 'sign-in',
           message: `Complete Claude ${logout ? 'sign-out' : 'subscription sign-in'} in the terminal panel. Anvil checks account status every 3 seconds.` }))
         this.pollClaude(operation, workspace, before, revision, logout)
       } else {

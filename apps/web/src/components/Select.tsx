@@ -8,11 +8,11 @@ import { cn, field } from '../ui'
  * so every picker lines up no matter how the OS draws the default widget.
  * Takes the same props and <option> children a plain <select> would.
  */
-export function Select({ className, children, disabled, ...props }: SelectHTMLAttributes<HTMLSelectElement>): JSX.Element {
+export function Select({ className, children, disabled, compact = false, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { compact?: boolean }): JSX.Element {
   return (
     <span className="relative block">
       <select
-        className={cn(field.sized, 'appearance-none pr-9 disabled:cursor-not-allowed disabled:opacity-45', className)}
+        className={cn(field.control, compact ? 'h-8 px-2.5 py-1 text-xs' : 'px-2.5 py-2', 'appearance-none pr-9 disabled:cursor-not-allowed disabled:opacity-45', className)}
         disabled={disabled}
         {...props}
       >

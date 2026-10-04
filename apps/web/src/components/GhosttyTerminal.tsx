@@ -59,7 +59,7 @@ export function GhosttyTerminal({ sessionId, className, visible = true, onExit }
       const input = term.onData((data) => {
         if (active()) void window.anvil.terminals.write({ sessionId, data }).catch(reportRequestFailure)
       })
-      const detachInput = attachTerminalInput(hostElement, term)
+      const detachInput = attachTerminalInput(hostElement, term, reportRequestFailure)
       const resize = term.onResize(({ cols, rows }) => {
         if (active()) void window.anvil.terminals.resize({ sessionId, cols: Math.min(500, Math.max(2, cols)), rows: Math.min(300, Math.max(1, rows)) }).catch(reportRequestFailure)
       })
