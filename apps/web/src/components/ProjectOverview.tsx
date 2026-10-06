@@ -37,12 +37,12 @@ function GitAlert({ project }: { project: Project }): JSX.Element | null {
       className={cn(
         'flex gap-4 items-center justify-between px-[18px] py-3.5 mb-6',
         'max-[700px]:mb-4 max-[700px]:flex-col max-[700px]:items-stretch max-[700px]:gap-3 max-[700px]:px-4',
-        'text-warn bg-warn/8 border border-warn/35'
+        'text-warn-text bg-warn-tint border border-warn/35'
       )}
       role="status"
     >
       <div className="flex flex-col gap-[3px]">
-        <strong className="text-[13px] font-semibold">This project is not using Git</strong>
+        <strong className="font-mono text-[13px] font-semibold"><span aria-hidden="true">▲ </span>This project is not using Git</strong>
         <span className="text-xs text-dim">{detail}</span>
         {error && <span className="text-xs text-danger">{error}</span>}
       </div>

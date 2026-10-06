@@ -8,7 +8,7 @@ export function normalizeFontSize(value: unknown): number {
     ? value : DEFAULT_FONT_SIZE
 }
 
-export const DEFAULT_OVERVIEW_COLOR = '#0d0f12'
+export const DEFAULT_OVERVIEW_COLOR = '#0c0d10'
 export const OVERVIEW_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$(?![\s\S])/
 export const WALLPAPER_ID_PATTERN = /^(?![.])(?!.*[\\/:\x00-\x1f\x7f])[^\n]{1,255}\.(?:png|jpe?g|webp)$/i
 

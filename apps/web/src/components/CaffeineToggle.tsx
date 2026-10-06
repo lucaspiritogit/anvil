@@ -10,22 +10,20 @@ export function CaffeineToggle(): JSX.Element {
   const caffeineMode = caffeineSave?.status === 'pending' ? caffeineSave.value : settings?.caffeineMode ?? false
   const failed = caffeineSave?.status === 'error'
   return (
-    <div className="mx-2.5 mb-1 shrink-0 border border-line">
-      <label className="flex items-center gap-2.5 px-3 py-2 text-xs text-dim">
-        <Icon icon="coffee" size={18} aria-hidden="true" />
-        <span className={cn('flex-1', caffeineMode && 'text-fg')}>Caffeine mode</span>
-        <span className={cn('relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border transition-colors duration-150 motion-reduce:transition-none',
-          caffeineMode ? 'border-accent bg-accent' : 'border-line bg-canvas',
-          'has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent')}>
-          <input type="checkbox" aria-label="Caffeine mode" className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
-            checked={caffeineMode} disabled={!settings} onChange={(event) => void setCaffeineMode(event.target.checked)} />
-          <span className={cn('pointer-events-none ml-[2px] size-3 rounded-full transition-[transform,background-color] duration-150 motion-reduce:transition-none', caffeineMode ? 'translate-x-2.5 bg-canvas' : 'bg-dim')} />
-        </span>
+    <div className="relative shrink-0">
+      <label
+        title={caffeineMode ? 'Caffeine mode is on: the computer and display stay awake while tasks are running' : 'Caffeine mode: keep the computer and display awake while tasks are running'}
+        className={cn('relative grid size-8 cursor-pointer place-items-center border transition-colors duration-[120ms] motion-reduce:transition-none',
+          caffeineMode ? 'border-ember-800 bg-ember-950 text-accent' : 'border-transparent text-faint hover:bg-hover hover:text-fg',
+          'has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent has-[:disabled]:cursor-not-allowed')}
+      >
+        <input type="checkbox" aria-label="Caffeine mode" className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+          checked={caffeineMode} disabled={!settings} onChange={(event) => void setCaffeineMode(event.target.checked)} />
+        <Icon icon="coffee" size={16} aria-hidden="true" />
       </label>
-      <p className="px-3 pb-2 text-[11px] leading-[1.4] text-dim">Keep the computer and display awake while tasks are running</p>
       {failed && (
-        <p role="alert" className="px-3 pb-2 text-[11px] text-danger">
-          Could not save Caffeine mode. <button type="button" className="text-accent" onClick={() => void setCaffeineMode(caffeineSave.value)}>Retry</button>
+        <p role="alert" className="absolute right-0 bottom-full z-20 mb-2 w-56 border border-danger/40 bg-danger-tint px-3 py-2 text-[11px] text-danger-text shadow-[0_0_0_1px_var(--color-void)]">
+          Could not save Caffeine mode. <button type="button" className="text-ember-400 hover:text-ember-300" onClick={() => void setCaffeineMode(caffeineSave.value)}>Retry</button>
         </p>
       )}
     </div>

@@ -132,7 +132,7 @@ export function WorkspaceAgentAccounts(): JSX.Element {
   return <div>
     <h2 className="font-medium">Accounts for {workspaceName}</h2>
     <p className="mt-1 text-xs text-dim">Account changes apply immediately to this workspace. Credentials stay in the agent's workspace profile.</p>
-    <div className="mt-3 overflow-hidden rounded-lg border border-line">
+    <div className="mt-3 overflow-hidden border border-line">
       {(['codex', 'claude', 'opencode'] as const).map((agentId) => <AccountRow key={`${workspaceId}:${agentId}`} workspaceId={workspaceId} workspaceName={workspaceName} agentId={agentId} />)}
     </div>
   </div>

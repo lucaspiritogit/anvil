@@ -18,7 +18,7 @@ import { ProjectBranchSelector } from './ProjectBranchSelector'
 import { TASK_STYLES, TASK_STYLE_LABELS } from '@anvil/protocol/task-style'
 import type { TaskCheckoutMode, TaskReviewPolicy } from '@anvil/protocol/types'
 
-const compactSelect = 'min-w-0 field-sizing-content appearance-none bg-transparent py-1.5 pl-2 pr-6 text-sm text-dim outline-none hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45'
+const compactSelect = 'h-[30px] min-w-0 field-sizing-content appearance-none border border-line-strong bg-overlay pl-2 pr-6 font-mono text-xs text-fg outline-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:text-faint'
 const successDuration = 1800
 export function TaskComposer(): JSX.Element {
   const projectId = useStore((state) => state.activeProjectId)
@@ -157,7 +157,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
       {style === 'work' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">Work requires a Git repository so Anvil can create an isolated branch and worktree.</p>}
       {style === 'quick' && checkoutMode === 'worktree' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">An isolated worktree requires a Git repository. Use the current checkout instead.</p>}
-      {style === 'work' && parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
+      {style === 'work' && parents.length > 0 && <label className="mb-2 inline-flex items-center gap-2 font-mono text-xs text-dim">
         <Icon icon="layers" size={14} />
         Stack on task
         <select aria-label="Stack on task" className={compactSelect} disabled={busy} value={parentTaskId} onChange={(event) => setParentTaskId(event.target.value)}>
@@ -177,10 +177,11 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         onStartBaseChange={setStartBase}
         onTransitioning={setSwitchingBranch}
       />
+      <div className="corner-marks p-1.5">
       <form
         ref={composerRef}
         aria-label="Start a task"
-        className={cn('@container/composer relative overflow-hidden border border-line bg-raised shadow-[0_12px_40px_rgba(0,0,0,0.2)] focus-within:border-accent/50 transition-colors', showSuccess && 'task-composer-success')}
+        className={cn('@container/composer relative overflow-hidden border border-line-strong bg-raised focus-within:border-accent/60 transition-colors', showSuccess && 'task-composer-success')}
         onSubmit={(event) => {
           event.preventDefault()
           void submit()
@@ -191,7 +192,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
             aria-label="Task prompt"
             ref={promptRef}
             rows={5}
-            className="block w-full resize-none bg-transparent px-5 pb-3 pt-4 text-sm leading-relaxed outline-none placeholder:text-dim/60 max-[700px]:min-h-[clamp(10rem,28dvh,12rem)] max-[700px]:px-4"
+            className="block w-full resize-none bg-transparent px-5 pb-3 pt-4 text-[15px] leading-relaxed outline-none placeholder:text-faint max-[700px]:min-h-[clamp(10rem,28dvh,12rem)] max-[700px]:px-4"
             placeholder={style === 'work' ? 'Describe the work you want done' : 'Ask a question or describe a focused change'}
             value={prompt}
             onChange={(event) => { setPrompt(event.target.value); mentions.syncSelection() }}
@@ -219,7 +220,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
           {attachments.images.length > 0 && (
             <ul aria-label="Image attachments" className="flex flex-wrap gap-3 px-5 pb-3 max-[700px]:px-4">
               {attachments.images.map((image) => (
-                <li key={image.id} className="w-36 border border-line p-2 text-xs">
+                <li key={image.id} className="w-36 border border-line-strong bg-overlay p-2 text-xs">
                   {image.preview && <img src={image.preview} alt={`Preview of ${image.filename}`} className="h-20 w-full object-contain" />}
                   <p className="truncate" title={image.filename}>{image.filename}</p>
                   {image.status === 'reading' && <p role="status">Reading {image.filename}…</p>}
@@ -230,7 +231,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
             </ul>
           )}
           {attachments.attachmentError && <p role="alert" className="px-5 pb-3 text-xs text-danger max-[700px]:px-4">{attachments.attachmentError}</p>}
-          <div className="flex min-w-0 items-center gap-1 px-3 pb-3 pt-1 max-[700px]:px-2">
+          <div className="flex min-w-0 items-center gap-1.5 border-t border-dashed border-line px-3 py-2.5 max-[700px]:px-2">
             <input
               ref={imageInputRef}
               type="file"
@@ -303,12 +304,12 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
               </label>
             </ComposerOverflowOptions>
-            <div className="ml-auto flex shrink-0 items-stretch gap-3 self-stretch pl-2">
+            <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
               <button
                 type="button"
                 aria-label="Attach image"
                 title="Attach image"
-                className="grid w-8 shrink-0 place-items-center text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
+                className="grid w-8 shrink-0 place-items-center border border-line-strong bg-overlay text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:text-faint"
                 disabled={busy}
                 onClick={() => imageInputRef.current?.click()}
               >
@@ -318,16 +319,18 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 type="submit"
                 aria-label={busy ? 'Starting…' : 'Send'}
                 title={busy ? 'Starting…' : 'Send'}
-                className="grid w-8 shrink-0 place-items-center bg-accent text-canvas transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-35"
+                className="flex h-8 shrink-0 items-center gap-2 bg-accent px-2.5 text-[13px] font-semibold text-canvas transition-[filter,background-color] enabled:hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:bg-overlay disabled:text-faint @max-[420px]/composer:px-2"
                 disabled={!hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || busy || switchingBranch || (isolated && isRepository === false)}
               >
-                <Icon icon="chevron-up" size={18} aria-hidden="true" />
+                <span aria-hidden="true" className="@max-[420px]/composer:hidden">Start</span>
+                <span aria-hidden="true" className="bg-canvas/20 px-1 font-mono text-[11px] font-medium">↵</span>
               </button>
             </div>
           </div>
         </fieldset>
         {error && <p role="alert" className="px-5 pb-4 text-xs text-danger max-[700px]:px-4">{error}</p>}
       </form>
+      </div>
       {showSuccess && <p role="status" aria-label="Task created" className="sr-only">Task created</p>}
     </div>
   )

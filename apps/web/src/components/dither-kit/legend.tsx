@@ -55,7 +55,7 @@ export function Legend({
             )}
           >
             <span
-              className="size-2 rounded-[1px]"
+              className="size-2"
               style={{ backgroundColor: rgb(seed.fill) }}
             />
             {chart.labelOf(name)}

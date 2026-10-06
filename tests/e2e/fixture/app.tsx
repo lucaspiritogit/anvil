@@ -208,7 +208,7 @@ window.outputTest = {
   release: (fail = false) => { releaseOutput?.(fail); releaseOutput = null }
 }
 
-let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-embed-large', ollamaBaseUrl: 'http://localhost:11434/v1', fontSize: 14, overviewBackgroundMode: 'color', overviewBackgroundColor: '#0d0f12', overviewWallpaperId: null, defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, caffeineMode: false, allowOtherDevices: false, tailscaleHttps: false, keybindings: DEFAULT_KEYBINDINGS, diffThemes: DEFAULT_DIFF_THEMES }
+let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-embed-large', ollamaBaseUrl: 'http://localhost:11434/v1', fontSize: 14, overviewBackgroundMode: 'color', overviewBackgroundColor: '#0c0d10', overviewWallpaperId: null, defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, caffeineMode: false, allowOtherDevices: false, tailscaleHttps: false, keybindings: DEFAULT_KEYBINDINGS, diffThemes: DEFAULT_DIFF_THEMES }
 
 declare global {
   interface Window {

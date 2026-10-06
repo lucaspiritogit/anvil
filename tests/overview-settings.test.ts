@@ -117,7 +117,7 @@ test('recovers corrupt and legacy settings while preserving other preferences', 
   raw.close()
   store = new Store(database, options)
   expect(store.getSettings().overviewBackgroundMode).toBe('color')
-  expect(store.getSettings().overviewBackgroundColor).toBe('#0d0f12')
+  expect(store.getSettings().overviewBackgroundColor).toBe('#0c0d10')
   expect(store.getSettings().overviewWallpaperId).toBe(null)
   expect(store.getSettings().caffeineMode).toBe(true)
   expect(store.getSettings().fontSize, 'Invalid font size falls back').toBe(14)
@@ -126,7 +126,7 @@ test('recovers corrupt and legacy settings while preserving other preferences', 
   legacy.prepare("DELETE FROM workspace_settings WHERE key LIKE 'overview%'").run()
   legacy.close()
   store = new Store(database, options)
-  expect(store.getSettings().overviewBackgroundColor, 'Older databases receive defaults').toBe('#0d0f12')
+  expect(store.getSettings().overviewBackgroundColor, 'Older databases receive defaults').toBe('#0c0d10')
   expect(store.getSettings().caffeineMode).toBe(true)
 })
 

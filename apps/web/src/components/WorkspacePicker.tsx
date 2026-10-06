@@ -143,7 +143,7 @@ export function WorkspacePicker(): JSX.Element {
     onConfirm={() => useStore.getState().removeWorkspace(deleting.id)}
     onClose={() => { flushSync(() => setDeleting(null)); restoreFocus() }} />
 
-  return <div className="relative min-w-0 flex-1" onBlur={(event) => {
+  return <div className="no-drag min-w-0" onBlur={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget)) close()
   }} onKeyDown={(event) => {
     if (open && event.key === 'Escape') {
@@ -153,9 +153,8 @@ export function WorkspacePicker(): JSX.Element {
       restoreFocus()
     }
   }}>
-    <label htmlFor={id} className="mb-1 block text-[11px] text-dim">Workspace</label>
-    <div className="flex h-9 items-center gap-2 border border-line px-2.5 focus-within:border-accent">
-      <Icon icon="folder" size={16} className="shrink-0 text-dim" aria-hidden="true" />
+    <label htmlFor={id} className="sr-only">Workspace</label>
+    <div className="flex h-7 min-w-0 items-center gap-1 px-1.5 text-dim hover:bg-hover hover:text-fg focus-within:bg-hover focus-within:text-fg">
       <input id={id} ref={inputRef} role="combobox" aria-autocomplete="list" aria-expanded={open}
         aria-controls={open ? `${id}-list` : undefined}
         aria-activedescendant={open && activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
@@ -183,17 +182,17 @@ export function WorkspacePicker(): JSX.Element {
             close()
           }
         }}
-        className="w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-dim outline-none"
+        className="field-sizing-content min-w-[4ch] max-w-[112px] cursor-pointer truncate bg-transparent font-mono text-xs text-inherit placeholder:text-faint outline-none focus:cursor-text"
       />
-      <Icon icon="chevron-down" size={14} className="pointer-events-none shrink-0 text-dim" aria-hidden="true" />
+      <Icon icon="chevron-down" size={12} className="pointer-events-none shrink-0" aria-hidden="true" />
     </div>
-    {open && <div className="absolute inset-x-0 bottom-full z-30 mb-1 max-h-[65vh] overflow-y-auto border border-line bg-raised shadow-lg">
+    {open && <div className="absolute inset-x-2.5 top-full z-30 max-h-[65vh] overflow-y-auto border border-line-strong bg-overlay shadow-[0_0_0_1px_var(--color-void)]">
       <div ref={listRef} id={`${id}-list`} role="listbox" aria-label="Workspaces" className="max-h-[min(320px,40vh)] overflow-y-auto overscroll-contain p-1">
         {options.map((workspace, index) => <div key={workspace.id} className={cn('flex min-w-0 items-stretch', index === activeIndex && 'bg-hover')}>
           <button id={`${id}-option-${index}`} role="option" aria-selected={workspace.id === value} title={workspace.name}
             onMouseDown={(event) => event.preventDefault()} onClick={() => void choose(workspace.id)}
             onMouseMove={() => setHighlight(index)}
-            className={cn('min-w-0 flex-1 px-2 py-2 text-left text-xs', workspace.id === value ? 'text-accent' : 'text-fg')}>
+            className={cn('min-w-0 flex-1 px-2 py-2 text-left text-xs', workspace.id === value ? 'text-ember-400' : 'text-fg')}>
             <span className="block truncate font-medium">{workspace.name}</span>
             {workspace.id === value && <span className="mt-0.5 block text-[10px] text-dim">Selected workspace</span>}
           </button>

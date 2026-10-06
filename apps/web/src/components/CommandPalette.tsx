@@ -36,7 +36,7 @@ interface Command {
   onClick: () => void
 }
 
-const commandClass = 'flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45'
+const commandClass = 'group flex w-full items-center gap-3 px-4 py-2.5 text-left text-[13px] hover:bg-hover focus-visible:shadow-[inset_2px_0_0_var(--color-accent)] focus-visible:outline-none disabled:cursor-not-allowed disabled:text-faint'
 
 export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPaletteProps): JSX.Element {
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -149,7 +149,7 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
       <dialog
         ref={dialogRef}
         aria-label="Command palette"
-        className="m-auto w-[min(460px,calc(100vw-24px))] max-w-none overflow-hidden border border-line bg-raised p-0 text-fg shadow-[0_16px_64px_rgba(0,0,0,0.5)] backdrop:bg-black/35"
+        className="m-auto w-[min(560px,calc(100vw-24px))] max-w-none overflow-hidden border border-line-strong bg-overlay p-0 text-fg shadow-[0_0_0_1px_var(--color-void)] backdrop:bg-void/60"
         onCancel={(event) => { event.preventDefault(); close() }}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
@@ -167,9 +167,9 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
           if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) close()
         }}
       >
-        <header className="border-b border-line px-4 py-3">
-          <h2 className="text-sm font-semibold">Command palette</h2>
-          <p className="mt-0.5 text-[11px] text-dim">Use arrow keys to navigate · Esc to close</p>
+        <header className="flex h-12 items-center gap-3 border-b border-line px-4">
+          <h2 className="sr-only">Command palette</h2>
+          <span aria-hidden="true" className="font-mono text-accent">›</span>
           <input ref={searchRef} type="search" autoFocus aria-label="Search commands" aria-controls="command-palette-commands"
             value={query} placeholder="Search commands…"
             onChange={(event) => {
@@ -186,19 +186,24 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
               setActiveCommand(next.dataset.commandId ?? null)
               next.focus()
             }}
-            className="mt-3 w-full border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none placeholder:text-dim focus:border-accent" />
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-fg caret-accent outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:appearance-none" />
         </header>
         <div id="command-palette-commands">
           {visibleCommands.length ? (
-            <div role="menu" aria-label="Commands" className="p-2" onKeyDown={moveCommandFocus}>
+            <div role="menu" aria-label="Commands" className="max-h-[min(420px,60vh)] overflow-y-auto py-1.5" onKeyDown={moveCommandFocus}>
               {visibleCommands.map((command) => (
                 <CommandButton key={command.id} {...command} active={selectedCommand?.id === command.id} onFocus={setActiveCommand} />
               ))}
             </div>
           ) : (
-            <p role="status" className="px-3 py-6 text-center text-sm text-dim">No commands found.</p>
+            <p role="status" className="px-3 py-6 text-center font-mono text-xs text-dim">No commands found.</p>
           )}
         </div>
+        <footer aria-hidden="true" className="flex gap-4 border-t border-line px-4 py-2 font-mono text-[11px] text-dim">
+          <span>↑↓ move</span>
+          <span>↵ run</span>
+          <span>esc close</span>
+        </footer>
       </dialog>
 
       {open && nestedPicker === 'model' && (
@@ -265,13 +270,11 @@ function CommandButton({ ref, id, active, icon, label, description, disabled, un
     <button ref={ref} id={`command-palette-${id}`} data-command data-command-id={id} type="button" role="menuitem" disabled={disabled}
       tabIndex={active && !disabled ? 0 : -1} onFocus={() => onFocus(id)}
       aria-disabled={disabled || unavailable || undefined}
-      aria-pressed={pressed} onClick={onClick} className={commandClass}>
-      <Icon icon={icon} size={17} className="shrink-0 text-dim" aria-hidden="true" />
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{label}</span>
-        {description && <span className="block truncate text-[11px] text-dim">{description}</span>}
-      </span>
-      <Icon icon="chevron-right" size={14} className="shrink-0 text-dim" aria-hidden="true" />
+      aria-pressed={pressed} onClick={onClick} className={cn(commandClass, active && !disabled && 'row-selected')}>
+      <span aria-hidden="true" className={cn('w-2.5 shrink-0 font-mono', active && !disabled ? 'text-ember-400' : 'text-transparent')}>▸</span>
+      <Icon icon={icon} size={16} className={cn('shrink-0', active && !disabled ? 'text-fg' : 'text-faint')} aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+      {description && <span className="max-w-[45%] shrink-0 truncate font-mono text-[11px] text-dim">{description}</span>}
     </button>
   )
 }
@@ -296,14 +299,14 @@ function ChoicePickerDialog({ anchorRef, label, choices, selectedId, status, onC
   return (
     <PickerDialog anchorRef={anchorRef} label={label} onClose={onClose}>
       <div className="flex h-full flex-col">
-        <header className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <header className="flex h-12 items-center gap-2 border-b border-line px-3">
           <button type="button" aria-label="Back to command palette" onClick={onClose}
             className="p-2 text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent">
             <Icon icon="chevron-left" size={16} aria-hidden="true" />
           </button>
-          <h2 className="text-sm font-semibold">{label}</h2>
+          <h2 className="font-mono text-[13px] font-semibold">{label}</h2>
         </header>
-        <div ref={listRef} role="group" aria-label={label} className="min-h-0 flex-1 overflow-y-auto p-2"
+        <div ref={listRef} role="group" aria-label={label} className="min-h-0 flex-1 overflow-y-auto py-1.5"
           onKeyDown={(event) => {
             if (event.key === 'ArrowLeft') { event.preventDefault(); onClose(); return }
             if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
@@ -318,12 +321,12 @@ function ChoicePickerDialog({ anchorRef, label, choices, selectedId, status, onC
           {choices.map((choice) => (
             <button key={choice.id} type="button" aria-pressed={choice.id === selectedId}
               title={choice.description} onClick={() => onSelect(choice.id)}
-              className={cn(commandClass, choice.id === selectedId && 'bg-hover text-accent')}>
+              className={cn(commandClass, choice.id === selectedId && 'row-selected text-fg')}>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">{choice.label}</span>
-                {choice.description && <span className="block truncate text-[11px] text-dim">{choice.description}</span>}
+                <span className="block truncate font-medium">{choice.label}</span>
+                {choice.description && <span className="block truncate font-mono text-[11px] text-dim">{choice.description}</span>}
               </span>
-              {choice.id === selectedId && <Icon icon="check" size={15} className="shrink-0" aria-hidden="true" />}
+              {choice.id === selectedId && <Icon icon="check" size={15} className="shrink-0 text-ember-400" aria-hidden="true" />}
             </button>
           ))}
           {status && <p role="status" className="px-3 py-5 text-center text-xs text-dim">{status}</p>}

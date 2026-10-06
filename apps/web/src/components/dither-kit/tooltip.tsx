@@ -68,7 +68,7 @@ export function Tooltip({
             mass: 0.6,
           }}
           className={cn(
-            "pointer-events-none absolute z-10 rounded-md border px-2 py-1 shadow-sm",
+            "pointer-events-none absolute z-10 border px-2 py-1 shadow-[0_0_0_1px_var(--color-void)]",
             VARIANT[variant]
           )}
         >
@@ -85,7 +85,7 @@ export function Tooltip({
                 style={{ opacity: item.dimmed ? 0.4 : 1 }}
               >
                 <span
-                  className="size-2 rounded-[1px]"
+                  className="size-2"
                   style={{ backgroundColor: rgb(item.seed.fill) }}
                 />
                 <span className="text-muted-foreground">{item.label}</span>

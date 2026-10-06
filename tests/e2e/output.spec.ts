@@ -98,7 +98,7 @@ test('MCP tool calls have a light orange type and retain their call details', as
     category: 'tool_use', text: 'anvil_browser_browser_open\nhttp://localhost:4173'
   } })))
   const tool = output.locator('[data-output-category="mcp_tool"]')
-  await expect(tool.getByText('mcp_tool', { exact: true })).toHaveClass(/text-orange-300/)
+  await expect(tool.getByText('mcp_tool', { exact: true })).toHaveClass(/text-warn/)
   await expect(tool.getByText('anvil_browser_browser_open', { exact: true })).toBeVisible()
   await expect(tool.getByText('http://localhost:4173', { exact: true })).toBeVisible()
 })

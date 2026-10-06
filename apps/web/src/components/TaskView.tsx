@@ -292,7 +292,7 @@ function CommitsMenu({ diff, disabled, rebasing, onRebase }: {
         {count} commit{count === 1 ? '' : 's'}
         <Icon icon="chevron-down" size={14} aria-hidden="true" />
       </summary>
-      <div className="absolute right-0 top-full z-20 mt-1.5 w-[min(460px,80vw)] border border-line bg-raised p-3 text-fg shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+      <div className="absolute right-0 top-full z-20 mt-1.5 w-[min(460px,80vw)] border border-line-strong bg-overlay p-3 text-fg shadow-[0_0_0_1px_var(--color-void)]">
         <div className="mb-2 flex items-center justify-between gap-3">
           <span className="text-[11px] text-dim">Commits on this branch</span>
           <button
@@ -482,7 +482,7 @@ function MergeActions({ disabled, title, onSelect }: {
       {open && <div
         role="menu"
         aria-label="Merge actions"
-        className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full border border-line bg-raised p-1 shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
+        className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full border border-line-strong bg-overlay p-1 shadow-[0_0_0_1px_var(--color-void)]"
       >
         <button
           ref={menuItemRef}
@@ -659,13 +659,13 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
       <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4 @max-[760px]:pt-2">
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 @max-[760px]:flex-col">
           <div className="flex min-w-0 flex-1 items-center gap-2 @max-[760px]:w-full @max-[760px]:flex-none">
-            <h1 className="min-w-0 truncate text-base font-medium leading-snug" title={task.title}>{task.title}</h1>
+            <h1 className="min-w-0 truncate font-mono text-[15px] font-semibold leading-snug tracking-[-0.01em]" title={task.title}>{task.title}</h1>
             <TaskStyleBadge style={style} />
-            {work && task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warn/30 bg-warn/10 px-2.5 py-0.5 text-[11px] font-medium leading-relaxed tracking-wide text-warn"><Icon icon="moon-star" size={12} aria-hidden="true" />Review at the end</span>}
+            {work && task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex h-[18px] shrink-0 items-center gap-1.5 border border-warn/30 bg-warn-tint px-1.5 font-mono text-[10px] font-medium tracking-[0.06em] text-warn-text uppercase"><Icon icon="moon-star" size={12} aria-hidden="true" />Review at the end</span>}
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
             {issue ? <>
-              <span aria-label="Task status" className={cn('min-w-0 font-medium [overflow-wrap:anywhere]', ISSUE_STATUS[issuePresentation(issue).status].tone)}>{issuePresentation(issue).label}{`: ${issue.title}`}</span>
+              <span aria-label="Task status" className={cn('min-w-0 font-mono font-medium [overflow-wrap:anywhere]', ISSUE_STATUS[issuePresentation(issue).status].tone)}>{issuePresentation(issue).label}{`: ${issue.title}`}</span>
               {issue.status === 'review' && <>
                 <button className={cn(btn.ghost, 'ml-2')} disabled={reviewDisabled} onClick={() => void reviewIssue('reject')}>
                   {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
@@ -716,7 +716,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
             <QuickCommitActions task={task} />
           </div>
         </div>
-        <div className="mt-1.5 text-[11.5px] text-dim @max-[760px]:hidden">
+        <div className="mt-1.5 font-mono text-[11.5px] text-dim @max-[760px]:hidden">
           <TaskDetails task={task} workspaceName={workspaceName} projectName={project?.name ?? 'No project'} projectPath={project?.path} now={now} />
         </div>
         <details className="group mt-1.5 hidden text-[11.5px] text-dim @max-[760px]:block">
@@ -745,7 +745,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
               aria-controls={`task-panel-${panel}`}
               aria-selected={selected}
               className={cn(
-                'relative flex min-w-0 items-center gap-1.5 px-2.5 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-accent @max-[760px]:flex-1 @max-[760px]:justify-center @max-[760px]:gap-1 @max-[760px]:px-1',
+                'relative flex min-w-0 items-center gap-1.5 px-3 py-2.5 text-[13px] font-medium focus-visible:outline focus-visible:outline-accent @max-[760px]:flex-1 @max-[760px]:justify-center @max-[760px]:gap-1 @max-[760px]:px-1',
                 selected ? 'text-fg' : 'text-dim hover:text-fg'
               )}
               onClick={() => setActivePanel(panel)}
@@ -755,8 +755,8 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
               {panel === 'issues' && 'Issues'}
               {panel === 'changes' && <>
                 Changes{' '}
-                <span className="font-mono font-normal tabular-nums text-dim">{issueReviewPending || reviewable && !diff ? 'Loading…' : task.filesChanged}</span>
-                {!issueReviewPending && (!reviewable || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono font-normal tabular-nums">
+                <span className="font-mono text-[11px] font-normal tabular-nums text-faint">{issueReviewPending || reviewable && !diff ? 'Loading…' : task.filesChanged}</span>
+                {!issueReviewPending && (!reviewable || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono text-[11px] font-normal tabular-nums">
                   <span className="text-ok">+{task.additions}</span> <span className="text-danger">−{task.deletions}</span>
                 </span></>}
               </>}

@@ -131,7 +131,7 @@ export function TaskContextMenu(): JSX.Element | null {
       ref={menuRef}
       role="menu"
       aria-label="Task actions"
-      className="fixed z-[110] min-w-36 p-1 bg-raised border border-line shadow-lg"
+      className="fixed z-[110] min-w-36 p-1 bg-overlay border border-line-strong shadow-[0_0_0_1px_var(--color-void)]"
       style={{ left: menu.x, top: menu.y }}
     >
       <button

@@ -1,9 +1,8 @@
 import { useRef, useState, type JSX } from 'react'
 import type { Task } from '@anvil/protocol/types'
-import { Icon } from '../icons'
 import { useStore } from '../state/store'
-import { btn, cn, field } from '../ui'
 import { TaskContextControl, type TaskContextControlProps } from './TaskContextControl'
+import { StatusGlyph } from './StatusGlyph'
 
 export function TaskSteeringComposer({ task, contextControl }: {
   task: Task
@@ -52,18 +51,17 @@ export function TaskSteeringComposer({ task, contextControl }: {
   return (
     <form
       aria-label="Steer task"
-      className="shrink-0 px-5 py-2.5 border-t border-line bg-raised"
+      className="shrink-0 px-5 pt-2 pb-5"
       onSubmit={(event) => { event.preventDefault(); void send() }}
     >
-      {contextControl && <TaskContextControl {...contextControl} />}
-      <div className="flex items-stretch gap-2">
+      <div className="border border-line-strong bg-raised transition-colors focus-within:border-accent/60">
         <textarea
           aria-label="Message to agent"
-          className={cn(field.control, 'min-w-0 px-2.5 py-2 resize-none text-[13px] overflow-y-auto disabled:opacity-50')}
-          rows={2}
+          className="block max-h-40 min-h-11 w-full min-w-0 resize-none overflow-y-auto bg-transparent px-4 py-[11px] text-sm leading-[22px] text-fg outline-none field-sizing-content placeholder:text-faint disabled:text-faint"
+          rows={1}
           value={message}
           disabled={sending || unavailable}
-          placeholder={'Follow up'}
+          placeholder={task.status === 'running' ? 'Steer the agent…' : 'Follow up…'}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing) {
@@ -72,32 +70,38 @@ export function TaskSteeringComposer({ task, contextControl }: {
             }
           }}
         />
-        {stopMode ? (
-          <button
-            type="button"
-            aria-label="Stop task"
-            title="Stop task"
-            className={cn(btn.danger, 'grid h-10 w-14 shrink-0 place-items-center self-center px-0 py-0')}
-            disabled={stopping}
-            onClick={() => void stop()}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
-              <rect x="1" y="1" width="12" height="12" fill="currentColor" />
-            </svg>
-          </button>
-        ) : (
-          <button
-            type="submit"
-            aria-label="Send message"
-            title="Send message"
-            className={cn(btn.primary, 'shrink-0 w-15 place-items-center')}
-            disabled={sending || unavailable || !message.trim()}
-          >
-            <Icon icon={sending ? 'loader' : 'chevron-up'} size={16} className={cn(sending && 'animate-spin')} />
-          </button>
-        )}
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-dashed border-line px-3 py-1.5 font-mono text-[11px] text-dim">
+          <span className="min-w-0 truncate">{task.agentLabel}{task.model && <> · {task.model}</>}</span>
+          <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
+            {contextControl && <TaskContextControl {...contextControl} />}
+            {stopMode ? (
+              <button
+                type="button"
+                aria-label="Stop task"
+                title="Stop task"
+                className="inline-flex h-6 items-center gap-1.5 px-1.5 text-danger-text hover:bg-danger-tint focus-visible:outline-2 focus-visible:outline-accent disabled:text-faint"
+                disabled={stopping}
+                onClick={() => void stop()}
+              >
+                <span aria-hidden="true">■</span>
+                <span aria-hidden="true">{stopping ? 'stopping…' : 'stop'}</span>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                aria-label="Send message"
+                title="Send message"
+                className="inline-flex h-6 items-center gap-1.5 px-1.5 text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent enabled:[&:not(:hover)]:text-ember-400 disabled:text-faint"
+                disabled={sending || unavailable || !message.trim()}
+              >
+                {sending ? <StatusGlyph glyph="running" /> : <span aria-hidden="true">↵</span>}
+                <span aria-hidden="true">send</span>
+              </button>
+            )}
+          </span>
+        </div>
       </div>
-      {error && <p role="alert" className="mt-1.5 max-h-16 overflow-y-auto text-xs text-danger">{error}</p>}
+      {(error || contextControl?.error) && <p role="alert" className="mt-1.5 max-h-16 overflow-y-auto text-xs text-danger">{error || contextControl?.error}</p>}
     </form>
   )
 }

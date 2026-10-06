@@ -37,7 +37,7 @@ export function PickerDialog({ anchorRef, label, onClose, children, wide = false
     <dialog
       ref={dialogRef}
       aria-label={label}
-      className={`fixed m-0 h-[min(400px,calc(100dvh-16px))] max-h-none ${wide ? 'w-[min(640px,calc(100vw-16px))]' : 'w-[min(420px,calc(100vw-16px))]'} max-w-none overflow-hidden border border-line bg-raised p-0 text-fg shadow-[0_16px_64px_rgba(0,0,0,0.5)] backdrop:bg-black/20`}
+      className={`fixed m-0 h-[min(400px,calc(100dvh-16px))] max-h-none ${wide ? 'w-[min(640px,calc(100vw-16px))]' : 'w-[min(420px,calc(100vw-16px))]'} max-w-none overflow-hidden border border-line-strong bg-overlay p-0 text-fg shadow-[0_0_0_1px_var(--color-void)] backdrop:bg-black/20`}
       onKeyDownCapture={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault()

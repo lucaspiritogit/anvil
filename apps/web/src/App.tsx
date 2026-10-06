@@ -323,8 +323,8 @@ export function App(): JSX.Element {
         </div>
         {settingsOpen && <div className="contents" inert={switching}><Suspense fallback={<p role="status" className="p-5 text-sm text-dim">Loading settings…</p>}><SettingsPage key={workspaceId} /></Suspense></div>}
       </div>
-      {switching && <div role="status" className="fixed bottom-4 right-4 z-50 border border-line bg-canvas p-3 text-sm shadow-lg">Switching workspace…</div>}
-      {workspaceError && <div role="alert" className="fixed bottom-4 right-4 z-50 rounded border border-line bg-canvas p-3 text-sm shadow-lg">
+      {switching && <div role="status" className="fixed bottom-4 right-4 z-50 border border-line-strong bg-canvas p-3 text-sm shadow-[0_0_0_1px_var(--color-void)]">Switching workspace…</div>}
+      {workspaceError && <div role="alert" className="fixed bottom-4 right-4 z-50 border border-line-strong bg-canvas p-3 text-sm shadow-[0_0_0_1px_var(--color-void)]">
         <p>{workspaceError}</p>
         <button className="mt-2 text-accent" onClick={() => { void load() }}>Retry workspace</button>
       </div>}

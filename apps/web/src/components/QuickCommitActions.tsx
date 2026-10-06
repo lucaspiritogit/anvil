@@ -80,7 +80,7 @@ export function QuickCommitActions({ task }: { task: Task }): JSX.Element | null
         >
           <Icon icon="chevron-down" size={14} aria-hidden="true" />
         </button>
-        {open && <div role="menu" aria-label="Commit actions" className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full border border-line bg-raised p-1 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+        {open && <div role="menu" aria-label="Commit actions" className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full border border-line-strong bg-overlay p-1 shadow-[0_0_0_1px_var(--color-void)]">
           <button ref={menuItemRef} role="menuitem" className="block w-full px-3 py-2 text-left font-medium whitespace-nowrap text-fg hover:bg-hover focus:bg-hover focus:outline-none" onClick={() => { setOpen(false); setModal({ push: true }) }}>
             Commit &amp; Push
           </button>

@@ -66,23 +66,22 @@ test('task status icons and highlights remain visible when selected, hovered, an
   const merged = sidebar.getByRole('button', { name: 'Open task: Polish task cards', exact: true })
   const review = sidebar.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
   const failed = sidebar.getByRole('button', { name: 'Open task: Retry provider setup', exact: true })
-  await expect(merged.getByRole('img', { name: 'Merged', exact: true })).toHaveCSS('color', 'rgb(187, 154, 247)')
-  await expect(review.getByRole('img', { name: 'Ready for review', exact: true })).toHaveClass(/text-orange-400/)
-  await expect(failed.getByRole('img', { name: 'Failed', exact: true })).toHaveCSS('color', 'rgb(224, 108, 117)')
-  await expect(merged.locator('..')).toHaveClass(/bg-violet\/8/)
-  await expect(review.locator('..')).toHaveClass(/bg-orange-400\/8/)
+  await expect(merged.getByRole('img', { name: 'Merged', exact: true })).toHaveCSS('color', 'rgb(95, 211, 138)')
+  await expect(review.getByRole('img', { name: 'Ready for review', exact: true })).toHaveClass(/text-review/)
+  await expect(failed.getByRole('img', { name: 'Failed', exact: true })).toHaveCSS('color', 'rgb(255, 95, 95)')
+  await expect(merged.locator('..')).not.toHaveClass(/row-selected/)
+  await expect(review.locator('..')).not.toHaveClass(/row-selected/)
   await merged.click()
   await merged.hover()
   await expect(merged.getByRole('img', { name: 'Merged', exact: true })).toBeVisible()
-  await expect(merged.locator('..')).toHaveClass(/bg-violet\/8/)
-  await expect(merged.locator('..')).toHaveClass(/outline-offset-1/)
+  await expect(merged.locator('..')).toHaveClass(/row-selected/)
   await page.screenshot({ path: testInfo.outputPath('sidebar-task-statuses.png') })
   await sidebar.getByRole('button', { name: 'Settle task: Polish task cards', exact: true }).click()
   const settled = sidebar.getByRole('region', { name: 'Settled tasks' })
   await settled.getByRole('button', { name: /^Settled/ }).click()
   const settledTask = settled.getByRole('button', { name: 'Open task: Polish task cards', exact: true })
   await expect(settledTask.getByRole('img', { name: 'Merged', exact: true })).toBeVisible()
-  await expect(settledTask.locator('..')).toHaveClass(/bg-violet\/8/)
+  await expect(settledTask.locator('..')).toHaveClass(/hover:bg-hover/)
 })
 
 test('task updates replace the sidebar status without leaving stale success indicators', async ({ page }) => {
@@ -115,11 +114,6 @@ test('task updates replace the sidebar status without leaving stale success indi
     }
     if (scenario.label === 'Open PR') {
       await expect(task.getByRole('img', { name: 'Open PR', exact: true }).locator('path')).toHaveAttribute('d', /M15 6C12\.6131/)
-      await expect(task.locator('..')).toHaveClass(/bg-ok\/8/)
-    } else if (scenario.label === 'Merged') {
-      await expect(task.locator('..')).toHaveClass(/bg-violet\/8/)
-    } else if (scenario.label !== 'Ready for review') {
-      await expect(task.locator('..')).not.toHaveClass(/bg-(ok|orange-400|violet)\/8/)
     }
   }
   await task.click()

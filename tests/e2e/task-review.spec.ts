@@ -315,7 +315,7 @@ test('Pierre line comments and merge remain available', async ({ page }, testInf
   await expect(confirmation).toBeHidden()
   // Merge retires the button; the header status carries the result and the PR action stays.
   await expect(merge).toHaveCount(0)
-  await expect(page.getByRole('main').getByText('Merged', { exact: true })).toHaveCSS('color', 'rgb(187, 154, 247)')
+  await expect(page.getByRole('main').getByText('Merged', { exact: true })).toHaveCSS('color', 'rgb(95, 211, 138)')
   await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toBeEnabled()
 })
 

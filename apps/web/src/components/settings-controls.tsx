@@ -65,7 +65,7 @@ export function OptionCards({ options, value, onChange, name, disabled, ariaLabe
             key={option.value}
             className={cn(
               'flex items-start gap-3 border p-3 focus-within:outline-2 focus-within:outline-accent',
-              selected ? 'border-accent bg-accent/10' : 'border-line hover:border-dim',
+              selected ? 'border-accent bg-ember-950' : 'border-line-strong hover:border-dim',
               disabled ? 'opacity-45' : 'cursor-pointer'
             )}
           >

@@ -465,7 +465,7 @@ export function SettingsPage(): JSX.Element {
   const [projectRemovalError, setProjectRemovalError] = useState('')
   const initialSettings = useRef<Partial<Settings> | null>(null)
   const [appearance, setAppearance] = useState<OverviewAppearance>({
-    overviewBackgroundMode: 'color', overviewBackgroundColor: '#0d0f12', overviewWallpaperId: null
+    overviewBackgroundMode: 'color', overviewBackgroundColor: '#0c0d10', overviewWallpaperId: null
   })
   useEffect(() => { initialSettings.current = null }, [workspaceId])
   useEffect(() => {
@@ -698,7 +698,7 @@ export function SettingsPage(): JSX.Element {
                 </Select>
                 <small className={field.hint}>Scales text and controls across Anvil automatically.</small>
               </label>
-              <div className="mb-7 rounded-lg border border-line bg-raised p-5" style={{ fontSize: fontSize * DEFAULT_FONT_SIZE / normalizeFontSize(settings?.fontSize) }} aria-label="Font size preview">
+              <div className="mb-7 border border-line bg-raised p-5" style={{ fontSize: fontSize * DEFAULT_FONT_SIZE / normalizeFontSize(settings?.fontSize) }} aria-label="Font size preview">
                 <p className="font-medium">Your next task starts here.</p>
                 <p className="mt-1 text-dim">Add a feature or fix a bug.</p>
               </div>
