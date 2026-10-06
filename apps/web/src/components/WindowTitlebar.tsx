@@ -5,6 +5,14 @@ import { useStore } from '../state/store'
 import { cn } from '../ui'
 
 const HAS_MAC_WINDOW_CONTROLS = IS_MAC && navigator.userAgent.includes('Electron/')
+const ANVIL_ASCII = [
+  '  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄',
+  '▀▀█████████████████▀',
+  '       ▀▀██████▀▀',
+  '         ██████',
+  '      ▄▄████████▄▄',
+  '      ▀▀▀▀▀▀▀▀▀▀▀▀'
+].join('\n')
 
 export function WindowTitlebar({ children, className }: {
   children: ReactNode
@@ -36,7 +44,7 @@ export function WindowTitlebar({ children, className }: {
 export function AnvilBrand(): JSX.Element {
   return (
     <span className="inline-flex shrink-0 items-center gap-2.5 font-mono text-xs font-semibold tracking-[0.14em] text-fg">
-      <span aria-hidden="true" className="size-2 bg-accent" />
+      <span aria-hidden="true" className="whitespace-pre font-mono text-[4px] leading-[4px] font-normal tracking-normal text-accent select-none">{ANVIL_ASCII}</span>
       <span>ANVIL</span>
     </span>
   )
