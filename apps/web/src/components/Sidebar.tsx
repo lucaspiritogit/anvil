@@ -213,22 +213,24 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
 
       <CaffeineToggle />
 
-      <button
-        className="flex shrink-0 items-center gap-2.5 mx-2.5 mt-2 px-2 py-2 text-left text-xs text-dim hover:bg-hover/60 hover:text-fg focus-visible:outline focus-visible:outline-accent"
-        onClick={() => { if (mobileNavigation) onNavigate(); setSettingsOpen(true) }}
-      >
-        <Icon icon="settings" size={18} aria-hidden="true" />
-        Settings
-      </button>
-      <button
-        aria-current={view.kind === 'analytics' ? 'page' : undefined}
-        className={cn('flex shrink-0 items-center gap-2.5 mx-2.5 mb-2 px-2 py-2 text-left text-xs hover:bg-hover/60 focus-visible:outline focus-visible:outline-accent',
-          view.kind === 'analytics' ? 'row-selected text-fg' : 'text-dim hover:text-fg')}
-        onClick={() => { showAnalytics(); if (mobileNavigation) onNavigate() }}
-      >
-        <Icon icon="chart-no-axes-combined" size={18} aria-hidden="true" />
-        Analytics
-      </button>
+      <div className="mx-2.5 mt-2 mb-2 flex shrink-0 gap-1 border-t border-line pt-2">
+        <button
+          aria-current={view.kind === 'analytics' ? 'page' : undefined}
+          className={cn('flex h-8 min-w-0 flex-1 items-center gap-2 px-2 text-left text-xs hover:bg-hover focus-visible:outline focus-visible:outline-accent',
+            view.kind === 'analytics' ? 'row-selected text-fg' : 'text-dim hover:text-fg')}
+          onClick={() => { showAnalytics(); if (mobileNavigation) onNavigate() }}
+        >
+          <Icon icon="chart-no-axes-combined" size={16} className="shrink-0" aria-hidden="true" />
+          <span className="truncate">Analytics</span>
+        </button>
+        <button
+          className="flex h-8 min-w-0 flex-1 items-center gap-2 px-2 text-left text-xs text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent"
+          onClick={() => { if (mobileNavigation) onNavigate(); setSettingsOpen(true) }}
+        >
+          <Icon icon="settings" size={16} className="shrink-0" aria-hidden="true" />
+          <span className="truncate">Settings</span>
+        </button>
+      </div>
       <div className="shrink-0 px-2.5 pb-3">
         <WorkspacePicker />
       </div>

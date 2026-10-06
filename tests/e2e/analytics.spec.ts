@@ -9,7 +9,8 @@ test('analytics navigation renders workspace metrics and range presets', async (
   const analytics = page.getByRole('button', { name: 'Analytics', exact: true })
   const settingsBox = await settings.boundingBox()
   const analyticsBox = await analytics.boundingBox()
-  expect(analyticsBox!.y).toBeGreaterThan(settingsBox!.y)
+  expect(analyticsBox!.y).toBe(settingsBox!.y)
+  expect(analyticsBox!.x + analyticsBox!.width).toBeLessThanOrEqual(settingsBox!.x)
 
   await analytics.focus()
   await expect(analytics).toBeFocused()
