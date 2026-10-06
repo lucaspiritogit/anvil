@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process'
 const output = resolve(process.argv[2] || 'public/showcase')
 const frames = await mkdtemp(join(tmpdir(), 'anvil-demo-frames-'))
 const fps = 25
-const durationSeconds = 20
+const durationSeconds = 24
 const targetFrames = fps * durationSeconds
 const errors = []
 let frame = 0
@@ -27,7 +27,7 @@ const server = await createServer({ configFile: resolve('tests/e2e/vite.config.m
 let browser
 try {
   await server.listen()
-  browser = await chromium.launch({ headless: true })
+  browser = await chromium.launch({ headless: true, executablePath: process.env.ANVIL_DEMO_BROWSER || undefined })
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
   page.on('pageerror', (error) => errors.push(error.message))
   async function capture(seconds, target = cursor) {
@@ -48,12 +48,23 @@ try {
     await expect(page.getByRole('textbox', { name: 'Task prompt', exact: true })).toBeFocused()
     await capture(0.2)
   }
+  async function centerOf(locator) {
+    const box = await locator.boundingBox()
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  }
+  async function chooseFromMenu(name, option, { hold = 0.35 } = {}) {
+    const trigger = page.getByRole('combobox', { name, exact: true })
+    await capture(0.35, await centerOf(trigger))
+    await trigger.click()
+    const choice = page.getByRole('listbox', { name, exact: true }).getByRole('option', { name: option, exact: true })
+    await expect(choice).toBeVisible()
+    await capture(hold, await centerOf(choice))
+    await choice.click()
+    await expect(trigger).toHaveText(option)
+    await capture(0.2)
+  }
   async function switchToWork() {
-    const taskStyle = page.getByRole('combobox', { name: 'Task style', exact: true })
-    await taskStyle.focus()
-    await taskStyle.selectOption('work')
-    await expect(taskStyle).toHaveValue('work')
-    await capture(0.4)
+    await chooseFromMenu('Task style', 'Work', { hold: 0.5 })
     await focusNewTask()
   }
   async function typePrompt(text) {
@@ -65,8 +76,16 @@ try {
     }
     await capture(0.16)
     await input.press('Enter')
-    await page.getByRole('log', { name: 'Task output' }).waitFor()
+    await expect(page.getByRole('status').filter({ hasText: 'Task created' })).toBeVisible()
+    await capture(0.45)
     return page.evaluate(() => window.anvil.tasks.list().then((tasks) => tasks[0].id))
+  }
+  async function openTask(title) {
+    const row = page.getByRole('button', { name: `Open task: ${title}`, exact: true })
+    await capture(0.4, await centerOf(row))
+    await row.click()
+    await page.getByRole('log', { name: 'Task output' }).waitFor()
+    await capture(0.15)
   }
   async function emit(taskId, category, text) {
     await page.evaluate((detail) => window.dispatchEvent(new CustomEvent('fixture:output', {
@@ -94,7 +113,7 @@ try {
     window.settingsTest.apply(personal)
   }, wallpaper)
   await page.addStyleTag({ content: `
-    body { padding: 28px; background: #080c11; overflow: hidden }
+    body { padding: 28px; background: #08090b; overflow: hidden }
     #root { height: calc(100vh - 56px); width: calc(100vw - 56px); border-radius: 12px; overflow: hidden; box-shadow: 0 16px 60px #0008; border: 1px solid #ffffff18 }
     * { cursor: none !important }
     #demo-cursor { position: fixed; top: 0; left: 0; width: 18px; height: 23px; z-index: 99999; pointer-events: none; filter: drop-shadow(0 2px 2px #0009) }
@@ -105,6 +124,10 @@ try {
     cursor.innerHTML = '<svg viewBox="0 0 18 23"><path d="M2 1L2 19L6.7 14.9L10.2 22L13.5 20.4L10 13.6L16 13Z" fill="white" stroke="#17212a" stroke-width="1.3"/></svg>'
     document.body.append(cursor)
   })
+  await page.evaluate(async () => {
+    await window.anvil.accounts.connect({ workspaceId: 'default', agentId: 'codex', method: 'browser' })
+    window.dispatchEvent(new CustomEvent('fixture:account-complete', { detail: { workspaceId: 'default', agentId: 'codex', success: true } }))
+  })
   await page.waitForTimeout(600)
   await expect(page.getByRole('region', { name: 'Codex usage limits', exact: true })).toBeVisible()
   await capture(1.2)
@@ -112,6 +135,7 @@ try {
 
   await focusNewTask()
   const quickTaskId = await typePrompt('Tighten analytics date controls')
+  await openTask('Tighten analytics date controls')
   await emit(quickTaskId, 'message', 'I’ll update the date controls in the current checkout and keep the change focused.')
   await capture(0.7)
   await emit(quickTaskId, 'tool_use', 'Edit file\napps/web/src/components/AnalyticsPage.tsx')
@@ -132,24 +156,17 @@ try {
 
   await focusNewTask()
   await switchToWork()
-  const stackSelector = page.getByRole('combobox', { name: 'Stack on task', exact: true })
-  await expect(stackSelector).toBeVisible()
-  await stackSelector.focus()
-  await stackSelector.selectOption(parentTaskId)
-  await expect(stackSelector).toHaveValue(parentTaskId)
-  await capture(0.55)
+  await expect(page.getByRole('combobox', { name: 'Stack on task', exact: true })).toBeVisible()
+  await chooseFromMenu('Stack on task', 'Add provider usage limits', { hold: 0.45 })
   await focusNewTask()
   const childTaskId = await typePrompt('Polish provider limit meters')
   await updateTask(childTaskId, { deliveryStatus: 'preparing', branchName: undefined, sessionId: undefined })
+  await openTask('Polish provider limit meters')
   await expect(page.getByText('Queued. Waiting for Add provider usage limits to finish before starting.', { exact: true })).toBeVisible()
   await capture(1.3)
   await page.screenshot({ path: join(output, 'demo-stack-preview.png') })
 
-  const parentTask = page.getByRole('button', { name: 'Open task: Add provider usage limits', exact: true })
-  await parentTask.focus()
-  await capture(0.2)
-  await parentTask.press('Enter')
-  await page.getByRole('log', { name: 'Task output' }).waitFor()
+  await openTask('Add provider usage limits')
   await emit(parentTaskId, 'tool_result', 'Found the account rate-limit endpoint and shared meter component.')
   await emit(parentTaskId, 'tool_use', 'Edit files\nAdd the workspace provider limit panel')
   await capture(0.8)
@@ -158,9 +175,8 @@ try {
   await capture(1.0)
 
   const analyticsButton = page.getByRole('button', { name: 'Analytics', exact: true })
-  await analyticsButton.focus()
-  await capture(0.2)
-  await analyticsButton.press('Enter')
+  await capture(0.4, await centerOf(analyticsButton))
+  await analyticsButton.click()
   await expect(page.getByRole('heading', { name: 'Analytics', exact: true })).toBeVisible()
   await expect(page.getByRole('region', { name: /Tokens over time$/ })).toBeVisible()
   await capture(2.8)
