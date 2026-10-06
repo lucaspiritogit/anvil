@@ -1,14 +1,33 @@
 import type { JSX } from 'react'
-import { asciiBar } from './AsciiMeter'
 import { ProviderIcon } from './ProviderIcon'
 import { cn } from '../ui'
 
 const METER_CELLS = 32
 
 function meterTone(remainingPercent: number): string {
-  if (remainingPercent <= 10) return 'text-danger'
-  if (remainingPercent <= 25) return 'text-warn'
-  return 'text-accent'
+  if (remainingPercent <= 10) return 'bg-danger'
+  if (remainingPercent <= 25) return 'bg-warn'
+  return 'bg-accent'
+}
+
+function filledCells(remainingPercent: number): number {
+  return Math.round(Math.max(0, Math.min(100, remainingPercent)) / 100 * METER_CELLS)
+}
+
+function LimitMeter({ label, remainingPercent }: { label: string; remainingPercent: number }): JSX.Element {
+  const filled = filledCells(remainingPercent)
+  return (
+    <div className="flex items-center gap-3" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(remainingPercent)} aria-label={label}>
+      <span
+        className="grid h-4 min-w-0 flex-1 gap-[2px] border border-line bg-canvas p-[2px]"
+        style={{ gridTemplateColumns: `repeat(${METER_CELLS}, minmax(0, 1fr))` }}
+        aria-hidden="true"
+      >
+        {Array.from({ length: METER_CELLS }, (_, cell) => <span key={cell} className={cell < filled ? meterTone(remainingPercent) : 'bg-line'} />)}
+      </span>
+      <span className="min-w-16 shrink-0 text-right text-[11px] text-fg tabular-nums">{Math.round(remainingPercent)}% left</span>
+    </div>
+  )
 }
 
 export interface ProviderLimit {
@@ -53,27 +72,7 @@ export function ProviderLimits({ providers, className }: {
                   <span className="text-dim">{limit.label}</span>
                   <span className="text-dim tabular-nums">{limit.value}</span>
                 </div>
-                {limit.remainingPercent !== null && <div
-                  className="flex items-center gap-3"
-                  role="meter"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(limit.remainingPercent)}
-                  aria-label={limit.label}
-                >
-                  <span
-                    className={cn('grid min-w-0 flex-1 select-none text-[13px] leading-none', meterTone(limit.remainingPercent))}
-                    style={{ gridTemplateColumns: `repeat(${METER_CELLS}, minmax(0, 1fr))` }}
-                    aria-hidden="true"
-                  >
-                    {asciiBar(limit.remainingPercent / 100, METER_CELLS).split('').map((character, index) => (
-                      <span key={index} className="text-center">{character}</span>
-                    ))}
-                  </span>
-                  <span className="min-w-16 shrink-0 text-right text-[11px] text-fg tabular-nums">
-                    {Math.round(limit.remainingPercent)}% left
-                  </span>
-                </div>}
+                {limit.remainingPercent !== null && <LimitMeter label={limit.label} remainingPercent={limit.remainingPercent} />}
               </div>
             ))}
           </div>
