@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
-import { btn, cn, field, modal } from '../ui'
+import { btn, cn, field } from '../ui'
 
 export function GitHubSettings(): JSX.Element {
   const [configured, setConfigured] = useState(false)
@@ -33,12 +33,19 @@ export function GitHubSettings(): JSX.Element {
   }
 
   return (
-    <section className={modal.section} aria-label="GitHub integration">
-      <h3 className="my-3 text-[13px] font-semibold">GitHub</h3>
+    <section className="mb-6 border border-line bg-raised" aria-label="GitHub integration">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
+        <h3 className="font-mono text-[11px] font-medium tracking-[0.12em] text-dim uppercase">GitHub</h3>
+        <span className={cn('inline-flex h-5 items-center gap-1.5 px-2 font-mono text-[10px] tracking-[0.06em] uppercase', configured ? 'bg-ok-tint text-ok-text' : 'bg-overlay text-dim')}>
+          <span aria-hidden="true">{configured ? '✓' : '○'}</span>
+          <span role="status">{configured ? 'Token saved' : 'No token saved'}</span>
+        </span>
+      </div>
+      <div className="px-4 py-3.5">
       <label className={field.wrap}>
         <span className={field.label}>Personal access token</span>
         <input
-          className={field.sized}
+          className={cn(field.sized, 'font-mono text-xs')}
           type="password"
           autoComplete="off"
           spellCheck={false}
@@ -60,9 +67,9 @@ export function GitHubSettings(): JSX.Element {
           {busy ? 'Please wait…' : 'Save token'}
         </button>
         {configured && <button className={btn.ghost} disabled={busy} onClick={() => void save(true)}>Remove token</button>}
-        <span role="status" className="text-xs text-dim">{configured ? 'Token saved' : 'No token saved'}</span>
       </div>
       {error && <p role="alert" className="mt-2 text-xs text-danger">{error}</p>}
+      </div>
     </section>
   )
 }

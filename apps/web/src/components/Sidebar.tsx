@@ -106,26 +106,30 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   if (settingsOpen) return (
     <aside aria-label="Sidebar" className="flex min-h-0 flex-col border-r border-line bg-canvas max-[700px]:border-b max-[700px]:border-r-0">
       <WindowTitlebar>
-        <h1 className="font-mono text-sm font-semibold">Settings</h1>
+        <AnvilBrand />
+        <span aria-hidden="true" className="mx-1.5 shrink-0 font-mono text-xs text-faint">/</span>
+        <h1 className="font-mono text-xs font-normal text-dim lowercase">Settings</h1>
       </WindowTitlebar>
-      <nav aria-label="Settings sections" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3 max-[700px]:flex-row max-[700px]:overflow-x-auto">
+      <nav aria-label="Settings sections" className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-line pt-1.5 max-[700px]:flex-row max-[700px]:overflow-x-auto max-[700px]:pt-0">
         {SETTINGS_SECTIONS.map((section) => (
           <button key={section.id} aria-current={settingsSection === section.id ? 'page' : undefined}
-            className={cn('flex shrink-0 items-center gap-2.5 px-3 py-2.5 text-left text-[13px] whitespace-nowrap focus-visible:outline focus-visible:outline-accent', settingsSection === section.id ? 'row-selected text-fg' : 'text-dim hover:bg-hover hover:text-fg')}
+            className={cn('flex h-[38px] shrink-0 items-center gap-2.5 px-4 text-left text-[13px] whitespace-nowrap focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent', settingsSection === section.id ? 'row-selected text-fg' : 'text-dim hover:bg-hover hover:text-fg')}
             onClick={() => setSettingsSection(section.id)}>
-            <Icon icon={section.icon} size={18} aria-hidden="true" />
+            <Icon icon={section.icon} size={16} aria-hidden="true" />
             {section.label}
           </button>
         ))}
       </nav>
-      <button className="mx-3 mb-3 flex shrink-0 items-center gap-2 px-3 py-2 text-left text-xs text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent"
-        onClick={() => setSettingsOpen(false)}>
-        <Icon icon="x" size={16} aria-hidden="true" />
-        Back to workspace
-      </button>
+      <div className="mx-2.5 mt-2 mb-2.5 flex shrink-0 items-center justify-between gap-2 border-t border-line pt-2">
+        <button className="flex h-8 min-w-0 items-center gap-2 px-2 text-left text-xs text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent"
+          onClick={() => setSettingsOpen(false)}>
+          <Icon icon="arrow-left-to-line" size={14} aria-hidden="true" />
+          Back to workspace
+        </button>
+        <kbd aria-hidden="true" className="border border-b-2 border-line-strong px-1.5 font-mono text-[10px] text-dim">esc</kbd>
+      </div>
     </aside>
   )
-
   return (
     <aside
       id="task-sidebar"

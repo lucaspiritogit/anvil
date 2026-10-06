@@ -4,7 +4,7 @@ import type { JSX } from 'react'
 import type { Settings, Wallpaper } from '@anvil/protocol/types'
 import { loadWallpaper } from '../state/wallpaper-cache'
 import { Icon } from '../icons'
-import { btn, cn, field, modal } from '../ui'
+import { btn, cn, field } from '../ui'
 
 export type OverviewAppearance = Pick<Settings, 'overviewBackgroundMode' | 'overviewBackgroundColor' | 'overviewWallpaperId'>
 const PAGE_SIZE = 3
@@ -129,7 +129,7 @@ export function OverviewBackgroundPicker({ value, onChange }: {
   const pages = Math.ceil(library.length / PAGE_SIZE)
   const imageMode = value.overviewBackgroundMode === 'image'
   return (
-    <fieldset className={cn(modal.section, 'min-w-0 transition-colors', dragging && 'outline-2 outline-accent')}
+    <fieldset className={cn('mb-6 min-w-0 border border-line bg-raised pb-3.5 transition-colors [&>*:not(legend)]:mx-4', dragging && 'outline-2 outline-accent')}
       onDragOver={(event) => {
         if (!imageMode || importing || !event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
@@ -145,18 +145,18 @@ export function OverviewBackgroundPicker({ value, onChange }: {
         setDragging(false)
         showFilePreview(event.dataTransfer.files[0])
       }}>
-      <legend className="text-[13px] font-semibold">Overview background</legend>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <legend className="float-left mb-3.5 w-full border-b border-line px-4 py-2.5 font-mono text-[11px] font-medium tracking-[0.12em] text-dim uppercase">Overview background</legend>
+      <div className="clear-both flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <p className="min-w-0 text-[11px] text-dim">
           {imageMode
             ? 'Project preview only · the color is used while an image is unavailable.'
             : 'Project preview only · PNG, JPEG or WebP.'}
         </p>
-        <div role="radiogroup" aria-label="Overview background mode" className="inline-flex shrink-0 border border-line p-0.5">
+        <div role="radiogroup" aria-label="Overview background mode" className="inline-flex shrink-0 border border-line-strong">
           {MODES.map((mode) => {
             const selected = value.overviewBackgroundMode === mode.value
             return (
-              <label key={mode.value} className={cn('relative cursor-pointer px-3 py-1 text-xs', selected ? 'bg-accent text-canvas' : 'text-dim hover:text-fg')}>
+              <label key={mode.value} className={cn('relative cursor-pointer px-3 py-1 font-mono text-xs has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent', selected ? 'bg-accent text-canvas' : 'text-dim hover:text-fg')}>
                 <input type="radio" name="overview-background-mode" value={mode.value} checked={selected}
                   className="absolute inset-0 cursor-pointer opacity-0"
                   onChange={() => onChange({ ...value, overviewBackgroundMode: mode.value })} />

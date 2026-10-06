@@ -2,6 +2,7 @@ import { GhosttyTerminal } from './GhosttyTerminal'
 import { TerminalAuthInput } from './TerminalAuthInput'
 import { Select } from './Select'
 import { AgentIcon } from './AgentIcon'
+import { SettingsPanel } from './settings-controls'
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { AgentAccountConnect, AgentAccountTarget, WorkspaceAgentAccount } from '@anvil/protocol/types'
 import { useStore } from '../state/store'
@@ -59,19 +60,19 @@ function AccountRow({ workspaceId, workspaceName, agentId }: AgentAccountTarget 
   const pending = account?.status === 'pending'
   const disabled = requesting || pending || account?.busy || !account
   return (
-    <section className="border-b border-line px-3 py-3 last:border-b-0" aria-label={`${label} account for ${workspaceName}`}>
+    <section className="px-4 py-3.5" aria-label={`${label} account for ${workspaceName}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex min-w-[120px] flex-1 items-center gap-2.5">
           <AgentIcon agentId={agentId} label={label} size={22} />
           <div className="min-w-0">
             <h3 className="text-sm font-medium">{label}</h3>
-            <div role="status" className="mt-0.5 break-words text-xs text-dim">
+            <div role="status" className={cn('mt-0.5 flex min-w-0 items-baseline gap-1.5 break-words font-mono text-[11px] before:shrink-0', account?.status === 'connected' ? "text-ok-text before:content-['●']" : account ? "text-dim before:content-['○']" : 'text-dim')}>
               {!account
                 ? <p>Reading account…</p>
                 : account.status === 'connected'
                   ? agentId === 'codex' || agentId === 'claude'
                     ? <button type="button" aria-pressed={revealed} title={revealed ? 'Hide email' : 'Reveal email'}
-                        className={cn('max-w-full cursor-pointer break-all text-left transition-[filter] duration-150 focus-visible:outline focus-visible:outline-accent', !revealed && 'select-none blur-[3px]')}
+                        className={cn('max-w-full cursor-pointer break-all text-left text-dim transition-[filter] duration-150 focus-visible:outline focus-visible:outline-accent', !revealed && 'select-none blur-[3px]')}
                         onClick={() => setRevealed((value) => !value)}>
                         {account.accounts.join(', ')}
                       </button>
@@ -93,7 +94,7 @@ function AccountRow({ workspaceId, workspaceName, agentId }: AgentAccountTarget 
       </div>
       {account?.busy && <p className="mt-2 text-xs text-dim">Active work in {workspaceName} must finish before changing accounts.</p>}
       {agentId === 'codex' && !pending && <>
-        <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+        <div className="mt-3 grid gap-2.5 pl-8 sm:grid-cols-2">
           <label>
             <span className={field.label}>Account type</span>
             <Select compact aria-label={`Codex account type for ${workspaceName}`} value={accountType} disabled={disabled} onChange={(event) => { setAccountType(event.target.value as typeof accountType); setApiKey('') }}>
@@ -129,11 +130,7 @@ export function WorkspaceAgentAccounts(): JSX.Element {
   const workspaceId = useStore((state) => state.activeWorkspaceId)
   const workspaceName = useStore((state) => state.workspaces.find((workspace) => workspace.id === workspaceId)?.name ?? 'Workspace')
   if (!workspaceId) return <p>Select a workspace to manage accounts.</p>
-  return <div>
-    <h2 className="font-medium">Accounts for {workspaceName}</h2>
-    <p className="mt-1 text-xs text-dim">Account changes apply immediately to this workspace. Credentials stay in the agent's workspace profile.</p>
-    <div className="mt-3 overflow-hidden border border-line">
-      {(['codex', 'claude', 'opencode'] as const).map((agentId) => <AccountRow key={`${workspaceId}:${agentId}`} workspaceId={workspaceId} workspaceName={workspaceName} agentId={agentId} />)}
-    </div>
-  </div>
+  return <SettingsPanel title={`Accounts · ${workspaceName}`} aside="Changes apply immediately. Credentials stay in each agent's workspace profile.">
+    {(['codex', 'claude', 'opencode'] as const).map((agentId) => <AccountRow key={`${workspaceId}:${agentId}`} workspaceId={workspaceId} workspaceName={workspaceName} agentId={agentId} />)}
+  </SettingsPanel>
 }
