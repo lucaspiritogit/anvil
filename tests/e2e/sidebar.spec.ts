@@ -69,8 +69,8 @@ test('task status icons and highlights remain visible when selected, hovered, an
   await expect(merged.getByRole('img', { name: 'Merged', exact: true })).toHaveCSS('color', 'rgb(95, 211, 138)')
   await expect(review.getByRole('img', { name: 'Ready for review', exact: true })).toHaveClass(/text-review/)
   await expect(failed.getByRole('img', { name: 'Failed', exact: true })).toHaveCSS('color', 'rgb(255, 95, 95)')
-  await expect(merged.locator('..')).toHaveClass(/bg-ok-tint/)
-  await expect(review.locator('..')).toHaveClass(/bg-review-tint/)
+  await expect(merged.locator('..')).not.toHaveClass(/row-selected/)
+  await expect(review.locator('..')).not.toHaveClass(/row-selected/)
   await merged.click()
   await merged.hover()
   await expect(merged.getByRole('img', { name: 'Merged', exact: true })).toBeVisible()
@@ -81,7 +81,7 @@ test('task status icons and highlights remain visible when selected, hovered, an
   await settled.getByRole('button', { name: /^Settled/ }).click()
   const settledTask = settled.getByRole('button', { name: 'Open task: Polish task cards', exact: true })
   await expect(settledTask.getByRole('img', { name: 'Merged', exact: true })).toBeVisible()
-  await expect(settledTask.locator('..')).toHaveClass(/bg-ok-tint/)
+  await expect(settledTask.locator('..')).toHaveClass(/hover:bg-hover/)
 })
 
 test('task updates replace the sidebar status without leaving stale success indicators', async ({ page }) => {
@@ -114,11 +114,6 @@ test('task updates replace the sidebar status without leaving stale success indi
     }
     if (scenario.label === 'Open PR') {
       await expect(task.getByRole('img', { name: 'Open PR', exact: true }).locator('path')).toHaveAttribute('d', /M15 6C12\.6131/)
-      await expect(task.locator('..')).toHaveClass(/bg-ok-tint/)
-    } else if (scenario.label === 'Merged') {
-      await expect(task.locator('..')).toHaveClass(/bg-ok-tint/)
-    } else if (scenario.label !== 'Ready for review') {
-      await expect(task.locator('..')).not.toHaveClass(/bg-(ok|review|run)-tint/)
     }
   }
   await task.click()

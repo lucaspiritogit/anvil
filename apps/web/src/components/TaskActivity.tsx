@@ -26,7 +26,7 @@ export function TaskActivity({ task, event, presentation }: { presentation?: Ret
   const label = activityLabel(task, event)
 
   return (
-    <div role="status" aria-label="Agent activity" aria-live="polite" aria-atomic="true" className="py-3 text-xs">
+    <div role="status" aria-label="Agent activity" aria-live="polite" aria-atomic="true" className="my-2 bg-run-tint px-3 py-1.5 text-xs">
       <span className="flex items-center gap-2 motion-safe:animate-breathe">
         <StatusGlyph glyph="running" className="text-run" />
         <span className="block truncate font-mono text-run-text" title={label}>{label}</span>

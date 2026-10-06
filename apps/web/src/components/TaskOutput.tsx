@@ -365,7 +365,7 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
   return (
     <section id="task-panel-output" aria-label="Output" className={cn('relative flex flex-1 min-h-0 min-w-0', !visible && 'hidden')}>
       {visible && <div className="flex flex-1 min-h-0 min-w-0 flex-col">
-        <nav aria-label="Output history" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-5 py-1.5 text-xs">
+        <nav aria-label="Output history" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-5 py-1.5 font-mono text-[11px]">
           <span role="status" className="text-dim">{history?.loading ? 'Loading output…' : history?.loaded ? `${filtering ? `${visibleCount} of ` : ''}${events?.length ?? 0} events · ${history.followingLatest ? 'Latest' : 'History'}` : ''}</span>
         </nav>
         <div role="toolbar" aria-label="Output filters" className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-5 py-1.5">
@@ -684,10 +684,10 @@ function PromptBlock({ label, text }: { label: string; text: string }): JSX.Elem
   }, [expanded, text])
 
   return (
-    <section role="region" aria-label="Task prompt" tabIndex={0} className="my-3 border-l-2 border-accent/50 pl-3.5 font-sans focus-visible:outline focus-visible:outline-accent">
-      <div className="mb-1 flex items-center gap-3 text-[11px] text-dim">
-        <span className="font-medium">{label}</span>
-        {(clamped || expanded) && <button className="text-accent hover:underline" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+    <section role="region" aria-label="Task prompt" tabIndex={0} className="corner-marks my-3 border border-line bg-raised px-4 py-3 font-sans focus-visible:outline focus-visible:outline-accent">
+      <div className="mb-1.5 flex items-center gap-3 font-mono text-[11px] text-dim">
+        <span className="font-medium tracking-[0.12em] uppercase"><span aria-hidden="true" className="text-accent">▸ </span>{label}</span>
+        {(clamped || expanded) && <button className="text-ember-400 hover:text-ember-300 hover:underline" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
           {expanded ? 'Show less' : 'Show more'}
         </button>}
       </div>
@@ -716,6 +716,15 @@ const KIND_TONE: Record<TaskEventCategory, string> = {
   tool_result: 'text-cyan',
   system: 'text-ok',
   error: 'text-danger'
+}
+
+const KIND_GLYPH: Record<TaskEventCategory, string> = {
+  message: '◇',
+  thinking: '∴',
+  tool_use: '›',
+  tool_result: '↳',
+  system: '•',
+  error: '✕'
 }
 
 const CATEGORY_DOT: Record<TaskEventCategory, string> = {
@@ -768,7 +777,7 @@ function ExpandButton({ expanded, onToggle }: { expanded: boolean; onToggle: () 
         event.stopPropagation()
         onToggle()
       }}
-      className="-ml-1 mt-px flex size-4 shrink-0 items-center justify-center text-dim/50 hover:text-fg">
+      className="flex size-4 shrink-0 items-center justify-center text-faint hover:text-fg">
       <Icon icon="chevron-right" size={12} aria-hidden="true" className={cn('transition-transform duration-150', expanded && 'rotate-90')} />
     </button>
   )
@@ -782,31 +791,33 @@ function CopyButton({ copied, onCopy }: { copied: boolean; onCopy: () => void })
         event.stopPropagation()
         onCopy()
       }}
-      className={cn('absolute right-1 top-1 z-10 flex size-5 items-center justify-center border border-line bg-raised text-dim transition-opacity hover:text-fg focus-visible:opacity-100',
+      className={cn('absolute right-1 top-1 z-10 flex size-5 items-center justify-center border border-line-strong bg-overlay text-dim transition-opacity hover:text-fg focus-visible:opacity-100',
         copied ? 'opacity-100 text-ok' : 'opacity-0 group-hover:opacity-100')}>
       <Icon icon={copied ? 'check' : 'copy'} size={11} aria-hidden="true" />
     </button>
   )
 }
 
-function Gutter({ event, label, tone, expandable, expanded, onToggle }: {
+function Gutter({ event, label, glyph, tone, expandable, expanded, onToggle }: {
   event: TaskEvent
   label: string
+  glyph: string
   tone: string
   expandable: boolean
   expanded: boolean
   onToggle: () => void
 }): JSX.Element {
   return (
-    <span className="flex select-none flex-col gap-0.5">
-      <span className="flex items-center gap-1">
-        {expandable && <ExpandButton expanded={expanded} onToggle={onToggle} />}
-        <span className={cn('text-[11px]', tone)}>{label}</span>
-      </span>
-      <time dateTime={new Date(event.ts).toISOString()} className="text-[10px] leading-tight text-dim/50 tabular-nums">
+    <>
+      <time dateTime={new Date(event.ts).toISOString()} className="select-none pt-px text-[11px] leading-5 text-faint tabular-nums max-[700px]:hidden">
         {timeFormat.format(event.ts)}
       </time>
-    </span>
+      <span className="flex min-w-0 select-none items-center gap-1.5 leading-5">
+        {expandable ? <ExpandButton expanded={expanded} onToggle={onToggle} /> : <span aria-hidden="true" className="size-4 shrink-0" />}
+        <span aria-hidden="true" className={cn('w-3 shrink-0 text-center', tone)}>{glyph}</span>
+        <span className={cn('truncate text-[11px]', tone)}>{label}</span>
+      </span>
+    </>
   )
 }
 
@@ -877,11 +888,11 @@ function ToolResultRow({ result, expanded, hidden, copied, onToggle, onCopy }: {
   const failed = result.category === 'error'
   return (
     <div data-event-id={result.id} data-output-category={result.category} aria-expanded={expanded}
-      className={cn('group relative mt-1 flex items-start gap-2 border-l border-line pl-2.5', hidden && 'hidden')}>
+      className={cn('group relative mt-1 flex items-start gap-2 border-l border-dashed border-line-strong pl-2.5', hidden && 'hidden')}>
       <ExpandButton expanded={expanded} onToggle={() => onToggle(result.id)} />
       <span className="min-w-0 flex-1">
-        <span className={cn('block text-[10px] uppercase tracking-wide select-none', failed ? 'text-danger' : KIND_TONE.tool_result)}>
-          {failed ? 'error' : 'result'}
+        <span className={cn('block text-[10px] uppercase tracking-[0.12em] select-none', failed ? 'text-danger' : KIND_TONE.tool_result)}>
+          <span aria-hidden="true">{failed ? '✕ ' : '↳ '}</span>{failed ? 'error' : 'result'}
         </span>
         <ClampedText text={result.text} lines={CLAMP_LINES.tool_result} expanded={expanded}
           className={failed ? 'text-danger' : 'text-dim'} onToggle={() => onToggle(result.id)} />
@@ -907,9 +918,9 @@ const ToolRow = memo(function ToolRow({ use, result, useExpanded, resultExpanded
   const mcpTool = isMcpTool(use)
   return (
     <div data-output-category={mcpTool ? 'mcp_tool' : 'tool_use'} data-event-id={use.id} aria-expanded={useExpanded}
-      className={cn('group relative grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
+      className={cn('group relative grid grid-cols-[52px_120px_minmax(0,1fr)] items-start gap-x-3 px-2 py-1 hover:bg-hover/60 max-[700px]:grid-cols-[104px_minmax(0,1fr)]',
         animate && 'motion-safe:animate-row-in', useHidden && 'hidden')}>
-      <Gutter event={use} label={mcpTool ? 'mcp_tool' : 'tool_use'} tone={mcpTool ? 'text-warn' : KIND_TONE.tool_use}
+      <Gutter event={use} label={mcpTool ? 'mcp_tool' : 'tool_use'} glyph={mcpTool ? '◈' : KIND_GLYPH.tool_use} tone={mcpTool ? 'text-warn' : KIND_TONE.tool_use}
         expandable expanded={useExpanded} onToggle={() => onToggle(use.id)} />
       <span className="min-w-0">
         <ToolUseContent event={use} expanded={useExpanded} onToggle={onToggle} />
@@ -940,13 +951,14 @@ const EventRow = memo(function EventRow({ event, expanded, hidden, copied, anima
   const expandable = tool || toolResult || truncated
   return (
     <div data-output-category={mcpTool ? 'mcp_tool' : event.category} data-event-id={event.id} aria-expanded={expanded}
-      className={cn('group relative grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
+      className={cn('group relative grid grid-cols-[52px_120px_minmax(0,1fr)] items-start gap-x-3 px-2 py-1 hover:bg-hover/60 max-[700px]:grid-cols-[104px_minmax(0,1fr)]',
         animate && 'motion-safe:animate-row-in', hidden && 'hidden')}>
       <Gutter event={event} label={mcpTool ? 'mcp_tool' : CATEGORY_LABEL[event.category]}
+        glyph={uncommitted ? '▲' : mcpTool ? '◈' : KIND_GLYPH[event.category]}
         tone={uncommitted ? 'text-warn' : mcpTool ? 'text-warn' : KIND_TONE[event.category]}
         expandable={expandable} expanded={expanded} onToggle={() => onToggle(event.id)} />
       {tool ? <ToolUseContent event={event} expanded={expanded} onToggle={onToggle} /> :
-        <span className={cn('min-w-0', event.category === 'message' && 'block border-l-2 border-accent/50 py-0.5 pl-3')}>
+        <span className={cn('min-w-0', event.category === 'message' && 'block border-l-2 border-ember-800 py-0.5 pl-3')}>
           <ClampedText text={event.text} lines={lines} expanded={expanded}
             className={cn(prose, uncommitted ? 'text-warn' : TEXT_TONE[event.category])}
             showMoreLink={event.category === 'message' || event.category === 'thinking'}

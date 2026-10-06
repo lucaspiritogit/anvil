@@ -204,7 +204,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
         </div>
       </div>
 
-      <nav aria-label="Projects and tasks" className="flex flex-1 min-h-0 flex-col px-2.5 pb-2">
+      <nav aria-label="Projects and tasks" className="flex flex-1 min-h-0 flex-col border-t border-line pt-1 pb-2">
         <SidebarTaskList key={listKey} entries={entries} snapshots={snapshots} now={now} view={view}
           activeProjectId={activeProjectId} onToggleProject={toggleProject} onToggleSettled={toggleSettled}
           onSelectProject={(projectId) => { selectProject(projectId); if (mobileNavigation) onNavigate() }}

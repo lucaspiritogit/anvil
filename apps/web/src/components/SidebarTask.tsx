@@ -10,20 +10,21 @@ import { useStore } from '../state/store'
 import { IS_MAC } from '../keys'
 import { cn } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
-import { taskStyle } from '@anvil/protocol/task-style'
-import { TaskStyleBadge } from './TaskStyleBadge'
+import { TASK_STYLE_LABELS, taskStyle } from '@anvil/protocol/task-style'
 import { StatusGlyph, type StatusGlyphName } from './StatusGlyph'
 
 const TASK_INDICATORS = {
-  queued: { glyph: 'queued', label: 'Queued', tone: 'text-idle', highlight: '' },
-  running: { glyph: 'running', label: 'Working', tone: 'text-run', highlight: '' },
-  done: { glyph: 'done', label: 'Done', tone: 'text-ok', highlight: '' },
-  reviewedIssue: { glyph: 'done', label: 'Approved', tone: 'text-ok', highlight: 'bg-ok-tint hover:bg-ok-tint/70 ring-ok/30' },
-  merged: { glyph: 'done', icon: 'git-branch', label: 'Merged', tone: 'text-ok', highlight: 'bg-ok-tint hover:bg-ok-tint/70 ring-ok/30' },
-  openPullRequest: { glyph: 'done', icon: 'git-branch', label: 'Open PR', tone: 'text-ok', highlight: 'bg-ok-tint hover:bg-ok-tint/70 ring-ok/30' },
-  reviewable: { glyph: 'review', label: 'Ready for review', tone: 'text-review', highlight: 'bg-review-tint hover:bg-review-tint/70 ring-review/35' },
-  failed: { glyph: 'failed', label: 'Failed', tone: 'text-danger', highlight: '' }
-} as const satisfies Record<string, { glyph: StatusGlyphName; icon?: IconName; label: string; tone: string; highlight: string }>
+  queued: { glyph: 'queued', label: 'Queued', tone: 'text-idle', meta: 'text-dim' },
+  running: { glyph: 'running', label: 'Working', tone: 'text-run', meta: 'text-run-text' },
+  done: { glyph: 'done', label: 'Done', tone: 'text-ok', meta: 'text-ok-text' },
+  reviewedIssue: { glyph: 'done', label: 'Approved', tone: 'text-ok', meta: 'text-ok-text' },
+  merged: { glyph: 'done', icon: 'git-branch', label: 'Merged', tone: 'text-ok', meta: 'text-ok-text' },
+  openPullRequest: { glyph: 'done', icon: 'git-branch', label: 'Open PR', tone: 'text-ok', meta: 'text-ok-text' },
+  reviewable: { glyph: 'review', label: 'Ready for review', tone: 'text-review', meta: 'text-review-text' },
+  failed: { glyph: 'failed', label: 'Failed', tone: 'text-danger', meta: 'text-danger-text' }
+} as const satisfies Record<string, { glyph: StatusGlyphName; icon?: IconName; label: string; tone: string; meta: string }>
+
+const STYLE_GLYPHS = { work: '▣', quick: '»' } as const
 
 function taskIndicator(task: Task, finishedUnseen: boolean): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
   if (task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit') return TASK_INDICATORS.running
@@ -84,7 +85,6 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   rowProps?: ComponentPropsWithRef<'li'> & { 'data-index'?: number; 'data-task-id'?: string; 'data-stack-moving'?: boolean; 'data-row-start'?: number }
 }): JSX.Element {
   const parent = useStore((state) => state.tasks.find((entry) => entry.id === (task.restackTarget?.parentTaskId ?? task.parentTaskId)))
-  const stacked = Boolean(task.restackTarget?.parentTaskId ?? task.parentTaskId)
   const queuedStack = isQueuedStackTask(task)
   const articleRef = useRef<HTMLElement>(null)
   const queuedHeight = useRef<number | null>(null)
@@ -103,6 +103,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
     else expandedSubtasks.delete(task.id)
   }
   const childCount = snapshot?.children.length ?? 0
+  const reviewCount = snapshot?.children.filter((issue) => issue.status === 'review').length ?? 0
   const hasChildren = childCount > 0
   const showChildren = compact || expanded
   const eligible = canSettleTask(task)
@@ -185,15 +186,13 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
         ref={articleRef}
         className={cn(
           'group relative transition-colors duration-[120ms]',
-          stacked && !active && 'bg-ember-950/40',
-          active ? 'row-selected' : indicator?.highlight || (compact ? 'hover:bg-hover' : 'bg-raised/70 hover:bg-hover'),
-          !active && indicator?.highlight && 'ring-1 ring-inset'
+          active ? 'row-selected' : 'hover:bg-hover'
         )}
       >
         <button
           aria-label={`Open task: ${task.title}`}
           aria-current={active ? 'page' : undefined}
-          className={cn('w-full min-w-0 text-left focus-visible:outline focus-visible:outline-accent', compact || queuedStack ? 'flex items-center gap-2 px-2.5 py-2' : 'block px-3 py-3')}
+          className={cn('grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)_auto] gap-x-2.5 text-left focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent', compact || queuedStack ? 'items-center px-4 py-2' : 'items-center px-4 py-2.5')}
           onClick={open}
           onContextMenu={(event) => openTaskContextMenu(event, task.id)}
           title={title}
@@ -201,7 +200,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           {queuedStack ? (
             <>
               {statusIcon}
-              <span className="min-w-0 flex-1 truncate text-xs text-soft">{task.title}</span>
+              <span className="min-w-0 truncate text-xs text-soft">{task.title}</span>
               <span className={cn('shrink-0 font-mono text-[10px]', indicator?.tone ?? 'text-dim')}>
                 Queued
               </span>
@@ -209,64 +208,64 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           ) : compact ? (
             <>
               {statusIcon}
-              <span className="min-w-0 flex-1 truncate text-xs text-dim">{task.title}</span>
+              <span className="min-w-0 truncate text-xs text-dim">{task.title}</span>
               <span className="shrink-0 font-mono text-[10px] text-faint">{relativeAge(task.settledAt ?? task.startedAt, now)}</span>
             </>
           ) : (
             <>
-              <span className="flex items-center justify-between gap-2 mb-1.5 font-mono text-[11px] text-dim">
-                <span className="flex min-w-0 items-center gap-2">
-                  {statusIcon}
-                  <span className="truncate">{project?.name ?? 'No project'}</span>
+              {statusIcon}
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className={cn('truncate text-[13px] font-medium', active || task.status === 'running' ? 'text-fg' : 'text-soft')}>
+                  {task.title}
                 </span>
-                <span className="flex shrink-0 items-center gap-1">
-                  <span className={cn('shrink-0 text-[11px]', indicator?.tone ?? 'text-dim', eligible && 'group-hover:invisible group-focus-within:invisible')}>
+                <span className="flex min-w-0 items-center gap-1.5 font-mono text-[11px] leading-4">
+                  <span className={cn('shrink-0 lowercase', indicator?.meta ?? 'text-dim')}>
                     {indicator?.label ?? (task.status === 'pending' ? 'Pending' : task.status === 'cancelled' ? 'Cancelled' : relativeAge(task.endedAt ?? task.startedAt, now))}
                   </span>
+                  {task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 text-warn" title="Runs unattended until the final review"><Icon icon="moon-star" size={11} aria-hidden="true" /><span className="sr-only">Review at the end</span></span>}
+                  {task.restackState && <span className="shrink-0 text-warn">· restack {task.restackState}</span>}
+                  <span aria-hidden="true" className="shrink-0 text-faint">·</span>
+                  <span className="min-w-0 truncate text-faint">{task.branchName ?? task.agentLabel}</span>
                 </span>
               </span>
-              <span className={cn('block truncate text-[13px] font-medium', active || task.status === 'running' ? 'text-fg' : 'text-soft')}>
-                {task.title}
-              </span>
-              <span className="mt-1 flex min-w-0 items-center gap-2">
-                <TaskStyleBadge style={taskStyle(task)} />
-                {task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] text-warn" title="Runs unattended until the final review"><Icon icon="moon-star" size={12} aria-hidden="true" />Review at the end</span>}
-                <span className="min-w-0 truncate font-mono text-[10px] text-faint">{task.branchName ?? task.agentLabel}</span>
+              <span className={cn('flex shrink-0 items-center', eligible && 'group-hover:invisible group-focus-within:invisible')}>
+                {reviewCount > 0
+                  ? <span title={`${reviewCount} ${reviewCount === 1 ? 'subtask' : 'subtasks'} ready for review`} className="grid h-[18px] min-w-[18px] place-items-center bg-review px-1 font-mono text-[10px] font-semibold text-canvas">{reviewCount}</span>
+                  : <span title={TASK_STYLE_LABELS[taskStyle(task)]} className="font-mono text-[11px] text-faint">{STYLE_GLYPHS[taskStyle(task)]}</span>}
               </span>
             </>
           )}
-          {!queuedStack && task.restackState && <span className="block font-mono text-[10px] text-warn">Restack {task.restackState}</span>}
         </button>
         {!queuedStack && !compact && eligible && (
           <button
             aria-label={`Settle task: ${task.title}`}
             title={deadline === undefined ? 'Settle task' : `Settle now. Automatically settles ${new Date(deadline).toLocaleString()}.`}
-            className="absolute top-2 right-2 grid size-7 place-items-center text-dim bg-raised opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent disabled:opacity-50"
+            className="absolute top-1/2 right-2.5 grid size-7 -translate-y-1/2 place-items-center text-dim bg-overlay opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent disabled:opacity-50"
             disabled={settling}
             onClick={() => void settle()}
           >
             <Icon icon="archive" size={16} aria-hidden="true" />
           </button>
         )}
-        {error && <p role="alert" className="px-3 pb-2 text-xs text-danger">{error}</p>}
+        {error && <p role="alert" className="px-4 pb-2 pl-[42px] text-xs text-danger">{error}</p>}
         {!queuedStack && !compact && hasChildren && (
           <button
             type="button"
             aria-expanded={expanded}
             aria-controls={`subtasks-${task.id}`}
             aria-label={`${expanded ? 'Collapse' : 'Expand'} subtasks: ${task.title}`}
-            className="flex w-full items-center justify-between gap-2 border-t border-line px-3 py-1.5 font-mono text-[11px] text-dim hover:bg-white/5 hover:text-fg focus-visible:outline focus-visible:outline-accent"
+            className="flex w-full items-center justify-between gap-2 py-1 pl-[42px] pr-4 font-mono text-[11px] text-faint hover:bg-white/5 hover:text-fg focus-visible:outline focus-visible:outline-accent"
             onClick={toggleExpanded}
           >
             <span>{childCount} {childCount === 1 ? 'subtask' : 'subtasks'}</span>
-            <Icon icon="chevron-down" size={20} className={cn('transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
+            <Icon icon="chevron-down" size={14} className={cn('transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
           </button>
         )}
       </article>
-      {!queuedStack && hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="ml-4 mr-2 mt-1 mb-2 border-l border-line pl-2 space-y-1">
+      {!queuedStack && hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="ml-[42px] mr-4 mt-0.5 mb-2 border-l border-line pl-2 space-y-0.5">
         {snapshot?.children.map((issue) => <li key={issue.id}>
           <div
-            className="flex w-full min-w-0 items-center gap-2 min-h-7 px-2 py-1 text-left text-[11px] text-dim"
+            className="flex w-full min-w-0 items-center gap-2 min-h-7 px-2 py-1 text-left font-mono text-[11px] text-dim"
             title={issue.title}
           >
             <span className="min-w-0 flex-1 truncate">{issue.title}</span>
@@ -279,7 +278,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
 }
 
 function StackSeparator(): JSX.Element {
-  return <div className="flex items-center gap-2 py-2 text-ember-400/70" aria-hidden="true">
+  return <div className="flex items-center gap-2 px-4 py-2 text-ember-400/70" aria-hidden="true">
     <span className="h-px flex-1 border-t border-dashed border-ember-800" />
     <Icon icon="layers" size={12} />
     <span className="h-px flex-1 border-t border-dashed border-ember-800" />

@@ -2,6 +2,7 @@ import type { JSX } from 'react'
 import { contextOccupancy } from '@anvil/protocol/task-context'
 import { formatTokens } from '../format'
 import { btn, cn } from '../ui'
+import { asciiBar } from './AsciiMeter'
 
 export interface TaskContextControlProps {
   compactVisible: boolean
@@ -36,7 +37,7 @@ export function TaskContextControl({
 
   return (
     <div className="mb-1.5">
-      <div aria-label="Task context controls" role="group" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-dim">
+      <div aria-label="Task context controls" role="group" className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-dim">
         {compactVisible && (
           <button
             type="button"
@@ -56,6 +57,9 @@ export function TaskContextControl({
             <span>Context</span>
             <span className={cn('font-medium tabular-nums', danger ? 'text-danger' : contextPercent >= warningThreshold ? 'text-warn' : 'text-fg')}>
               {contextPercent}%
+            </span>
+            <span aria-hidden="true" className={cn('select-none tracking-[-0.02em]', danger ? 'text-danger' : contextPercent >= warningThreshold ? 'text-warn' : 'text-run')}>
+              {asciiBar(contextPercent / 100, 12)}
             </span>
           </span>
         )}

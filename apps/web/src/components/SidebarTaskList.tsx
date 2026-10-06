@@ -43,7 +43,7 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
       return height + (stackStart ? 28 : 0) + (stackEnd ? 28 : 0)
     },
     overscan: 3,
-    gap: 6
+    gap: 0
   })
 
   useLayoutEffect(() => {
@@ -94,7 +94,7 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
             'data-row-start': row.start,
             'aria-posinset': row.index + 1,
             'aria-setsize': entries.length,
-            className: cn('absolute left-0 top-0 w-full flow-root', entry.kind !== 'project' && entry.indented && 'pl-5'),
+            className: 'absolute left-0 top-0 w-full flow-root',
             style: { transformOrigin: 'top center', transform: `translateY(${row.start}px)` }
           }
           if (entry.kind === 'task') {
@@ -108,19 +108,18 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
           if (entry.kind === 'project') {
             const { project, expanded, taskCount } = entry
             return <li key={entry.key} {...rowProps}>
-              <div className={cn('flex min-h-9 items-center font-mono text-[11px] tracking-[0.1em]', activeProjectId === project.id ? 'text-fg' : 'text-dim')}>
+              <div className={cn('flex min-h-9 items-center px-2 pt-1 font-mono text-[11px] tracking-[0.12em]', activeProjectId === project.id ? 'text-fg' : 'text-dim')}>
                 <button type="button" aria-label={`${expanded ? 'Collapse' : 'Expand'} project: ${project.name}`}
                   aria-expanded={expanded} onClick={() => onToggleProject(project.id, expanded)}
                   className="grid size-7 shrink-0 place-items-center hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent">
-                  <Icon icon="chevron-down" size={14} className={cn('transition-transform', !expanded && '-rotate-90')} aria-hidden="true" />
+                  <Icon icon="chevron-down" size={12} className={cn('transition-transform', !expanded && '-rotate-90')} aria-hidden="true" />
                 </button>
                 <button type="button" aria-label={`Select project: ${project.name}`}
                   aria-current={activeProjectId === project.id && view.kind === 'home' ? 'page' : undefined}
                   onClick={() => onSelectProject(project.id)} title={project.path}
                   className="flex min-w-0 flex-1 items-center gap-2 self-stretch px-1 pr-2 text-left hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent">
-                  <Icon icon="folder" size={16} className="shrink-0" aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate font-medium uppercase">{project.name}</span>
-                  <span className="shrink-0 text-[10px] text-faint">{taskCount}</span>
+                  <span className="shrink-0 text-[11px] text-dim tabular-nums">{taskCount}</span>
                 </button>
               </div>
             </li>
@@ -129,7 +128,7 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
             return <li key={entry.key} {...rowProps}>
               <button type="button" aria-label={entry.project ? `Settled tasks in ${entry.project.name}` : 'Settled tasks with no project'}
                 aria-expanded={entry.expanded} onClick={() => onToggleSettled(entry.groupId, entry.expanded)}
-                className="flex min-h-9 w-full items-center gap-2 px-2 font-mono text-[11px] text-dim hover:text-fg focus-visible:outline focus-visible:outline-accent">
+                className="flex min-h-9 w-full items-center gap-2 px-4 font-mono text-[11px] text-faint hover:text-fg focus-visible:outline focus-visible:outline-accent">
                 <Icon icon="chevron-down" size={13} className={cn('transition-transform', !entry.expanded && '-rotate-90')} aria-hidden="true" />
                 <span>Settled</span>
                 <span className="text-faint">{entry.taskCount}</span>
@@ -137,7 +136,7 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
               </button>
             </li>
           }
-          return <li key={entry.key} {...rowProps}><p className="px-2 py-3 text-xs text-dim">{entry.message}</p></li>
+          return <li key={entry.key} {...rowProps}><p className="px-4 py-3 font-mono text-[11px] text-faint">{entry.message}</p></li>
         })}
       </ul>
     </div>
