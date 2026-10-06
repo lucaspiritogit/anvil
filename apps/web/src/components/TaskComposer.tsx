@@ -157,7 +157,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
       {style === 'work' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">Work requires a Git repository so Anvil can create an isolated branch and worktree.</p>}
       {style === 'quick' && checkoutMode === 'worktree' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">An isolated worktree requires a Git repository. Use the current checkout instead.</p>}
-      {style === 'work' && parents.length > 0 && <label className="inline-flex items-center gap-2 text-xs text-dim mb-2">
+      {style === 'work' && parents.length > 0 && <label className="mb-2 inline-flex items-center gap-2 font-mono text-xs text-dim">
         <Icon icon="layers" size={14} />
         Stack on task
         <select aria-label="Stack on task" className={compactSelect} disabled={busy} value={parentTaskId} onChange={(event) => setParentTaskId(event.target.value)}>

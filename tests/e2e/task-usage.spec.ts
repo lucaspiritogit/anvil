@@ -46,7 +46,7 @@ test('mobile task details disclose complete live usage and copy controls', async
   await page.screenshot({ path: testInfo.outputPath('mobile-task-details.png') })
 })
 
-test('context occupancy appears beside Compact above the steering input', async ({ page }, testInfo) => {
+test('context occupancy appears beside Compact in the steering input footer', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=output&taskUsage=1&contextUsage=1')
   const statistics = page.getByRole('group', { name: 'Task statistics' })
   const composer = page.getByRole('form', { name: 'Steer task' })
@@ -57,13 +57,13 @@ test('context occupancy appears beside Compact above the steering input', async 
   await expect(statistics.getByText('Context', { exact: true })).toHaveCount(0)
   await expect(controls.locator(':scope > *')).toHaveCount(2)
   await expect(controls.locator(':scope > *').nth(0)).toHaveText('Compact')
-  await expect(controls.locator(':scope > *').nth(1)).toContainText('Context67%')
+  await expect(controls.locator(':scope > *').nth(1)).toContainText('67%')
   await expect(context).toHaveAttribute('title', /142K \/ 213K/)
   const controlsBounds = (await controls.boundingBox())!
   const compactBounds = (await compact.boundingBox())!
   const contextBounds = (await context.boundingBox())!
   const inputBounds = (await input.boundingBox())!
-  expect(controlsBounds.y + controlsBounds.height).toBeLessThanOrEqual(inputBounds.y)
+  expect(controlsBounds.y).toBeGreaterThanOrEqual(inputBounds.y + inputBounds.height)
   expect(contextBounds.x).toBeGreaterThanOrEqual(compactBounds.x + compactBounds.width)
   await expect(compact).toBeEnabled()
   await compact.click()
