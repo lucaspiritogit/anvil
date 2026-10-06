@@ -221,8 +221,12 @@ test('preserves project tasks, executions, events, comments, stack references an
   const olderMigrationsFolder = join(root, 'older-migrations')
   mkdirSync(olderMigrationsFolder)
   const migrationDirectories = readdirSync(migrationsFolder).sort()
-  for (const migrationDirectory of migrationDirectories.slice(0, -1)) {
+  const projectlessMigration = migrationDirectories.findIndex((directory) => directory.endsWith('_furry_black_bolt'))
+  for (const migrationDirectory of migrationDirectories.slice(0, projectlessMigration)) {
     cpSync(join(migrationsFolder, migrationDirectory), join(olderMigrationsFolder, migrationDirectory), { recursive: true })
+  }
+  for (const migrationDirectory of migrationDirectories.slice(projectlessMigration + 1)) {
+    cpSync(join(migrationsFolder, migrationDirectory), join(olderMigrationsFolder, `${migrationDirectory}_before_projectless`), { recursive: true })
   }
   const configFile = join(root, 'config.json')
   let store = new Store(configFile, { migrationsFolder: olderMigrationsFolder })

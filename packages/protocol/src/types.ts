@@ -439,6 +439,8 @@ export interface WorkspacePreferences {
   lastProjectId: string | null
 }
 
+export type TaskStackOrigin = 'manual' | 'auto'
+
 export interface TaskStackTarget {
   commit: string
   branch: string
@@ -452,6 +454,7 @@ export interface Task {
   checkoutMode?: TaskCheckoutMode
   startBase?: string
   parentTaskId?: string
+  stackOrigin?: TaskStackOrigin
   expectedFiles?: string[]
   reviewPaths?: string[]
   restackState?: 'pending' | 'conflict'

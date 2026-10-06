@@ -18,14 +18,15 @@ interface Props {
   onSelectProject: (projectId: string) => void
   onToggleProject: (projectId: string, expanded: boolean) => void
   onToggleSettled: (groupId: string, expanded: boolean) => void
+  onToggleStack: (rootId: string) => void
   onNavigate?: () => void
 }
 
-export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId, onSelectProject, onToggleProject, onToggleSettled, onNavigate }: Props): JSX.Element {
+export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId, onSelectProject, onToggleProject, onToggleSettled, onToggleStack, onNavigate }: Props): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const layoutKey = JSON.stringify(entries.map((entry) => entry.kind === 'task' ? [
     entry.task.id, entry.task.restackTarget?.parentTaskId ?? entry.task.parentTaskId,
-    isQueuedStackTask(entry.task), entry.compact, entry.stackStart, entry.stackEnd
+    isQueuedStackTask(entry.task), entry.compact, entry.stackStart, entry.stackEnd, entry.tree?.collapsed
   ] : entry.key))
   const previousLayoutKey = useRef(layoutKey)
   const previousRows = useRef(new Map<string, { top: number; height: number }>())
@@ -37,10 +38,10 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
     estimateSize: (index) => {
       const entry = entries[index]
       if (entry.kind !== 'task') return entry.kind === 'empty' ? 44 : 36
-      const { task, compact, stackStart, stackEnd } = entry
+      const { task, compact } = entry
       const queuedStack = isQueuedStackTask(task)
       const height = queuedStack ? 36 : compact ? 36 + (snapshots.get(task.id)?.children.length ?? 0) * 32 : 96
-      return height + (stackStart ? 28 : 0) + (stackEnd ? 28 : 0)
+      return height
     },
     overscan: 3,
     gap: 0
@@ -63,8 +64,8 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
       nextRows.set(taskId, { top, height })
       const stackMoving = element.dataset.stackMoving === 'true'
       const running = element.getAnimations()
-      // Anchor the root task at the bottom immediately. Descendants move into
-      // place above it so a newly stacked task settles from the top of the group.
+      // Anchor the root task at the top immediately. Descendants move into
+      // place below it so a newly stacked task settles into the tree.
       // Mount and scroll measurements establish positions without animation.
       // Only real stack changes can start movement; later measurements may
       // adjust an animation already started by that change.
@@ -98,12 +99,12 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
             style: { transformOrigin: 'top center', transform: `translateY(${row.start}px)` }
           }
           if (entry.kind === 'task') {
-            const { task, project, compact, stackStart, stackEnd } = entry
+            const { task, project, compact, tree } = entry
             return <SidebarTask key={entry.key} task={task} snapshot={snapshots.get(task.id)} project={project}
-              now={now} compact={compact} stackStart={stackStart} stackEnd={stackEnd} active={view.kind === 'task' && view.taskId === task.id}
+              now={now} compact={compact} tree={tree} onToggleStack={onToggleStack} active={view.kind === 'task' && view.taskId === task.id}
               onNavigate={onNavigate}
               rowProps={{ ...rowProps, 'data-task-id': task.id,
-                'data-stack-moving': !stackEnd && Boolean(task.restackTarget?.parentTaskId ?? task.parentTaskId) }} />
+                'data-stack-moving': Boolean(tree && tree.depth > 0) }} />
           }
           if (entry.kind === 'project') {
             const { project, expanded, taskCount } = entry

@@ -54,6 +54,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   const [search, setSearch] = useState('')
   const [collapsedProjectsByWorkspace, setCollapsedProjectsByWorkspace] = useState(loadCollapsedProjects)
   const [expandedSettledGroups, setExpandedSettledGroups] = useState<Set<string>>(() => new Set())
+  const [collapsedStacks, setCollapsedStacks] = useState<Set<string>>(() => new Set())
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
@@ -64,6 +65,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   useEffect(() => {
     setSearch('')
     setExpandedSettledGroups(new Set())
+    setCollapsedStacks(new Set())
   }, [workspaceId])
 
   useEffect(() => {
@@ -77,8 +79,8 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   const query = search.trim().toLowerCase()
   const snapshots = useSidebarIssueSnapshots(Boolean(query))
   const entries = useMemo(() => sidebarTaskProjects({
-    workspaceId, projects, tasks, query, snapshots, taskSeenAt, collapsedProjects, expandedSettledGroups
-  }), [workspaceId, projects, tasks, query, snapshots, taskSeenAt, collapsedProjects, expandedSettledGroups])
+    workspaceId, projects, tasks, query, snapshots, taskSeenAt, collapsedProjects, expandedSettledGroups, collapsedStacks
+  }), [workspaceId, projects, tasks, query, snapshots, taskSeenAt, collapsedProjects, expandedSettledGroups, collapsedStacks])
   const reviewCount = useMemo(() => tasks.filter((task) => taskNeedsReview(task, taskSeenAt[task.id])).length,
     [tasks, taskSeenAt])
   const listKey = JSON.stringify([workspaceId, search])
@@ -99,6 +101,14 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
       const next = new Set(previous)
       if (expanded) next.delete(groupId)
       else next.add(groupId)
+      return next
+    })
+  }
+
+  const toggleStack = (rootId: string): void => {
+    setCollapsedStacks((previous) => {
+      const next = new Set(previous)
+      if (!next.delete(rootId)) next.add(rootId)
       return next
     })
   }
@@ -211,7 +221,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
 
       <nav aria-label="Projects and tasks" className="flex flex-1 min-h-0 flex-col border-t border-line pt-1 pb-2">
         <SidebarTaskList key={listKey} entries={entries} snapshots={snapshots} now={now} view={view}
-          activeProjectId={activeProjectId} onToggleProject={toggleProject} onToggleSettled={toggleSettled}
+          activeProjectId={activeProjectId} onToggleProject={toggleProject} onToggleSettled={toggleSettled} onToggleStack={toggleStack}
           onSelectProject={(projectId) => { selectProject(projectId); if (mobileNavigation) onNavigate() }}
           onNavigate={mobileNavigation ? onNavigate : undefined} />
       </nav>

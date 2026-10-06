@@ -1245,6 +1245,7 @@ test('stacked tasks wait in order for final delivery and an active push before p
   const child = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Child', parentTaskId: parent.id }) as Task
   expect(child.parentTaskId).toBe(parent.id)
   expect(store.getTask(child.id)?.parentTaskId).toBe(parent.id)
+  expect(store.getTask(child.id)?.stackOrigin).toBe('manual')
   const grandchild = await call('tasks:start', { projectId: 'project', agentId: 'codex', prompt: 'Grandchild', parentTaskId: child.id }) as Task
   await tick()
   expect(child.deliveryStatus).toBe('preparing')

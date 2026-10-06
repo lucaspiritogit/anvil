@@ -229,6 +229,7 @@ test('planning unions declared files and automatically queues the strongest over
   f.active.delete(child.id)
   await f.stacks.apply(child.id)
   expect(f.store.getTask(child.id)?.parentTaskId).toBe('parent')
+  expect(f.store.getTask(child.id)?.stackOrigin).toBe('auto')
 })
 
 test('automatic stacking leaves tasks without overlap unstacked', async () => {
