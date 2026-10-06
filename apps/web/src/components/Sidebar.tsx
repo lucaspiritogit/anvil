@@ -139,8 +139,10 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
       inert={sidebarHidden}
       aria-hidden={sidebarHidden || undefined}
     >
-      <WindowTitlebar>
+      <WindowTitlebar className="relative">
         <AnvilBrand />
+        <span aria-hidden="true" className="mx-1.5 shrink-0 font-mono text-xs text-faint">/</span>
+        <WorkspacePicker />
         {reviewCount > 0 && (
           <span
             role="status"
@@ -211,7 +213,6 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
           onNavigate={mobileNavigation ? onNavigate : undefined} />
       </nav>
 
-      <CaffeineToggle />
 
       <div className="mx-2.5 mt-2 mb-2 flex shrink-0 gap-1 border-t border-line pt-2">
         <button
@@ -230,9 +231,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
           <Icon icon="settings" size={16} className="shrink-0" aria-hidden="true" />
           <span className="truncate">Settings</span>
         </button>
-      </div>
-      <div className="shrink-0 px-2.5 pb-3">
-        <WorkspacePicker />
+        <CaffeineToggle />
       </div>
     </aside>
   )

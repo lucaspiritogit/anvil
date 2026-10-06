@@ -56,16 +56,18 @@ test('macOS title treatment stays aligned and borderless when the sidebar is exp
   expect(await titleMetrics(page, 'main .drag-region')).toEqual({ height: 44, textLeft: 78, borderBottomWidth: '0px', appRegion: 'drag' })
 })
 
-test('Workspace is below Settings and supports keyboard selection, filtering and focus restoration', async ({ page }, testInfo) => {
+test('Workspace sits in the sidebar header and supports keyboard selection, filtering and focus restoration', async ({ page }, testInfo) => {
   await page.goto(fixture)
   await createWorkspace(page, 'Work')
   await back(page)
   const settings = page.getByRole('button', { name: 'Settings', exact: true })
+  const newTask = page.getByRole('button', { name: 'New task', exact: true })
   const settingsBox = (await settings.boundingBox())!
+  const newTaskBox = (await newTask.boundingBox())!
   const workspaceBox = (await picker(page).boundingBox())!
-  expect(workspaceBox.y).toBeGreaterThan(settingsBox.y + settingsBox.height)
-  await settings.focus()
-  await page.keyboard.press('Tab')
+  expect(workspaceBox.y + workspaceBox.height).toBeLessThanOrEqual(newTaskBox.y)
+  expect(workspaceBox.y).toBeLessThan(settingsBox.y)
+  await picker(page).focus()
   await expect(picker(page)).toBeFocused()
   await expect(page.getByRole('listbox', { name: 'Workspaces' }).getByRole('option', { selected: true })).toHaveText('WorkSelected workspace')
   await expect(page.getByRole('listbox', { name: 'Workspaces' }).getByRole('option')).toHaveCount(2)
@@ -89,7 +91,7 @@ test('Workspace is below Settings and supports keyboard selection, filtering and
   await expect(picker(page)).toHaveValue('Work')
   await picker(page).click()
   await page.screenshot({ path: testInfo.outputPath('workspace-selector.png') })
-  await page.getByRole('searchbox', { name: 'Search tasks' }).click()
+  await page.getByRole('main').click({ position: { x: 24, y: 24 } })
   await expect(picker(page)).toHaveAttribute('aria-expanded', 'false')
 })
 
