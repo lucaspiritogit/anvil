@@ -112,7 +112,7 @@ export function ComposerOptionTooltip({ title, description, disabled = false, ch
         hideAfterLeaving()
       }}
       onFocus={(event) => {
-        if (!event.target.matches(':focus-visible')) return
+        if (!event.target.matches(':focus-visible') || event.target.closest('.menu-select-panel')) return
         focused.current = true
         dismissed.current = false
         show(0)

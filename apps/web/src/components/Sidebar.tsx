@@ -145,14 +145,13 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
     >
       <WindowTitlebar className="relative">
         <AnvilBrand />
-        <span aria-hidden="true" className="mx-1.5 shrink-0 font-mono text-xs text-faint">/</span>
         <WorkspacePicker />
         {reviewCount > 0 && (
           <span
             role="status"
             aria-label={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready for review`}
             title={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready for review`}
-            className="ml-2 inline-flex h-[18px] items-center gap-1 bg-review px-1.5 font-mono text-[10px] font-semibold text-canvas"
+            className="ml-2 inline-flex h-[18px] shrink-0 items-center gap-1 bg-review px-1.5 font-mono text-[10px] font-semibold text-canvas"
           >
             <span aria-hidden="true">◆</span>
             {reviewCount}
@@ -160,7 +159,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
         )}
         <button
           ref={mobileNavigation ? mobileNavigationCloseRef : undefined}
-          className={cn(ICON_BUTTON, 'no-drag ml-auto')}
+          className={cn(ICON_BUTTON, 'no-drag ml-1')}
           aria-label={mobileNavigation ? 'Close navigation' : 'Collapse sidebar'}
           title={mobileNavigation ? 'Close navigation' : 'Collapse sidebar'}
           aria-controls="task-sidebar"

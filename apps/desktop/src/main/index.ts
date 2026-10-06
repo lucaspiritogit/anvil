@@ -14,6 +14,7 @@ import type { ServerTarget } from '@anvil/protocol/server-address'
 import { BrowserSessionManager } from './browser-sessions'
 import { BrowserToolServer } from './browser-tools'
 import { pickProjectFolder, readProjectFile, releaseProjectFolder } from './project-folder'
+import appIcon from '../../../../build/icon.png?asset'
 
 const dataDirectory = resolveAppDataDirectory(app.getPath('home'), app.isPackaged, process.env.ANVIL_DATA_DIR)
 if (!app.isPackaged || process.env.ANVIL_DATA_DIR) {
@@ -62,6 +63,7 @@ function createRendererWindow(state: ServerConnectionState): BrowserWindow {
     minHeight: 600,
     show: false,
     backgroundColor: '#0c0d10',
+    icon: appIcon,
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
     trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 15 } : undefined,
@@ -232,6 +234,7 @@ app.on('second-instance', () => {
 })
 
 if (ownsInstance) app.whenReady().then(async () => {
+  if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(appIcon)
   try {
     const state = await startConnection()
     if (!state) return

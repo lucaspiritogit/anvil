@@ -143,7 +143,7 @@ export function WorkspacePicker(): JSX.Element {
     onConfirm={() => useStore.getState().removeWorkspace(deleting.id)}
     onClose={() => { flushSync(() => setDeleting(null)); restoreFocus() }} />
 
-  return <div className="no-drag min-w-0" onBlur={(event) => {
+  return <div className="no-drag ml-2.5 min-w-[104px] flex-1 @max-[225px]/titlebar:ml-0" onBlur={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget)) close()
   }} onKeyDown={(event) => {
     if (open && event.key === 'Escape') {
@@ -154,7 +154,7 @@ export function WorkspacePicker(): JSX.Element {
     }
   }}>
     <label htmlFor={id} className="sr-only">Workspace</label>
-    <div className="flex h-7 min-w-0 items-center gap-1 px-1.5 text-dim hover:bg-hover hover:text-fg focus-within:bg-hover focus-within:text-fg">
+    <div className="flex h-7 min-w-0 items-center gap-1.5 border border-line-strong bg-overlay pl-2 pr-1.5 text-fg transition-colors duration-[120ms] hover:border-dim hover:bg-hover focus-within:border-accent">
       <input id={id} ref={inputRef} role="combobox" aria-autocomplete="list" aria-expanded={open}
         aria-controls={open ? `${id}-list` : undefined}
         aria-activedescendant={open && activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
@@ -182,9 +182,9 @@ export function WorkspacePicker(): JSX.Element {
             close()
           }
         }}
-        className="field-sizing-content min-w-[4ch] max-w-[112px] cursor-pointer truncate bg-transparent font-mono text-xs text-inherit placeholder:text-faint outline-none focus:cursor-text"
+        className="min-w-0 flex-1 cursor-pointer truncate bg-transparent font-mono text-xs text-inherit placeholder:text-faint outline-none focus:cursor-text"
       />
-      <Icon icon="chevron-down" size={12} className="pointer-events-none shrink-0" aria-hidden="true" />
+      <Icon icon="chevron-down" size={12} className="pointer-events-none shrink-0 text-dim" aria-hidden="true" />
     </div>
     {open && <div className="absolute inset-x-2.5 top-full z-30 max-h-[65vh] overflow-y-auto border border-line-strong bg-overlay shadow-[0_0_0_1px_var(--color-void)]">
       <div ref={listRef} id={`${id}-list`} role="listbox" aria-label="Workspaces" className="max-h-[min(320px,40vh)] overflow-y-auto overscroll-contain p-1">

@@ -33,7 +33,7 @@ export function WindowTitlebar({ children, className }: {
             style={{ width: 72 / scale, height: 28 / scale }} />
         </div>
       )}
-      <div className="flex h-full min-w-0 flex-1 items-center px-4"
+      <div className="@container/titlebar flex h-full min-w-0 flex-1 items-center px-4"
         style={HAS_MAC_WINDOW_CONTROLS ? { paddingLeft: 12 / scale, paddingRight: 16 / scale } : undefined}>
         {children}
       </div>
@@ -43,9 +43,9 @@ export function WindowTitlebar({ children, className }: {
 
 export function AnvilBrand(): JSX.Element {
   return (
-    <span className="inline-flex shrink-0 items-center gap-2.5 font-mono text-xs font-semibold tracking-[0.14em] text-fg">
-      <span aria-hidden="true" className="whitespace-pre font-mono text-[4px] leading-[4px] font-normal tracking-normal text-accent select-none">{ANVIL_ASCII}</span>
-      <span>ANVIL</span>
+    <span className="inline-flex shrink-0 items-center gap-2 font-mono text-[11px] font-semibold tracking-[0.14em] text-fg @max-[225px]/titlebar:hidden">
+      <span aria-hidden="true" className="whitespace-pre font-mono text-[3px] leading-[3px] font-normal tracking-normal text-accent select-none">{ANVIL_ASCII}</span>
+      <span className="@max-[270px]/titlebar:sr-only">ANVIL</span>
     </span>
   )
 }

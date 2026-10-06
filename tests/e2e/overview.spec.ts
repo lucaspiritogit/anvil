@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { chooseProject, chooseProvider, restoreComposerSelection } from './composer-setup'
+import { chooseMenuOption, chooseProject, chooseProvider, restoreComposerSelection } from './composer-setup'
 
 test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
@@ -61,7 +61,7 @@ test('Quick and Work starts show a brief composer confirmation that can replay',
   await expect(status).toHaveCount(0)
 
   await page.setViewportSize({ width: 600, height: 800 })
-  await composer.getByRole('combobox', { name: 'Task style' }).selectOption('work')
+  await chooseMenuOption(composer.getByRole('combobox', { name: 'Task style' }), 'Work')
   await prompt.fill('Second work task')
   await prompt.press('Enter')
   await expect(composer).toHaveClass(/task-composer-success/)

@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { restoreComposerSelection } from './composer-setup'
+import { chooseMenuOption, restoreComposerSelection } from './composer-setup'
 
 test('composer submits the selected stack parent', async ({ page }) => {
   await restoreComposerSelection(page)
   await page.goto('/tests/e2e/fixture/')
-  await page.getByRole('combobox', { name: 'Stack on task' }).selectOption('running')
+  await chooseMenuOption(page.getByRole('combobox', { name: 'Stack on task' }), 'Build streaming support')
   await page.getByRole('textbox', { name: 'Task prompt' }).fill('Build the next part')
   await page.getByRole('textbox', { name: 'Task prompt' }).press('Control+Enter')
   await expect.poll(() => page.evaluate(() => window.composerTest.starts[0]?.parentTaskId)).toBe('running')
