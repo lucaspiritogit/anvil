@@ -33,7 +33,7 @@ export function ComposerFilePicker({ id, paths, selected, loading, result, onCho
           <li key={path} id={`${id}-${index}`} role="option" aria-selected={index === selected}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onChoose(path)}
-            className={cn('cursor-pointer break-all px-3 py-2 font-mono hover:bg-hover', index === selected && 'bg-hover text-accent')}
+            className={cn('cursor-pointer break-all px-3 py-2 font-mono hover:bg-hover', index === selected && 'row-selected text-fg')}
           >{path}</li>
         ))}
       </ul>

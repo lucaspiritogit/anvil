@@ -20,7 +20,7 @@ interface Props {
 
 type OpenPicker = 'project' | 'location' | 'branch' | null
 
-const triggerClass = 'inline-flex min-w-0 max-w-full items-center gap-1.5 px-2 py-1.5 text-sm text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-45 aria-disabled:cursor-wait aria-disabled:opacity-45'
+const triggerClass = 'inline-flex min-w-0 max-w-full items-center gap-1.5 px-2 py-1.5 font-mono text-[13px] text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-45 aria-disabled:cursor-wait aria-disabled:opacity-45'
 const BRANCH_RECOVERY_INTERVAL_MS = 60_000
 const BRANCH_RETRY_INTERVAL_MS = 1_000
 const BRANCH_RETRY_LIMIT = 5
@@ -231,10 +231,10 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
           onClick={() => setOpen('project')}
         >
           <Icon icon="folder" size={15} className="shrink-0" aria-hidden="true" />
-          <span data-testid="composer-project-name" className="max-w-56 truncate font-medium text-fg">{project?.name ?? 'No project'}</span>
+          <span data-testid="composer-project-name" className="max-w-56 truncate font-semibold text-fg">{project?.name ?? 'No project'}</span>
           <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
         </button>
-        {projectId && (work ? <span aria-label="Execution location" className="inline-flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-sm text-dim" title="Work runs on a dedicated branch in an isolated worktree">
+        {projectId && (work ? <span aria-label="Execution location" className="inline-flex min-w-0 items-center gap-1.5 px-2 py-1.5 font-mono text-[13px] text-dim" title="Work runs on a dedicated branch in an isolated worktree">
           <Icon icon="layers" size={15} className="shrink-0" aria-hidden="true" />
           <span className="truncate">{locationLabel}</span>
           <span aria-hidden="true">·</span>
@@ -255,7 +255,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
           <span className="truncate">{locationLabel}</span>
           <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
         </button>
-        <span aria-hidden="true" className="text-sm text-dim">·</span>
+        <span aria-hidden="true" className="text-sm text-faint">·</span>
         </>)}
         {projectId && <button
           ref={branchRef}
@@ -366,7 +366,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
         onSelect={(ref) => { setOpen(null); onStartBaseChange(ref) }}
       />}
       {transitioning && <p role="status" className="px-2 pt-1 text-xs text-dim">Updating checkout…</p>}
-      {error && <p role="alert" className="mx-2 mt-1 max-w-full rounded-md bg-black/85 px-3 py-2 text-xs text-white shadow-lg">{error}</p>}
+      {error && <p role="alert" className="mx-2 mt-1 max-w-full border border-danger/40 bg-danger-tint px-3 py-2 text-xs text-danger-text shadow-[0_0_0_1px_var(--color-void)]">{error}</p>}
     </div>
   )
 }

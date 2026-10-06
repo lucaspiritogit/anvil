@@ -4,6 +4,7 @@ import { useStore } from '../state/store'
 import { renderWallpaper } from './wallpaper-effects'
 import { loadWallpaper } from '../state/wallpaper-cache'
 import { DEFAULT_OVERVIEW_COLOR } from '@anvil/protocol/appearance'
+import { cn } from '../ui'
 
 function WallpaperLayer({ image, color }: { image: HTMLImageElement; color: string }): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -78,7 +79,7 @@ function OverviewBackgroundImpl(): JSX.Element | null {
     <div
       aria-hidden
       data-testid="overview-background"
-      className="pointer-events-none absolute inset-0 -z-10"
+      className={cn('pointer-events-none absolute inset-0 -z-10', !image && 'dot-field')}
       style={{ backgroundColor: color }}
     >
       {image && <WallpaperLayer image={image} color={color} />}

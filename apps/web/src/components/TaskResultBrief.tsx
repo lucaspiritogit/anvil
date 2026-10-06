@@ -167,7 +167,7 @@ function taskDetail(notice: TaskResultNotice, task?: Task): string {
 
 function StatusIcon({ tone }: { tone: RowTone }): JSX.Element {
   return (
-    <span className={cn('grid size-9 shrink-0 place-items-center rounded-full border-2', STATUS_TONE[tone])}>
+    <span className={cn('grid size-9 shrink-0 place-items-center border-2', STATUS_TONE[tone])}>
       {tone === 'warning'
         ? <span className="text-lg font-semibold leading-none">!</span>
         : <Icon icon="check" size={18} />}
@@ -334,7 +334,7 @@ export function TaskResultBrief({ project }: Props): JSX.Element {
         <time className="font-normal normal-case tracking-normal" dateTime={new Date(active[active.length - 1]?.createdAt ?? Date.now()).toISOString()}>{since}</time>
       </div>
 
-      <div className="border border-line bg-raised/90 shadow-[0_18px_55px_rgba(0,0,0,0.16)]">
+      <div className="border border-line-strong bg-overlay shadow-[0_0_0_1px_var(--color-void)]">
         {active.map((notice) => (
           <ResultRow
             key={notice.id}

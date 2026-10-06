@@ -35,7 +35,7 @@ export function ComposerModelPicker({ agents, agentId, selectedModels, value, on
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(true)}
-        className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden px-2.5 py-1.5 text-xs font-medium hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45"
+        className="flex h-[30px] min-w-0 max-w-full items-center gap-2 overflow-hidden border border-line-strong bg-overlay px-2 font-mono text-xs hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:text-faint"
       >
         {agent && selected.name ? <AgentIcon agentId={agentId} label={agent.label} size={16} />
           : <Icon icon="brain-circuit" size={16} className="shrink-0 text-dim" aria-hidden="true" />}

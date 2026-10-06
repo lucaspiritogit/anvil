@@ -374,24 +374,24 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
             const label = category === 'mcp_tool' ? 'mcp_tool' : CATEGORY_LABEL[category]
             return <button key={category} aria-pressed={!silent}
               title={`${silent ? 'Show' : 'Hide'} ${label} events`}
-              className={cn('flex items-center gap-1.5 border px-2 py-0.5 text-[11px] transition-colors',
-                silent ? 'border-line/50 text-dim/40' : 'border-line text-dim hover:text-fg')}
+              className={cn('flex items-center gap-1.5 border px-2 py-0.5 font-mono text-[11px] transition-colors',
+                silent ? 'border-line/50 text-faint/60' : 'border-line-strong bg-overlay text-dim hover:text-fg')}
               onClick={() => setSilentCategories((current) => {
                 const next = new Set(current)
                 if (next.has(category)) next.delete(category)
                 else next.add(category)
                 return next
               })}>
-              <span aria-hidden className={cn('size-[6px] rounded-full', category === 'mcp_tool' ? 'bg-orange-300' : CATEGORY_DOT[category])} />
+              <span aria-hidden className={cn('size-[6px]', category === 'mcp_tool' ? 'bg-warn' : CATEGORY_DOT[category])} />
               {label}
-              <span aria-hidden className="text-dim/60">{categoryCounts.get(category) ?? 0}</span>
+              <span aria-hidden className="text-faint">{categoryCounts.get(category) ?? 0}</span>
             </button>
           })}
           <label className="ml-auto flex items-center gap-1.5 text-dim">
             <Icon icon="search" size={12} aria-hidden="true" />
             <input type="text" value={query} aria-label="Filter output" placeholder="Filter output…"
               onChange={(event) => setQuery(event.target.value)}
-              className="w-44 bg-transparent text-xs text-fg outline-none placeholder:text-dim/60" />
+              className="w-44 bg-transparent font-mono text-xs text-fg outline-none placeholder:text-faint" />
           </label>
         </div>
         {history?.error && <div role="alert" className="shrink-0 px-5 py-2 text-xs text-danger">
@@ -450,7 +450,7 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
             </div>
           </div>
           {newCount > 0 && !follow && history?.followingLatest === true ? <button
-            className="absolute bottom-3 right-4 z-10 border border-line bg-raised px-3 py-1 text-xs text-fg shadow-[0_8px_32px_rgba(0,0,0,0.4)] hover:bg-hover motion-safe:animate-row-in"
+            className="absolute bottom-3 right-4 z-10 border border-line-strong bg-overlay px-3 py-1 text-xs text-fg shadow-[0_0_0_1px_var(--color-void)] hover:bg-hover motion-safe:animate-row-in"
             onClick={() => {
               if (history?.hasNewer) load('latest')
               else scrollToTail()
@@ -458,7 +458,7 @@ function TaskOutputHistory({ task, visible, presentation, events }: {
             ↓ {newCount} new event{newCount === 1 ? '' : 's'}
           </button> : (!follow || history?.hasNewer || history?.followingLatest === false) && <button
             aria-label="Jump to latest" disabled={!!history?.loading}
-            className="absolute bottom-3 right-4 z-10 flex size-7 items-center justify-center border border-line bg-raised text-dim shadow-[0_8px_32px_rgba(0,0,0,0.4)] hover:text-fg disabled:opacity-45 motion-safe:animate-row-in"
+            className="absolute bottom-3 right-4 z-10 flex size-7 items-center justify-center border border-line-strong bg-overlay text-dim shadow-[0_0_0_1px_var(--color-void)] hover:text-fg disabled:opacity-45 motion-safe:animate-row-in"
             onClick={() => load('latest')}>
             <Icon icon="chevron-down" size={14} aria-hidden="true" />
           </button>}
@@ -711,7 +711,7 @@ const CATEGORY_LABEL: Record<TaskEventCategory, string> = {
  * never committing is amber whatever category carried it. */
 const KIND_TONE: Record<TaskEventCategory, string> = {
   message: 'text-accent',
-  thinking: 'text-violet',
+  thinking: 'text-run',
   tool_use: 'text-accent',
   tool_result: 'text-cyan',
   system: 'text-ok',
@@ -720,7 +720,7 @@ const KIND_TONE: Record<TaskEventCategory, string> = {
 
 const CATEGORY_DOT: Record<TaskEventCategory, string> = {
   message: 'bg-accent',
-  thinking: 'bg-violet',
+  thinking: 'bg-run',
   tool_use: 'bg-accent',
   tool_result: 'bg-cyan',
   system: 'bg-ok',
@@ -909,7 +909,7 @@ const ToolRow = memo(function ToolRow({ use, result, useExpanded, resultExpanded
     <div data-output-category={mcpTool ? 'mcp_tool' : 'tool_use'} data-event-id={use.id} aria-expanded={useExpanded}
       className={cn('group relative grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
         animate && 'motion-safe:animate-row-in', useHidden && 'hidden')}>
-      <Gutter event={use} label={mcpTool ? 'mcp_tool' : 'tool_use'} tone={mcpTool ? 'text-orange-300' : KIND_TONE.tool_use}
+      <Gutter event={use} label={mcpTool ? 'mcp_tool' : 'tool_use'} tone={mcpTool ? 'text-warn' : KIND_TONE.tool_use}
         expandable expanded={useExpanded} onToggle={() => onToggle(use.id)} />
       <span className="min-w-0">
         <ToolUseContent event={use} expanded={useExpanded} onToggle={onToggle} />
@@ -943,7 +943,7 @@ const EventRow = memo(function EventRow({ event, expanded, hidden, copied, anima
       className={cn('group relative grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-1.5 border-b border-line/55 last:border-b-0 hover:bg-hover/45',
         animate && 'motion-safe:animate-row-in', hidden && 'hidden')}>
       <Gutter event={event} label={mcpTool ? 'mcp_tool' : CATEGORY_LABEL[event.category]}
-        tone={uncommitted ? 'text-warn' : mcpTool ? 'text-orange-300' : KIND_TONE[event.category]}
+        tone={uncommitted ? 'text-warn' : mcpTool ? 'text-warn' : KIND_TONE[event.category]}
         expandable={expandable} expanded={expanded} onToggle={() => onToggle(event.id)} />
       {tool ? <ToolUseContent event={event} expanded={expanded} onToggle={onToggle} /> :
         <span className={cn('min-w-0', event.category === 'message' && 'block border-l-2 border-accent/50 py-0.5 pl-3')}>

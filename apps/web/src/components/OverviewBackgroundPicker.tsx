@@ -152,11 +152,11 @@ export function OverviewBackgroundPicker({ value, onChange }: {
             ? 'Project preview only · the color is used while an image is unavailable.'
             : 'Project preview only · PNG, JPEG or WebP.'}
         </p>
-        <div role="radiogroup" aria-label="Overview background mode" className="inline-flex shrink-0 rounded-full border border-line p-0.5">
+        <div role="radiogroup" aria-label="Overview background mode" className="inline-flex shrink-0 border border-line p-0.5">
           {MODES.map((mode) => {
             const selected = value.overviewBackgroundMode === mode.value
             return (
-              <label key={mode.value} className={cn('relative cursor-pointer rounded-full px-3 py-1 text-xs', selected ? 'bg-accent text-canvas' : 'text-dim hover:text-fg')}>
+              <label key={mode.value} className={cn('relative cursor-pointer px-3 py-1 text-xs', selected ? 'bg-accent text-canvas' : 'text-dim hover:text-fg')}>
                 <input type="radio" name="overview-background-mode" value={mode.value} checked={selected}
                   className="absolute inset-0 cursor-pointer opacity-0"
                   onChange={() => onChange({ ...value, overviewBackgroundMode: mode.value })} />
@@ -197,14 +197,14 @@ export function OverviewBackgroundPicker({ value, onChange }: {
         <label className="mt-3 flex items-center gap-2.5 text-xs text-dim">
           Background color
           <input type="color" value={value.overviewBackgroundColor}
-            className="h-6 w-9 cursor-pointer rounded border border-line bg-transparent p-0"
+            className="h-6 w-9 cursor-pointer border border-line bg-transparent p-0"
             onChange={(event) => onChange({ ...value, overviewBackgroundColor: event.target.value })} />
         </label>
       )}
 
       {imageMode && <>
         {pending && (
-          <div className="mt-3 overflow-hidden rounded border border-line bg-canvas/40 p-2">
+          <div className="mt-3 overflow-hidden border border-line bg-canvas/40 p-2">
             <img src={pending.url} alt={`Preview of ${pending.file.name}`} className="max-h-52 w-full object-contain" />
             <p className="mt-2 truncate text-xs" title={pending.file.name}>{pending.file.name}</p>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -236,7 +236,7 @@ export function OverviewBackgroundPicker({ value, onChange }: {
                   onClick={() => onChange({ ...value, overviewWallpaperId: wallpaper.id })}>
                   <Thumbnail workspaceId={workspaceId} wallpaper={wallpaper} refresh={revision > 0} />
                   <span className="block truncate text-[11px]" title={wallpaper.name}>{wallpaper.name}</span>
-                  {selected && <span aria-hidden="true" className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-full bg-accent text-canvas"><Icon icon="check" size={12} /></span>}
+                  {selected && <span aria-hidden="true" className="absolute right-1.5 top-1.5 grid size-5 place-items-center bg-accent text-canvas"><Icon icon="check" size={12} /></span>}
                 </button>
               )
             })}

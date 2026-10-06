@@ -3,10 +3,10 @@ import type { DitherColor } from '@dither-kit/palette'
 import { cn } from '../ui'
 
 export const ASCII_METER_TONE = {
-  blue: 'text-accent',
+  blue: 'text-run',
   green: 'text-ok',
-  purple: 'text-violet',
-  pink: 'text-violet',
+  purple: 'text-review',
+  pink: 'text-review',
   red: 'text-danger',
   orange: 'text-warn',
   grey: 'text-dim'

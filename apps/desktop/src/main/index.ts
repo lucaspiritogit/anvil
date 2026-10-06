@@ -61,7 +61,7 @@ function createRendererWindow(state: ServerConnectionState): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: '#0d0f12',
+    backgroundColor: '#0c0d10',
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
     trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 15 } : undefined,
@@ -173,7 +173,7 @@ function openSettings(): void {
 async function showClosingProcesses(): Promise<void> {
   const closingWindow = new BrowserWindow({
     width: 320, height: 140, show: false, frame: false, resizable: false,
-    backgroundColor: '#0d0f12', alwaysOnTop: true,
+    backgroundColor: '#0c0d10', alwaysOnTop: true,
     ...(mainWindow && !mainWindow.isDestroyed() ? { parent: mainWindow, modal: true } : {}),
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false }
   })

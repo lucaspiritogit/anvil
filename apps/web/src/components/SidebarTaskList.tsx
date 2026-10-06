@@ -108,7 +108,7 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
           if (entry.kind === 'project') {
             const { project, expanded, taskCount } = entry
             return <li key={entry.key} {...rowProps}>
-              <div className={cn('flex min-h-9 items-center rounded-sm text-xs', activeProjectId === project.id ? 'text-fg' : 'text-dim')}>
+              <div className={cn('flex min-h-9 items-center font-mono text-[11px] tracking-[0.1em]', activeProjectId === project.id ? 'text-fg' : 'text-dim')}>
                 <button type="button" aria-label={`${expanded ? 'Collapse' : 'Expand'} project: ${project.name}`}
                   aria-expanded={expanded} onClick={() => onToggleProject(project.id, expanded)}
                   className="grid size-7 shrink-0 place-items-center hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent">
@@ -119,8 +119,8 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
                   onClick={() => onSelectProject(project.id)} title={project.path}
                   className="flex min-w-0 flex-1 items-center gap-2 self-stretch px-1 pr-2 text-left hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent">
                   <Icon icon="folder" size={16} className="shrink-0" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
-                  <span className="shrink-0 text-[10px] text-dim/60">{taskCount}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium uppercase">{project.name}</span>
+                  <span className="shrink-0 text-[10px] text-faint">{taskCount}</span>
                 </button>
               </div>
             </li>
@@ -129,11 +129,11 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
             return <li key={entry.key} {...rowProps}>
               <button type="button" aria-label={entry.project ? `Settled tasks in ${entry.project.name}` : 'Settled tasks with no project'}
                 aria-expanded={entry.expanded} onClick={() => onToggleSettled(entry.groupId, entry.expanded)}
-                className="flex min-h-9 w-full items-center gap-2 px-2 text-[11px] text-dim hover:text-fg focus-visible:outline focus-visible:outline-accent">
+                className="flex min-h-9 w-full items-center gap-2 px-2 font-mono text-[11px] text-dim hover:text-fg focus-visible:outline focus-visible:outline-accent">
                 <Icon icon="chevron-down" size={13} className={cn('transition-transform', !entry.expanded && '-rotate-90')} aria-hidden="true" />
                 <span>Settled</span>
-                <span className="text-dim/60">{entry.taskCount}</span>
-                <span className="h-px flex-1 bg-line" />
+                <span className="text-faint">{entry.taskCount}</span>
+                <span className="h-px flex-1 border-t border-dashed border-line-strong" />
               </button>
             </li>
           }

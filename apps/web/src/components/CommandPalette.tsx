@@ -149,7 +149,7 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
       <dialog
         ref={dialogRef}
         aria-label="Command palette"
-        className="m-auto w-[min(460px,calc(100vw-24px))] max-w-none overflow-hidden border border-line bg-raised p-0 text-fg shadow-[0_16px_64px_rgba(0,0,0,0.5)] backdrop:bg-black/35"
+        className="m-auto w-[min(460px,calc(100vw-24px))] max-w-none overflow-hidden border border-line-strong bg-overlay p-0 text-fg shadow-[0_0_0_1px_var(--color-void)] backdrop:bg-black/35"
         onCancel={(event) => { event.preventDefault(); close() }}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
@@ -186,7 +186,7 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
               setActiveCommand(next.dataset.commandId ?? null)
               next.focus()
             }}
-            className="mt-3 w-full border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none placeholder:text-dim focus:border-accent" />
+            className="mt-3 w-full border border-line-strong bg-canvas px-3 py-2 text-sm text-fg outline-none placeholder:text-faint focus:border-accent" />
         </header>
         <div id="command-palette-commands">
           {visibleCommands.length ? (
@@ -318,7 +318,7 @@ function ChoicePickerDialog({ anchorRef, label, choices, selectedId, status, onC
           {choices.map((choice) => (
             <button key={choice.id} type="button" aria-pressed={choice.id === selectedId}
               title={choice.description} onClick={() => onSelect(choice.id)}
-              className={cn(commandClass, choice.id === selectedId && 'bg-hover text-accent')}>
+              className={cn(commandClass, choice.id === selectedId && 'row-selected text-fg')}>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{choice.label}</span>
                 {choice.description && <span className="block truncate text-[11px] text-dim">{choice.description}</span>}

@@ -1,7 +1,7 @@
 import { isQueuedStackTask } from '@anvil/protocol/task-stacks'
 import type { ComponentPropsWithRef, JSX } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Icon } from '../icons'
+import { Icon, type IconName } from '../icons'
 import type { Project, Task, TaskIssueSnapshot } from '@anvil/protocol/types'
 import { taskIssuePresentation } from '@anvil/protocol/task-issue-presentation'
 import { canSettleTask, settlementDeadline } from '@anvil/protocol/task-settlement'
@@ -12,17 +12,18 @@ import { cn } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
 import { taskStyle } from '@anvil/protocol/task-style'
 import { TaskStyleBadge } from './TaskStyleBadge'
+import { StatusGlyph, type StatusGlyphName } from './StatusGlyph'
 
 const TASK_INDICATORS = {
-  queued: { icon: 'loader', label: 'Queued', tone: 'text-accent', highlight: '' },
-  running: { icon: 'loader', label: 'Working', tone: 'text-accent', highlight: '' },
-  done: { icon: 'check', label: 'Done', tone: 'text-ok', highlight: '' },
-  reviewedIssue: { icon: 'check', label: 'Approved', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
-  merged: { icon: 'git-branch', label: 'Merged', tone: 'text-violet', highlight: 'bg-violet/8 hover:bg-violet/12 ring-violet/30' },
-  openPullRequest: { icon: 'git-branch', label: 'Open PR', tone: 'text-ok', highlight: 'bg-ok/8 hover:bg-ok/12 ring-ok/30' },
-  reviewable: { icon: 'bell-ring', label: 'Ready for review', tone: 'text-orange-400', highlight: 'bg-orange-400/8 hover:bg-orange-400/12 ring-orange-400/30' },
-  failed: { icon: 'x', label: 'Failed', tone: 'text-danger', highlight: '' }
-} as const
+  queued: { glyph: 'queued', label: 'Queued', tone: 'text-idle', highlight: '' },
+  running: { glyph: 'running', label: 'Working', tone: 'text-run', highlight: '' },
+  done: { glyph: 'done', label: 'Done', tone: 'text-ok', highlight: '' },
+  reviewedIssue: { glyph: 'done', label: 'Approved', tone: 'text-ok', highlight: 'bg-ok-tint hover:bg-ok-tint/70 ring-ok/30' },
+  merged: { glyph: 'done', icon: 'git-branch', label: 'Merged', tone: 'text-ok', highlight: 'bg-ok-tint hover:bg-ok-tint/70 ring-ok/30' },
+  openPullRequest: { glyph: 'done', icon: 'git-branch', label: 'Open PR', tone: 'text-ok', highlight: 'bg-ok-tint hover:bg-ok-tint/70 ring-ok/30' },
+  reviewable: { glyph: 'review', label: 'Ready for review', tone: 'text-review', highlight: 'bg-review-tint hover:bg-review-tint/70 ring-review/35' },
+  failed: { glyph: 'failed', label: 'Failed', tone: 'text-danger', highlight: '' }
+} as const satisfies Record<string, { glyph: StatusGlyphName; icon?: IconName; label: string; tone: string; highlight: string }>
 
 function taskIndicator(task: Task, finishedUnseen: boolean): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
   if (task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit') return TASK_INDICATORS.running
@@ -109,13 +110,10 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const presentation = taskIssuePresentation(task, snapshot)
   const indicator = queuedStack ? TASK_INDICATORS.queued : presentation ? taskIssueIndicator(presentation) : taskIndicator(task, finishedUnseen)
   const statusIcon = (
-    <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex shrink-0', indicator?.tone ?? 'text-dim')}>
-      <Icon
-        icon={indicator?.icon ?? 'folder'}
-        size={compact ? 15 : 16}
-        className={indicator?.icon === 'loader' ? 'animate-spin motion-reduce:animate-none' : undefined}
-        aria-hidden="true"
-      />
+    <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex w-4 shrink-0 justify-center', compact ? 'text-xs' : 'text-[13px]', indicator?.tone ?? 'text-faint')}>
+      {indicator && 'icon' in indicator ? <Icon icon={indicator.icon} size={compact ? 14 : 15} aria-hidden="true" />
+        : indicator ? <StatusGlyph glyph={indicator.glyph} />
+          : <Icon icon="folder" size={compact ? 14 : 15} aria-hidden="true" />}
     </span>
   )
 
@@ -186,11 +184,10 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
       <article
         ref={articleRef}
         className={cn(
-          'group relative transition-colors',
-          stacked && 'bg-accent/5',
-          indicator?.highlight || (active ? 'bg-hover' : compact ? 'hover:bg-hover/60' : 'bg-raised/60 hover:bg-hover/70'),
-          (active || indicator?.highlight) && 'ring-1 ring-inset',
-          active && (indicator?.highlight ? 'outline outline-1 outline-offset-1 outline-dim/60' : 'ring-line')
+          'group relative transition-colors duration-[120ms]',
+          stacked && !active && 'bg-ember-950/40',
+          active ? 'row-selected' : indicator?.highlight || (compact ? 'hover:bg-hover' : 'bg-raised/70 hover:bg-hover'),
+          !active && indicator?.highlight && 'ring-1 ring-inset'
         )}
       >
         <button
@@ -204,8 +201,8 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           {queuedStack ? (
             <>
               {statusIcon}
-              <span className="min-w-0 flex-1 truncate text-xs text-fg/80">{task.title}</span>
-              <span className={cn('shrink-0 text-[10px]', indicator?.tone ?? 'text-dim')}>
+              <span className="min-w-0 flex-1 truncate text-xs text-soft">{task.title}</span>
+              <span className={cn('shrink-0 font-mono text-[10px]', indicator?.tone ?? 'text-dim')}>
                 Queued
               </span>
             </>
@@ -213,32 +210,32 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
             <>
               {statusIcon}
               <span className="min-w-0 flex-1 truncate text-xs text-dim">{task.title}</span>
-              <span className="shrink-0 text-[10px] text-dim/70">{relativeAge(task.settledAt ?? task.startedAt, now)}</span>
+              <span className="shrink-0 font-mono text-[10px] text-faint">{relativeAge(task.settledAt ?? task.startedAt, now)}</span>
             </>
           ) : (
             <>
-              <span className="flex items-center justify-between gap-2 mb-2 text-xs text-dim">
+              <span className="flex items-center justify-between gap-2 mb-1.5 font-mono text-[11px] text-dim">
                 <span className="flex min-w-0 items-center gap-2">
                   {statusIcon}
                   <span className="truncate">{project?.name ?? 'No project'}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1">
-                  <span className={cn('shrink-0 text-[11px]', indicator?.tone, eligible && 'group-hover:invisible group-focus-within:invisible')}>
+                  <span className={cn('shrink-0 text-[11px]', indicator?.tone ?? 'text-dim', eligible && 'group-hover:invisible group-focus-within:invisible')}>
                     {indicator?.label ?? (task.status === 'pending' ? 'Pending' : task.status === 'cancelled' ? 'Cancelled' : relativeAge(task.endedAt ?? task.startedAt, now))}
                   </span>
                 </span>
               </span>
-              <span className={cn('block truncate text-[13px] font-medium', active || task.status === 'running' ? 'text-fg' : 'text-fg/80')}>
+              <span className={cn('block truncate text-[13px] font-medium', active || task.status === 'running' ? 'text-fg' : 'text-soft')}>
                 {task.title}
               </span>
               <span className="mt-1 flex min-w-0 items-center gap-2">
                 <TaskStyleBadge style={taskStyle(task)} />
-                {task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 items-center gap-1 text-[10px] text-warn" title="Runs unattended until the final review"><Icon icon="moon-star" size={12} aria-hidden="true" />Review at the end</span>}
-                <span className="min-w-0 truncate font-mono text-[10px] text-dim/65">{task.branchName ?? task.agentLabel}</span>
+                {task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] text-warn" title="Runs unattended until the final review"><Icon icon="moon-star" size={12} aria-hidden="true" />Review at the end</span>}
+                <span className="min-w-0 truncate font-mono text-[10px] text-faint">{task.branchName ?? task.agentLabel}</span>
               </span>
             </>
           )}
-          {!queuedStack && task.restackState && <span className="block text-[10px] text-warn">Restack {task.restackState}</span>}
+          {!queuedStack && task.restackState && <span className="block font-mono text-[10px] text-warn">Restack {task.restackState}</span>}
         </button>
         {!queuedStack && !compact && eligible && (
           <button
@@ -258,7 +255,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
             aria-expanded={expanded}
             aria-controls={`subtasks-${task.id}`}
             aria-label={`${expanded ? 'Collapse' : 'Expand'} subtasks: ${task.title}`}
-            className="flex w-full items-center justify-between gap-2 border-t border-line px-3 py-1.5 text-xs text-dim hover:bg-white/5 hover:text-fg focus-visible:outline focus-visible:outline-accent"
+            className="flex w-full items-center justify-between gap-2 border-t border-line px-3 py-1.5 font-mono text-[11px] text-dim hover:bg-white/5 hover:text-fg focus-visible:outline focus-visible:outline-accent"
             onClick={toggleExpanded}
           >
             <span>{childCount} {childCount === 1 ? 'subtask' : 'subtasks'}</span>
@@ -282,9 +279,9 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
 }
 
 function StackSeparator(): JSX.Element {
-  return <div className="flex items-center gap-2 py-2 text-accent/60" aria-hidden="true">
-    <span className="h-px flex-1 bg-accent/25" />
+  return <div className="flex items-center gap-2 py-2 text-ember-400/70" aria-hidden="true">
+    <span className="h-px flex-1 border-t border-dashed border-ember-800" />
     <Icon icon="layers" size={12} />
-    <span className="h-px flex-1 bg-accent/25" />
+    <span className="h-px flex-1 border-t border-dashed border-ember-800" />
   </div>
 }

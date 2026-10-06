@@ -3,6 +3,14 @@ import { asciiBar } from './AsciiMeter'
 import { ProviderIcon } from './ProviderIcon'
 import { cn } from '../ui'
 
+const METER_CELLS = 32
+
+function meterTone(remainingPercent: number): string {
+  if (remainingPercent <= 10) return 'text-danger'
+  if (remainingPercent <= 25) return 'text-warn'
+  return 'text-accent'
+}
+
 export interface ProviderLimit {
   label: string
   value: string
@@ -25,28 +33,28 @@ export function ProviderLimits({ providers, className }: {
 
   return (
     <div
-      className={cn('mx-auto grid w-full max-w-[1040px] gap-x-8 gap-y-5 animate-fade-in', className)}
+      className={cn('mx-auto grid w-full max-w-[1040px] gap-x-8 gap-y-6 animate-fade-in', className)}
       style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))' }}
     >
       {providers.map((provider) => (
         <section
           key={provider.id}
           aria-label={provider.ariaLabel}
-          className="min-w-0 border-t border-dashed border-line/70 px-1 pt-4"
+          className="min-w-0 border-t border-dashed border-line-strong pt-4"
         >
-          <div className="mb-3 flex items-center gap-2 text-xs font-medium text-foreground">
-            <ProviderIcon company={provider.company} size={18} />
+          <div className="mb-3.5 flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.12em] text-fg uppercase">
+            <ProviderIcon company={provider.company} size={16} />
             <span>{provider.name}</span>
           </div>
-          <div className="grid min-w-0 gap-3">
+          <div className="grid min-w-0 gap-3.5">
             {provider.limits.map((limit) => (
-              <div key={limit.label} className="grid gap-1">
+              <div key={limit.label} className="grid gap-1.5 font-mono">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
-                  <span className="text-muted-foreground">{limit.label}</span>
+                  <span className="text-dim">{limit.label}</span>
                   <span className="text-dim tabular-nums">{limit.value}</span>
                 </div>
                 {limit.remainingPercent !== null && <div
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-3"
                   role="meter"
                   aria-valuemin={0}
                   aria-valuemax={100}
@@ -54,15 +62,15 @@ export function ProviderLimits({ providers, className }: {
                   aria-label={limit.label}
                 >
                   <span
-                    className="grid min-w-0 flex-1 select-none text-[11px] leading-none text-accent"
-                    style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
+                    className={cn('grid min-w-0 flex-1 select-none text-[13px] leading-none', meterTone(limit.remainingPercent))}
+                    style={{ gridTemplateColumns: `repeat(${METER_CELLS}, minmax(0, 1fr))` }}
                     aria-hidden="true"
                   >
-                    {asciiBar(limit.remainingPercent / 100, 24).split('').map((character, index) => (
+                    {asciiBar(limit.remainingPercent / 100, METER_CELLS).split('').map((character, index) => (
                       <span key={index} className="text-center">{character}</span>
                     ))}
                   </span>
-                  <span className="shrink-0 text-right text-[10px] text-muted-foreground tabular-nums">
+                  <span className="min-w-16 shrink-0 text-right text-[11px] text-fg tabular-nums">
                     {Math.round(limit.remainingPercent)}% left
                   </span>
                 </div>}

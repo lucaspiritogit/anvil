@@ -36,7 +36,7 @@ export function CopyableText({ label, value }: { label: string; value: string })
       >
         <Icon icon="copy" size={14} aria-hidden="true" />
       </button>
-      <span role="status" className={feedback ? 'absolute right-0 bottom-full z-10 mb-1 w-max max-w-64 border border-line bg-hover px-2 py-1 text-xs text-fg shadow-lg' : 'sr-only'}>
+      <span role="status" className={feedback ? 'absolute right-0 bottom-full z-10 mb-1 w-max max-w-64 border border-line-strong bg-hover px-2 py-1 text-xs text-fg shadow-[0_0_0_1px_var(--color-void)]' : 'sr-only'}>
         {feedback}
       </span>
     </span>

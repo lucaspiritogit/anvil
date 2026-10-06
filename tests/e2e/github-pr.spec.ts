@@ -35,7 +35,7 @@ test('Open PR previews the remote, drafts editable fields, and shows created PR 
   await created.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Open PR')
   await expect(page.getByLabel('Task status', { exact: true })).not.toContainText('Ready to review')
-  await expect(page.getByLabel('Task status', { exact: true }).getByText('Open PR', { exact: true })).toHaveCSS('color', 'rgb(124, 195, 121)')
+  await expect(page.getByLabel('Task status', { exact: true }).getByText('Open PR', { exact: true })).toHaveCSS('color', 'rgb(95, 211, 138)')
   await expect(page.getByLabel('Task status', { exact: true }).locator('path')).toHaveAttribute('d', /M15 6C12\.6131/)
   const sidebarTask = page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
   await expect(sidebarTask.getByRole('img', { name: 'Open PR', exact: true })).toBeVisible()

@@ -106,12 +106,12 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
   if (settingsOpen) return (
     <aside aria-label="Sidebar" className="flex min-h-0 flex-col border-r border-line bg-canvas max-[700px]:border-b max-[700px]:border-r-0">
       <WindowTitlebar>
-        <h1 className="text-sm font-semibold">Settings</h1>
+        <h1 className="font-mono text-sm font-semibold">Settings</h1>
       </WindowTitlebar>
       <nav aria-label="Settings sections" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3 max-[700px]:flex-row max-[700px]:overflow-x-auto">
         {SETTINGS_SECTIONS.map((section) => (
           <button key={section.id} aria-current={settingsSection === section.id ? 'page' : undefined}
-            className={cn('flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-[13px] whitespace-nowrap focus-visible:outline focus-visible:outline-accent', settingsSection === section.id ? 'bg-accent/10 text-accent' : 'text-dim hover:bg-hover hover:text-fg')}
+            className={cn('flex shrink-0 items-center gap-2.5 px-3 py-2.5 text-left text-[13px] whitespace-nowrap focus-visible:outline focus-visible:outline-accent', settingsSection === section.id ? 'row-selected text-fg' : 'text-dim hover:bg-hover hover:text-fg')}
             onClick={() => setSettingsSection(section.id)}>
             <Icon icon={section.icon} size={18} aria-hidden="true" />
             {section.label}
@@ -146,9 +146,9 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
             role="status"
             aria-label={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready for review`}
             title={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready for review`}
-            className="ml-2 inline-flex items-center gap-1 rounded-full bg-orange-400/15 px-1.5 py-0.5 text-[10px] tracking-normal text-orange-400"
+            className="ml-2 inline-flex h-[18px] items-center gap-1 bg-review px-1.5 font-mono text-[10px] font-semibold text-canvas"
           >
-            <Icon icon="bell-ring" size={11} aria-hidden="true" />
+            <span aria-hidden="true">◆</span>
             {reviewCount}
           </span>
         )}
@@ -167,7 +167,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
 
       <div className="flex shrink-0 flex-col gap-2 px-2.5 pb-3">
         <button
-          className="flex h-9 shrink-0 items-center gap-2 border border-line px-2.5 text-xs text-fg hover:bg-hover disabled:opacity-40 focus-visible:outline focus-visible:outline-accent"
+          className="flex h-9 shrink-0 items-center gap-2 bg-accent px-2.5 text-xs font-semibold text-canvas enabled:hover:brightness-110 disabled:bg-overlay disabled:text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           aria-label="New task"
           title="New task"
           disabled={!workspaceId}
@@ -177,7 +177,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
           New Task
         </button>
         <button
-          className="flex h-9 shrink-0 items-center gap-2 border border-line px-2.5 text-xs text-fg hover:bg-hover disabled:opacity-40 focus-visible:outline focus-visible:outline-accent"
+          className="flex h-9 shrink-0 items-center gap-2 border border-line-strong bg-overlay px-2.5 text-xs text-fg enabled:hover:bg-hover disabled:text-faint focus-visible:outline focus-visible:outline-accent"
           aria-label="Open terminal"
           title="Open terminal"
           disabled={!terminalAvailable}
@@ -186,7 +186,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
           <Icon icon="terminal" size={16} aria-hidden="true" />
           Terminal
         </button>
-        <div className="flex items-center gap-2 h-9 px-2.5 border border-line focus-within:border-dim/60">
+        <div className="flex items-center gap-2 h-9 px-2.5 border border-line-strong bg-void focus-within:border-accent">
           <Icon icon="search" size={16} className="shrink-0 text-dim" aria-hidden="true" />
           <input
             type="search"
@@ -194,7 +194,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
             placeholder="Search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-dim outline-none [&::-webkit-search-cancel-button]:appearance-none"
+            className="w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-faint outline-none [&::-webkit-search-cancel-button]:appearance-none"
           />
           {search && (
             <button className="text-dim hover:text-fg" aria-label="Clear search" onClick={() => setSearch('')}>
@@ -223,7 +223,7 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
       <button
         aria-current={view.kind === 'analytics' ? 'page' : undefined}
         className={cn('flex shrink-0 items-center gap-2.5 mx-2.5 mb-2 px-2 py-2 text-left text-xs hover:bg-hover/60 focus-visible:outline focus-visible:outline-accent',
-          view.kind === 'analytics' ? 'bg-accent/10 text-accent' : 'text-dim hover:text-fg')}
+          view.kind === 'analytics' ? 'row-selected text-fg' : 'text-dim hover:text-fg')}
         onClick={() => { showAnalytics(); if (mobileNavigation) onNavigate() }}
       >
         <Icon icon="chart-no-axes-combined" size={18} aria-hidden="true" />

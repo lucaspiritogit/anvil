@@ -138,7 +138,7 @@ export function ComposerOptionTooltip({ title, description, disabled = false, ch
         id={tooltipId}
         role="tooltip"
         popover="manual"
-        className="composer-option-tooltip fixed m-0 w-72 max-w-[calc(100vw-16px)] border border-line bg-raised px-3.5 py-3 text-left text-xs leading-relaxed text-fg shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
+        className="composer-option-tooltip fixed m-0 w-72 max-w-[calc(100vw-16px)] border border-line-strong bg-overlay px-3.5 py-3 text-left text-xs leading-relaxed text-fg shadow-[0_0_0_1px_var(--color-void)]"
       >
         <p className="mb-1 font-medium">{title}</p>
         <p className="text-dim">{description}</p>

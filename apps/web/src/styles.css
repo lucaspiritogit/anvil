@@ -6,33 +6,60 @@
  * here and nowhere else.
  */
 @theme {
-  --color-canvas: #0d0f12;
-  --color-raised: #14171c;
-  --color-hover: #1b1f26;
-  --color-line: #23272f;
-  --color-fg: #d7dbe0;
-  --color-dim: #868e9b;
-  --color-accent: #7aa2f7;
-  --color-ok: #7cc379;
-  --color-danger: #e06c75;
-  --color-warn: #d9a441;
-  --color-violet: #bb9af7;
+  --color-void: #08090b;
+  --color-canvas: #0c0d10;
+  --color-raised: #121418;
+  --color-overlay: #181b20;
+  --color-hover: #1f2329;
+  --color-line: #252a31;
+  --color-line-strong: #353b45;
+  --color-fg: #e6e8eb;
+  --color-soft: #c9cdd3;
+  --color-dim: #9aa1ac;
+  --color-faint: #626974;
+
+  --color-ember-300: #ffb287;
+  --color-ember-400: #ff8a4c;
+  --color-ember-500: #ff6a1f;
+  --color-ember-800: #5a2810;
+  --color-ember-950: #24130b;
+  --color-accent: var(--color-ember-500);
+
+  --color-run: #6ea8ff;
+  --color-ok: #5fd38a;
+  --color-warn: #f2c14e;
+  --color-danger: #ff5f5f;
+  --color-review: #b794f6;
+  --color-idle: #7a818c;
+  --color-violet: var(--color-review);
   --color-cyan: #7dcfa0;
+
+  --color-run-tint: #121c2e;
+  --color-ok-tint: #13241a;
+  --color-warn-tint: #2a2312;
+  --color-danger-tint: #2a1415;
+  --color-review-tint: #221b2f;
+  --color-run-text: #8dbbff;
+  --color-ok-text: #7fe0a3;
+  --color-warn-text: #f5cf72;
+  --color-danger-text: #ff8a8a;
+  --color-review-text: #c9aef8;
+
   --color-background: var(--color-canvas);
   --color-card: var(--color-raised);
   --color-border: var(--color-line);
   --color-foreground: var(--color-fg);
   --color-muted-foreground: var(--color-dim);
-  --color-popover: var(--color-raised);
+  --color-popover: var(--color-overlay);
   --color-popover-foreground: var(--color-fg);
 
   /* The accent hairline used by the sidebar's review badge. */
-  --color-accent-edge: color-mix(in srgb, var(--color-accent) 45%, var(--color-line));
+  --color-accent-edge: var(--color-ember-800);
 
   --radius-card: 0px;
 
-  --font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'Cascadia Mono', Consolas, monospace;
+  --font-sans: 'Geist Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'Cascadia Mono', Consolas, monospace;
 
   /* Softer than Tailwind's own pulse, for the "agent is working" dot. */
   --animate-blink: blink 1.4s ease-in-out infinite;
@@ -93,6 +120,11 @@
     font-size: 14px;
   }
 
+  ::selection {
+    background: var(--color-ember-800);
+    color: var(--color-fg);
+  }
+
   /* Preflight leaves buttons at the browser default; every button here is one. */
   button:not(:disabled) {
     cursor: pointer;
@@ -104,7 +136,7 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #262b33;
+    background: var(--color-line-strong);
     border: 3px solid transparent;
     background-clip: content-box;
   }
@@ -152,6 +184,31 @@
     }
   }
 
+  .braille-spin::before {
+    content: '⠋';
+    animation: braille-spin 1.1s steps(1) infinite;
+  }
+
+  @keyframes braille-spin {
+    0% { content: '⠋'; }
+    10% { content: '⠙'; }
+    20% { content: '⠹'; }
+    30% { content: '⠸'; }
+    40% { content: '⠼'; }
+    50% { content: '⠴'; }
+    60% { content: '⠦'; }
+    70% { content: '⠧'; }
+    80% { content: '⠇'; }
+    90% { content: '⠏'; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .braille-spin::before {
+      content: '⠿';
+      animation: none;
+    }
+  }
+
   .task-composer-success::after {
     content: '';
     position: absolute;
@@ -177,8 +234,18 @@
 
   .analytics-grid {
     background-color: var(--color-canvas);
-    background-image: radial-gradient(color-mix(in srgb, var(--color-dim) 22%, transparent) 0.7px, transparent 0.7px);
-    background-size: 10px 10px;
+    background-image: radial-gradient(color-mix(in srgb, var(--color-dim) 22%, transparent) 0.8px, transparent 0.8px);
+    background-size: 12px 12px;
+  }
+
+  .dot-field {
+    background-image: radial-gradient(color-mix(in srgb, var(--color-dim) 18%, transparent) 0.8px, transparent 0.8px);
+    background-size: 12px 12px;
+  }
+
+  .row-selected {
+    background-color: var(--color-ember-950);
+    box-shadow: inset 2px 0 0 var(--color-accent);
   }
 
   .corner-marks {
@@ -192,23 +259,23 @@
       linear-gradient(var(--color-accent), var(--color-accent)),
       linear-gradient(var(--color-accent), var(--color-accent));
     background-position:
-      left 8px top,
-      left 4px top 4px,
-      right 8px top,
-      right 4px top 4px,
-      left 8px bottom,
-      left 4px bottom 4px,
-      right 8px bottom,
-      right 4px bottom 4px;
+      left top,
+      left top,
+      right top,
+      right top,
+      left bottom,
+      left bottom,
+      right bottom,
+      right bottom;
     background-repeat: no-repeat;
     background-size:
-      1px 9px,
-      9px 1px,
-      1px 9px,
-      9px 1px,
-      1px 9px,
-      9px 1px,
-      1px 9px,
-      9px 1px;
+      1px 10px,
+      10px 1px,
+      1px 10px,
+      10px 1px,
+      1px 10px,
+      10px 1px,
+      1px 10px,
+      10px 1px;
   }
 }

@@ -187,13 +187,13 @@ export function WorkspacePicker(): JSX.Element {
       />
       <Icon icon="chevron-down" size={14} className="pointer-events-none shrink-0 text-dim" aria-hidden="true" />
     </div>
-    {open && <div className="absolute inset-x-0 bottom-full z-30 mb-1 max-h-[65vh] overflow-y-auto border border-line bg-raised shadow-lg">
+    {open && <div className="absolute inset-x-0 bottom-full z-30 mb-1 max-h-[65vh] overflow-y-auto border border-line-strong bg-overlay shadow-[0_0_0_1px_var(--color-void)]">
       <div ref={listRef} id={`${id}-list`} role="listbox" aria-label="Workspaces" className="max-h-[min(320px,40vh)] overflow-y-auto overscroll-contain p-1">
         {options.map((workspace, index) => <div key={workspace.id} className={cn('flex min-w-0 items-stretch', index === activeIndex && 'bg-hover')}>
           <button id={`${id}-option-${index}`} role="option" aria-selected={workspace.id === value} title={workspace.name}
             onMouseDown={(event) => event.preventDefault()} onClick={() => void choose(workspace.id)}
             onMouseMove={() => setHighlight(index)}
-            className={cn('min-w-0 flex-1 px-2 py-2 text-left text-xs', workspace.id === value ? 'text-accent' : 'text-fg')}>
+            className={cn('min-w-0 flex-1 px-2 py-2 text-left text-xs', workspace.id === value ? 'text-ember-400' : 'text-fg')}>
             <span className="block truncate font-medium">{workspace.name}</span>
             {workspace.id === value && <span className="mt-0.5 block text-[10px] text-dim">Selected workspace</span>}
           </button>

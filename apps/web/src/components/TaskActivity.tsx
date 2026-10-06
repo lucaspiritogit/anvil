@@ -1,6 +1,7 @@
 import type { taskIssuePresentation } from '@anvil/protocol/task-issue-presentation'
 import type { JSX } from 'react'
 import type { Task, TaskEvent } from '@anvil/protocol/types'
+import { StatusGlyph } from './StatusGlyph'
 
 function activityLabel(task: Task, event?: TaskEvent): string {
   switch (task.deliveryStatus) {
@@ -25,10 +26,10 @@ export function TaskActivity({ task, event, presentation }: { presentation?: Ret
   const label = activityLabel(task, event)
 
   return (
-    <div role="status" aria-label="Agent activity" aria-live="polite" aria-atomic="true" className="py-3 text-xs text-dim">
-      <span className="flex items-center gap-1.5 motion-safe:animate-breathe">
-        <span className="block truncate" title={label}>{label}</span>
-        <span aria-hidden className="h-3 w-[2px] shrink-0 bg-accent motion-safe:animate-blink" />
+    <div role="status" aria-label="Agent activity" aria-live="polite" aria-atomic="true" className="py-3 text-xs">
+      <span className="flex items-center gap-2 motion-safe:animate-breathe">
+        <StatusGlyph glyph="running" className="text-run" />
+        <span className="block truncate font-mono text-run-text" title={label}>{label}</span>
       </span>
     </div>
   )
