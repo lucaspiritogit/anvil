@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { chooseBranch, chooseProject, restoreComposerSelection } from './composer-setup'
+import { chooseBranch, chooseMenuOption, chooseProject, expectMenuOptions, restoreComposerSelection } from './composer-setup'
 
 test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
@@ -23,7 +23,7 @@ test('Quick defaults to the current checkout and supports keyboard branch switch
   const branch = surface.getByRole('button', { name: 'Project branch', exact: true })
   const composer = surface.getByRole('form', { name: 'Start a task' })
 
-  await expect(composer.getByRole('combobox', { name: 'Task style' })).toHaveValue('quick')
+  await expect(composer.getByRole('combobox', { name: 'Task style' })).toHaveText('Quick')
   await expect(project).toHaveAccessibleDescription('Anvil, /tmp/anvil')
   await expect(location).toHaveAccessibleDescription('Local checkout')
   await expect(branch).toHaveAccessibleDescription('main')
@@ -143,7 +143,7 @@ test('detached HEAD stays explicit and non-Git projects explain that Work is una
   await expect(branch).toHaveAccessibleDescription('No Git branch')
   await expect(branch).toBeDisabled()
   const composer = surface.getByRole('form', { name: 'Start a task' })
-  await composer.getByRole('combobox', { name: 'Task style' }).selectOption('work')
+  await chooseMenuOption(composer.getByRole('combobox', { name: 'Task style' }), 'Work')
   await expect(surface.getByRole('alert')).toHaveText(/Work requires a Git repository/)
   await composer.getByRole('textbox').fill('Try isolated work')
   await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
@@ -203,7 +203,7 @@ test('project picker imports from disk, handles cancel and failure, and clones w
   const style = composer.getByRole('combobox', { name: 'Task style' })
   const project = page.getByRole('button', { name: 'Project', exact: true })
   await prompt.fill('Keep this project draft')
-  await style.selectOption('work')
+  await chooseMenuOption(style, 'Work')
   await page.evaluate(() => {
     const original = window.anvil.projects.importFromDisk
     let attempts = 0
@@ -227,12 +227,12 @@ test('project picker imports from disk, handles cancel and failure, and clones w
   await picker.getByRole('button', { name: 'Add from disk' }).click()
   await expect(picker.getByRole('alert')).toHaveText('Cannot read selected folder; check file permissions')
   await expect(prompt).toHaveValue('Keep this project draft')
-  await expect(style).toHaveValue('work')
+  await expect(style).toHaveText('Work')
   await picker.getByRole('button', { name: 'Add from disk' }).click()
   await expect(project).toHaveAccessibleDescription('local-app, /fixture/workspaces/default/projects/local-app')
   await expect(project).toBeFocused()
   await expect(prompt).toHaveValue('Keep this project draft')
-  await expect(style).toHaveValue('work')
+  await expect(style).toHaveText('Work')
 
   await project.click()
   await page.getByRole('dialog', { name: 'Choose project' }).getByRole('button', { name: 'Add project', exact: true }).click()
@@ -249,7 +249,7 @@ test('project picker imports from disk, handles cancel and failure, and clones w
   await cloneProject.getByRole('button', { name: 'Clone repository', exact: true }).click()
   await expect(project).toHaveAccessibleDescription('remote-app, /fixture/workspaces/default/projects/remote-app')
   await expect(prompt).toHaveValue('Keep this project draft')
-  await expect(style).toHaveValue('work')
+  await expect(style).toHaveText('Work')
 })
 
 test('project import keeps the initiating workspace when the user switches workspaces', async ({ page }) => {
@@ -284,7 +284,7 @@ test('Quick can run in an isolated worktree without switching the local checkout
   const location = surface.getByRole('button', { name: 'Execution location', exact: true })
   const branch = surface.getByRole('button', { name: 'Project branch', exact: true })
 
-  await expect(composer.getByRole('combobox', { name: 'Task style' })).toHaveValue('quick')
+  await expect(composer.getByRole('combobox', { name: 'Task style' })).toHaveText('Quick')
   await expect(location).toHaveAccessibleDescription('Local checkout')
   await expect(branch).toHaveAccessibleDescription('main')
 
@@ -314,8 +314,8 @@ test('new worktrees use the selected base without switching the local checkout',
   const project = page.getByRole('button', { name: 'Project', exact: true })
   await chooseProject(project, 'workbench', 'Workbench')
   const composer = page.getByRole('form', { name: 'Start a task' })
-  await composer.getByRole('combobox', { name: 'Task style' }).selectOption('work')
-  await expect(composer.getByRole('combobox', { name: 'Review policy' }).locator('option')).toHaveText(['Review each step', 'Review at the end'])
+  await chooseMenuOption(composer.getByRole('combobox', { name: 'Task style' }), 'Work')
+  await expectMenuOptions(composer.getByRole('combobox', { name: 'Review policy' }), ['Review each step', 'Review at the end'])
   const location = page.getByLabel('Execution location', { exact: true })
   await expect(location).toHaveText(/Isolated worktree/)
 

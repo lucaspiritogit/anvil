@@ -1,4 +1,4 @@
-import { browseProvider, chooseProvider } from './composer-setup'
+import { browseProvider, chooseMenuOption, chooseProvider } from './composer-setup'
 import { expect, test } from '@playwright/test'
 
 const fixture = '/tests/e2e/fixture/'
@@ -16,7 +16,7 @@ test('fresh composer chooses provider and model together and leaves selection un
   await expect(dialog).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(model).toHaveText('Choose a model')
-  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toBeDisabled()
   await composer.getByRole('textbox').press('Enter')
   expect(await page.evaluate(() => window.composerTest.starts)).toEqual([])
   await chooseProvider(model, 'codex', 'gpt-5-mini')
@@ -30,7 +30,7 @@ test('the last configuration survives provider switches, task submission, projec
   const composer = page.getByRole('form', { name: 'Start a task' })
   const provider = composer.getByRole('button', { name: /^(Choose a model|Model:)/ })
   await chooseProvider(provider, 'codex', 'gpt-5-mini')
-  await composer.getByRole('combobox', { name: 'Reasoning effort' }).selectOption('native-max')
+  await chooseMenuOption(composer.getByRole('combobox', { name: 'Reasoning effort' }), 'max')
   await chooseProvider(provider, 'opencode', 'provider/model')
   await chooseProvider(provider, 'codex')
   await expect(composer.getByRole('button', { name: 'Model: GPT 5 Mini', exact: true })).toBeVisible()
@@ -43,11 +43,11 @@ test('the last configuration survives provider switches, task submission, projec
   await page.getByRole('combobox', { name: 'Project', exact: true }).click()
   await page.getByRole('option').filter({ hasText: '/tmp/workbench' }).click()
   await expect(provider).toHaveAccessibleDescription('Codex')
-  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('native-max')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveText('max')
   await page.reload()
   await expect(provider).toHaveAccessibleDescription('Codex')
   await expect(composer.getByRole('button', { name: 'Model: GPT 5 Mini', exact: true })).toBeVisible()
-  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('native-max')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveText('max')
   await chooseProvider(provider, 'opencode')
   await expect(composer.getByRole('button', { name: 'Model: model', exact: true })).toBeVisible()
 })
@@ -57,7 +57,7 @@ test('workspace switching restores independent models and reasoning and clears p
   const composer = page.getByRole('form', { name: 'Start a task' })
   const provider = composer.getByRole('button', { name: /^(Choose a model|Model:)/ })
   await chooseProvider(provider, 'codex', 'gpt-5-mini')
-  await composer.getByRole('combobox', { name: 'Reasoning effort' }).selectOption('native-max')
+  await chooseMenuOption(composer.getByRole('combobox', { name: 'Reasoning effort' }), 'max')
   await composer.getByRole('textbox').fill('Personal draft must stay private')
   await page.getByRole('button', { name: 'Create test workspace' }).click()
   await expect(provider).toHaveText('Choose a model')
@@ -65,7 +65,7 @@ test('workspace switching restores independent models and reasoning and clears p
   await chooseProvider(provider, 'opencode', 'provider/model')
   await page.getByRole('combobox', { name: 'Test workspace', exact: true }).selectOption({ label: 'Default' })
   await expect(provider).toHaveText('GPT 5 Mini')
-  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveValue('native-max')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort' })).toHaveText('max')
   await expect(composer.getByRole('textbox')).toHaveValue('')
   await page.getByRole('combobox', { name: 'Test workspace', exact: true }).selectOption({ label: 'Work' })
   await page.reload()

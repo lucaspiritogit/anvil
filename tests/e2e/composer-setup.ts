@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 
 /** Exercise existing flows as a returning user with an explicit saved selection. */
 export async function restoreComposerSelection(page: Page): Promise<void> {
@@ -48,4 +48,20 @@ export async function chooseProject(trigger: import('@playwright/test').Locator,
   const dialog = trigger.page().getByRole('dialog', { name: 'Choose project', exact: true })
   await dialog.getByRole('searchbox', { name: 'Search projects', exact: true }).fill(query)
   await dialog.getByRole('button', { name, exact: true }).click()
+}
+
+export async function chooseMenuOption(trigger: import('@playwright/test').Locator, name: string): Promise<void> {
+  await trigger.click()
+  const label = await trigger.getAttribute('aria-label')
+  await trigger.page().getByRole('listbox', { name: label ?? undefined, exact: true }).getByRole('option', { name, exact: true }).click()
+}
+
+export async function expectMenuOptions(trigger: import('@playwright/test').Locator, names: string[]): Promise<void> {
+  await trigger.click()
+  const label = await trigger.getAttribute('aria-label')
+  const listbox = trigger.page().getByRole('listbox', { name: label ?? undefined, exact: true })
+  await expect(listbox.getByRole('option')).toHaveCount(names.length)
+  for (const [index, name] of names.entries()) await expect(listbox.getByRole('option').nth(index)).toHaveAccessibleName(name)
+  await trigger.page().keyboard.press('Escape')
+  await expect(listbox).toBeHidden()
 }

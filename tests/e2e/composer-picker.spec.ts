@@ -86,7 +86,7 @@ test('model picker searches by company and model name, and omits reasoning when 
   await expect(selectedModel).toBeFocused()
   await composer.getByRole('button', { name: 'More task options', exact: true }).click()
   await expect(composer.getByRole('combobox', { name: 'Reasoning effort', exact: true })).toBeDisabled()
-  await expect(composer.getByRole('combobox', { name: 'Reasoning effort', exact: true }).locator('option:checked')).toHaveText('Reasoning unavailable')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort', exact: true })).toHaveText('Reasoning unavailable')
   await page.keyboard.press('Escape')
   await page.screenshot({ path: testInfo.outputPath('composer.png') })
   await composer.getByRole('textbox').fill('Build search')

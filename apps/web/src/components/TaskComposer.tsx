@@ -14,11 +14,15 @@ import { cn } from '../ui'
 import { ComposerModelPicker } from './ComposerModelPicker'
 import { ComposerOverflowOptions } from './ComposerOverflowOptions'
 import { ComposerOptionTooltip } from './ComposerOptionTooltip'
+import { MenuSelect } from './MenuSelect'
 import { ProjectBranchSelector } from './ProjectBranchSelector'
 import { TASK_STYLES, TASK_STYLE_LABELS } from '@anvil/protocol/task-style'
 import type { TaskCheckoutMode, TaskReviewPolicy } from '@anvil/protocol/types'
 
-const compactSelect = 'h-[30px] min-w-0 field-sizing-content appearance-none border border-line-strong bg-overlay pl-2 pr-6 font-mono text-xs text-fg outline-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:text-faint'
+const REVIEW_DESCRIPTIONS: Record<TaskReviewPolicy, string> = {
+  review_each_issue: 'Pause after every step to review its changes before continuing.',
+  review_at_task_end: 'Runs unattended until the final review. Merge and push still wait for you.'
+}
 const successDuration = 1800
 export function TaskComposer(): JSX.Element {
   const projectId = useStore((state) => state.activeProjectId)
@@ -99,16 +103,16 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   }, [taskComposerFocusRequest])
 
   const isolated = Boolean(projectId) && (style === 'work' || checkoutMode === 'worktree')
-  const styleDescription = style === 'work'
-    ? 'Delegate planned work on a task branch. Changes wait for you to merge them.'
-    : !projectId
+  const styleDescriptions: Record<typeof style, string> = {
+    work: 'Delegate planned work on a task branch. Changes wait for you to merge them.',
+    quick: !projectId
       ? 'Ask a question or start a task without a project.'
       : checkoutMode === 'worktree'
         ? 'Ask a question or make a focused change in an isolated worktree.'
         : 'Ask a question or make a focused change in the current checkout.'
-  const reviewDescription = reviewPolicy === 'review_at_task_end'
-    ? 'Runs unattended until the final review. Merge and push still wait for you.'
-    : 'Pause after every step to review its changes before continuing.'
+  }
+  const styleDescription = styleDescriptions[style]
+  const reviewDescription = REVIEW_DESCRIPTIONS[reviewPolicy]
   const submit = async (): Promise<void> => {
     if (useStore.getState().activeProjectId !== projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || switchingBranch || (isolated && isRepository === false) || submitting.current) return
     submitting.current = true
@@ -157,14 +161,17 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
       {style === 'work' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">Work requires a Git repository so Anvil can create an isolated branch and worktree.</p>}
       {style === 'quick' && checkoutMode === 'worktree' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">An isolated worktree requires a Git repository. Use the current checkout instead.</p>}
-      {style === 'work' && parents.length > 0 && <label className="mb-2 inline-flex items-center gap-2 font-mono text-xs text-dim">
-        <Icon icon="layers" size={14} />
-        Stack on task
-        <select aria-label="Stack on task" className={compactSelect} disabled={busy} value={parentTaskId} onChange={(event) => setParentTaskId(event.target.value)}>
-          <option value="">Project branch</option>
-          {parents.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}
-        </select>
-      </label>}
+      {style === 'work' && parents.length > 0 && <div className="mb-2 inline-flex items-center gap-2 font-mono text-xs text-dim">
+        <Icon icon="layers" size={14} aria-hidden="true" />
+        <span aria-hidden="true">Stack on task</span>
+        <MenuSelect
+          label="Stack on task"
+          disabled={busy}
+          value={parentTaskId}
+          options={[{ value: '', label: 'Project branch' }, ...parents.map((task) => ({ value: task.id, label: task.title }))]}
+          onChange={setParentTaskId}
+        />
+      </div>}
       <ProjectBranchSelector
         key={projectId ?? 'no-project'}
         projectId={projectId}
@@ -247,38 +254,34 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
             />
             <ComposerOptionTooltip title={TASK_STYLE_LABELS[style]} description={styleDescription} disabled={busy}>
               {(tooltipId) => (
-                <label className="relative flex min-w-0 items-center overflow-hidden">
-                  <span className="sr-only">Task style</span>
-                  <Icon icon={style === 'quick' ? 'rabbit' : 'anvil'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
-                  <select
-                    aria-label="Task style"
-                    aria-describedby={tooltipId}
-                    className={cn(compactSelect, 'pl-8')}
-                    value={style}
-                    onChange={(event) => setStyle(event.target.value as typeof style)}
-                  >
-                    {TASK_STYLES.map((option) => <option className="bg-raised text-fg" key={option} value={option} disabled={!projectId && option === 'work'}>{TASK_STYLE_LABELS[option]}</option>)}
-                  </select>
-                  <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
-                </label>
+                <MenuSelect
+                  label="Task style"
+                  aside="⇧ tab cycles"
+                  describedBy={tooltipId}
+                  value={style}
+                  options={TASK_STYLES.map((option) => ({
+                    value: option,
+                    label: TASK_STYLE_LABELS[option],
+                    icon: option === 'quick' ? 'rabbit' : 'anvil',
+                    description: !projectId && option === 'work' ? 'Needs a project.' : styleDescriptions[option],
+                    disabled: !projectId && option === 'work'
+                  }))}
+                  onChange={setStyle}
+                />
               )}
             </ComposerOptionTooltip>
             {style === 'work' && <ComposerOptionTooltip title={reviewPolicy === 'review_at_task_end' ? 'Review at the end' : 'Review each step'} description={reviewDescription} disabled={busy}>
               {(tooltipId) => (
-                <label className="relative flex min-w-0 items-center overflow-hidden">
-                  <Icon icon={reviewPolicy === 'review_at_task_end' ? 'moon-star' : 'table-of-contents'} size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
-                  <select
-                    aria-label="Review policy"
-                    aria-describedby={tooltipId}
-                    className={cn(compactSelect, 'pl-8')}
-                    value={reviewPolicy}
-                    onChange={(event) => preferences.setReviewPolicy(event.target.value as TaskReviewPolicy)}
-                  >
-                    <option className="bg-raised text-fg" value="review_each_issue">Review each step</option>
-                    <option className="bg-raised text-fg" value="review_at_task_end">Review at the end</option>
-                  </select>
-                  <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
-                </label>
+                <MenuSelect<TaskReviewPolicy>
+                  label="Review policy"
+                  describedBy={tooltipId}
+                  value={reviewPolicy}
+                  options={[
+                    { value: 'review_each_issue', label: 'Review each step', icon: 'table-of-contents', description: REVIEW_DESCRIPTIONS.review_each_issue },
+                    { value: 'review_at_task_end', label: 'Review at the end', icon: 'moon-star', description: REVIEW_DESCRIPTIONS.review_at_task_end }
+                  ]}
+                  onChange={preferences.setReviewPolicy}
+                />
               )}
             </ComposerOptionTooltip>}
             <ComposerModelPicker
@@ -289,20 +292,17 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
               onChange={preferences.setSelection}
             />
             <ComposerOverflowOptions containerRef={composerRef}>
-              <label className="relative flex items-center" title="Reasoning effort">
-                <Icon icon="brain" size={16} className="pointer-events-none absolute left-2 text-dim" aria-hidden="true" />
-                <select
-                  aria-label="Reasoning effort"
-                  className={cn(compactSelect, 'pl-8')}
-                  value={reasoningEffort ?? ''}
-                  disabled={loadingEfforts || !reasoningOptions.length}
-                  onChange={(event) => setReasoningEffort(agentId, model, event.target.value)}
-                >
-                  {!reasoningOptions.length && <option value="">{loadingEfforts ? 'Loading efforts…' : catalogue?.error || (model && !capabilities) ? 'Reasoning unavailable' : 'Agent default'}</option>}
-                  {reasoningOptions.map((option) => <option className="bg-raised text-fg" key={option.id} value={option.id}>{option.level}</option>)}
-                </select>
-                <Icon icon="chevron-down" size={12} className="pointer-events-none absolute right-2 text-dim" aria-hidden="true" />
-              </label>
+              <MenuSelect
+                label="Reasoning effort"
+                title="Thinking"
+                aside={model.trim() || undefined}
+                icon="brain"
+                value={reasoningEffort ?? ''}
+                placeholder={loadingEfforts ? 'Loading efforts…' : catalogue?.error || (model && !capabilities) ? 'Reasoning unavailable' : 'Agent default'}
+                disabled={loadingEfforts || !reasoningOptions.length}
+                options={reasoningOptions.map((option, index) => ({ value: option.id, label: option.level, meter: { level: index + 1, max: reasoningOptions.length } }))}
+                onChange={(effort) => setReasoningEffort(agentId, model, effort)}
+              />
             </ComposerOverflowOptions>
             <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
               <button

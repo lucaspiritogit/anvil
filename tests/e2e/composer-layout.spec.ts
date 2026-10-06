@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { chooseProvider, restoreComposerSelection } from './composer-setup'
+import { chooseMenuOption, chooseProvider, restoreComposerSelection } from './composer-setup'
 
 test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
@@ -29,7 +29,7 @@ test('compact composer keeps the model and Send aligned, with other controls beh
     await more.click()
     const options = page.getByRole('group', { name: 'Task options', exact: true })
     await expect(options).toBeInViewport()
-    await options.getByRole('combobox', { name: 'Reasoning effort', exact: true }).selectOption('medium')
+    await chooseMenuOption(options.getByRole('combobox', { name: 'Reasoning effort', exact: true }), 'medium')
     if (width === 900) await page.screenshot({ path: testInfo.outputPath('composer-options.png') })
     await page.keyboard.press('Escape')
     await expect(options).toBeHidden()
@@ -47,7 +47,7 @@ test('compact composer keeps the model and Send aligned, with other controls beh
   await page.keyboard.press('Control+b')
   await expect(composer.getByRole('button', { name: 'More task options', exact: true })).toBeHidden()
   await expect(composer.getByRole('button', { name: /^(Choose a model|Model:)/ })).toHaveAccessibleDescription('OpenCode')
-  await expect(composer.getByRole('combobox', { name: 'Reasoning effort', exact: true })).toHaveValue('medium')
+  await expect(composer.getByRole('combobox', { name: 'Reasoning effort', exact: true })).toHaveText('medium')
   await expect(page.getByRole('group', { name: 'Task options', exact: true })).toBeHidden()
   await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeInViewport()
   expect(await composer.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
