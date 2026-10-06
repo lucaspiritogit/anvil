@@ -1,11 +1,12 @@
 import type { HandlerRegistry } from '../handler-registry'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, isAbsolute, join } from 'node:path'
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { mkdir, readdir, realpath, rm, stat } from 'node:fs/promises'
 import type { ProjectMemory } from '../memory/project-memory'
 import type { TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
-import type { Project } from '@anvil/protocol/types'
+import type { Project, ProjectFolderListing } from '@anvil/protocol/types'
 import { listProjectFiles, projectFileError } from '../project-files'
 import { usesManagedWorktree, usesProjectCheckout } from '../tasks/checkout'
 import { taskOperationKind } from '../tasks/operations'
@@ -42,6 +43,27 @@ function cloneUrl(value: string): { url: string; name: string } {
     throw new Error('The Git repository URL contains an invalid repository name')
   }
   return { url: parsed.href, name }
+}
+
+const MAX_LISTED_FOLDERS = 1000
+
+async function browseFolder(input?: string): Promise<ProjectFolderListing> {
+  if (input !== undefined && !isAbsolute(input)) throw new Error('Folder path must be absolute')
+  const path = await realpath(input ?? homedir())
+  if (!(await stat(path)).isDirectory()) throw new Error('Folder path must be a directory')
+  const items = (await readdir(path, { withFileTypes: true }))
+    .filter((item) => !item.name.startsWith('.') && (item.isDirectory() || item.isSymbolicLink()))
+    .sort((left, right) => left.name.localeCompare(right.name))
+  const directories: ProjectFolderListing['directories'] = []
+  for (const item of items) {
+    if (directories.length >= MAX_LISTED_FOLDERS) break
+    const child = join(path, item.name)
+    if (item.isSymbolicLink() && !(await stat(child).then((info) => info.isDirectory(), () => false))) continue
+    const repository = await stat(join(child, '.git')).then(() => true, () => false)
+    directories.push({ name: item.name, path: child, repository })
+  }
+  const parent = dirname(path)
+  return { path, parent: parent === path ? null : parent, directories, truncated: directories.length < items.length }
 }
 
 async function cloneHttpsRepository(url: string, destination: string): Promise<void> {
@@ -81,8 +103,12 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     return result
   })
 
-  ipc.handle('projects:add', async ({ path, workspaceId = store.getActiveWorkspace().id }) => {
-    if (!isAbsolute(path) || !(await stat(path)).isDirectory()) throw new Error('Project path must be an absolute directory')
+  ipc.handle('projects:browse', ({ path }) => browseFolder(path))
+
+  ipc.handle('projects:add', async ({ path: input, workspaceId = store.getActiveWorkspace().id }) => {
+    if (!isAbsolute(input)) throw new Error('Project path must be an absolute directory')
+    const path = await realpath(input)
+    if (!(await stat(path)).isDirectory()) throw new Error('Project path must be an absolute directory')
     const project: Project = {
       id: randomUUID(),
       name: basename(path) || path,

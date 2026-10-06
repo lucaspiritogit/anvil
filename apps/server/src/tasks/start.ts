@@ -83,6 +83,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
           recordSystemEvent(task.id, `Using local checkout: ${project.path}`)
           const enrichedPrompt = await promptWithProjectMemory(project.id, task.prompt, task.workspaceId)
           const prompt = quickTaskPrompt(style, enrichedPrompt)
+          if (git.isRepository) await gitDelivery.captureWorkingTree(task.id, project.path)
           requireRunningTask()
           agentProcesses.start({
             workspace,

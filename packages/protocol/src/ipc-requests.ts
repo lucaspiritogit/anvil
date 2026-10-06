@@ -33,6 +33,7 @@ export interface IpcRequests {
   'analytics:get': AnalyticsRange
   'projects:list': undefined
   'projects:add': { path: string; workspaceId?: string }
+  'projects:browse': { path?: string }
   'projects:import-begin': { workspaceId: string; name: string; entries: Array<{ path: string; type: 'file' | 'directory'; size: number; executable?: boolean }> }
   'projects:import-chunk': { importId: string; index: number; offset: number; bytes: Uint8Array }
   'projects:import-finish': string

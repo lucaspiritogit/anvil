@@ -540,6 +540,8 @@ window.anvil = {
       return () => window.removeEventListener('fixture:projects-changed', receive)
     },
     list: async () => projects,
+    canPickFromDisk: true,
+    browse: async (path?: string) => ({ path: path ?? '/fixture', parent: null, directories: [], truncated: false }),
     importFromDisk: async (workspaceId: string, onProgress: (done: number, total: number) => void) => {
       onProgress(1, 1)
       const project: Project = { id: 'imported-project', name: 'local-app', path: `/fixture/workspaces/${workspaceId}/projects/local-app`, createdAt: now,

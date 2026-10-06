@@ -42,8 +42,9 @@ export function createTaskCompletion(
     if (!project || !task) return
     if (taskStyle(task) !== 'work' && !managed) {
       if (status !== 'succeeded') return
-      const reviewPaths = [...new Set([...(task.reviewPaths ?? []), ...(info.result?.changedFiles ?? [])])]
+      let reviewPaths = [...new Set([...(task.reviewPaths ?? []), ...(info.result?.changedFiles ?? [])])]
       try {
+        reviewPaths = [...new Set([...reviewPaths, ...await gitDelivery.takeWorkingTreeChanges(task.id, project.path)])]
         const diff = await gitDelivery.getWorkingTreeDiff(project.path, reviewPaths)
         task = store.updateTask(task.id, {
           reviewPaths: diff.paths,

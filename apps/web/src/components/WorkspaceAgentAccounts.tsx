@@ -119,8 +119,8 @@ function AccountRow({ workspaceId, workspaceName, agentId }: AgentAccountTarget 
       {agentId === 'opencode' && account?.status !== 'connected' && !pending && <p className="mt-2 text-xs text-dim">Choose an API key or subscription in OpenCode's provider prompts.</p>}
       {agentId === 'claude' && pending && account.authAction === 'sign-in' && <p className="mt-2 text-xs text-dim">Complete the browser sign-in, then paste, review, and send its code below when prompted.</p>}
       {pending && (agentId === 'opencode' || agentId === 'claude') && <p className="mt-3 text-xs text-dim">Complete sign-in or sign-out in the terminal panel. Cancelling stops the command.</p>}
-      {pending && account.terminalSessionId && <GhosttyTerminal key={account.terminalSessionId} sessionId={account.terminalSessionId} className="mt-3 h-[180px]" />}
-      {pending && agentId === 'claude' && account.authAction === 'sign-in' && account.terminalSessionId && <TerminalAuthInput key={account.terminalSessionId} sessionId={account.terminalSessionId} />}
+      {pending && account.terminalSessionId && <GhosttyTerminal key={`${account.terminalSessionId}:terminal`} sessionId={account.terminalSessionId} className="mt-3 h-[180px]" />}
+      {pending && agentId === 'claude' && account.authAction === 'sign-in' && account.terminalSessionId && <TerminalAuthInput key={`${account.terminalSessionId}:input`} sessionId={account.terminalSessionId} />}
     </section>
   )
 }

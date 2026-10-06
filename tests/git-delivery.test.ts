@@ -99,6 +99,24 @@ test('working tree reviews include only reported task paths', async () => {
   expect(diff).toMatchObject({ filesChanged: 2, additions: 2, deletions: 1, commits: [] })
 })
 
+test('detects working tree files changed since a task snapshot', async () => {
+  const { repo, manager } = await fixture()
+  await mkdir(join(repo, 'app'), { recursive: true })
+  await writeFile(join(repo, 'app', 'tracked.ts'), 'base\n')
+  await writeFile(join(repo, 'app', 'dirty.ts'), 'base\n')
+  git(repo, 'add', 'app')
+  git(repo, 'commit', '-m', 'Add app files')
+  await writeFile(join(repo, 'app', 'dirty.ts'), 'user change\n')
+  await writeFile(join(repo, 'untouched.txt'), 'user file\n')
+
+  await manager.captureWorkingTree('quick', join(repo, 'app'))
+  await writeFile(join(repo, 'app', 'tracked.ts'), 'agent change\n')
+  await writeFile(join(repo, 'app', 'created.ts'), 'agent file\n')
+
+  expect((await manager.takeWorkingTreeChanges('quick', join(repo, 'app'))).sort()).toEqual(['created.ts', 'tracked.ts'])
+  expect(await manager.takeWorkingTreeChanges('quick', join(repo, 'app'))).toEqual([])
+})
+
 test('discovers local and remote worktree bases and resolves the origin default without switching checkout', async () => {
   const { repo, manager } = await fixture()
   const remoteBase = git(repo, 'rev-parse', 'HEAD')

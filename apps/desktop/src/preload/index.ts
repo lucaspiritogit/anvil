@@ -25,12 +25,13 @@ const api = createAnvilApi(url, {
   },
   pickWallpaper: () => ipcRenderer.invoke('desktop:pick-wallpaper'),
   pickProjectFolder: async () => {
-    const selected = await ipcRenderer.invoke('desktop:pick-project-folder') as {
+    const selected = await ipcRenderer.invoke('desktop:pick-project-folder') as { name: string; path: string } | {
       token: string
       name: string
       entries: Array<{ path: string; type: 'file' | 'directory'; size: number; executable?: boolean }>
     } | null
     if (!selected) return null
+    if ('path' in selected) return selected
     return {
       name: selected.name,
       entries: selected.entries.map((entry, index) => ({

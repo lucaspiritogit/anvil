@@ -1,8 +1,10 @@
 import { dialog } from 'electron'
+import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { open, readdir, lstat, realpath } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
+import { promisify } from 'node:util'
 
 interface Entry {
   path: string
@@ -19,21 +21,34 @@ interface Selection {
 const MAX_ENTRIES = 20_000
 const MAX_READ_SIZE = 4 * 1024 * 1024
 const selections = new Map<string, Selection>()
+const ALWAYS_IGNORED = new Set(['node_modules'])
+const run = promisify(execFile)
 
-async function scanFolder(root: string, directory: string, entries: Entry[]): Promise<void> {
+async function gitIgnoredPaths(root: string): Promise<Set<string>> {
+  try {
+    const { stdout } = await run('git', ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], {
+      cwd: root,
+      maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true
+    })
+    return new Set(stdout.split('\0').filter(Boolean).map((path) => path.replace(/\/$/, '')))
+  } catch {
+    return new Set()
+  }
+}
+
+async function scanFolder(root: string, directory: string, entries: Entry[], ignored: Set<string>): Promise<void> {
   for (const item of await readdir(directory, { withFileTypes: true })) {
     const fullPath = join(directory, item.name)
     const entryPath = relative(root, fullPath).split('\\').join('/')
+    if (ignored.has(entryPath) || (item.isDirectory() && ALWAYS_IGNORED.has(item.name))) continue
     const info = await lstat(fullPath)
 
-    if (info.isSymbolicLink()) throw new Error(`The selected folder contains a symbolic link: ${entryPath}`)
     if (info.isDirectory()) {
       entries.push({ path: entryPath, type: 'directory', size: 0 })
-      await scanFolder(root, fullPath, entries)
+      await scanFolder(root, fullPath, entries, ignored)
     } else if (info.isFile()) {
       entries.push({ path: entryPath, type: 'file', size: info.size, executable: !!(info.mode & 0o111) })
-    } else {
-      throw new Error(`The selected folder contains an unsupported entry: ${entryPath}`)
     }
 
     if (entries.length > MAX_ENTRIES) {
@@ -42,13 +57,16 @@ async function scanFolder(root: string, directory: string, entries: Entry[]): Pr
   }
 }
 
-export async function pickProjectFolder(): Promise<{ token: string; name: string; entries: Entry[] } | null> {
+export async function pickProjectFolder(
+  local: boolean
+): Promise<{ name: string; path: string } | { token: string; name: string; entries: Entry[] } | null> {
   const chosen = await dialog.showOpenDialog({ title: 'Add project from disk', properties: ['openDirectory'] })
   if (chosen.canceled || !chosen.filePaths[0]) return null
 
   const root = await realpath(chosen.filePaths[0])
+  if (local) return { name: basename(root), path: root }
   const entries: Entry[] = []
-  await scanFolder(root, root, entries)
+  await scanFolder(root, root, entries, await gitIgnoredPaths(root))
   if (!entries.length) throw new Error('Choose a folder with project files')
 
   const token = randomUUID()

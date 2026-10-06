@@ -85,6 +85,7 @@ export async function resumeTaskTurn(
       // next attempt must reuse it instead of creating another branch.
       if (store.getTask(task.id)) store.updateTask(task.id, location)
     }
+    if (project && !usesManagedWorktree(task) && git?.isRepository) await gitDelivery.captureWorkingTree(task.id, project.path)
     const current = guard()
     const previousState = store.getTaskExecution(task.id)
     let running: Task | undefined

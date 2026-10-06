@@ -26,6 +26,7 @@ import type {
   ProjectGitStatus,
   ProjectBranches,
   ProjectFileList,
+  ProjectFolderListing,
   Task,
   TaskComment,
   TaskDiff,
@@ -49,7 +50,7 @@ export interface ClientHost {
   platform: string
   onSettingsOpen(handler: () => void): () => void
   pickWallpaper(): Promise<string | null>
-  pickProjectFolder(): Promise<ProjectFolderSelection | null>
+  pickProjectFolder?(): Promise<ProjectFolderSelection | null>
   openPath(path: string): Promise<string>
   openPullRequest(url: string): Promise<void>
   openLoginUrl(url: string): Promise<void>
@@ -61,11 +62,9 @@ export interface ClientHost {
   setServerTarget?(target: ServerTarget): Promise<DesktopServerConnectionState>
 }
 
-export interface ProjectFolderSelection {
-  name: string
-  entries: ProjectFolderEntry[]
-  dispose?: () => Promise<void>
-}
+export type ProjectFolderSelection =
+  | { name: string; path: string }
+  | { name: string; entries: ProjectFolderEntry[]; dispose?: () => Promise<void> }
 
 export interface ProjectFolderEntry {
   path: string
@@ -92,8 +91,10 @@ export function createAnvilApi(url: string, host: ClientHost) {
     workspaceId: string,
     onProgress: (done: number, total: number) => void
   ): Promise<Project | null> => {
+    if (!host.pickProjectFolder) throw new Error('This client cannot open folders from disk')
     const folder = await host.pickProjectFolder()
     if (!folder) return null
+    if ('path' in folder) return invoke('projects:add', { path: folder.path, workspaceId })
 
     let importId: string | undefined
     try {
@@ -229,7 +230,9 @@ export function createAnvilApi(url: string, host: ClientHost) {
     projects: {
       onChanged: (handler: (projects: Project[]) => void): (() => void) => subscribe('projects:changed', handler),
       list: (): Promise<Project[]> => invoke('projects:list'),
+      canPickFromDisk: !!host.pickProjectFolder,
       importFromDisk: importProjectFromDisk,
+      browse: (path?: string): Promise<ProjectFolderListing> => invoke('projects:browse', path ? { path } : {}),
       add: (path: string, workspaceId?: string): Promise<Project> => invoke('projects:add', { path, ...(workspaceId ? { workspaceId } : {}) }),
       clone: (url: string, workspaceId?: string): Promise<Project> => invoke('projects:clone', { url, ...(workspaceId ? { workspaceId } : {}) }),
       update: (input: IpcRequests['projects:update']): Promise<Project | undefined> => invoke('projects:update', input),

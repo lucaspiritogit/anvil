@@ -142,6 +142,8 @@ export class GitDeliveryManager {
   }
   async merge(): Promise<any> { return { status: 'merged', commit: 'd'.repeat(40) } }
   async getDiff(_path: string, base: string, head: string): Promise<any> { return { patch: `${base}..${head}`, commits: [] } }
+  async captureWorkingTree(): Promise<void> {}
+  async takeWorkingTreeChanges(): Promise<string[]> { return [] }
   async getWorkingTreeDiff(_path: string, paths: string[]): Promise<any> {
     return {
       patch: paths.map((path) => `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+new\n`).join(''),

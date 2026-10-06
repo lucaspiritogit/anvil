@@ -2,6 +2,8 @@ import type { TaskCommit, TaskDiff } from '@anvil/protocol/types'
 import type { IssueDiffSource } from './types'
 import { git } from './command'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 
 export interface WorkingTreeDiff extends TaskDiff {
   paths: string[]
@@ -83,6 +85,20 @@ export async function getWorkingTreeDiff(repoPath: string, paths: string[]): Pro
     additions: trackedStats.additions + untrackedDiffs.reduce((sum, diff) => sum + diff.stats.additions, 0),
     deletions: trackedStats.deletions + untrackedDiffs.reduce((sum, diff) => sum + diff.stats.deletions, 0)
   }
+}
+
+export async function workingTreeState(repoPath: string): Promise<Map<string, string>> {
+  const [prefix, status] = await Promise.all([
+    git(repoPath, ['rev-parse', '--show-prefix']),
+    git(repoPath, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames', '--', '.'])
+  ])
+  const base = prefix.stdout.trim()
+  const paths = status.stdout.split('\0').filter(Boolean).map((entry) => entry.slice(3))
+    .filter((path) => path.startsWith(base)).map((path) => path.slice(base.length))
+  return new Map(await Promise.all(paths.map(async (path) => {
+    const content = await readFile(resolve(repoPath, path)).catch(() => null)
+    return [path, content ? createHash('sha1').update(content).digest('hex') : ''] as const
+  })))
 }
 
 /** Review diff for one issue; issues without a recorded range fall back to the whole task diff. */

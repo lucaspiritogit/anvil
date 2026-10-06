@@ -191,6 +191,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   },
   'projects:list': none,
   'projects:add': object({ path: text(4096), workspaceId: optional(workspaceId) }),
+  'projects:browse': object({ path: optional(text(4096)) }),
   'projects:import-begin': object({ workspaceId, name: text(255), entries: array(object({ path: text(1024), type: oneOf('file', 'directory'), size: number(0, 16 * 1024 * 1024 * 1024), executable: optional(boolean) }), 20_000) }),
   'projects:import-chunk': object({ importId: id, index: number(0, 19_999), offset: number(0, 16 * 1024 * 1024 * 1024), bytes: bytes(4 * 1024 * 1024) }),
   'projects:import-finish': id,

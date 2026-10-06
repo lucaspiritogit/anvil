@@ -253,7 +253,7 @@ if (ownsInstance) app.whenReady().then(async () => {
         filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })
       return result.canceled ? null : result.filePaths[0] ?? null
     })
-    desktop.handle('desktop:pick-project-folder', pickProjectFolder)
+    desktop.handle('desktop:pick-project-folder', () => pickProjectFolder(connectionManager.state().target.mode === 'local'))
     desktop.handle('desktop:read-project-file', readProjectFile)
     desktop.handle('desktop:release-project-folder', releaseProjectFolder)
     desktop.handle('desktop:open-path', (path) => shell.openPath(path))

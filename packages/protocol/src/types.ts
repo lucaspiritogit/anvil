@@ -101,6 +101,13 @@ export interface Project {
 }
 
 /** A fresh, bounded snapshot for client-side fuzzy matching. No file contents. */
+export interface ProjectFolderListing {
+  path: string
+  parent: string | null
+  directories: Array<{ name: string; path: string; repository: boolean }>
+  truncated: boolean
+}
+
 export interface ProjectFileList {
   projectId: string
   paths: string[]

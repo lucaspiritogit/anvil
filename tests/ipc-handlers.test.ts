@@ -7,7 +7,8 @@ import { TaskImageStorage } from '../apps/server/src/task-image-storage'
 import { taskImages } from './task-image-fixture'
 import { MERGE_CONFLICT_MAX_FILE_BYTES, TASK_IMAGE_LIMITS } from '@anvil/protocol/types'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { taskState } from './task-state'
 import type { AgentProcessManager as RealAgentProcessManager } from '../apps/server/src/agents/process-manager'
@@ -457,6 +458,30 @@ test('updates projects, validates task references and selects supported agents a
   const codexSettings = call('settings:set', { defaultAgentId: 'codex', defaultModel: 'selected-model' })
   expect(codexSettings.defaultAgentId).toBe('codex')
   expect(codexSettings.defaultModel).toBe('selected-model')
+})
+
+test('browses server folders and adds an existing folder in place', async () => {
+  const { call } = setupIpc()
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'anvil-browse-')))
+  onTestCleanup(() => rmSync(root, { recursive: true, force: true }))
+  mkdirSync(join(root, 'Zulu'))
+  mkdirSync(join(root, 'alpha', '.git'), { recursive: true })
+  mkdirSync(join(root, '.hidden'))
+  writeFileSync(join(root, 'file.txt'), 'not a directory')
+  await expect(call('projects:browse', { path: 'relative/path' })).rejects.toThrow(/must be absolute/)
+  await expect(call('projects:browse', { path: join(root, 'file.txt') })).rejects.toThrow(/must be a directory/)
+  await expect(call('projects:browse', { path: root })).resolves.toEqual({
+    path: root,
+    parent: join(root, '..'),
+    directories: [
+      { name: 'alpha', path: join(root, 'alpha'), repository: true },
+      { name: 'Zulu', path: join(root, 'Zulu'), repository: false }
+    ],
+    truncated: false
+  })
+  const project: Project = await call('projects:add', { path: join(root, 'alpha', '..', 'alpha') })
+  expect(project).toMatchObject({ name: 'alpha', path: join(root, 'alpha') })
+  expect(existsSync(join(root, 'alpha', '.git'))).toBe(true)
 })
 
 test('clones HTTPS repositories into the selected workspace', async () => {

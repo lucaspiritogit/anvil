@@ -25,12 +25,13 @@ import { renameTaskBranch, restackBranch, finalizeBranch } from './task-branches
 import { rebase } from './rebase'
 import { getPullRequestPreview, pushPullRequestBranch } from './pull-requests'
 import { abortMergeConflict, completeMergeConflict, getMergeConflict, getMergePreview, getPushPreview, merge, push, saveMergeConflictFile, validateMergeConflict } from './merge'
-import { changedFiles, getDiff, getIssueDiff, getWorkingTreeDiff, scopedPaths } from './diff'
+import { changedFiles, getDiff, getIssueDiff, getWorkingTreeDiff, scopedPaths, workingTreeState } from './diff'
 
 export type { PreparedCheckout, RebasedBranch, FinalizeOptions, FinalizedCheckout, IssueDiffSource, MergeResult } from './types'
 
 export class GitDeliveryManager {
   private readonly context: GitContext
+  private readonly workingTrees = new Map<string, Map<string, string>>()
 
   constructor(worktreesRoot: GitContext['worktreesRoot'], remoteGit: typeof git = git) {
     this.context = { worktreesRoot, remoteGit, repoLocks: new Map() }
@@ -230,6 +231,20 @@ export class GitDeliveryManager {
 
   getWorkingTreeDiff(repoPath: string, paths: string[]) {
     return getWorkingTreeDiff(repoPath, paths)
+  }
+
+  async captureWorkingTree(taskId: string, repoPath: string): Promise<void> {
+    if (this.workingTrees.has(taskId)) return
+    const state = await workingTreeState(repoPath).catch(() => undefined)
+    if (state && !this.workingTrees.has(taskId)) this.workingTrees.set(taskId, state)
+  }
+
+  async takeWorkingTreeChanges(taskId: string, repoPath: string): Promise<string[]> {
+    const before = this.workingTrees.get(taskId)
+    if (!before) return []
+    this.workingTrees.delete(taskId)
+    const after = await workingTreeState(repoPath)
+    return [...after].filter(([path, hash]) => before.get(path) !== hash).map(([path]) => path)
   }
 
   commitPaths(repoPath: string, paths: string[], message: string): Promise<string> {

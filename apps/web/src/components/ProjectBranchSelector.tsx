@@ -31,6 +31,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
   const project = projects.find((project) => project.id === projectId)
   const selectProject = useStore((state) => state.selectProject)
   const importProject = useStore((state) => state.importProject)
+  const addProjectFolder = useStore((state) => state.addProjectFolder)
   const cloneProject = useStore((state) => state.cloneProject)
   const removeProject = useStore((state) => state.removeProject)
   const isRepository = useStore((state) => projectId ? state.gitStatusByProject[projectId]?.isRepository : false)
@@ -188,6 +189,12 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
     return added
   }
 
+  const addFolder = async (path: string) => {
+    const added = await addProjectFolder(path)
+    if (added) focusProjectTrigger()
+    return added
+  }
+
   const clone = async (url: string) => {
     const added = await cloneProject(url)
     if (added) focusProjectTrigger()
@@ -278,6 +285,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
         value={projectId}
         onChange={chooseProject}
         onImport={add}
+        onAddFolder={addFolder}
         onClone={clone}
         onRemove={removeProject}
         onBusyChange={setTransition}
