@@ -7,12 +7,13 @@ import { ComposerModelPicker } from './ComposerModelPicker'
 import { OverviewBackgroundPicker, type OverviewAppearance } from './OverviewBackgroundPicker'
 import { GitHubSettings } from './GitHubSettings'
 import { Select } from './Select'
-import { OptionCards, ToggleRow } from './settings-controls'
+import { asciiBar } from './AsciiMeter'
+import { OptionCards, SettingRow, SettingsPanel, ToggleRow } from './settings-controls'
 import { acceleratorFromEvent, IS_MAC } from '../keys'
 import { autosave, retryAutosave, useSettingsAutosave } from '../state/settings-autosave'
 import { useStore } from '../state/store'
 import { useComposerPreferences } from '../state/composer-preferences'
-import { btn, cn, field, hint, modal } from '../ui'
+import { btn, cn, field } from '../ui'
 import { DEFAULT_KEYBINDINGS, formatAccelerator, SHORTCUTS } from '@anvil/protocol/keybindings'
 import type { Keybindings, ShortcutDefinition } from '@anvil/protocol/keybindings'
 import { DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE, normalizeFontSize } from '@anvil/protocol/appearance'
@@ -86,17 +87,19 @@ function DesktopServerConnectionSettings(): JSX.Element | null {
   }
 
   return (
-    <section aria-labelledby="desktop-server-target" className="mb-6 border-b border-line pb-6">
-      <h3 id="desktop-server-target" className="mb-1 font-medium">Connect to remote server</h3>
+    <section aria-labelledby="desktop-server-target" className="mb-6 border border-line bg-raised">
+      <h3 id="desktop-server-target" className="border-b border-line px-4 py-2.5 font-mono text-[11px] font-medium tracking-[0.12em] uppercase text-dim">Connect to remote server</h3>
+      <div className="px-4 pt-3.5">
       <p className="mb-4 text-xs text-dim">Choose the server used by this Electron client. Applying a change verifies the server, saves the choice for future launches, and reloads Anvil to reconnect.</p>
 
-      <div className="mb-4 border border-line bg-raised p-3 text-xs">
-        <span className="block text-dim">Active client target</span>
+      <div className="mb-1 border border-line-strong bg-canvas p-3 text-xs">
+        <span className="block font-mono text-[10px] tracking-[0.12em] text-dim uppercase">Active client target</span>
         {connection
           ? <><strong className="mt-1 block">{connection.target.mode === 'local' ? 'Built-in local server' : 'Remote server'}</strong><code className="mt-1 block break-all text-dim">{connection.url}</code></>
           : <span role="status" className="mt-1 block text-dim">Loading desktop server target…</span>}
       </div>
 
+      </div>
       <OptionCards
         ariaLabel="Electron server target"
         name="electron-server-target"
@@ -113,6 +116,7 @@ function DesktopServerConnectionSettings(): JSX.Element | null {
         ]}
       />
 
+      <div className="px-4 pb-3.5">
       {mode === 'remote' ? (
         <form noValidate onSubmit={(event) => { event.preventDefault(); void apply({ mode: 'remote', url: remoteUrl }) }}>
           <label className={field.wrap}>
@@ -147,6 +151,7 @@ function DesktopServerConnectionSettings(): JSX.Element | null {
       {pending && <p role="status" className="mt-3 text-xs text-dim">Verifying the server before reconnecting…</p>}
       {reconnecting && <p role="status" className="mt-3 text-xs text-ok">Server ready. Reloading Anvil…</p>}
       {requestError && <p role="alert" className="mt-3 text-xs text-danger">{requestError}</p>}
+      </div>
     </section>
   )
 }
@@ -269,9 +274,10 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
   return (
     <div>
       <DesktopServerConnectionSettings />
-      <section aria-labelledby="server-access-settings">
-      <h3 id="server-access-settings" className="mb-1 font-medium">Server access</h3>
-      <p className="mb-4 text-xs text-dim">Configure how other devices can reach the server currently shown above.</p>
+      <section aria-labelledby="server-access-settings" className="mb-6 border border-line bg-raised">
+      <h3 id="server-access-settings" className="border-b border-line px-4 py-2.5 font-mono text-[11px] font-medium tracking-[0.12em] uppercase text-dim">Server access</h3>
+      <p className="border-b border-line px-4 py-3 text-xs text-dim">Configure how other devices can reach the server currently shown above.</p>
+      <div className="divide-y divide-line">
       <ToggleRow
         title="Allow other devices"
         description={<>Make Anvil available over HTTP on port 4780 to devices on this local network. Remote requests require the username <code>anvil</code> and your password.</>}
@@ -307,6 +313,8 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
       >
         {status?.headlessAccess && <small className="mt-2 block text-xs text-dim">Connection access is managed by the server startup command.</small>}
       </ToggleRow>
+      </div>
+      <div className="border-t border-line px-4 py-3.5 empty:hidden">
       {status?.tailscaleUrl && (
         <label className={field.wrap}>
           <span className={field.label}>Tailscale HTTPS address</span>
@@ -316,7 +324,7 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
       )}
 
       {!status && !requestError && <p role="status" className="text-xs text-dim">Loading connection settings…</p>}
-      {status && !status.headlessAccess && <div className="mb-4 flex items-center justify-between gap-3 text-xs text-dim">
+      {status && !status.headlessAccess && <div className="flex items-center justify-between gap-3 text-xs text-dim">
         <p>{status.passwordConfigured ? 'A server password is configured.' : 'Set a server password before enabling LAN or Tailscale access.'}</p>
         {status.passwordConfigured && passwordPurpose === null && (
           <button className={cn(btn.ghost, 'flex-none')} disabled={pending} onClick={() => {
@@ -370,6 +378,7 @@ function ConnectionsSettings({ workspaceId }: { workspaceId: string | null }): J
       )}
       {pending && <p role="status" className="mt-4 text-xs text-dim">Changing connection access…</p>}
       {(requestError || status?.error) && <p role="alert" className="mt-4 text-xs text-danger">{requestError || status?.error}</p>}
+      </div>
       </section>
     </div>
   )
@@ -387,9 +396,9 @@ function ShortcutField({
 }): JSX.Element {
   const [capturing, setCapturing] = useState(false)
   return (
-    <div className="flex gap-3 items-center py-2 border-t border-line [&:first-of-type]:border-t-0">
-      <span className="flex flex-1 flex-col gap-0.5 min-w-0">
-        <strong>{shortcut.label}</strong>
+    <div className="flex items-center gap-3 px-4 py-3">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <strong className="text-sm font-medium">{shortcut.label}</strong>
         <small className="text-xs text-dim">{shortcut.hint}</small>
       </span>
       {accelerator !== shortcut.defaultAccelerator && (
@@ -399,8 +408,8 @@ function ShortcutField({
       )}
       <button
         className={cn(
-          'flex-none min-w-[92px] px-2.5 py-[5px] font-mono text-xs bg-canvas border',
-          capturing ? 'text-accent border-accent' : 'text-fg border-line hover:border-accent'
+          'h-[30px] min-w-[92px] flex-none border border-b-2 px-2.5 font-mono text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+          capturing ? 'border-accent bg-ember-950 text-ember-400' : 'border-line-strong bg-canvas text-fg hover:border-dim'
         )}
         onClick={() => setCapturing(true)}
         onBlur={() => setCapturing(false)}
@@ -491,72 +500,72 @@ export function SettingsPage(): JSX.Element {
 
   const currentSection = SETTINGS_SECTIONS.find((item) => item.id === section)!
 
+  const statusTone = failed.length > 0 ? 'bg-danger-tint text-danger-text' : saving ? 'bg-run-tint text-run-text' : saved ? 'bg-ok-tint text-ok-text' : 'bg-overlay text-dim'
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-canvas" data-testid="settings-page" ref={pageRef} tabIndex={-1}>
-      <main className="min-h-0 flex-1 overflow-y-auto px-8 py-7 max-[600px]:px-5" aria-labelledby="settings-section-title">
-        <div className="mx-auto max-w-[720px]">
-          <p className="mb-3 break-words text-xs text-dim" aria-label="Settings workspace">Workspace: {workspaceName}</p>
-          <h2 id="settings-section-title" className="text-2xl font-semibold tracking-tight">{currentSection.label}</h2>
-          <p className="mb-7 mt-2 text-sm text-dim">{currentSection.description}</p>
-          <div aria-live="polite" className="mb-6 min-w-0 space-y-2 break-words text-xs">
-            {projectRemovalError && <p role="alert" className="text-danger">{projectRemovalError}</p>}
-            {failed.length > 0 && <p role="alert" className="text-danger">Could not save settings. Your changes are retained. <button className={btn.text} onClick={() => failed.forEach(([key]) => retryAutosave(key))}>Retry</button></p>}
-            <span role="status" className={hint}>{saving ? 'Saving settings…' : saved ? 'Saved' : 'Changes save automatically.'}</span>
+      <main className="min-h-0 flex-1 overflow-y-auto px-8 py-8 max-[600px]:px-5" aria-labelledby="settings-section-title">
+        <div className="mx-auto max-w-[760px]">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <p className="min-w-0 break-words font-mono text-[11px] tracking-[0.12em] text-dim uppercase" aria-label="Settings workspace">Workspace: <span className="text-fg normal-case tracking-normal">{workspaceName}</span></p>
+            <span className={cn('inline-flex h-[22px] shrink-0 items-center gap-1.5 px-2 font-mono text-[11px]', statusTone)}>
+              <span aria-hidden="true">{failed.length > 0 ? '✕' : saving ? '⠿' : saved ? '✓' : '·'}</span>
+              <span role="status">{saving ? 'Saving settings…' : saved ? 'Saved' : 'Changes save automatically.'}</span>
+            </span>
           </div>
-          {!settings && <p role="status" className="mb-4 text-dim">Loading settings…</p>}
+          <h2 id="settings-section-title" className="font-mono text-[28px] font-semibold tracking-[-0.02em]">{currentSection.label}</h2>
+          <p className="mb-6 mt-2 text-sm leading-normal text-dim">{currentSection.description}</p>
+          {(projectRemovalError || failed.length > 0) && <div aria-live="polite" className="mb-6 min-w-0 space-y-2 break-words border border-danger/40 bg-danger-tint px-4 py-3 text-xs">
+            {projectRemovalError && <p role="alert" className="text-danger-text">{projectRemovalError}</p>}
+            {failed.length > 0 && <p role="alert" className="text-danger-text">Could not save settings. Your changes are retained. <button className={btn.text} onClick={() => failed.forEach(([key]) => retryAutosave(key))}>Retry</button></p>}
+          </div>}
+          {!settings && <p role="status" className="mb-4 font-mono text-xs text-dim">Loading settings…</p>}
           {(section === 'general' || section === 'source-control') && projects.length > 0 && (
-            <label className={cn(field.wrap, 'mb-6')}>
-              <span className={field.label}>Project</span>
-              <Select aria-label="Project" value={activeProject?.id ?? ''} onChange={(event) => selectProject(event.target.value)}>
-                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-              </Select>
-            </label>
+            <SettingsPanel title="Active project">
+              <SettingRow title="Project" description="Project settings below apply to this project.">
+                <label className="block min-w-[200px]">
+                  <span className="sr-only">Project</span>
+                  <Select aria-label="Project" value={activeProject?.id ?? ''} onChange={(event) => selectProject(event.target.value)}>
+                    {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  </Select>
+                </label>
+              </SettingRow>
+            </SettingsPanel>
           )}
           <fieldset className="min-w-0" disabled={!settings}>
-            {section === 'providers' && <div className="space-y-6">
-              <section aria-labelledby="session-default-title" className="border border-line px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 id="session-default-title" className="text-sm font-medium">Default for new sessions</h3>
-                    <p className="mt-1 text-xs text-dim">Provider and model used when you start a task in this workspace.</p>
-                  </div>
-                  <div className="min-w-0 max-w-full border border-line bg-canvas">
-                    <ComposerModelPicker
-                      agents={agents}
-                      agentId={composer.agentId}
-                      selectedModels={composer.modelsByAgent}
-                      value={composer.modelsByAgent[composer.agentId] ?? ''}
-                      onChange={composer.setSelection}
-                    />
-                  </div>
-                </div>
-                {composer.saveError && <p role="alert" className="mt-2 text-xs text-danger">{composer.saveError}</p>}
-              </section>
+            {section === 'providers' && <>
+              <SettingsPanel title="Session defaults">
+                <SettingRow title={<span id="session-default-title">Default for new sessions</span>} description="Provider and model used when you start a task in this workspace.">
+                  <ComposerModelPicker
+                    agents={agents}
+                    agentId={composer.agentId}
+                    selectedModels={composer.modelsByAgent}
+                    value={composer.modelsByAgent[composer.agentId] ?? ''}
+                    onChange={composer.setSelection}
+                  />
+                </SettingRow>
+                {composer.saveError && <p role="alert" className="px-4 py-2 text-xs text-danger">{composer.saveError}</p>}
+              </SettingsPanel>
               <WorkspaceAgentAccounts />
-              <section aria-labelledby="session-context-title" className="border border-line">
-                <div className="px-4 py-3">
-                  <label className="flex cursor-pointer items-center justify-between gap-4">
-                    <span className="min-w-0">
-                      <span id="session-context-title" className="block text-sm font-medium">Auto-compact task context</span>
-                      <span className="mt-1 block text-xs text-dim">Compact the model session before resuming when it reaches the threshold.</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      className="size-4 shrink-0 accent-accent"
-                      checked={autoCompactContext}
-                      onChange={(event) => {
-                        setAutoCompactContext(event.target.checked)
-                        persist({ autoCompactContext: event.target.checked })
-                      }}
-                    />
-                  </label>
-                </div>
-                <label className={cn('flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3', !autoCompactContext && 'opacity-50')}>
-                  <span className="text-xs text-dim">Context threshold</span>
-                  <span className="inline-flex h-8 w-28 shrink-0 items-center border border-line bg-canvas focus-within:border-accent">
+              <SettingsPanel title="Context">
+                <ToggleRow
+                  title={<span id="session-context-title">Auto-compact task context</span>}
+                  description="Compact the model session before resuming when it reaches the threshold."
+                  checked={autoCompactContext}
+                  onChange={(value) => {
+                    setAutoCompactContext(value)
+                    persist({ autoCompactContext: value })
+                  }}
+                />
+                <SettingRow
+                  title="Context threshold"
+                  description={<span className="font-mono">compacts at <span aria-hidden="true" className="tracking-[-0.02em] text-warn">{asciiBar(contextCompactionThreshold / 100, 10)}</span> {contextCompactionThreshold}%</span>}
+                  disabled={!autoCompactContext}
+                >
+                  <label className="inline-flex h-8 w-28 shrink-0 items-center border border-line-strong bg-canvas focus-within:border-accent">
                     <input
                       aria-label="Context threshold (%)"
-                      className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-right text-sm text-fg tabular-nums outline-none disabled:cursor-not-allowed"
+                      className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-right font-mono text-sm text-fg tabular-nums outline-none disabled:cursor-not-allowed"
                       type="number" min={1} max={100} step={1} disabled={!autoCompactContext}
                       value={contextCompactionThreshold} onChange={(event) => {
                         const value = Number(event.target.value)
@@ -565,17 +574,17 @@ export function SettingsPage(): JSX.Element {
                         persist({ contextCompactionThreshold: value })
                       }}
                     />
-                    <span aria-hidden="true" className="pr-2.5 text-xs text-dim">%</span>
-                  </span>
-                </label>
-              </section>
-            </div>}
-            {section === 'general' && <>
-              {activeProject && (
-                <div className="flex gap-3 items-center justify-between p-3 mt-2 text-xs text-dim border border-line">
-                  <span>
-                    Remove <strong>{activeProject.name}</strong> and its task history
-                  </span>
+                    <span aria-hidden="true" className="pr-2.5 font-mono text-xs text-dim">%</span>
+                  </label>
+                </SettingRow>
+              </SettingsPanel>
+            </>}
+            {section === 'general' && activeProject && (
+              <SettingsPanel title={<><span aria-hidden="true">▲ </span>Danger zone</>} tone="danger">
+                <SettingRow
+                  title={<>Remove <strong className="font-mono">{activeProject.name}</strong> and its task history</>}
+                  description="Deletes its task history from Anvil. Files on disk stay."
+                >
                   <button
                     className={btn.danger}
                     onClick={() => {
@@ -586,13 +595,11 @@ export function SettingsPage(): JSX.Element {
                   >
                     Remove
                   </button>
-                </div>
-              )}
-
-            </>}
+                </SettingRow>
+              </SettingsPanel>
+            )}
             <div hidden={section !== 'source-control'}>
-              <div className={field.wrap}>
-                <span className={field.label}>Rebase mode</span>
+              <SettingsPanel title="Rebase mode">
                 <OptionCards
                   ariaLabel="Rebase mode"
                   value={rebaseMode}
@@ -614,41 +621,36 @@ export function SettingsPage(): JSX.Element {
                     }
                   ]}
                 />
-              </div>
-
-              <ToggleRow
-                title="Ask before handing a rebase to an agent"
-                checked={confirmRebase}
-                onChange={(value) => {
-                  setConfirmRebase(value)
-                  persist({ confirmRebase: value })
-                }}
-              />
+                <ToggleRow
+                  title="Ask before handing a rebase to an agent"
+                  checked={confirmRebase}
+                  onChange={(value) => {
+                    setConfirmRebase(value)
+                    persist({ confirmRebase: value })
+                  }}
+                />
+              </SettingsPanel>
               <GitHubSettings />
             </div>
-            {section === 'shortcuts' && <>
-              <p className="mb-4 text-xs text-dim">Select a shortcut, then press the keys you want to use. Escape cancels.</p>
-              <div className={modal.section}>
-                {SHORTCUTS.map((shortcut) => (
-                  <ShortcutField
-                    key={shortcut.id}
-                    shortcut={shortcut}
-                    accelerator={keybindings[shortcut.id]}
-                    onChange={(accelerator) => {
-                      const value = { ...keybindings, [shortcut.id]: accelerator }
-                      setKeybindings(value)
-                      persist({ keybindings: value })
-                    }}
-                  />
-                ))}
+            {section === 'shortcuts' && <SettingsPanel title="Shortcuts" aside="Select a shortcut, then press the keys you want to use. Escape cancels.">
+              {SHORTCUTS.map((shortcut) => (
+                <ShortcutField
+                  key={shortcut.id}
+                  shortcut={shortcut}
+                  accelerator={keybindings[shortcut.id]}
+                  onChange={(accelerator) => {
+                    const value = { ...keybindings, [shortcut.id]: accelerator }
+                    setKeybindings(value)
+                    persist({ keybindings: value })
+                  }}
+                />
+              ))}
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="text-sm text-dim">Open settings</span>
+                <kbd className="border border-line px-2.5 py-1 font-mono text-xs text-dim">{formatAccelerator('Mod+,', IS_MAC)}</kbd>
               </div>
-
-              <div className="flex items-center justify-between gap-3 border-t border-line py-3">
-                <span>Open settings</span>
-                <kbd className="border border-line bg-raised px-2.5 py-1 font-mono text-xs">{formatAccelerator('Mod+,', IS_MAC)}</kbd>
-              </div>
-            </>}
-            {section === 'memory' && <>
+            </SettingsPanel>}
+            {section === 'memory' && <SettingsPanel title="Project memory">
               <ToggleRow
                 title="Enable project memory"
                 description="Save completed task context and include relevant memories in future tasks. Off by default."
@@ -659,10 +661,10 @@ export function SettingsPage(): JSX.Element {
                   persist({ memoryEnabled: value })
                 }}
               />
-              {memoryEnabled && <div className="mt-6 space-y-5">
+              {memoryEnabled && <div className="grid gap-x-4 px-4 pt-3.5 min-[640px]:grid-cols-2">
                 <label className={field.wrap}>
                   <span className={field.label}>Embedding model</span>
-                  <input aria-label="Embedding model" className={field.sized} list="embedding-models" value={memoryEmbeddingModel}
+                  <input aria-label="Embedding model" className={cn(field.sized, 'font-mono text-xs')} list="embedding-models" value={memoryEmbeddingModel}
                     onChange={(event) => {
                       const value = event.target.value
                       setMemoryEmbeddingModel(value)
@@ -673,7 +675,7 @@ export function SettingsPage(): JSX.Element {
                 </label>
                 <label className={field.wrap}>
                   <span className={field.label}>Ollama base URL</span>
-                  <input aria-label="Ollama base URL" className={field.sized} type="url" value={ollamaBaseUrl}
+                  <input aria-label="Ollama base URL" className={cn(field.sized, 'font-mono text-xs')} type="url" value={ollamaBaseUrl}
                     onChange={(event) => {
                       const value = event.target.value
                       setOllamaBaseUrl(value)
@@ -682,55 +684,62 @@ export function SettingsPage(): JSX.Element {
                   <small className={field.hint}>Use the OpenAI-compatible endpoint, including /v1.</small>
                 </label>
               </div>}
-            </>}
+            </SettingsPanel>}
             {section === 'connections' && <ConnectionsSettings workspaceId={workspaceId} />}
             {section === 'display' && <>
-              <label className={field.wrap}>
-                <span className={field.label}>Font size</span>
-                <Select aria-label="Font size" value={fontSize} onChange={(event) => {
-                  const value = Number(event.target.value)
-                  setFontSize(value)
-                  persist({ fontSize: value })
-                }}>
-                  {Array.from({ length: MAX_FONT_SIZE - MIN_FONT_SIZE + 1 }, (_, index) => MIN_FONT_SIZE + index).map((size) => (
-                    <option key={size} value={size}>{size} px{size === DEFAULT_FONT_SIZE ? ' (Default)' : ''}</option>
-                  ))}
-                </Select>
-                <small className={field.hint}>Scales text and controls across Anvil automatically.</small>
-              </label>
-              <div className="mb-7 border border-line bg-raised p-5" style={{ fontSize: fontSize * DEFAULT_FONT_SIZE / normalizeFontSize(settings?.fontSize) }} aria-label="Font size preview">
-                <p className="font-medium">Your next task starts here.</p>
-                <p className="mt-1 text-dim">Add a feature or fix a bug.</p>
-              </div>
-              <section className="mb-7" aria-labelledby="diff-themes-heading">
-                <h3 id="diff-themes-heading" className="mb-1 font-medium">Diff themes</h3>
-                <p className="mb-4 text-xs text-dim">Choose the Shiki theme used to highlight code changes. The dark theme applies when the system is dark and the light theme when it is light.</p>
-                <div className="grid gap-4 min-[560px]:grid-cols-2">
-                  <label className={field.wrap}>
-                    <span className={field.label}>Dark diff theme</span>
-                    <Select aria-label="Dark diff theme" value={diffThemes.dark} onChange={(event) => {
-                      const value = { ...diffThemes, dark: event.target.value }
-                      setDiffThemes(value)
-                      persist({ diffThemes: value })
+              <SettingsPanel title="Text">
+                <SettingRow title="Font size" description="Scales text and controls across Anvil automatically.">
+                  <label className="block min-w-[160px]">
+                    <span className="sr-only">Font size</span>
+                    <Select aria-label="Font size" value={fontSize} onChange={(event) => {
+                      const value = Number(event.target.value)
+                      setFontSize(value)
+                      persist({ fontSize: value })
                     }}>
-                      {DIFF_THEME_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
+                      {Array.from({ length: MAX_FONT_SIZE - MIN_FONT_SIZE + 1 }, (_, index) => MIN_FONT_SIZE + index).map((size) => (
+                        <option key={size} value={size}>{size} px{size === DEFAULT_FONT_SIZE ? ' (Default)' : ''}</option>
+                      ))}
                     </Select>
                   </label>
-                  <label className={field.wrap}>
-                    <span className={field.label}>Light diff theme</span>
-                    <Select aria-label="Light diff theme" value={diffThemes.light} onChange={(event) => {
-                      const value = { ...diffThemes, light: event.target.value }
-                      setDiffThemes(value)
-                      persist({ diffThemes: value })
-                    }}>
-                      {DIFF_THEME_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
-                    </Select>
-                  </label>
+                </SettingRow>
+                <div className="px-4 py-3.5">
+                  <div className="border border-dashed border-line-strong bg-canvas px-4 py-3.5" style={{ fontSize: fontSize * DEFAULT_FONT_SIZE / normalizeFontSize(settings?.fontSize) }} aria-label="Font size preview">
+                    <p className="font-medium">Your next task starts here.</p>
+                    <p className="mt-1 text-dim">Add a feature or fix a bug.</p>
+                  </div>
                 </div>
-                <div className="mt-4" aria-label="Diff theme preview">
-                  <Suspense fallback={<p className="text-xs text-dim">Loading diff preview…</p>}>
-                    <DiffThemePreview themes={diffThemes} />
-                  </Suspense>
+              </SettingsPanel>
+              <section className="mb-6 border border-line bg-raised" aria-labelledby="diff-themes-heading">
+                <h3 id="diff-themes-heading" className="border-b border-line px-4 py-2.5 font-mono text-[11px] font-medium tracking-[0.12em] text-dim uppercase">Diff themes</h3>
+                <div className="px-4 py-3.5">
+                  <p className="mb-4 text-xs leading-normal text-dim">Choose the Shiki theme used to highlight code changes. The dark theme applies when the system is dark and the light theme when it is light.</p>
+                  <div className="grid gap-x-4 min-[560px]:grid-cols-2">
+                    <label className={field.wrap}>
+                      <span className={field.label}>Dark diff theme</span>
+                      <Select aria-label="Dark diff theme" value={diffThemes.dark} onChange={(event) => {
+                        const value = { ...diffThemes, dark: event.target.value }
+                        setDiffThemes(value)
+                        persist({ diffThemes: value })
+                      }}>
+                        {DIFF_THEME_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
+                      </Select>
+                    </label>
+                    <label className={field.wrap}>
+                      <span className={field.label}>Light diff theme</span>
+                      <Select aria-label="Light diff theme" value={diffThemes.light} onChange={(event) => {
+                        const value = { ...diffThemes, light: event.target.value }
+                        setDiffThemes(value)
+                        persist({ diffThemes: value })
+                      }}>
+                        {DIFF_THEME_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
+                      </Select>
+                    </label>
+                  </div>
+                  <div className="mt-1" aria-label="Diff theme preview">
+                    <Suspense fallback={<p className="text-xs text-dim">Loading diff preview…</p>}>
+                      <DiffThemePreview themes={diffThemes} />
+                    </Suspense>
+                  </div>
                 </div>
               </section>
               {settings && <OverviewBackgroundPicker value={appearance} onChange={(value) => {
@@ -739,11 +748,9 @@ export function SettingsPage(): JSX.Element {
               }} />}
             </>}
           </fieldset>
+          <p className="mt-8 text-right font-mono text-[11px] text-faint" aria-label="Anvil version">anvil v{version}</p>
         </div>
       </main>
-      <footer className="shrink-0 px-5 py-3 text-right text-[11px] text-dim" aria-label="Anvil version">
-        Anvil v{version}
-      </footer>
     </div>
   )
 }
