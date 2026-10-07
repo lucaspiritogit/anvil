@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { contextOccupancy, CONTEXT_COMPACTED } from '@anvil/protocol/task-context'
+import { structuredPatchEdit, textEdit, type TaskEventEdit } from '@anvil/protocol/task-event-edits'
 import type { TaskEventCategory, TaskUsage } from '@anvil/protocol/types'
 import type { TaskEvent, TaskInput } from './agent-executor'
 import { StreamingTextOutput } from './streaming-text-output'
@@ -203,8 +204,9 @@ export class ClaudeCodeOutput {
         this.snapshot(`${id}:${index}`, block.thinking, 'thinking')
       } else if (block.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string') {
         this.flush()
-        this.toolInputs.set(block.id, { name: block.name, input: claudeObject(block.input) })
-        this.tools.use(block.id, block.name, toolInputDescription(block.input))
+        const input = claudeObject(block.input)
+        this.toolInputs.set(block.id, { name: block.name, input })
+        this.tools.use(block.id, block.name, toolInputDescription(block.input), claudeToolEdits(block.name, input))
       }
     })
   }
@@ -242,6 +244,29 @@ export class ClaudeCodeOutput {
       if (failed || !tool || !['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(tool.name)) continue
       const path = tool.input.file_path ?? tool.input.notebook_path
       if (typeof path === 'string') this.changedFiles.add(path)
+      const patch = user.content.length === 1 ? claudeObject(message.tool_use_result).structuredPatch : undefined
+      if (typeof path === 'string' && Array.isArray(patch) && patch.length) {
+        const hunks = patch.map(claudeObject).filter((hunk) => typeof hunk.oldStart === 'number' && typeof hunk.newStart === 'number' && Array.isArray(hunk.lines))
+          .map((hunk) => ({ oldStart: hunk.oldStart as number, oldLines: Number(hunk.oldLines) || 0, newStart: hunk.newStart as number, newLines: Number(hunk.newLines) || 0,
+            lines: (hunk.lines as unknown[]).filter((line): line is string => typeof line === 'string') }))
+        if (hunks.length) this.tools.edits(block.tool_use_id, [structuredPatchEdit(path, hunks)])
+      }
     }
   }
+}
+
+function claudeToolEdits(name: string, input: ClaudeObject): TaskEventEdit[] | undefined {
+  const path = input.file_path
+  if (typeof path !== 'string') return undefined
+  if (name === 'Write' && typeof input.content === 'string') return [textEdit(path, '', input.content)]
+  const changes = name === 'Edit' ? [input] : name === 'MultiEdit' && Array.isArray(input.edits) ? input.edits.map(claudeObject) : []
+  const edits = changes.filter((change) => typeof change.old_string === 'string' && typeof change.new_string === 'string')
+    .map((change) => textEdit(path, change.old_string as string, change.new_string as string, false))
+  if (!edits.length) return undefined
+  return [{
+    path,
+    additions: edits.reduce((sum, edit) => sum + edit.additions, 0),
+    deletions: edits.reduce((sum, edit) => sum + edit.deletions, 0),
+    hunks: edits.map((edit) => edit.hunks).join('\n')
+  }]
 }

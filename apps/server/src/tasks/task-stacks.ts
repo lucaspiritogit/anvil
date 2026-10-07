@@ -1,4 +1,4 @@
-import type { Task, TaskStackTarget } from '@anvil/protocol/types'
+import type { Task, TaskStackOrigin, TaskStackTarget } from '@anvil/protocol/types'
 import type { TaskContext } from './context'
 import type { Store } from '../store'
 import { taskOperationActive, withTaskOperation } from './operations'
@@ -78,7 +78,7 @@ export class TaskStacks {
     return task
   }
 
-  async stack(taskId: string, parentId: string): Promise<Task> {
+  async stack(taskId: string, parentId: string, origin: TaskStackOrigin = 'manual'): Promise<Task> {
     const { store } = this.context
     return withTaskOperation(store, taskId, 'stack', async (check) => {
       const task = check()
@@ -91,7 +91,7 @@ export class TaskStacks {
       }
       check()
       const currentParent = requireStackParent(store, task, parentId)
-      return this.update(taskId, { restackTarget: { ...target, branch: currentParent.branchName ?? target.branch, parentTaskId: parentId }, restackState: 'pending', stackSuggestion: undefined })
+      return this.update(taskId, { restackTarget: { ...target, branch: currentParent.branchName ?? target.branch, parentTaskId: parentId }, restackState: 'pending', stackOrigin: origin, stackSuggestion: undefined })
     }).then(async () => {
       await this.apply(taskId)
       const task = store.getTask(taskId)
@@ -121,11 +121,11 @@ export class TaskStacks {
         const child = store.getTask(original.id)
         if (!child || child.parentTaskId !== parentId && child.restackTarget?.parentTaskId !== parentId) continue
         if (!child.baseCommit) {
-          this.update(child.id, { parentTaskId: undefined, restackState: undefined, restackTarget: undefined })
+          this.update(child.id, { parentTaskId: undefined, stackOrigin: undefined, restackState: undefined, restackTarget: undefined })
           continue
         }
         const oldBase = removed ? await gitDelivery.commonBase(projectPath, child.baseCommit, target.commit) : child.baseCommit
-        this.update(child.id, { parentTaskId: undefined, restackState: 'pending', restackTarget: { ...target, oldBase } })
+        this.update(child.id, { parentTaskId: undefined, stackOrigin: undefined, restackState: 'pending', restackTarget: { ...target, oldBase } })
       }
     })
     for (const child of store.getTasks(parent.workspaceId).filter((task) => task.projectId === parent.projectId && task.restackState === 'pending')) await this.apply(child.id)
@@ -165,7 +165,7 @@ export class TaskStacks {
                 baseCommit: target.commit, baseBranch: target.branch, headCommit: result.headCommit,
                 filesChanged: result.filesChanged, additions: result.additions, deletions: result.deletions,
                 ...(state?.phase === 'complete' ? { deliveryStatus: result.hasChanges ? 'reviewable' : 'no_changes' } : {}),
-                parentTaskId: target.parentTaskId, restackState: undefined, restackTarget: undefined, deliveryError: undefined
+                parentTaskId: target.parentTaskId, ...(target.parentTaskId ? {} : { stackOrigin: undefined }), restackState: undefined, restackTarget: undefined, deliveryError: undefined
               })
               for (const child of store.getTasks(current.workspaceId).filter((entry) => (entry.restackTarget?.parentTaskId ?? entry.parentTaskId) === taskId)) {
                 this.update(child.id, { restackState: 'pending', restackTarget: { commit: result.headCommit, branch: current.branchName!, parentTaskId: taskId } })
@@ -199,7 +199,7 @@ export class TaskStacks {
       const current = store.getTask(taskId)
       if (!current || current.parentTaskId || current.restackState) return
       try {
-        await this.stack(taskId, candidate.parentTaskId)
+        await this.stack(taskId, candidate.parentTaskId, 'auto')
         return
       } catch {
         // A task or candidate can change while changed files are being inspected.

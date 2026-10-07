@@ -268,6 +268,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       }
       if (input.parentTaskId) requireStackParent(store, task, input.parentTaskId)
       task.parentTaskId = input.parentTaskId
+      if (input.parentTaskId) task.stackOrigin = 'manual'
       requireProjectCheckoutAvailable(store, task)
       store.addTask(task)
       try {

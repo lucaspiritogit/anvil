@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { TaskEvent as OutputEvent } from '@anvil/protocol/types'
+import type { TaskEventEdit } from '@anvil/protocol/task-event-edits'
 import type { TaskEvent, TaskInput } from './agent-executor'
 
 const ANSI = /\u001b\[[0-9;?]*[ -\/]*[@-~]/g
@@ -29,10 +30,16 @@ export class ToolOutput {
     this.issueId = input.issueId
   }
 
-  use(callId: string, name: string, description = ''): void {
-    this.publish(callId, 'use', `${name.replace(/\s+/g, ' ').trim()}${description ? `\n${description}` : ''}`, false)
+  use(callId: string, name: string, description = '', edits?: TaskEventEdit[]): void {
+    const previous = this.calls.get(callId)?.use
+    this.publish(callId, 'use', `${name.replace(/\s+/g, ' ').trim()}${description ? `\n${description}` : ''}`, false, edits ?? previous?.edits)
     // Reserve the result beside its call even when several tools run concurrently.
     if (!this.calls.get(callId)?.result) this.result(callId, '')
+  }
+
+  edits(callId: string, edits: TaskEventEdit[]): void {
+    const previous = this.calls.get(callId)?.use
+    if (previous) this.publish(callId, 'use', previous.text, false, edits)
   }
 
   result(callId: string, text: string, failed = false): void {
@@ -47,16 +54,18 @@ export class ToolOutput {
     this.result(callId, text ?? (this.calls.get(callId)?.result?.text || status), failed)
   }
 
-  private publish(callId: string, slot: 'use' | 'result', text: string, failed: boolean): void {
+  private publish(callId: string, slot: 'use' | 'result', text: string, failed: boolean, edits?: TaskEventEdit[]): void {
     const call = this.calls.get(callId) ?? {}
     const previous = call[slot]
     const category = slot === 'use' ? 'tool_use' : failed ? 'error' : 'tool_result'
     const cleaned = text.replace(ANSI, '').replace(/\r(?=\n|$)/g, '')
-    if (previous?.text === cleaned && previous.category === category) return
+    const usableEdits = edits?.filter((edit) => edit.additions || edit.deletions)
+    const nextEdits = usableEdits?.length ? usableEdits : undefined
+    if (previous?.text === cleaned && previous.category === category && JSON.stringify(previous.edits) === JSON.stringify(nextEdits)) return
     const event: OutputEvent = {
       id: previous?.id ?? `tool-${slot}:${randomUUID()}`, taskId: this.input.taskId, issueId: this.issueId,
       ts: previous?.ts ?? Date.now(), stream: failed ? 'stderr' : 'stdout',
-      kind: 'output', category, text: cleaned
+      kind: 'output', category, text: cleaned, ...(nextEdits ? { edits: nextEdits } : {})
     }
     call[slot] = event
     this.calls.set(callId, call)

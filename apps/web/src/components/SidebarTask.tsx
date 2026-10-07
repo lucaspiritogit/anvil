@@ -1,8 +1,8 @@
 import { isQueuedStackTask } from '@anvil/protocol/task-stacks'
-import type { ComponentPropsWithRef, JSX } from 'react'
+import type { ComponentPropsWithRef, CSSProperties, JSX, ReactNode } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon, type IconName } from '../icons'
-import type { Project, Task, TaskIssueSnapshot } from '@anvil/protocol/types'
+import type { Project, Task, TaskIssueSnapshot, TaskStackOrigin } from '@anvil/protocol/types'
 import { taskIssuePresentation } from '@anvil/protocol/task-issue-presentation'
 import { canSettleTask, settlementDeadline } from '@anvil/protocol/task-settlement'
 import { isTaskFinishedUnseen } from '@anvil/protocol/task-review'
@@ -12,6 +12,7 @@ import { cn } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
 import { TASK_STYLE_LABELS, taskStyle } from '@anvil/protocol/task-style'
 import { StatusGlyph, type StatusGlyphName } from './StatusGlyph'
+import type { SidebarStackTree } from './sidebar-task-stacks'
 
 const TASK_INDICATORS = {
   queued: { glyph: 'queued', label: 'Queued', tone: 'text-idle', meta: 'text-dim' },
@@ -72,15 +73,15 @@ function relativeAge(timestamp: number, now: number): string {
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`
 }
 
-export function SidebarTask({ task, snapshot, project, now, active, compact = false, stackStart = false, stackEnd = false, rowProps, onNavigate }: {
+export function SidebarTask({ task, snapshot, project, now, active, compact = false, tree = null, onToggleStack, rowProps, onNavigate }: {
   task: Task
   snapshot?: TaskIssueSnapshot | null
   project?: Project
   now: number
   active: boolean
   compact?: boolean
-  stackStart?: boolean
-  stackEnd?: boolean
+  tree?: SidebarStackTree | null
+  onToggleStack?: (rootId: string) => void
   onNavigate?: () => void
   rowProps?: ComponentPropsWithRef<'li'> & { 'data-index'?: number; 'data-task-id'?: string; 'data-stack-moving'?: boolean; 'data-row-start'?: number }
 }): JSX.Element {
@@ -106,7 +107,12 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const reviewCount = snapshot?.children.filter((issue) => issue.status === 'review').length ?? 0
   const hasChildren = childCount > 0
   const showChildren = compact || expanded
-  const eligible = canSettleTask(task)
+  const stackRoot = tree !== null && tree.depth === 0 && tree.size > 1
+  const depth = Math.min(tree?.depth ?? 0, MAX_STACK_DEPTH)
+  const leadWidth = depth > 0 ? branchWidth(depth) : 0
+  const indent = 42 + (depth > 0 ? leadWidth + 10 : 0)
+  const eligible = canSettleTask(task) && !stackRoot
+  const blocked = Boolean(task.parentTaskId) && task.deliveryStatus === 'reviewable'
   const deadline = settlementDeadline(task)
   const presentation = taskIssuePresentation(task, snapshot)
   const indicator = queuedStack ? TASK_INDICATORS.queued : presentation ? taskIssueIndicator(presentation) : taskIndicator(task, finishedUnseen)
@@ -161,7 +167,8 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   }
 
   const title = [
-    parent ? `${task.prompt}\nStacked on ${parent.title}` : task.prompt,
+    parent ? `${task.prompt}\n${task.stackOrigin === 'auto' ? 'Anvil stacked this on' : 'Stacked on'} ${parent.title}` : task.prompt,
+    ...(blocked && parent ? [`Merge ${parent.title} first.`] : []),
     ...(task.pullRequest ? [task.pullRequest.url, `${IS_MAC ? '⌘' : 'Ctrl'}+click to open pull request`] : [])
   ].join('\n')
 
@@ -180,8 +187,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   }
 
   return (
-    <li {...rowProps}>
-      {stackStart && <StackSeparator />}
+    <li {...rowProps} className={cn(rowProps?.className, tree && (tree.stem || tree.next || tree.rails.some(Boolean)) && 'overflow-clip')}>
       <article
         ref={articleRef}
         className={cn(
@@ -192,14 +198,16 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
         <button
           aria-label={`Open task: ${task.title}`}
           aria-current={active ? 'page' : undefined}
-          className={cn('grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)_auto] gap-x-2.5 text-left focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent', compact || queuedStack ? 'items-center px-4 py-2' : 'items-center px-4 py-2.5')}
+          className={cn('grid w-full min-w-0 gap-x-2.5 text-left focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent', depth === 0 && 'grid-cols-[16px_minmax(0,1fr)_auto]', compact || queuedStack ? 'items-center px-4 py-2' : 'items-center px-4 py-2.5')}
+          style={depth > 0 ? { gridTemplateColumns: `${leadWidth}px 16px minmax(0, 1fr) auto` } : undefined}
           onClick={open}
           onContextMenu={(event) => openTaskContextMenu(event, task.id)}
           title={title}
         >
+          {depth > 0 && tree && <StackBranch tree={tree} depth={depth} width={leadWidth} tight={compact || queuedStack} />}
           {queuedStack ? (
             <>
-              {statusIcon}
+              {tree?.stem ? <StackStem origin={tree.stem} tight={compact || queuedStack}>{statusIcon}</StackStem> : statusIcon}
               <span className="min-w-0 truncate text-xs text-soft">{task.title}</span>
               <span className={cn('shrink-0 font-mono text-[10px]', indicator?.tone ?? 'text-dim')}>
                 Queued
@@ -207,35 +215,52 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
             </>
           ) : compact ? (
             <>
-              {statusIcon}
+              {tree?.stem ? <StackStem origin={tree.stem} tight={compact || queuedStack}>{statusIcon}</StackStem> : statusIcon}
               <span className="min-w-0 truncate text-xs text-dim">{task.title}</span>
               <span className="shrink-0 font-mono text-[10px] text-faint">{relativeAge(task.settledAt ?? task.startedAt, now)}</span>
             </>
           ) : (
             <>
-              {statusIcon}
+              {tree?.stem ? <StackStem origin={tree.stem} tight={compact || queuedStack}>{statusIcon}</StackStem> : statusIcon}
               <span className="flex min-w-0 flex-col gap-0.5">
                 <span className={cn('truncate text-[13px] font-medium', active || task.status === 'running' ? 'text-fg' : 'text-soft')}>
                   {task.title}
                 </span>
                 <span className="flex min-w-0 items-center gap-1.5 font-mono text-[11px] leading-4">
+                  {tree?.origin === 'auto' && <span className="shrink-0 text-ember-400" title="Anvil stacked this task because it touches the same files">⠿ anvil ·</span>}
                   <span className={cn('shrink-0 lowercase', indicator?.meta ?? 'text-dim')}>
                     {indicator?.label ?? (task.status === 'pending' ? 'Pending' : task.status === 'cancelled' ? 'Cancelled' : relativeAge(task.endedAt ?? task.startedAt, now))}
                   </span>
                   {task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 text-warn" title="Runs unattended until the final review"><Icon icon="moon-star" size={11} aria-hidden="true" /><span className="sr-only">Review at the end</span></span>}
                   {task.restackState && <span className="shrink-0 text-warn">· restack {task.restackState}</span>}
                   <span aria-hidden="true" className="shrink-0 text-faint">·</span>
-                  <span className="min-w-0 truncate text-faint">{task.branchName ?? task.agentLabel}</span>
+                  <span className="min-w-0 truncate text-faint">{tree?.collapsed ? `+${tree.size - 1} stacked${tree.hiddenWorking ? ` · ${tree.hiddenWorking} working` : ''}` : task.branchName ?? task.agentLabel}</span>
                 </span>
               </span>
               <span className={cn('flex shrink-0 items-center', eligible && 'group-hover:invisible group-focus-within:invisible')}>
-                {reviewCount > 0
+                {stackRoot
+                  ? <span aria-hidden="true" className="invisible font-mono text-[11px]">{tree.size} ▸</span>
+                  : blocked
+                  ? <span aria-hidden="true" className="font-mono text-[12px] text-warn">⊘</span>
+                  : reviewCount > 0
                   ? <span title={`${reviewCount} ${reviewCount === 1 ? 'subtask' : 'subtasks'} ready for review`} className="grid h-[18px] min-w-[18px] place-items-center bg-review px-1 font-mono text-[10px] font-semibold text-canvas">{reviewCount}</span>
                   : <span title={TASK_STYLE_LABELS[taskStyle(task)]} className="font-mono text-[11px] text-faint">{STYLE_GLYPHS[taskStyle(task)]}</span>}
               </span>
             </>
           )}
         </button>
+        {stackRoot && !queuedStack && !compact && (
+          <button
+            type="button"
+            aria-label={`${tree.collapsed ? 'Expand' : 'Collapse'} stack: ${task.title}`}
+            aria-expanded={!tree.collapsed}
+            title={tree.collapsed ? `Show ${tree.size - 1} stacked ${tree.size === 2 ? 'task' : 'tasks'}` : 'Collapse stack'}
+            className="absolute top-1/2 right-2.5 grid h-7 min-w-7 -translate-y-1/2 place-items-center px-1.5 font-mono text-[11px] text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent"
+            onClick={() => onToggleStack?.(tree.rootId)}
+          >
+            {tree.size} {tree.collapsed ? '▸' : '▾'}
+          </button>
+        )}
         {!queuedStack && !compact && eligible && (
           <button
             aria-label={`Settle task: ${task.title}`}
@@ -247,14 +272,15 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
             <Icon icon="archive" size={16} aria-hidden="true" />
           </button>
         )}
-        {error && <p role="alert" className="px-4 pb-2 pl-[42px] text-xs text-danger">{error}</p>}
+        {error && <p role="alert" className="px-4 pb-2 text-xs text-danger" style={{ paddingLeft: indent }}>{error}</p>}
         {!queuedStack && !compact && hasChildren && (
           <button
             type="button"
             aria-expanded={expanded}
             aria-controls={`subtasks-${task.id}`}
             aria-label={`${expanded ? 'Collapse' : 'Expand'} subtasks: ${task.title}`}
-            className="flex w-full items-center justify-between gap-2 py-1 pl-[42px] pr-4 font-mono text-[11px] text-faint hover:bg-white/5 hover:text-fg focus-visible:outline focus-visible:outline-accent"
+            className="flex w-full items-center justify-between gap-2 py-1 pr-4 font-mono text-[11px] text-faint hover:bg-white/5 hover:text-fg focus-visible:outline focus-visible:outline-accent"
+            style={{ paddingLeft: indent }}
             onClick={toggleExpanded}
           >
             <span>{childCount} {childCount === 1 ? 'subtask' : 'subtasks'}</span>
@@ -262,7 +288,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           </button>
         )}
       </article>
-      {!queuedStack && hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="ml-[42px] mr-4 mt-0.5 mb-2 border-l border-line pl-2 space-y-0.5">
+      {!queuedStack && hasChildren && showChildren && <ol id={`subtasks-${task.id}`} aria-label={`Subtasks of ${task.title}`} className="mr-4 mt-0.5 mb-2 border-l border-line pl-2 space-y-0.5" style={{ marginLeft: indent }}>
         {snapshot?.children.map((issue) => <li key={issue.id}>
           <div
             className="flex w-full min-w-0 items-center gap-2 min-h-7 px-2 py-1 text-left font-mono text-[11px] text-dim"
@@ -272,15 +298,48 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
           </div>
         </li>)}
       </ol>}
-      {stackEnd && <StackSeparator />}
     </li>
   )
 }
 
-function StackSeparator(): JSX.Element {
-  return <div className="flex items-center gap-2 px-4 py-2 text-ember-400/70" aria-hidden="true">
-    <span className="h-px flex-1 border-t border-dashed border-ember-800" />
-    <Icon icon="layers" size={12} />
-    <span className="h-px flex-1 border-t border-dashed border-ember-800" />
-  </div>
+const MAX_STACK_DEPTH = 3
+const STACK_LEVEL = 32
+const AUTO_DASH = 'color-mix(in srgb, var(--color-ember-400) 60%, transparent) 0 3px, transparent 3px 6px'
+
+const branchWidth = (depth: number): number => 22 + (depth - 1) * STACK_LEVEL
+const railX = (level: number): number => 8 + (level - 1) * STACK_LEVEL
+
+function stackLine(origin: TaskStackOrigin, vertical: boolean): { className: string; style?: CSSProperties } {
+  if (origin === 'manual') return { className: 'bg-line-strong' }
+  return { className: '', style: { backgroundImage: `repeating-linear-gradient(${vertical ? 'to bottom' : 'to right'}, ${AUTO_DASH})` } }
+}
+
+function StackBranch({ tree, depth, width, tight }: { tree: SidebarStackTree; depth: number; width: number; tight: boolean }): JSX.Element {
+  const lines: { key: string; origin: TaskStackOrigin; vertical: boolean; style: CSSProperties }[] = []
+  tree.rails.slice(0, depth - 1).forEach((rail, index) => {
+    if (rail) lines.push({ key: `rail-${index}`, origin: rail, vertical: true, style: { left: railX(index + 1), top: 0, height: '100vh' } })
+  })
+  const x = railX(depth)
+  const origin = tree.origin ?? 'manual'
+  lines.push({ key: 'up', origin, vertical: true, style: { left: x, top: 0, height: '50%' } })
+  lines.push({ key: 'across', origin, vertical: false, style: { left: x, top: '50%', width: width + 4 - x, height: 1 } })
+  if (tree.next) lines.push({ key: 'down', origin: tree.next, vertical: true, style: { left: x, top: '50%', height: '100vh' } })
+  return (
+    <span aria-hidden="true" className={cn('relative self-stretch', tight ? '-my-2' : '-my-2.5')}>
+      {lines.map((line) => {
+        const look = stackLine(line.origin, line.vertical)
+        return <span key={line.key} className={cn('absolute', line.vertical && 'w-px', look.className)} style={{ ...line.style, ...look.style }} />
+      })}
+    </span>
+  )
+}
+
+function StackStem({ origin, tight, children }: { origin: TaskStackOrigin; tight: boolean; children: ReactNode }): JSX.Element {
+  const look = stackLine(origin, true)
+  return (
+    <span className={cn('relative grid place-items-center self-stretch', tight ? '-my-2' : '-my-2.5')}>
+      <span aria-hidden="true" className={cn('absolute top-[calc(50%+9px)] left-1/2 h-[100vh] w-px -translate-x-1/2', look.className)} style={look.style} />
+      {children}
+    </span>
+  )
 }

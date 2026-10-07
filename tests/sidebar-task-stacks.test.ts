@@ -13,10 +13,10 @@ function task(id: string, parentTaskId?: string): Task {
   }
 }
 
-test('puts nested stack descendants before their parent and marks only the group boundaries', () => {
+test('puts nested stack descendants under their parent and marks only the group boundaries', () => {
   const rows = sidebarTaskStacks([task('grandchild', 'child'), task('other'), task('child', 'parent'), task('parent')])
   expect(rows.map((row) => [row.task.id, row.stackStart, row.stackEnd])).toEqual([
-    ['grandchild', true, false], ['child', false, false], ['parent', false, true], ['other', false, false]
+    ['parent', true, false], ['child', false, false], ['grandchild', false, true], ['other', false, false]
   ])
 })
 
@@ -29,17 +29,17 @@ test('moves a restacking child to its target group', () => {
   const child = task('child', 'old')
   child.restackTarget = { parentTaskId: 'new', branch: 'main', commit: 'abc123' }
   const rows = sidebarTaskStacks([task('old'), task('grandchild', 'child'), child, task('new')])
-  expect(rows.map((row) => row.task.id)).toEqual(['old', 'grandchild', 'child', 'new'])
+  expect(rows.map((row) => row.task.id)).toEqual(['old', 'new', 'child', 'grandchild'])
 })
 
-test('inserts later siblings at the top of the stack in newest-first order', () => {
+test('orders siblings under their parent oldest first', () => {
   const parent = task('parent')
   const first = { ...task('first', 'parent'), startedAt: 10 }
   const second = { ...task('second', 'parent'), startedAt: 20 }
   const third = { ...task('third', 'parent'), startedAt: 30 }
   const rows = sidebarTaskStacks([third, second, first, parent])
   expect(rows.map((row) => [row.task.id, row.stackStart, row.stackEnd])).toEqual([
-    ['third', true, false], ['second', false, false], ['first', false, false], ['parent', false, true]
+    ['parent', true, false], ['first', false, false], ['second', false, false], ['third', false, true]
   ])
 })
 
@@ -109,7 +109,7 @@ test('orders tasks by review attention within each project without moving unassi
 test('preserves stack boundaries inside a project folder', () => {
   const entries = projectEntries({ tasks: [task('child', 'parent'), task('other'), task('parent')] })
   expect(entries.filter((entry) => entry.kind === 'task').map((entry) => [entry.task.id, entry.stackStart, entry.stackEnd])).toEqual([
-    ['child', true, false], ['parent', false, true], ['other', false, false]
+    ['parent', true, false], ['child', false, true], ['other', false, false]
   ])
 })
 
@@ -143,4 +143,24 @@ test('hides tasks from another workspace and retains tasks whose project is unav
 test('shows an empty workspace and reports searches with no matching tasks', () => {
   expect(projectEntries({ projects: [] })).toEqual([{ kind: 'empty', key: 'empty:workspace', message: 'No tasks yet.', indented: false }])
   expect(projectEntries({ tasks: [task('active')], query: 'missing' }).at(-1)).toMatchObject({ kind: 'empty', message: 'No matching tasks.' })
+})
+
+test('draws tree branches with each link origin', () => {
+  const first = { ...task('first', 'parent'), startedAt: 10, stackOrigin: 'auto' as const }
+  const second = { ...task('second', 'parent'), startedAt: 20 }
+  const rows = sidebarTaskStacks([task('nested', 'first'), second, first, task('parent'), task('other')])
+  expect(rows.map((row) => [row.task.id, row.tree && [row.tree.depth, row.tree.origin, row.tree.next, row.tree.rails, row.tree.stem]])).toEqual([
+    ['parent', [0, undefined, undefined, [], 'auto']],
+    ['first', [1, 'auto', 'manual', [], 'manual']],
+    ['nested', [2, 'manual', undefined, ['manual'], undefined]],
+    ['second', [1, 'manual', undefined, [], undefined]],
+    ['other', null]
+  ])
+})
+
+test('collapses a stack to its parent and summarises hidden work', () => {
+  const rows = sidebarTaskStacks([{ ...task('child', 'parent'), status: 'running' }, task('parent'), task('other')], new Set(['parent']))
+  expect(rows.map((row) => [row.task.id, row.tree && [row.tree.size, row.tree.collapsed, row.tree.hiddenWorking, row.tree.stem]])).toEqual([
+    ['parent', [2, true, 1, undefined]], ['other', null]
+  ])
 })

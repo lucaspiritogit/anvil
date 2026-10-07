@@ -1,4 +1,5 @@
 import { contextOccupancy, CONTEXT_COMPACTED } from '@anvil/protocol/task-context'
+import { textEdit, unifiedDiffEdit, type TaskEventEdit } from '@anvil/protocol/task-event-edits'
 import { randomUUID } from 'node:crypto'
 import type { TaskEventCategory, TaskUsage } from '@anvil/protocol/types'
 import type { TaskEvent, TaskInput } from './agent-executor'
@@ -167,7 +168,7 @@ export class CodexAppServerOutput {
         : type === 'fileChange' && Array.isArray(item.changes)
           ? item.changes.map((change) => codexString(codexObject(change).path)).join('\n')
           : toolInputDescription(item.arguments)
-      this.tools.use(id, name, description)
+      this.tools.use(id, name, description, type === 'fileChange' ? codexFileEdits(item.changes) : undefined)
       if (complete) {
         const failed = item.status === 'failed' || item.status === 'declined' || item.success === false ||
           (typeof item.exitCode === 'number' && item.exitCode !== 0) || item.error != null
@@ -190,4 +191,18 @@ export class CodexAppServerOutput {
     }
     if (complete) this.completed.add(id)
   }
+}
+
+function codexFileEdits(changes: unknown): TaskEventEdit[] | undefined {
+  if (!Array.isArray(changes)) return undefined
+  const edits = changes.map(codexObject).flatMap((change) => {
+    const path = codexString(change.path)
+    const diff = typeof change.diff === 'string' ? change.diff : ''
+    if (!path || !diff) return []
+    const kind = codexString(codexObject(change.kind).type)
+    if (kind === 'add') return [textEdit(path, '', diff)]
+    if (kind === 'delete') return [textEdit(path, diff, '')]
+    return [unifiedDiffEdit(path, diff)]
+  })
+  return edits.length ? edits : undefined
 }

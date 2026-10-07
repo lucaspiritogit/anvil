@@ -130,6 +130,7 @@ export const tasks = sqliteTable(
       .default('unavailable'),
     mergeConflict: text('merge_conflict', { mode: 'json' }).$type<import('@anvil/protocol/types').TaskMergeConflict>(),
     parentTaskId: text('parent_task_id').references((): AnySQLiteColumn => tasks.id, { onDelete: 'set null' }),
+    stackOrigin: text('stack_origin').$type<import('@anvil/protocol/types').TaskStackOrigin>(),
     expectedFiles: text('expected_files', { mode: 'json' }).$type<string[]>(),
     reviewPaths: text('review_paths', { mode: 'json' }).$type<string[]>(),
     restackState: text('restack_state').$type<'pending' | 'conflict'>(),
@@ -238,7 +239,8 @@ export const taskEvents = sqliteTable(
     stream: text('stream').$type<StreamName>().notNull(),
     kind: text('kind').$type<TaskEventKind>().notNull().default('output'),
     category: text('category').$type<TaskEventCategory>().notNull().default('message'),
-    text: text('text').notNull()
+    text: text('text').notNull(),
+    edits: text('edits', { mode: 'json' }).$type<import('@anvil/protocol/task-event-edits').TaskEventEdit[]>()
   },
   (table) => [
     index('task_events_task_sequence_idx').on(table.taskId, table.sequence),

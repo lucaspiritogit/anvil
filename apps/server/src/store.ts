@@ -175,6 +175,7 @@ function toTask(row: TaskRow): Task {
     ...(row.contextSize === null ? {} : { contextSize: row.contextSize }),
     ...(row.contextCompactionError === null ? {} : { contextCompactionError: row.contextCompactionError }),
     ...(row.parentTaskId === null ? {} : { parentTaskId: row.parentTaskId }),
+    ...(row.stackOrigin === null ? {} : { stackOrigin: row.stackOrigin }),
     ...(row.expectedFiles === null ? {} : { expectedFiles: row.expectedFiles }),
     ...(row.reviewPaths === null ? {} : { reviewPaths: row.reviewPaths }),
     ...(row.restackState === null ? {} : { restackState: row.restackState }),
@@ -258,7 +259,8 @@ function toTaskEvent(row: TaskEventRow): TaskEvent {
     stream: row.stream,
     kind: row.kind,
     category: row.category,
-    text: row.text
+    text: row.text,
+    ...(row.edits ? { edits: row.edits } : {})
   }
 }
 
@@ -271,6 +273,7 @@ function toTaskRow(task: Task): typeof tasks.$inferInsert {
     checkoutMode: task.checkoutMode ?? 'worktree',
     startBase: task.startBase ?? null,
     parentTaskId: task.parentTaskId ?? null,
+    stackOrigin: task.stackOrigin ?? null,
     expectedFiles: task.expectedFiles ?? null,
     reviewPaths: task.reviewPaths ?? null,
     restackState: task.restackState ?? null,
@@ -1077,7 +1080,7 @@ export class Store {
     const { sequence: _sequence, ...input } = event
     const row = db.insert(taskEvents).values(input).onConflictDoUpdate({
       target: taskEvents.id,
-      set: { text: event.text, category: event.category, stream: event.stream }
+      set: { text: event.text, category: event.category, stream: event.stream, edits: event.edits ?? null }
     }).returning().get()
     return { ...toTaskEvent(row), sequence: row.sequence }
   }
