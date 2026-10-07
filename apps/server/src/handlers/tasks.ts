@@ -157,6 +157,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       store.deleteTaskCascade(taskId)
     }, store.getTask(taskId)?.workspaceId)
     forgetUsage(taskId)
+    send('task:deleted', taskId)
     if (running) agentProcesses.cancel(taskId)
     else if (deletedTask && usesManagedWorktree(deletedTask)) {
       if (project && deletedTask.branchName) void gitDelivery.releaseWorktree(project.path, taskId, deletedTask.branchName)

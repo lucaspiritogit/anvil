@@ -75,6 +75,7 @@ const modelGenerations = new Map<string, number>()
 const modelRequests = new Map<string, Promise<void>>()
 let workspaceGeneration = 0
 const taskDiffRequests = new Map<string, { view: CenterView; revision: string; generation: number }>()
+const deletedTaskIds = new Set<string>()
 const taskDiffRevision = (task?: Task): string => JSON.stringify(task ? [
   task.workspaceId, task.status, task.deliveryStatus, task.branchName, task.baseCommit, task.headCommit,
   task.reviewPaths, task.filesChanged, task.additions, task.deletions
@@ -235,6 +236,7 @@ interface AnvilState {
 
   applyEvent: (event: TaskEvent) => void
   applyTaskUpdate: (task: Task) => void
+  applyTaskDeleted: (taskId: string) => void
 
   saveSettings: (patch: Partial<Settings>, workspaceId?: string) => Promise<void>
   toggleSidebar: () => void
@@ -667,6 +669,11 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   deleteTask: async (taskId) => {
     await window.anvil.tasks.delete(taskId)
+    get().applyTaskDeleted(taskId)
+  },
+
+  applyTaskDeleted: (taskId) => {
+    deletedTaskIds.add(taskId)
     taskDiffRequests.delete(taskId)
     set((state) => {
       const withoutTask = <Value,>(cache: Record<string, Value>): Record<string, Value> =>
@@ -1171,7 +1178,7 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   applyTaskUpdate: (task) =>
     set((s) => {
-      if (task.workspaceId !== s.activeWorkspaceId) return s
+      if (task.workspaceId !== s.activeWorkspaceId || deletedTaskIds.has(task.id)) return s
       const existingTask = s.tasks.find((item) => item.id === task.id)
       const changed = taskDiffRevision(existingTask) !== taskDiffRevision(task)
       const conflictChanged = existingTask?.mergeConflict?.id !== task.mergeConflict?.id ||

@@ -1002,6 +1002,7 @@ window.anvil = {
       return () => window.removeEventListener('fixture:output', receive)
     },
     onUpdated: (listener: (task: Task) => void) => { updates.add(listener); return () => updates.delete(listener) },
+    onDeleted: () => () => undefined,
     delete: async (taskId: string) => {
       if (query.has('deleteFailure')) throw new Error('Deletion failed for testing')
       tasks = tasks.filter((task) => task.id !== taskId)

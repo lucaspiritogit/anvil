@@ -45,6 +45,7 @@ export function App(): JSX.Element {
   const load = useStore((s) => s.load)
   const applyEvent = useStore((s) => s.applyEvent)
   const applyTaskUpdate = useStore((s) => s.applyTaskUpdate)
+  const applyTaskDeleted = useStore((s) => s.applyTaskDeleted)
   const applyTaskResultNoticeChange = useStore((s) => s.applyTaskResultNoticeChange)
   const settingsOpen = useStore((s) => s.settingsOpen)
   const taskMenu = useStore((s) => s.taskMenu)
@@ -267,13 +268,15 @@ export function App(): JSX.Element {
   useEffect(() => {
     const offEvent = window.anvil.tasks.onEvent(applyEvent)
     const offUpdate = window.anvil.tasks.onUpdated(applyTaskUpdate)
+    const offDelete = window.anvil.tasks.onDeleted(applyTaskDeleted)
     const offResultNotice = window.anvil.taskResultNotices.onChanged(applyTaskResultNoticeChange)
     return () => {
       offEvent()
       offUpdate()
+      offDelete()
       offResultNotice()
     }
-  }, [applyEvent, applyTaskUpdate, applyTaskResultNoticeChange])
+  }, [applyEvent, applyTaskUpdate, applyTaskDeleted, applyTaskResultNoticeChange])
 
   if (!ready) return <AppSkeleton />
 

@@ -292,7 +292,8 @@ export function createAnvilApi(url: string, host: ClientHost) {
       rejectIssue: (input: IpcRequests['tasks:reject-issue']): Promise<Task> => invoke('tasks:reject-issue', input),
       onEvent: (handler: (event: TaskEvent) => void): (() => void) =>
         subscribe<TaskEvent>('task:event', handler),
-      onUpdated: (handler: (task: Task) => void): (() => void) => subscribe<Task>('task:updated', handler)
+      onUpdated: (handler: (task: Task) => void): (() => void) => subscribe<Task>('task:updated', handler),
+      onDeleted: (handler: (taskId: string) => void): (() => void) => subscribe<string>('task:deleted', handler)
     },
     taskResultNotices: {
       list: (input: IpcRequests['task-result-notices:list']): Promise<TaskResultNotice[]> =>
