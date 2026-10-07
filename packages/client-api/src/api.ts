@@ -38,6 +38,7 @@ import type {
   TaskMergeConflictSnapshot,
   TaskMergePreview,
   TaskPushPreview,
+  BranchSyncStatus,
   TaskResultNotice,
   TaskResultNoticeChange,
   Settings,
@@ -285,6 +286,8 @@ export function createAnvilApi(url: string, host: ClientHost) {
         invoke('tasks:merge-conflict-abort', input),
       pushPreview: (taskId: string): Promise<TaskPushPreview> => invoke('tasks:push-preview', taskId),
       push: (input: IpcRequests['tasks:push']): Promise<Task> => invoke('tasks:push', input),
+      syncStatus: (taskId: string): Promise<BranchSyncStatus> => invoke('tasks:sync-status', taskId),
+      pull: (input: IpcRequests['tasks:pull']): Promise<BranchSyncStatus> => invoke('tasks:pull', input),
       commitQuick: (input: IpcRequests['tasks:commit-quick']): Promise<Task> => invoke('tasks:commit-quick', input),
       draftCommitMessage: (input: IpcRequests['tasks:draft-commit-message']): Promise<string> =>
         invoke('tasks:draft-commit-message', input),

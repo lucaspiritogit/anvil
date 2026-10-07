@@ -17,7 +17,8 @@ import type {
   TaskMergeConflict,
   TaskMergeConflictSnapshot,
   TaskMergePreview,
-  TaskPushPreview
+  TaskPushPreview,
+  BranchSyncStatus
 } from '@anvil/protocol/types'
 import { status, init, branches, switchProjectBranch, createProjectBranch, resolveWorktreeBase, stackBase, commonBase, withRepoLock } from './repository'
 import { releaseWorktree, prepareBranch, checkoutBranch, worktreeHead } from './worktrees'
@@ -25,6 +26,7 @@ import { renameTaskBranch, restackBranch, finalizeBranch } from './task-branches
 import { rebase } from './rebase'
 import { getPullRequestPreview, pushPullRequestBranch } from './pull-requests'
 import { abortMergeConflict, completeMergeConflict, getMergeConflict, getMergePreview, getPushPreview, merge, push, saveMergeConflictFile, validateMergeConflict } from './merge'
+import { getSyncStatus, pull, type BranchSyncTarget } from './sync'
 import { changedFiles, getDiff, getIssueDiff, getWorkingTreeDiff, scopedPaths, workingTreeState } from './diff'
 
 export type { PreparedCheckout, RebasedBranch, FinalizeOptions, FinalizedCheckout, IssueDiffSource, MergeResult } from './types'
@@ -223,6 +225,14 @@ export class GitDeliveryManager {
     check: () => void = () => {}
   ): Promise<void> {
     return push(this.context, projectPath, expected, requiredCommit, check)
+  }
+
+  getSyncStatus(projectPath: string): Promise<BranchSyncStatus> {
+    return getSyncStatus(this.context, projectPath)
+  }
+
+  pull(projectPath: string, expected: BranchSyncTarget, check: () => void = () => {}): Promise<BranchSyncStatus> {
+    return pull(this.context, projectPath, expected, check)
   }
 
   getDiff(repoPath: string, baseCommit: string, headCommit: string): Promise<TaskDiff> {

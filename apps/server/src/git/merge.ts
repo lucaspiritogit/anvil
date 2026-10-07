@@ -361,7 +361,7 @@ export async function abortMergeConflict(
   })
 }
 
-async function originPushUrl(projectPath: string): Promise<string> {
+export async function originPushUrl(projectPath: string): Promise<string> {
   let output: string
   try {
     output = (await git(projectPath, ['remote', 'get-url', '--push', '--all', 'origin'])).stdout
@@ -379,7 +379,7 @@ function remoteUrlHash(remoteUrl: string): string {
   return createHash('sha256').update(remoteUrl).digest('hex')
 }
 
-async function remoteBranchCommit(
+export async function remoteBranchCommit(
   context: GitContext,
   projectPath: string,
   remoteUrl: string,

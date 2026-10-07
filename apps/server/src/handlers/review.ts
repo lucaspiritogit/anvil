@@ -10,7 +10,7 @@ import { resumeTaskTurn } from '../tasks/resume'
 import { issueReworkPrompt, mergeConflictRepairPrompt, reviewPrompt } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
-import type { Project, Task, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview } from '@anvil/protocol/types'
+import type { BranchSyncStatus, Project, Task, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview } from '@anvil/protocol/types'
 import type { MergeConflictResult } from '../git/types'
 import { isTaskSettled } from '@anvil/protocol/task-settlement'
 import { taskStyle } from '@anvil/protocol/task-style'
@@ -455,9 +455,54 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     }
   }
 
+  const refreshLocalQuickTasks = async (task: Task, project: Project): Promise<void> => {
+    const locals = store.getTasks(task.workspaceId).filter((item) => item.projectId === task.projectId &&
+      taskStyle(item) === 'quick' && item.checkoutMode === 'local' && item.deliveryStatus === 'reviewable' && item.reviewPaths?.length)
+    for (const local of locals) {
+      try {
+        const diff = await gitDelivery.getWorkingTreeDiff(project.path, local.reviewPaths!)
+        if (!diff.patch || store.getTask(local.id)?.deliveryStatus !== 'reviewable') continue
+        const updated = store.updateTask(local.id, {
+          reviewPaths: diff.paths,
+          filesChanged: diff.filesChanged,
+          additions: diff.additions,
+          deletions: diff.deletions
+        })
+        if (updated) send('task:updated', updated)
+      } catch {
+        continue
+      }
+    }
+  }
+
+  ipc.handle('tasks:sync-status', async (taskId: string): Promise<BranchSyncStatus> => {
+    const { project } = requireQuickTask(taskId)
+    return gitDelivery.getSyncStatus(project.path)
+  })
+
+  ipc.handle('tasks:pull', async ({ taskId, branch, localCommit, remoteCommit }): Promise<BranchSyncStatus> => {
+    return withTaskOperation(store, taskId, 'pull', async (check) => {
+      const { task, project } = requireQuickTask(taskId)
+      const status = await gitDelivery.pull(project.path, { branch, localCommit, remoteCommit }, () => {
+        check()
+        requireQuickTask(taskId)
+      })
+      recordSystemEvent(task.id, `Pulled ${branch} from origin, fast-forwarding ${localCommit.slice(0, 8)} to ${remoteCommit.slice(0, 8)}.`)
+      await refreshLocalQuickTasks(task, project)
+      return status
+    })
+  })
+
   ipc.handle('tasks:commit-quick', async ({ taskId, push, message }): Promise<Task> => {
     return withTaskOperation(store, taskId, 'commit', async (check) => {
       const { task, project } = requireQuickTask(taskId)
+      if (push) {
+        const sync = await gitDelivery.getSyncStatus(project.path)
+        check()
+        if (sync.behind > 0) {
+          throw new Error(`origin/${sync.branch} has ${sync.behind} new commit${sync.behind === 1 ? '' : 's'}. Pull before committing and pushing.`)
+        }
+      }
       const headCommit = await gitDelivery.commitPaths(project.path, task.reviewPaths!, message?.trim() || task.title)
       check()
       const committed = store.updateTask(task.id, {

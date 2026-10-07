@@ -29,6 +29,12 @@ function setup() {
       remoteTargetCommit: '1'.repeat(40), remoteUrlHash: 'f'.repeat(64)
     })),
     push: vi.fn(async (...args: unknown[]) => { pushCalls.push(args) }),
+    getSyncStatus: vi.fn(async () => ({
+      branch: 'main', localCommit: '1'.repeat(40), remoteCommit: '1'.repeat(40), ahead: 0, behind: 0, overlappingPaths: [] as string[]
+    })),
+    pull: vi.fn(async (_path: string, expected: { branch: string; remoteCommit: string }) => ({
+      branch: expected.branch, localCommit: expected.remoteCommit, remoteCommit: expected.remoteCommit, ahead: 0, behind: 0, overlappingPaths: []
+    })),
     getWorkingTreeDiff: vi.fn(async (_repoPath: string, _paths: string[]) => ({
       patch: '', commits: [], paths: [] as string[], filesChanged: 0, additions: 0, deletions: 0
     }))
@@ -128,4 +134,36 @@ test('commit-quick refreshes overlapping local quick tasks that still have chang
     deliveryStatus: 'reviewable', reviewPaths: ['src/rest.ts'], filesChanged: 1, additions: 2, deletions: 0
   })
   expect(store.getTask(sibling.id)?.headCommit).toBeUndefined()
+})
+
+test('commit-quick with push refuses to commit when origin has new commits', async () => {
+  const { store, registry, gitDelivery, addQuickTask } = setup()
+  const task = addQuickTask()
+  gitDelivery.getSyncStatus.mockResolvedValueOnce({
+    branch: 'main', localCommit: '1'.repeat(40), remoteCommit: '2'.repeat(40), ahead: 0, behind: 2, overlappingPaths: []
+  })
+
+  await expect(registry.invoke('tasks:commit-quick', { taskId: task.id, push: true, message: 'test: behind' }))
+    .rejects.toThrow('origin/main has 2 new commits. Pull before committing and pushing.')
+
+  expect(gitDelivery.commitPaths).not.toHaveBeenCalled()
+  expect(store.getTask(task.id)).toMatchObject({ deliveryStatus: 'reviewable' })
+})
+
+test('pull fast-forwards the checkout and refreshes local quick task diffs', async () => {
+  const { store, registry, events, gitDelivery, addQuickTask } = setup()
+  const task = addQuickTask()
+  const sibling = addQuickTask({ reviewPaths: ['src/rest.ts'] })
+  gitDelivery.getWorkingTreeDiff.mockImplementation(async (_repoPath: string, paths: string[]) => ({
+    patch: 'diff', commits: [], paths, filesChanged: 1, additions: 7, deletions: 3
+  }))
+  const target = { branch: 'main', localCommit: '1'.repeat(40), remoteCommit: '2'.repeat(40) }
+
+  const status = await registry.invoke('tasks:pull', { taskId: task.id, ...target })
+
+  expect(status).toMatchObject({ localCommit: target.remoteCommit, behind: 0 })
+  expect(gitDelivery.pull).toHaveBeenCalledWith(store.getProjects()[0].path, target, expect.any(Function))
+  expect(store.getTask(task.id)).toMatchObject({ deliveryStatus: 'reviewable', additions: 7, deletions: 3 })
+  expect(store.getTask(sibling.id)).toMatchObject({ deliveryStatus: 'reviewable', additions: 7, deletions: 3 })
+  expect(events).toContainEqual({ taskId: task.id, text: 'Pulled main from origin, fast-forwarding 11111111 to 22222222.' })
 })

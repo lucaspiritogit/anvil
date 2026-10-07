@@ -262,6 +262,8 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:merge-conflict-fix-agent': object({ taskId: id, conflictId: id }),
   'tasks:merge-conflict-abort': object({ taskId: id, conflictId: id }),
   'tasks:push-preview': id,
+  'tasks:sync-status': id,
+  'tasks:pull': object({ taskId: id, branch, localCommit: sha, remoteCommit: sha }),
   'tasks:commit-quick': object({ taskId: id, push: boolean, message: optional(text(65_536)) }),
   'tasks:draft-commit-message': object({ taskId: id, message: text(65_536, false) }),
   'tasks:push': object({ taskId: id, preview: object(pushPreview) }),

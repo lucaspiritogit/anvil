@@ -3,7 +3,7 @@ import { fixtureAccounts } from './accounts'
 import React, { useState } from 'react'
 import { useTaskIssues } from '../../../apps/web/src/hooks/use-task-issues'
 import { createRoot } from 'react-dom/client'
-import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure, TaskResultNotice, TaskResultNoticeChange } from '@anvil/protocol/types'
+import type { AnalyticsRange, WorkspaceAnalytics, Workspace, WorkspacePreferences, WorkspaceSnapshot, Project, Task, TaskIssueSnapshot, TaskComment, TaskDiff, TaskEvent, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview, BranchSyncStatus, PullRequestPreview, PullRequestField, Settings, Wallpaper, ProviderModelList, ConnectionsStatus, ConnectionsConfigure, TaskResultNotice, TaskResultNoticeChange } from '@anvil/protocol/types'
 import { DEFAULT_KEYBINDINGS } from '@anvil/protocol/keybindings'
 import { DEFAULT_DIFF_THEMES } from '@anvil/protocol/diff-themes'
 import { canSettleTask } from '@anvil/protocol/task-settlement'
@@ -959,6 +959,17 @@ window.anvil = {
       window.dispatchEvent(new CustomEvent('fixture:push', { detail: input }))
       const task = tasks.find((task) => task.id === input.taskId)!
       return update({ ...task, ...(task.headCommit ? { pushedCommit: task.headCommit } : {}) })
+    },
+    syncStatus: async (): Promise<BranchSyncStatus> => {
+      const behind = Number(query.get('quickBehind') ?? 0)
+      return {
+        branch: 'user-current', localCommit: 'e'.repeat(40), remoteCommit: 'c'.repeat(40), ahead: 0, behind,
+        overlappingPaths: query.has('quickBehindOverlap') ? ['src/App.tsx'] : []
+      }
+    },
+    pull: async (input): Promise<BranchSyncStatus> => {
+      window.dispatchEvent(new CustomEvent('fixture:pull', { detail: input }))
+      return { branch: input.branch, localCommit: input.remoteCommit, remoteCommit: input.remoteCommit, ahead: 0, behind: 0, overlappingPaths: [] }
     },
     commitQuick: async (input) => {
       window.dispatchEvent(new CustomEvent('fixture:quick-commit', { detail: input }))

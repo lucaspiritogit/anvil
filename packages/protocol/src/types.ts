@@ -137,6 +137,15 @@ export interface TaskPushPreview {
   remoteUrlHash: string
 }
 
+export interface BranchSyncStatus {
+  branch: string
+  localCommit: string
+  remoteCommit: string | null
+  ahead: number
+  behind: number
+  overlappingPaths: string[]
+}
+
 export interface TaskMergeAndPushPreview extends TaskMergePreview {
   remote: 'origin'
   remoteTargetCommit: string | null

@@ -1,7 +1,7 @@
 import type { Task } from '@anvil/protocol/types'
 import type { Store } from '../store'
 
-export type TaskOperation = 'branch' | 'stack' | 'compact' | 'steer' | 'review' | 'rebase' | 'merge' | 'merge-repair' | 'commit' | 'push' | 'pull-request' | 'draft'
+export type TaskOperation = 'branch' | 'stack' | 'compact' | 'steer' | 'review' | 'rebase' | 'merge' | 'merge-repair' | 'commit' | 'push' | 'pull' | 'pull-request' | 'draft'
 
 interface Reservation { operation: TaskOperation; cancelled: boolean }
 const reservations = new WeakMap<Store, Map<string, Reservation>>()
