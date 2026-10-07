@@ -423,6 +423,38 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     })
   })
 
+  const reconcileOverlappingQuickTasks = async (committed: Task, project: Project, headCommit: string): Promise<void> => {
+    const committedPaths = new Set(committed.reviewPaths)
+    const siblings = store.getTasks(committed.workspaceId).filter((task) => task.id !== committed.id &&
+      task.projectId === committed.projectId && taskStyle(task) === 'quick' && task.checkoutMode === 'local' &&
+      task.deliveryStatus === 'reviewable' && task.reviewPaths?.some((path) => committedPaths.has(path)))
+    for (const sibling of siblings) {
+      try {
+        const diff = await gitDelivery.getWorkingTreeDiff(project.path, sibling.reviewPaths!)
+        if (store.getTask(sibling.id)?.deliveryStatus !== 'reviewable') continue
+        const updated = diff.patch
+          ? store.updateTask(sibling.id, {
+            reviewPaths: diff.paths,
+            filesChanged: diff.filesChanged,
+            additions: diff.additions,
+            deletions: diff.deletions
+          })
+          : store.updateTask(sibling.id, {
+            deliveryStatus: 'approved',
+            headCommit,
+            pushedCommit: undefined,
+            reviewedAt: Date.now(),
+            deliveryError: undefined
+          })
+        if (!updated) continue
+        if (!diff.patch) recordSystemEvent(sibling.id, `Changes were committed with "${committed.title}" as ${headCommit.slice(0, 8)}.`)
+        send('task:updated', updated)
+      } catch {
+        continue
+      }
+    }
+  }
+
   ipc.handle('tasks:commit-quick', async ({ taskId, push, message }): Promise<Task> => {
     return withTaskOperation(store, taskId, 'commit', async (check) => {
       const { task, project } = requireQuickTask(taskId)
@@ -438,6 +470,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       if (!committed) throw new Error('Task was deleted')
       recordSystemEvent(task.id, `Committed ${task.reviewPaths!.length} task file${task.reviewPaths!.length === 1 ? '' : 's'} as ${headCommit.slice(0, 8)}.`)
       send('task:updated', committed)
+      await reconcileOverlappingQuickTasks(committed, project, headCommit)
       if (push) {
         const preview = await gitDelivery.getPushPreview(project.path, undefined, headCommit)
         await gitDelivery.push(project.path, preview, headCommit, () => {

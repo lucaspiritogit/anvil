@@ -28,7 +28,10 @@ function setup() {
       targetBranch: 'main', targetCommit: headCommit, remote: 'origin',
       remoteTargetCommit: '1'.repeat(40), remoteUrlHash: 'f'.repeat(64)
     })),
-    push: vi.fn(async (...args: unknown[]) => { pushCalls.push(args) })
+    push: vi.fn(async (...args: unknown[]) => { pushCalls.push(args) }),
+    getWorkingTreeDiff: vi.fn(async (_repoPath: string, _paths: string[]) => ({
+      patch: '', commits: [], paths: [] as string[], filesChanged: 0, additions: 0, deletions: 0
+    }))
   }
   const registry = createHandlerRegistry()
   registerReviewHandlers(registry, {
@@ -38,21 +41,23 @@ function setup() {
     send: (channel: string, payload: unknown) => {
       if (channel === 'task:updated') updated.push(payload as Task)
     },
-    recordSystemEvent: () => {},
+    recordSystemEvent: (taskId: string, text: string) => { events.push({ taskId, text }) },
     requireFinishedTask: () => {},
     approveIssue: (() => {}) as never,
     rejectIssue: (() => {}) as never,
     runMergeConflictRepair: (() => {}) as never
   })
-  const addQuickTask = (): Task => store.addTask({
+  const events: { taskId: string; text: string }[] = []
+  const addQuickTask = (overrides: Partial<Task> = {}): Task => store.addTask({
     id: randomUUID(), projectId: project.id, agentId: 'codex', agentLabel: 'Codex',
     style: 'quick', reviewPolicy: 'review_each_issue', checkoutMode: 'local',
     prompt: 'Change', title: 'Change thing', cwd: home, status: 'succeeded', startedAt: Date.now(),
     deliveryStatus: 'reviewable', reviewPaths: ['src/quick.ts'],
     inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,
-    filesChanged: 1, additions: 1, deletions: 0
+    filesChanged: 1, additions: 1, deletions: 0,
+    ...overrides
   })
-  return { store, registry, headCommit, pushCalls, updated, addQuickTask }
+  return { store, registry, headCommit, pushCalls, updated, events, gitDelivery, addQuickTask }
 }
 
 test('commit-quick with push records the pushed head commit on the task', async () => {
@@ -91,4 +96,36 @@ test('pushing a committed quick task records the pushed head commit', async () =
   expect(pushCalls).toHaveLength(1)
   expect(store.getTask(task.id)?.pushedCommit).toBe(headCommit)
   expect(updated.at(-1)).toMatchObject({ id: task.id, pushedCommit: headCommit })
+})
+
+test('commit-quick approves overlapping local quick tasks whose changes it committed', async () => {
+  const { store, registry, headCommit, updated, events, gitDelivery, addQuickTask } = setup()
+  const task = addQuickTask({ title: 'Recolor' })
+  const sibling = addQuickTask()
+  const unrelated = addQuickTask({ reviewPaths: ['src/other.ts'] })
+
+  await registry.invoke('tasks:commit-quick', { taskId: task.id, push: false, message: 'test: shared file' })
+
+  expect(gitDelivery.getWorkingTreeDiff).toHaveBeenCalledTimes(1)
+  expect(gitDelivery.getWorkingTreeDiff).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/quick.ts'])
+  expect(store.getTask(sibling.id)).toMatchObject({ deliveryStatus: 'approved', headCommit })
+  expect(store.getTask(unrelated.id)).toMatchObject({ deliveryStatus: 'reviewable' })
+  expect(updated.at(-1)).toMatchObject({ id: sibling.id, deliveryStatus: 'approved' })
+  expect(events).toContainEqual({ taskId: sibling.id, text: `Changes were committed with "Recolor" as ${headCommit.slice(0, 8)}.` })
+})
+
+test('commit-quick refreshes overlapping local quick tasks that still have changes', async () => {
+  const { store, registry, gitDelivery, addQuickTask } = setup()
+  const task = addQuickTask()
+  const sibling = addQuickTask({ reviewPaths: ['src/quick.ts', 'src/rest.ts'], filesChanged: 2, additions: 4, deletions: 1 })
+  gitDelivery.getWorkingTreeDiff.mockResolvedValueOnce({
+    patch: 'diff --git a/src/rest.ts b/src/rest.ts', commits: [], paths: ['src/rest.ts'], filesChanged: 1, additions: 2, deletions: 0
+  })
+
+  await registry.invoke('tasks:commit-quick', { taskId: task.id, push: false, message: 'test: partial overlap' })
+
+  expect(store.getTask(sibling.id)).toMatchObject({
+    deliveryStatus: 'reviewable', reviewPaths: ['src/rest.ts'], filesChanged: 1, additions: 2, deletions: 0
+  })
+  expect(store.getTask(sibling.id)?.headCommit).toBeUndefined()
 })
