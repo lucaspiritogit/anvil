@@ -309,7 +309,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 type="button"
                 aria-label="Attach image"
                 title="Attach image"
-                className="grid w-8 shrink-0 place-items-center border border-line-strong bg-overlay text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:text-faint"
+                className="grid h-8 w-9 shrink-0 place-items-center border border-line-strong bg-overlay text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:text-faint"
                 disabled={busy}
                 onClick={() => imageInputRef.current?.click()}
               >
