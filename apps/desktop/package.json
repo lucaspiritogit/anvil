@@ -1,6 +1,6 @@
 {
   "name": "@anvil/desktop",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "private": true,
   "scripts": {
     "build": "electron-vite build --config electron.vite.config.ts"
