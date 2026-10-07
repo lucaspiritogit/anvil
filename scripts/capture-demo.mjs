@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process'
 const output = resolve(process.argv[2] || 'public/showcase')
 const frames = await mkdtemp(join(tmpdir(), 'anvil-demo-frames-'))
 const fps = 25
-const durationSeconds = 24
+const durationSeconds = 26
 const targetFrames = fps * durationSeconds
 const errors = []
 let frame = 0
@@ -152,7 +152,7 @@ try {
   const parentTaskId = await typePrompt('Add provider usage limits')
   await emit(parentTaskId, 'message', 'I’ll add workspace usage limits and keep the provider data isolated behind the account bridge.')
   await emit(parentTaskId, 'tool_use', 'Read files\nWorkspaceUsageLimits.tsx · ProviderLimits.tsx')
-  await capture(0.9)
+  await capture(0.6)
 
   await focusNewTask()
   await switchToWork()
@@ -161,18 +161,35 @@ try {
   await focusNewTask()
   const childTaskId = await typePrompt('Polish provider limit meters')
   await updateTask(childTaskId, { deliveryStatus: 'preparing', branchName: undefined, sessionId: undefined })
-  await openTask('Polish provider limit meters')
-  await expect(page.getByText('Queued. Waiting for Add provider usage limits to finish before starting.', { exact: true })).toBeVisible()
-  await capture(1.3)
+  await expect(page.getByRole('button', { name: 'Collapse stack: Add provider usage limits', exact: true })).toBeVisible()
+  await capture(0.8)
+
+  await focusNewTask()
+  await switchToWork()
+  const autoTaskId = await typePrompt('Show limit reset countdown')
+  await updateTask(autoTaskId, { parentTaskId, stackOrigin: 'auto', baseBranch: `anvil/${parentTaskId}` })
+  await expect(page.getByRole('button', { name: 'Open task: Show limit reset countdown', exact: true })).toContainText('⠿ anvil')
+  await capture(0.8)
+
+  await openTask('Show limit reset countdown')
+  await expect(page.getByRole('button', { name: 'Stacked on Add provider usage limits', exact: true })).toBeVisible()
+  await emit(autoTaskId, 'message', 'I’ll build on the provider limit panel from the parent branch and add a reset countdown.')
+  await emit(autoTaskId, 'tool_use', 'Edit file\napps/web/src/components/ProviderLimits.tsx')
+  await capture(0.6)
+  await emit(autoTaskId, 'tool_result', 'Updated ProviderLimits.tsx · +31 −4')
+  await emit(parentTaskId, 'tool_result', 'Updated 3 files · +74 −6')
+  await updateTask(parentTaskId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 21_000, filesChanged: 3, additions: 74, deletions: 6, inputTokens: 42_800, outputTokens: 1_960, totalTokens: 44_760 })
+  await updateTask(autoTaskId, { status: 'succeeded', deliveryStatus: 'reviewable', endedAt: Date.now(), workingStartedAt: undefined, workingTimeMs: 12_000, filesChanged: 2, additions: 31, deletions: 4, inputTokens: 23_100, outputTokens: 880, totalTokens: 23_980 })
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Succeeded')
+  await page.mouse.move(880, 620)
+  await capture(1.0, { x: 880, y: 620 })
   await page.screenshot({ path: join(output, 'demo-stack-preview.png') })
 
-  await openTask('Add provider usage limits')
-  await emit(parentTaskId, 'tool_result', 'Found the account rate-limit endpoint and shared meter component.')
-  await emit(parentTaskId, 'tool_use', 'Edit files\nAdd the workspace provider limit panel')
-  await capture(0.8)
-  await emit(parentTaskId, 'tool_result', 'Updated 3 files · +74 −6')
-  await emit(parentTaskId, 'message', 'Provider limits are wired in. I’m running the focused checks now.')
-  await capture(1.0)
+  const collapseStack = page.getByRole('button', { name: 'Collapse stack: Add provider usage limits', exact: true })
+  await capture(0.4, await centerOf(collapseStack))
+  await collapseStack.click()
+  await expect(page.getByRole('button', { name: 'Open task: Add provider usage limits', exact: true })).toContainText('+2 stacked · 1 working')
+  await capture(0.9)
 
   const analyticsButton = page.getByRole('button', { name: 'Analytics', exact: true })
   await capture(0.4, await centerOf(analyticsButton))

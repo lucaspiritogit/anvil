@@ -2,7 +2,7 @@
 
 **A local-first control plane that runs coding agents in parallel Git worktrees and lets you review their diffs from your desktop or browser.**
 
-![Anvil demo showing a task diff, a queued stacked task, and both tasks being merged](./public/showcase/anvil-demo.gif)
+![Anvil demo showing a quick task, a stacked task tree with manual and Anvil-created stacks, and the analytics dashboard](./public/showcase/anvil-demo.gif)
 
 Run Anvil as a desktop app or a standalone server. Use the same interface on the host machine, over a trusted LAN, or through Tailscale HTTPS.
 
