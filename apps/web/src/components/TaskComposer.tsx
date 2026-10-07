@@ -65,6 +65,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const [startBase, setStartBase] = useState<string>()
   const [error, setError] = useState<string | null>(null)
   const [showSuccess, setShowSuccess] = useState(false)
+  const [created, setCreated] = useState<{ title: string; project: string; offscreen: boolean } | null>(null)
   const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const restorePromptFocus = useRef(false)
   const submitting = useRef(false)
@@ -123,7 +124,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     setBusy(true)
     setError(null)
     try {
-      await startTask({
+      const task = await startTask({
         projectId,
         style,
         reviewPolicy: style === 'work' ? reviewPolicy : 'review_each_issue',
@@ -142,7 +143,16 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         attachments.reset()
         setParentTaskId('')
         setStyle('quick')
+        const project = useStore.getState().projects.find((entry) => entry.id === task?.projectId)?.name ?? 'no project'
+        setCreated(task ? { title: task.title, project, offscreen: false } : null)
         setShowSuccess(true)
+        if (task) window.setTimeout(() => {
+          if (!mounted.current) return
+          const row = document.querySelector(`[data-task-id="${CSS.escape(task.id)}"]`)
+          const bounds = row?.getBoundingClientRect()
+          const visible = Boolean(bounds && bounds.height > 0 && bounds.bottom > 0 && bounds.top < window.innerHeight)
+          if (!visible) setCreated((current) => current && { ...current, offscreen: true })
+        }, 80)
         successTimer.current = setTimeout(() => {
           successTimer.current = null
           setShowSuccess(false)
@@ -331,7 +341,10 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         {error && <p role="alert" className="px-5 pb-4 text-xs text-danger max-[700px]:px-4">{error}</p>}
       </form>
       </div>
-      {showSuccess && <p role="status" aria-label="Task created" className="sr-only">Task created</p>}
+      {showSuccess && created?.offscreen && <p aria-hidden="true" className="task-created-stamp mt-2 truncate px-1 font-mono text-[11px] text-dim">
+        <span className="text-ember-400">› </span>{created.title} <span className="text-ember-400">created</span> · queued in {created.project}
+      </p>}
+      {showSuccess && <p role="status" aria-label="Task created" className="sr-only">{created ? `Task created: ${created.title}, queued in ${created.project}` : 'Task created'}</p>}
     </div>
   )
 }

@@ -133,6 +133,7 @@ interface AnvilState {
   projects: Project[]
   tasks: Task[]
   taskSeenAt: Record<string, number>
+  createdTask: { id: string; at: number } | null
   markTaskSeen: (taskId: string) => void
   taskResultNotices: TaskResultNotice[]
   taskResultNoticeError: TaskResultNoticeError | null
@@ -221,7 +222,7 @@ interface AnvilState {
   sendComments: (taskId: string) => Promise<void>
 
   loadAgentModels: (agentId: string) => Promise<void>
-  startTask: (input: { projectId?: string | null; style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<void>
+  startTask: (input: { projectId?: string | null; style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<Task | undefined>
   steerTask: (taskId: string, message: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string, panel?: TaskPanel) => Promise<void>
@@ -351,6 +352,7 @@ export const useStore = create<AnvilState>((set, get) => ({
   projects: [],
   tasks: [],
   taskSeenAt: loadTaskSeenAt(),
+  createdTask: null,
   markTaskSeen: (taskId) => {
     set((state) => {
       const known = new Set(state.tasks.map((task) => task.id))
@@ -642,12 +644,14 @@ export const useStore = create<AnvilState>((set, get) => ({
       ...(fileReferences?.length ? { fileReferences } : {}),
       ...(reasoningEffort !== undefined ? { reasoningEffort } : {})
     })
-    if (generation !== workspaceGeneration) return
+    if (generation !== workspaceGeneration) return undefined
     set((s) => ({
       // SSE may deliver preparation, cancellation, or failure before the RPC
       // response arrives. The creation snapshot must not undo those updates.
-      tasks: [s.tasks.find((item) => item.id === task.id) ?? task, ...s.tasks.filter((item) => item.id !== task.id)]
+      tasks: [s.tasks.find((item) => item.id === task.id) ?? task, ...s.tasks.filter((item) => item.id !== task.id)],
+      createdTask: { id: task.id, at: Date.now() }
     }))
+    return task
   },
 
   steerTask: async (taskId, message) => {

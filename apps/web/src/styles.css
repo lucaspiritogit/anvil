@@ -228,26 +228,108 @@
     }
   }
 
+  .task-composer-success::before {
+    content: '░▒▓█▓▒░';
+    position: absolute;
+    top: 0;
+    left: 100%;
+    z-index: 2;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    line-height: 6px;
+    height: 6px;
+    overflow: hidden;
+    letter-spacing: -0.05em;
+    color: var(--color-accent);
+    pointer-events: none;
+    animation: task-composer-scan 420ms steps(14, end) both;
+  }
+
   .task-composer-success::after {
     content: '';
     position: absolute;
     inset: 0;
-    z-index: 1;
-    border: 2px solid var(--color-ok);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-ok) 30%, transparent);
+    z-index: 2;
     pointer-events: none;
-    animation: task-composer-success 1.8s ease-out both;
+    background:
+      linear-gradient(var(--color-ember-300), var(--color-ember-300)) top left / 10px 2px,
+      linear-gradient(var(--color-ember-300), var(--color-ember-300)) top left / 2px 10px,
+      linear-gradient(var(--color-ember-300), var(--color-ember-300)) top right / 10px 2px,
+      linear-gradient(var(--color-ember-300), var(--color-ember-300)) top right / 2px 10px,
+      linear-gradient(var(--color-ember-300), var(--color-ember-300)) bottom left / 10px 2px,
+      linear-gradient(var(--color-ember-300), var(--color-ember-300)) bottom left / 2px 10px,
+      linear-gradient(var(--color-ember-300), var(--color-ember-300)) bottom right / 10px 2px,
+      linear-gradient(var(--color-ember-300), var(--color-ember-300)) bottom right / 2px 10px;
+    background-repeat: no-repeat;
+    opacity: 0;
+    animation: task-composer-marks 120ms steps(1, end) 420ms both;
   }
 
-  @keyframes task-composer-success {
-    0% { opacity: 0; }
-    12%, 72% { opacity: 1; }
+  @keyframes task-composer-scan {
+    from { left: 100%; transform: translateX(0); }
+    to { left: 0; transform: translateX(-100%); }
+  }
+
+  @keyframes task-composer-marks {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+
+  .task-created-stamp {
+    animation: task-created-stamp 1800ms steps(1, end) both;
+  }
+
+  @keyframes task-created-stamp {
+    0%, 80% { opacity: 1; }
+    86% { opacity: 0.66; }
+    92% { opacity: 0.33; }
+    100% { opacity: 0; }
+  }
+
+  .sidebar-task-landed {
+    animation: sidebar-task-grow 240ms steps(3, end) both;
+  }
+
+  .sidebar-task-landed::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    z-index: 1;
+    width: 2px;
+    background: var(--color-accent);
+    pointer-events: none;
+    animation: sidebar-task-rail 300ms steps(1, end) both;
+  }
+
+  @keyframes sidebar-task-grow {
+    from { clip-path: inset(0 0 100% 0); }
+    to { clip-path: inset(0); }
+  }
+
+  @keyframes sidebar-task-rail {
+    0%, 66% { opacity: 1; transform: translateX(0); }
+    33% { opacity: 1; transform: translateX(2px); }
     100% { opacity: 0; }
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .task-composer-success::before {
+      display: none;
+    }
+
     .task-composer-success::after {
       animation: none;
+      opacity: 1;
+    }
+
+    .sidebar-task-landed,
+    .sidebar-task-landed::before {
+      animation: none;
+    }
+
+    .sidebar-task-landed::before {
+      opacity: 0;
     }
   }
 
