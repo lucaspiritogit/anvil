@@ -8,6 +8,8 @@ import { onTestCleanup } from './test-cleanup'
 import { TaskIssues } from '../apps/server/src/tasks/task-issues'
 import { IssueTracker } from '../apps/server/src/anvil-issue-tracker/tracker'
 import { Store } from '../apps/server/src/store'
+import { WorkspaceStorage } from '../apps/server/src/workspace-storage'
+import { DEFAULT_WORKSPACE_ID } from '@anvil/protocol/types'
 import { registerTestIpc } from './test-ipc'
 import { handlers, testHome, AgentProcessManager } from './issue-tracker-doubles'
 
@@ -141,24 +143,24 @@ test('upgrades a database from the prior migration set without losing projects, 
   const configFile = join(directory, 'config.json')
   const projectId = randomUUID()
   const taskId = randomUUID()
-  const old = new Store(configFile, { migrationsFolder: priorMigrations })
-  old.addProject({ id: projectId, name: 'Preserved project', path: directory, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
-  old.addTask({
-    id: taskId, projectId, title: 'Preserved task', prompt: 'Keep issue data', cwd: directory,
-    agentId: 'codex', agentLabel: 'Codex', status: 'pending', deliveryStatus: 'working', startedAt: 0,
-    inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,
-    filesChanged: 0, additions: 0, deletions: 0
-  })
-  const tracker = old.issueTracker(projectId)
-  const parent = tracker.createParent({ anvilTaskId: taskId, title: 'Preserved plan' })
-  const issue = tracker.create({ parentId: parent.id, title: 'Preserved issue',
-    description: 'Keep this issue', checklist: ['Verify'], validation: 'Reopen database' })
-  const databasePath = tracker.databasePath
-  const legacy = new DatabaseSync(databasePath)
+  const old = new WorkspaceStorage(priorMigrations, () => join(directory, 'workspaces', 'Default'),
+    () => ({ id: DEFAULT_WORKSPACE_ID, name: 'Default', createdAt: 0 }))
+  const legacy = old.open(DEFAULT_WORKSPACE_ID).sqlite
+  legacy.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, ?)')
+    .run(projectId, 'Preserved project', directory, 0)
+  legacy.prepare(`INSERT INTO tasks (id, workspace_id, project_id, agent_id, agent_label, prompt, title, cwd, status, delivery_status, started_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(taskId, DEFAULT_WORKSPACE_ID, projectId, 'codex', 'Codex', 'Keep issue data', 'Preserved task', directory, 'pending', 'working', 0)
+  const parent = { id: 'preserved-parent' }
+  const issue = { id: 'preserved-issue' }
+  legacy.prepare('INSERT INTO parent_issues (id, anvil_task_id, title, description) VALUES (?, ?, ?, ?)')
+    .run(parent.id, taskId, 'Preserved plan', '')
+  legacy.prepare(`INSERT INTO issues (id, parent_id, title, description, checklist, validation, labels, priority, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(issue.id, parent.id, 'Preserved issue', 'Keep this issue', '["Verify"]', 'Reopen database', '[]', 'medium', 'queued')
+  const databasePath = legacy.location()!
   legacy.prepare('INSERT INTO valence_imports (source_path, project_id, fingerprint, parents, imported_at) VALUES (?, ?, ?, ?, ?)')
     .run(join(directory, 'old.db'), projectId, 'fingerprint', '{}', 1)
-  legacy.close()
   old.close()
 
   const upgraded = new Store(configFile, { migrationsFolder: migrations })
