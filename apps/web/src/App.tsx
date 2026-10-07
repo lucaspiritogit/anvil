@@ -1,4 +1,4 @@
-import { RightSidePanel } from './components/RightSidePanel'
+import { TerminalDock } from './components/TerminalDock'
 import type { JSX } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AppSkeleton } from './components/AppSkeleton'
@@ -27,6 +27,13 @@ export function App(): JSX.Element {
   const [mobileNavigation, setMobileNavigation] = useState(() => window.matchMedia('(max-width: 700px)').matches)
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
   const projectId = useStore((s) => s.activeProjectId)
+  const activeProject = useStore((s) => s.projects.find((project) => project.id === s.activeProjectId))
+  const terminalTask = useStore((s) => {
+    if (s.view.kind !== 'task') return undefined
+    const taskId = s.view.taskId
+    const task = s.tasks.find((entry) => entry.id === taskId)
+    return task && task.projectId === s.activeProjectId && task.checkoutMode !== 'local' && task.branchName ? task : undefined
+  })
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mobileNavigationButtonRef = useRef<HTMLButtonElement>(null)
   const mobileNavigationCloseRef = useRef<HTMLButtonElement>(null)
@@ -226,7 +233,7 @@ export function App(): JSX.Element {
       // per press, so only the first event of a hold counts.
       if (event.repeat || useStore.getState().workspaceSwitching) return
       if (commandPaletteOpen) return
-      if (isTerminalShortcut(event)) {
+      if (isTerminalShortcut(event) || (event.ctrlKey && !event.metaKey && !event.altKey && event.code === 'Backquote')) {
         event.preventDefault()
         if (projectId) {
           setSettingsOpen(false)
@@ -314,11 +321,14 @@ export function App(): JSX.Element {
           }} />
         </div>
         <div ref={workspaceRef} tabIndex={-1} aria-hidden={mobileNavigation && mobileNavigationOpen || undefined}
-          className={cn('relative flex min-w-0 min-h-0 outline-none', settingsOpen && 'hidden')}
+          className={cn('relative flex min-w-0 min-h-0 flex-col outline-none', settingsOpen && 'hidden')}
           inert={settingsOpen || switching || (mobileNavigation && mobileNavigationOpen)}>
           <div className="min-h-0 min-w-0 flex-1"><Workspace key={workspaceId} mobileNavigation={mobileNavigation}
             mobileNavigationOpen={mobileNavigationOpen} navigationButtonRef={mobileNavigationButtonRef} onToggleNavigation={toggleNavigation} /></div>
-          {!settingsOpen && terminalCreated && projectId && <RightSidePanel key={`${workspaceId}:${projectId}`} projectId={projectId} visible={terminalOpen} onClose={() => setTerminalOpen(false)} />}
+          {!settingsOpen && terminalCreated && projectId && <TerminalDock key={`${workspaceId}:${projectId}`} projectId={projectId}
+            projectName={activeProject?.name ?? 'project'} task={terminalTask} open={terminalOpen}
+            onOpen={openTerminal} onCollapse={() => setTerminalOpen(false)}
+            onCloseAll={() => { setTerminalOpen(false); setTerminalCreated(false) }} />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
         {settingsOpen && <div className="contents" inert={switching}><Suspense fallback={<p role="status" className="p-5 text-sm text-dim">Loading settings…</p>}><SettingsPage key={workspaceId} /></Suspense></div>}

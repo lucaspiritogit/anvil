@@ -1,9 +1,15 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+async function selectProject(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /^Select project: / }).first().click()
+}
 
 for (const [platform, modifier] of [['darwin', 'Meta'], ['linux', 'Control']] as const) {
   test(`${modifier}+T and close hide the project terminal without replacing its session`, async ({ page }) => {
     await page.goto(`/tests/e2e/fixture/?platform=${platform}`)
     await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeVisible()
+    await selectProject(page)
+  await selectProject(page)
     await page.keyboard.press(`${modifier}+t`)
     const panel = page.getByRole('region', { name: 'Project terminal', exact: true })
     await expect(panel).toBeVisible()
@@ -31,6 +37,7 @@ for (const [platform, modifier] of [['darwin', 'Meta'], ['linux', 'Control']] as
 test('opening Settings disposes the project terminal and returning creates a clean session', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/')
   await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeVisible()
+  await selectProject(page)
   await page.keyboard.press('Control+t')
   const panel = page.getByRole('region', { name: 'Project terminal', exact: true })
   await expect(panel.locator('canvas')).toBeVisible()
@@ -56,22 +63,29 @@ test('terminal launch failure is visible', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/')
   await page.evaluate(() => { window.anvil.terminals.create = async () => { throw new Error('Shell unavailable') } })
   await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeVisible()
+  await selectProject(page)
   await page.keyboard.press('Control+t')
   await expect(page.getByRole('alert')).toContainText('Could not open the project terminal')
 })
 
-test('terminal opens as a readable right-side panel', async ({ page }) => {
+test('terminal opens as a full-width bottom dock that keeps the composer visible', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto('/tests/e2e/fixture/')
   await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeVisible()
+  await selectProject(page)
   await page.keyboard.press('Control+t')
   const panel = page.getByRole('region', { name: 'Project terminal', exact: true })
   await expect(panel.locator('canvas')).toBeVisible()
-  const box = await panel.boundingBox()
-  expect(box).not.toBeNull()
-  expect(box!.width).toBeGreaterThanOrEqual(340)
-  expect(box!.width).toBeLessThanOrEqual(480)
-  expect(box!.height).toBe(720)
-  expect(box!.x + box!.width).toBe(1280)
+  const box = (await panel.boundingBox())!
+  const main = (await page.locator('main').first().boundingBox())!
+  expect(Math.round(box.y + box.height)).toBe(720)
+  expect(box.width).toBeGreaterThanOrEqual(main.width)
+  expect(box.height).toBeGreaterThanOrEqual(120)
+  expect(box.height).toBeLessThanOrEqual(720 * 0.7)
+  await expect(panel.getByRole('tab', { name: /Workbench|Anvil|project/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeInViewport()
+  await page.getByRole('button', { name: 'Close project terminal' }).click()
+  await expect(page.getByRole('button', { name: 'Open project terminal' })).toContainText('1 session')
+  await page.keyboard.press('Control+Backquote')
+  await expect(panel).toBeVisible()
 })

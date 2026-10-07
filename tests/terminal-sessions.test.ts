@@ -43,10 +43,17 @@ function fixture() {
   native.spawn.mockReset().mockReturnValue(pty)
   native.resolveCommand.mockReset().mockImplementation((command: string) =>
     ({ command: `/bin/${command}`, prefixArgs: [], viaShell: false }))
-  const store = { getProjects: () => [{ id: 'project', path: '/project' }], getActiveWorkspace: () => ({ id: 'default' }) } as unknown as Store
+  const worktree = mkdtempSync(join(tmpdir(), 'anvil-terminal-worktree-'))
+  const tasks = new Map([
+    ['task', { id: 'task', projectId: 'project', cwd: worktree }],
+    ['released', { id: 'released', projectId: 'project', cwd: join(worktree, 'removed') }],
+    ['other', { id: 'other', projectId: 'elsewhere', cwd: worktree }]
+  ])
+  const store = { getProjects: () => [{ id: 'project', path: '/project' }], getActiveWorkspace: () => ({ id: 'default' }),
+    getTask: (id: string) => tasks.get(id) } as unknown as Store
   const broadcast = vi.fn()
   const manager = new TerminalSessionManager(store, broadcast)
-  return { manager, pty, broadcast, data: (value: string) => data(value), exit: (value: number) => exit({ exitCode: value }) }
+  return { manager, pty, broadcast, worktree, data: (value: string) => data(value), exit: (value: number) => exit({ exitCode: value }) }
 }
 
 test('project sessions resolve identity, buffer output, resize, exit and dispose', async () => {
@@ -129,4 +136,18 @@ test('terminal IPC rejects paths, commands, environment and invalid dimensions, 
   }
   expect(validateIpcRequest('terminals:create', [input])).toEqual(input)
   expect(validateIpcRequest('terminals:write', [{ sessionId: 'session', data: '\0\x03\r' }]).data).toBe('\0\x03\r')
+})
+
+test('task sessions open in the task worktree and fall back to the project root', () => {
+  const f = fixture()
+  try {
+    f.manager.createProject({ projectId: 'project', taskId: 'task', cols: 80, rows: 24 })
+    expect(native.spawn).toHaveBeenLastCalledWith(expect.any(String), [], expect.objectContaining({ cwd: f.worktree }))
+    f.manager.createProject({ projectId: 'project', taskId: 'released', cols: 80, rows: 24 })
+    expect(native.spawn).toHaveBeenLastCalledWith(expect.any(String), [], expect.objectContaining({ cwd: '/project' }))
+    expect(() => f.manager.createProject({ projectId: 'project', taskId: 'other', cols: 80, rows: 24 })).toThrow('Task not found in this project')
+    expect(validateIpcRequest('terminals:create', [{ projectId: 'project', taskId: 'task', cols: 80, rows: 24 }])).toMatchObject({ taskId: 'task' })
+  } finally {
+    rmSync(f.worktree, { recursive: true, force: true })
+  }
 })
