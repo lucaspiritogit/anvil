@@ -46,16 +46,19 @@ export class TerminalSessionManager {
   private readonly sessions = new Map<string, Session>()
 
   constructor(
-    private readonly store: Pick<Store, 'getProjects' | 'getActiveWorkspace'>,
+    private readonly store: Pick<Store, 'getProjects' | 'getActiveWorkspace' | 'getTask'>,
     private readonly broadcast: (channel: string, payload: unknown) => void
   ) {}
 
-  createProject(input: { projectId: string; cols: number; rows: number }): { sessionId: string } {
+  createProject(input: { projectId: string; taskId?: string; cols: number; rows: number }): { sessionId: string } {
     const project = this.store.getProjects().find((project) => project.id === input.projectId)
     if (!project) throw new Error('Project not found')
+    const task = input.taskId ? this.store.getTask(input.taskId) : undefined
+    if (input.taskId && task?.projectId !== project.id) throw new Error('Task not found in this project')
+    const cwd = task && existsSync(task.cwd) ? task.cwd : project.path
     return this.create('project', this.store.getActiveWorkspace().id,
       process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/sh', [],
-      project.path, process.env, input.cols, input.rows)
+      cwd, process.env, input.cols, input.rows)
   }
 
   createOpenCodeAuth(workspace: WorkspaceExecutionContext, logout: boolean, onExit: (exitCode: number) => void): { sessionId: string } {

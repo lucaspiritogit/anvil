@@ -73,6 +73,8 @@ function relativeAge(timestamp: number, now: number): string {
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`
 }
 
+const LANDING_MS = 2000
+
 export function SidebarTask({ task, snapshot, project, now, active, compact = false, tree = null, onToggleStack, rowProps, onNavigate }: {
   task: Task
   snapshot?: TaskIssueSnapshot | null
@@ -116,9 +118,20 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const deadline = settlementDeadline(task)
   const presentation = taskIssuePresentation(task, snapshot)
   const indicator = queuedStack ? TASK_INDICATORS.queued : presentation ? taskIssueIndicator(presentation) : taskIndicator(task, finishedUnseen)
+  const createdAt = useStore((state) => state.createdTask?.id === task.id ? state.createdTask.at : null)
+  const [landing, setLanding] = useState(false)
+  useEffect(() => {
+    if (createdAt === null) return
+    const remaining = createdAt + LANDING_MS - Date.now()
+    if (remaining <= 0) return
+    setLanding(true)
+    const timer = setTimeout(() => setLanding(false), remaining)
+    return () => clearTimeout(timer)
+  }, [createdAt])
   const statusIcon = (
-    <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex w-4 shrink-0 justify-center', compact ? 'text-xs' : 'text-[13px]', indicator?.tone ?? 'text-faint')}>
-      {indicator && 'icon' in indicator ? <Icon icon={indicator.icon} size={compact ? 14 : 15} aria-hidden="true" />
+    <span role={indicator ? 'img' : undefined} aria-label={indicator?.label} title={indicator?.label} className={cn('flex w-4 shrink-0 justify-center', compact ? 'text-xs' : 'text-[13px]', landing ? 'text-ember-400' : indicator?.tone ?? 'text-faint')}>
+      {landing ? <span aria-hidden="true" className="font-mono">◇</span>
+        : indicator && 'icon' in indicator ? <Icon icon={indicator.icon} size={compact ? 14 : 15} aria-hidden="true" />
         : indicator ? <StatusGlyph glyph={indicator.glyph} />
           : <Icon icon="folder" size={compact ? 14 : 15} aria-hidden="true" />}
     </span>
@@ -192,7 +205,8 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
         ref={articleRef}
         className={cn(
           'group relative transition-colors duration-[120ms]',
-          active ? 'row-selected' : 'hover:bg-hover'
+          active ? 'row-selected' : 'hover:bg-hover',
+          landing && 'sidebar-task-landed'
         )}
       >
         <button

@@ -200,7 +200,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'projects:update': object({ id, workspaceId: optional(workspaceId), monthlyTokenLimit: optional(nullable(number(0))), monthlyCostLimitUsd: optional(nullable(number(0, Number.MAX_SAFE_INTEGER, false))), finishOnPush: optional(boolean) }),
   'projects:remove': id,
   'projects:reveal': id,
-  'terminals:create': object({ projectId: id, cols: number(2, 500), rows: number(1, 300) }),
+  'terminals:create': object({ projectId: id, taskId: optional(id), cols: number(2, 500), rows: number(1, 300) }),
   'terminals:attach': id,
   'terminals:dispose': id,
   'terminals:write': object({ sessionId: id, data: (value, field) => {

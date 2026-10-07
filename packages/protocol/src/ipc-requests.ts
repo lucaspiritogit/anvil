@@ -42,7 +42,7 @@ export interface IpcRequests {
   'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean }
   'projects:remove': string
   'projects:reveal': string
-  'terminals:create': { projectId: string; cols: number; rows: number }
+  'terminals:create': { projectId: string; taskId?: string; cols: number; rows: number }
   'terminals:attach': string
   'terminals:dispose': string
   'terminals:write': { sessionId: string; data: string }
