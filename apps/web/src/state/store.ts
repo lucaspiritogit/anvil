@@ -1178,8 +1178,9 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   applyTaskUpdate: (task) =>
     set((s) => {
-      if (task.workspaceId !== s.activeWorkspaceId || deletedTaskIds.has(task.id)) return s
+      if (task.workspaceId !== s.activeWorkspaceId) return s
       const existingTask = s.tasks.find((item) => item.id === task.id)
+      if (!existingTask && deletedTaskIds.has(task.id)) return s
       const changed = taskDiffRevision(existingTask) !== taskDiffRevision(task)
       const conflictChanged = existingTask?.mergeConflict?.id !== task.mergeConflict?.id ||
         existingTask?.deliveryStatus !== task.deliveryStatus
