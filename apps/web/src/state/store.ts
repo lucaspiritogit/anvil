@@ -328,7 +328,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     const workspace = await window.anvil.workspaces.create(name)
     set({ workspaces: await window.anvil.workspaces.list() })
     await get().selectWorkspace(workspace.id)
-    if (get().activeWorkspaceId !== workspace.id || get().workspaceError) {
+    if (get().activeWorkspaceId !== workspace.id) {
       throw new Error('Workspace created, but it could not be selected. Close this dialog and select it from the Workspace menu to finish setup.')
     }
   },

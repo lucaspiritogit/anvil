@@ -35,7 +35,7 @@ export function DeleteConfirmationDialog({ title, name, description, fileNotice,
   }
 
   return <dialog ref={dialog} aria-labelledby="delete-resource-title" aria-describedby="delete-resource-description"
-    className={cn(modal.panel, modal.width.narrow, 'm-auto text-fg backdrop:bg-black/55')}
+    className={cn(modal.panel, modal.width.narrow, 'no-drag m-auto text-fg backdrop:bg-black/55')}
     onCancel={(event) => { event.preventDefault(); if (!deleting) onClose() }}>
     <h2 id="delete-resource-title" className={modal.title}>{title}</h2>
     <p id="delete-resource-description" className={cn(modal.copy, 'break-words')}>{description.replace('{name}', name)}</p>
