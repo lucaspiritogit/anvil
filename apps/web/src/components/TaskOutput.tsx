@@ -766,7 +766,7 @@ const CATEGORY_LABEL: Record<TaskEventCategory, string> = {
 const KIND_TONE: Record<TaskEventCategory, string> = {
   message: 'text-accent',
   thinking: 'text-run',
-  tool_use: 'text-accent',
+  tool_use: 'text-violet',
   tool_result: 'text-cyan',
   system: 'text-ok',
   error: 'text-danger'
@@ -775,7 +775,7 @@ const KIND_TONE: Record<TaskEventCategory, string> = {
 const KIND_GLYPH: Record<TaskEventCategory, string> = {
   message: '◇',
   thinking: '∴',
-  tool_use: '›',
+  tool_use: '$',
   tool_result: '↳',
   system: '•',
   error: '✕'
@@ -784,7 +784,7 @@ const KIND_GLYPH: Record<TaskEventCategory, string> = {
 const CATEGORY_DOT: Record<TaskEventCategory, string> = {
   message: 'bg-accent',
   thinking: 'bg-run',
-  tool_use: 'bg-accent',
+  tool_use: 'bg-violet',
   tool_result: 'bg-cyan',
   system: 'bg-ok',
   error: 'bg-danger'
