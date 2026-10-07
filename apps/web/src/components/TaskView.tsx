@@ -1,6 +1,6 @@
 import { issueIsReviewReady, issuePresentation, taskIssuePresentation } from '@anvil/protocol/task-issue-presentation'
 import type { JSX, ReactNode } from 'react'
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
 import { TaskStackStatus } from './TaskStackStatus'
@@ -551,6 +551,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   const issueReviewPending = Boolean(issue && !issueIsReviewReady(snapshot))
   const finalDiffPending = task.status === 'running' || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit'
   const [activePanel, setActivePanel] = useState<TaskPanel>(initialPanel)
+  const openChanges = useCallback(() => setActivePanel('changes'), [])
   const conflictId = task.deliveryStatus === 'merge_conflict' ? task.mergeConflict?.id : undefined
 
   useEffect(() => {
@@ -832,7 +833,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
           </div>}
         </section>}
 
-        <TaskOutput key={task.id} task={task} visible={activePanel === 'output'} presentation={presentation} />
+        <TaskOutput key={task.id} task={task} visible={activePanel === 'output'} presentation={presentation} onOpenChanges={openChanges} />
       </div>
 
       {!isTaskSettled(task) && <TaskSteeringComposer

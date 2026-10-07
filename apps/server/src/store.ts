@@ -259,7 +259,8 @@ function toTaskEvent(row: TaskEventRow): TaskEvent {
     stream: row.stream,
     kind: row.kind,
     category: row.category,
-    text: row.text
+    text: row.text,
+    ...(row.edits ? { edits: row.edits } : {})
   }
 }
 
@@ -1079,7 +1080,7 @@ export class Store {
     const { sequence: _sequence, ...input } = event
     const row = db.insert(taskEvents).values(input).onConflictDoUpdate({
       target: taskEvents.id,
-      set: { text: event.text, category: event.category, stream: event.stream }
+      set: { text: event.text, category: event.category, stream: event.stream, edits: event.edits ?? null }
     }).returning().get()
     return { ...toTaskEvent(row), sequence: row.sequence }
   }

@@ -350,6 +350,7 @@ export interface TaskEvent {
   category: TaskEventCategory
   /** tool_use: first line is the name, remaining lines describe what was executed. */
   text: string
+  edits?: import('./task-event-edits').TaskEventEdit[]
 }
 
 export const DEFAULT_TASK_EVENT_PAGE_SIZE = 500

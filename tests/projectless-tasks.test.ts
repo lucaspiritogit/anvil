@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -225,8 +225,12 @@ test('preserves project tasks, executions, events, comments, stack references an
   for (const migrationDirectory of migrationDirectories.slice(0, projectlessMigration)) {
     cpSync(join(migrationsFolder, migrationDirectory), join(olderMigrationsFolder, migrationDirectory), { recursive: true })
   }
+  const rebuiltTables = [...readFileSync(join(migrationsFolder, migrationDirectories[projectlessMigration], 'migration.sql'), 'utf8')
+    .matchAll(/CREATE TABLE `__new_(\w+)`/g)].map((match) => match[1])
   for (const migrationDirectory of migrationDirectories.slice(projectlessMigration + 1)) {
-    cpSync(join(migrationsFolder, migrationDirectory), join(olderMigrationsFolder, `${migrationDirectory}_before_projectless`), { recursive: true })
+    const migration = readFileSync(join(migrationsFolder, migrationDirectory, 'migration.sql'), 'utf8')
+    const rerun = rebuiltTables.some((table) => migration.includes(`\`${table}\``))
+    cpSync(join(migrationsFolder, migrationDirectory), join(olderMigrationsFolder, rerun ? `${migrationDirectory}_before_projectless` : migrationDirectory), { recursive: true })
   }
   const configFile = join(root, 'config.json')
   let store = new Store(configFile, { migrationsFolder: olderMigrationsFolder })

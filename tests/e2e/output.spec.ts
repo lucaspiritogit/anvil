@@ -63,7 +63,8 @@ test('tool calls show a name and gray input, with one expandable result per call
   await expect(command).toHaveClass(/text-dim/)
   const nameBounds = await tool.getByText('Shell', { exact: true }).boundingBox()
   const commandBounds = await command.boundingBox()
-  expect(commandBounds!.y).toBeGreaterThan(nameBounds!.y)
+  expect(Math.abs(commandBounds!.y - nameBounds!.y)).toBeLessThan(3)
+  expect(commandBounds!.x).toBeGreaterThan(nameBounds!.x + nameBounds!.width)
   await expect(results).toHaveCount(1)
   await expect(results).toHaveAttribute('aria-expanded', 'false')
   const collapsedHeight = (await results.boundingBox())!.height

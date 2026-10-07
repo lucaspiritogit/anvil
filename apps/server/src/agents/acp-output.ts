@@ -1,4 +1,5 @@
 import { contextOccupancy } from '@anvil/protocol/task-context'
+import { textEdit } from '@anvil/protocol/task-event-edits'
 import { randomUUID } from 'node:crypto'
 import type { SessionUpdate, ToolCall, ToolCallUpdate, Usage } from '@agentclientprotocol/sdk'
 import type { TaskEventCategory, TaskUsage } from '@anvil/protocol/types'
@@ -103,7 +104,8 @@ export class AcpOutput {
     const description = toolInputDescription(current.rawInput) ||
       (current.locations ?? []).map((location) => location.path).join('\n') ||
       (current.title !== name ? current.title ?? '' : '')
-    this.toolOutput.use(update.toolCallId, name, description)
+    const edits = (current.content ?? []).flatMap((content) => content.type === 'diff' ? [textEdit(content.path, content.oldText ?? '', content.newText)] : [])
+    this.toolOutput.use(update.toolCallId, name, description, edits.length ? edits : undefined)
     const textContent = (current.content ?? []).flatMap((content) =>
       content.type === 'content' && content.content.type === 'text' ? [content.content.text] : []
     )
