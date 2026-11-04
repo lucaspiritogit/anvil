@@ -202,7 +202,6 @@ test('keeps projectless execution and notices isolated between workspaces', asyn
 test('rejects project-dependent settings before creating a projectless task', async () => {
   const f = fixture()
   for (const input of [
-    { style: 'work' },
     { checkoutMode: 'worktree' },
     { parentTaskId: 'parent' },
     { startBase: 'main' },

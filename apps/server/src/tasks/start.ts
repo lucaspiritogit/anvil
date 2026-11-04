@@ -51,7 +51,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         const workspace = resolveWorkspaceExecution(store, task.workspaceId)
         const style = taskStyle(task)
         if (!project) {
-          if (style !== 'quick' || taskCheckoutMode(task) !== 'local') throw new Error('Tasks without a project require Quick style and a local directory')
+          if (style !== 'quick' || taskCheckoutMode(task) !== 'local') throw new Error('Tasks without a project run in a local directory')
           const cwd = resolveProjectlessTaskDirectory(store, task)
           if (state.projectPath !== cwd) throw new Error('Task directory does not match its workspace')
           requireRunningTask()
@@ -74,7 +74,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         const git = await gitDelivery.status(project.path)
         requireRunningTask()
         if (taskCheckoutMode(task) === 'local') {
-          if (style === 'work') throw new Error('Work tasks require an isolated worktree')
+          if (style === 'work') throw new Error('Planned tasks require an isolated worktree')
           const localTask = store.updateTask(task.id, {
             cwd: project.path,
             deliveryStatus: 'unavailable'
@@ -102,7 +102,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         }
         if (!git.isRepository) {
           throw new Error(style === 'work'
-            ? 'Work requires a Git repository so it can run in an isolated branch and worktree'
+            ? 'An isolated worktree requires a Git repository'
             : 'A worktree Quick task requires a Git repository so it can run in an isolated branch and worktree')
         }
 

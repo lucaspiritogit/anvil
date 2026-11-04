@@ -1,4 +1,4 @@
-import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, AgentRateLimitTarget, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskCheckoutMode } from './types'
+import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, AgentRateLimitTarget, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskCheckoutMode } from './types'
 import type { BrowserHostResponse } from './browser-host'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
@@ -62,7 +62,7 @@ export interface IpcRequests {
   'tasks:events-page': TaskEventsRequest
   'tasks:diff': string
   'tasks:issue-diff': { taskId: string; issueId: string }
-  'tasks:start': { style?: TaskStyle; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; workspaceId?: string; projectId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
+  'tasks:start': { checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; workspaceId?: string; projectId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
   'tasks:steer': { taskId: string; message: string }
   'tasks:compact': string
   'tasks:stack': { taskId: string; parentTaskId: string }

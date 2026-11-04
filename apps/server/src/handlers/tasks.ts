@@ -212,7 +212,6 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       const project = store.getProjects(workspaceId).find((project) => project.id === input.projectId)
       if (input.projectId !== undefined && !project) throw new Error('Project not found')
       if (!project) {
-        if (input.style === 'work') throw new Error('Work tasks require a project')
         if (input.checkoutMode === 'worktree') throw new Error('Worktree tasks require a project')
         if (input.parentTaskId !== undefined) throw new Error('Stacked tasks require a project')
         if (input.startBase !== undefined) throw new Error('Task start bases require a project')
@@ -231,10 +230,9 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
         throw new Error(`${agent.label} does not support image attachments. Choose an agent with an image-capable model.`)
       }
       const model = input.model || agent.defaultModel
-      const style = input.style ?? (project ? 'work' : 'quick')
-      const checkoutMode = input.checkoutMode ?? (style === 'quick' ? 'local' : 'worktree')
-      if (style === 'work' && checkoutMode !== 'worktree') throw new Error('Work tasks require an isolated worktree')
-      if (style !== 'work' && input.parentTaskId) throw new Error('Only Work tasks can be stacked')
+      const checkoutMode = input.checkoutMode ?? (project ? 'worktree' : 'local')
+      const style = project && checkoutMode === 'worktree' ? 'work' : 'quick'
+      if (checkoutMode === 'local' && input.parentTaskId) throw new Error('Only worktree tasks can be stacked')
       if (checkoutMode === 'local' && input.startBase !== undefined) throw new Error('Local checkout tasks cannot choose a worktree start base')
       if (input.parentTaskId && input.startBase !== undefined) throw new Error('Stacked tasks start from their parent task')
       const taskId = randomUUID()

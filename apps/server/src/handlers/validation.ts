@@ -106,7 +106,7 @@ const settingsPatch = object<IpcRequests['settings:set']['patch']>({
   caffeineMode: optional(boolean),
   allowOtherDevices: optional(boolean),
   tailscaleHttps: optional(boolean),
-  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false), cycleTaskStyle: text(128, false), cycleThinking: text(128, false) })),
+  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false), cycleThinking: text(128, false) })),
   diffThemes: optional(object({
     dark: (value, field) => {
       if (!isDiffThemeName(value)) invalid(field, 'must name a diff theme')
@@ -231,7 +231,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:diff': id,
   'tasks:issue-diff': object({ taskId: id, issueId: id }),
   'tasks:start': (value, field) => {
-    const input = object<IpcRequests['tasks:start']>({ style: optional(oneOf('work', 'quick')), checkoutMode: optional(oneOf('worktree', 'local')), startBase: optional(branch), parentTaskId: optional(id), workspaceId: optional(id), projectId: optional(id), agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
+    const input = object<IpcRequests['tasks:start']>({ checkoutMode: optional(oneOf('worktree', 'local')), startBase: optional(branch), parentTaskId: optional(id), workspaceId: optional(id), projectId: optional(id), agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
     if (!hasTaskContent(input.prompt, input.images)) invalid(field, 'requires a prompt or an image')
     return input
   },

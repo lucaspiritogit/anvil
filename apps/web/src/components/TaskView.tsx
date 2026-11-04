@@ -28,7 +28,6 @@ import type {
 } from '@anvil/protocol/types'
 import { taskStyle } from '@anvil/protocol/task-style'
 import { isLocalQuickTask, taskCheckoutMode } from '@anvil/protocol/task-checkout'
-import { TaskStyleBadge } from './TaskStyleBadge'
 
 interface Props {
   task: Task
@@ -543,7 +542,6 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 @max-[760px]:flex-col">
           <div className="flex min-w-0 flex-1 items-center gap-2 @max-[760px]:w-full @max-[760px]:flex-none">
             <h1 className="min-w-0 truncate font-mono text-[15px] font-semibold leading-snug tracking-[-0.01em]" title={task.title}>{task.title}</h1>
-            <TaskStyleBadge style={style} />
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
             <span aria-label="Task status" className="flex min-w-0 flex-wrap items-center gap-2">

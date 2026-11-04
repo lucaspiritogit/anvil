@@ -301,25 +301,19 @@ test('requires isolated Work tasks and routes their selected base', async () => 
   expect(() => call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', checkoutMode: 'shared' }))
     .toThrow(/checkoutMode/)
   await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', checkoutMode: 'local', startBase: 'origin/main' }))
-    .rejects.toThrow(/Work tasks require an isolated worktree/)
+    .rejects.toThrow(/Local checkout tasks cannot choose a worktree start base/)
   await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', checkoutMode: 'local', parentTaskId: 'parent' }))
-    .rejects.toThrow(/Work tasks require an isolated worktree/)
+    .rejects.toThrow(/Only worktree tasks can be stacked/)
   await expect(call('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Invalid', parentTaskId: 'parent', startBase: 'origin/main' }))
     .rejects.toThrow(/start from their parent task/)
-  await expect(call('tasks:start', {
-    style: 'work', checkoutMode: 'local', projectId: project.id, agentId: 'codex', prompt: 'Invalid'
-  })).rejects.toThrow(/Work tasks require an isolated worktree/)
-  await expect(call('tasks:start', {
-    style: 'quick', startBase: 'origin/main', projectId: project.id, agentId: 'codex', prompt: 'Invalid'
-  })).rejects.toThrow(/Local checkout tasks cannot choose a worktree start base/)
 
   GitDeliveryManager.repository = false
   const nonGit: Task = await call('tasks:start', {
-    style: 'work', projectId: project.id, agentId: 'codex', prompt: 'Cannot isolate this task'
+    projectId: project.id, agentId: 'codex', prompt: 'Cannot isolate this task'
   })
   await tick()
   expect(store.getTask(nonGit.id)).toMatchObject({
-    status: 'pending', deliveryStatus: 'failed', error: expect.stringMatching(/Work requires a Git repository/)
+    status: 'pending', deliveryStatus: 'failed', error: expect.stringMatching(/requires a Git repository/)
   })
   GitDeliveryManager.repository = true
 
@@ -516,13 +510,13 @@ test('rejects unsafe clone URLs and removes failed clone destinations', async ()
   expect(store.getProjects()).toStrictEqual([expect.objectContaining({ id: 'project' })])
 })
 
-test('runs local Quick tasks directly without issue plans', async () => {
+test('runs local checkout tasks directly without issue plans', async () => {
   const { store, project, agentProcesses, delivery, call, tick, commitPathCalls } = setupIpc()
   const prepareBranch = vi.spyOn(delivery, 'prepareBranch')
   const getWorkingTreeDiff = vi.spyOn(delivery, 'getWorkingTreeDiff')
 
   const quick: Task = await call('tasks:start', {
-    style: 'quick', projectId: project.id, agentId: 'codex', prompt: 'Explain the current architecture or make a focused change'
+    checkoutMode: 'local', projectId: project.id, agentId: 'codex', prompt: 'Explain the current architecture or make a focused change'
   })
   await tick()
   expect(quick.style).toBe('quick')
@@ -547,14 +541,14 @@ test('runs local Quick tasks directly without issue plans', async () => {
   })
   expect(store.getTask(quick.id)?.branchName).toBeUndefined()
   const parallelQuick: Task = await call('tasks:start', {
-    style: 'quick', projectId: project.id, agentId: 'codex', prompt: 'Run another quick task'
+    checkoutMode: 'local', projectId: project.id, agentId: 'codex', prompt: 'Run another quick task'
   })
   await tick()
   expect(store.getTask(parallelQuick.id)).toMatchObject({ cwd: project.path, checkoutMode: 'local', status: 'running' })
   await expect(call('projects:checkout', { projectId: project.id, branchName: 'main' })).rejects.toThrow('active task using this project checkout')
   await expect(call('tasks:start', {
-    style: 'quick', parentTaskId: quick.id, projectId: project.id, agentId: 'codex', prompt: 'Stack this'
-  })).rejects.toThrow('Only Work tasks can be stacked')
+    checkoutMode: 'local', parentTaskId: quick.id, projectId: project.id, agentId: 'codex', prompt: 'Stack this'
+  })).rejects.toThrow('Only worktree tasks can be stacked')
   agentProcesses.finishTurn(quick.id, 'Focused change complete', 0, ['src/quick.ts'])
   await tick()
   expect(store.getTask(quick.id)).toMatchObject({
@@ -572,48 +566,11 @@ test('runs local Quick tasks directly without issue plans', async () => {
   expect(store.getTask(quick.id)?.settledAt).toBeTypeOf('number')
 })
 
-test('runs worktree Quick tasks on an isolated branch without issue plans', async () => {
-  const { store, project, agentProcesses, delivery, mergeState, call, tick } = setupIpc()
-  const prepareBranch = vi.spyOn(delivery, 'prepareBranch')
-  const resolveBase = vi.spyOn(delivery, 'resolveWorktreeBase')
-
-  const quick: Task = await call('tasks:start', {
-    style: 'quick', checkoutMode: 'worktree', startBase: 'origin/main',
-    projectId: project.id, agentId: 'codex', prompt: 'Make a focused change in isolation'
-  })
-  await tick()
-  expect(resolveBase).toHaveBeenCalledWith(project.path, 'origin/main')
-  expect(prepareBranch).toHaveBeenCalledWith(project.path, quick.id, expect.any(Function), {
-    commit: 'base-origin/main', branch: 'origin/main'
-  })
-  expect(store.getTask(quick.id)).toMatchObject({
-    checkoutMode: 'worktree', startBase: 'origin/main', branchName: 'task', baseBranch: 'origin/main',
-    baseCommit: 'base-origin/main', deliveryStatus: 'working'
-  })
-  expect(call('tasks:issues', quick.id)).toBeNull()
-  expect(agentProcesses.starts.at(-1)).toMatchObject({ taskId: quick.id, issueTracker: false })
-  expect(agentProcesses.starts.at(-1).prompt).toContain('Answer or complete the request directly')
-
-  agentProcesses.finishTurn(quick.id, 'Focused change complete')
-  await tick()
-  expect(store.getTask(quick.id)).toMatchObject({ status: 'succeeded', deliveryStatus: 'reviewable', headCommit: expect.any(String) })
-
-  await expect(call('tasks:commit-quick', { taskId: quick.id, push: false })).rejects.toThrow(/Only local Quick tasks/)
-  const preview = await call('tasks:merge-preview', quick.id)
-  const approval = call('tasks:approve', { taskId: quick.id, preview }) as Promise<Task>
-  await tick()
-  mergeState.finish!()
-  const merged: Task = await approval
-  expect(merged.deliveryStatus).toBe('approved')
-  call('tasks:settle', quick.id)
-  expect(store.getTask(quick.id)?.settledAt).toBeTypeOf('number')
-})
-
-test('fails worktree Quick tasks without a Git repository', async () => {
+test('fails worktree tasks without a Git repository', async () => {
   const { store, project, agentProcesses, call, tick } = setupIpc()
   GitDeliveryManager.repository = false
   const quick: Task = await call('tasks:start', {
-    style: 'quick', checkoutMode: 'worktree', projectId: project.id, agentId: 'codex', prompt: 'Cannot isolate this task'
+    checkoutMode: 'worktree', projectId: project.id, agentId: 'codex', prompt: 'Cannot isolate this task'
   })
   await tick()
   expect(store.getTask(quick.id)).toMatchObject({
@@ -924,7 +881,7 @@ test('blocks failed planning, cancels preparation and between issues, and forwar
   await tick()
   GitDeliveryManager.repository = false
   const nonGitEffortTask: Task = await call('tasks:start', {
-    style: 'quick', projectId: project.id, agentId: 'codex', prompt: 'Use reasoning without Git',
+    checkoutMode: 'local', projectId: project.id, agentId: 'codex', prompt: 'Use reasoning without Git',
     model: 'reasoner', reasoningEffort: 'native-max'
   })
   await tick()
@@ -985,7 +942,7 @@ test('keeps image bytes separate through memory preparation and both startup pat
   try {
     for (const repository of [true, false]) {
       GitDeliveryManager.repository = repository
-      const task: Task = await call('tasks:start', { style: repository ? 'work' : 'quick', projectId: project.id, agentId: 'codex', prompt: 'Inspect image', images })
+      const task: Task = await call('tasks:start', { checkoutMode: repository ? 'worktree' : 'local', projectId: project.id, agentId: 'codex', prompt: 'Inspect image', images })
       await tick()
       const dispatched = agentProcesses.starts.find((start) => start.taskId === task.id)
       expect(dispatched.images).toEqual(images)
@@ -1180,7 +1137,7 @@ test('file references keep contents out of prompts and reject disappeared files 
   for (const repository of [true, false]) {
     GitDeliveryManager.repository = repository
     const task: Task = await call('tasks:start', {
-      style: repository ? 'work' : 'quick', projectId: project.id, agentId: 'codex', prompt: `Inspect @${JSON.stringify(path)}`, fileReferences: [path]
+      checkoutMode: repository ? 'worktree' : 'local', projectId: project.id, agentId: 'codex', prompt: `Inspect @${JSON.stringify(path)}`, fileReferences: [path]
     })
     await tick()
     const start = agentProcesses.starts.at(-1)

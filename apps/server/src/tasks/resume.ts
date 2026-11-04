@@ -42,7 +42,7 @@ export async function resumeTaskTurn(
   if (task.sessionId && !agent.executionProtocol && !agent.resumeArgs) throw new Error('This agent cannot resume its saved session')
   const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
   if (task.projectId !== undefined && !project) throw new Error('Project not found')
-  if (!project && (style !== 'quick' || taskCheckoutMode(task) !== 'local')) throw new Error('Tasks without a project require Quick style and a local directory')
+  if (!project && (style !== 'quick' || taskCheckoutMode(task) !== 'local')) throw new Error('Tasks without a project run in a local directory')
   const guard = (): Task => {
     const current = check()
     validate(current)
@@ -61,8 +61,8 @@ export async function resumeTaskTurn(
     if (!project && savedState && savedState.projectPath !== cwd) throw new Error('Task directory does not match its workspace')
     let location: Partial<Task> = { cwd }
     const git = project ? await gitDelivery.status(project.path) : undefined
-    if (style === 'work' && !usesManagedWorktree(task)) throw new Error('Work tasks require an isolated worktree')
-    if (style === 'work' && !git?.isRepository) throw new Error('Work requires a Git repository so it can run in an isolated branch and worktree')
+    if (style === 'work' && !usesManagedWorktree(task)) throw new Error('Planned tasks require an isolated worktree')
+    if (style === 'work' && !git?.isRepository) throw new Error('An isolated worktree requires a Git repository')
     if (project && usesManagedWorktree(task) && task.branchName) {
       const checkout = await gitDelivery.checkoutBranch(project.path, task.id, task.branchName, task.baseBranch, guard)
       location = { cwd: checkout.cwd }
