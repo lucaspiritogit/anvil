@@ -27,7 +27,7 @@ export async function taskBranchFixture() {
   const store = new Store(database, options)
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Project', path: repo, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const manager = new GitDeliveryManager(join(root, 'worktrees'))
   const prepared = await manager.prepareBranch(repo, 'task-a')
   const branchName = prepared.branchName

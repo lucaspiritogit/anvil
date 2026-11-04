@@ -1,15 +1,19 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 const fixture = '/tests/e2e/fixture/?scenario=review'
 
+async function openPullRequest(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'More ship actions' }).click()
+  await page.getByRole('menuitem', { name: 'Open pull request…' }).click()
+}
+
 test('Open PR previews the remote, drafts editable fields, and shows created PR details', async ({ page }, testInfo) => {
   await page.goto(fixture)
-  // Review actions live in the task header, so they are reachable from any panel.
-  const open = page.getByRole('button', { name: 'Open PR', exact: true })
-  const merge = page.getByRole('button', { name: 'Merge task', exact: true })
-  await expect(open).toBeEnabled()
-  expect((await open.boundingBox())!.x).toBeLessThan((await merge.boundingBox())!.x)
-  await open.click()
+  // Ship actions live in the task header, so they are reachable from any panel.
+  const ship = page.getByRole('button', { name: 'Ship', exact: true })
+  const more = page.getByRole('button', { name: 'More ship actions' })
+  await expect(ship).toBeEnabled()
+  await openPullRequest(page)
   const dialog = page.getByRole('dialog', { name: 'Open PR', exact: true })
   await expect(dialog).toContainText('developer/anvil via origin')
   await expect(dialog).toContainText('as developer')
@@ -34,17 +38,17 @@ test('Open PR previews the remote, drafts editable fields, and shows created PR 
   await page.screenshot({ path: testInfo.outputPath('created-pr.png') })
   await created.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Open PR')
-  await expect(page.getByLabel('Task status', { exact: true })).not.toContainText('Ready to review')
+  await expect(page.getByLabel('Task status', { exact: true })).not.toContainText('Ready to ship')
   await expect(page.getByLabel('Task status', { exact: true }).getByText('Open PR', { exact: true })).toHaveCSS('color', 'rgb(95, 211, 138)')
   await expect(page.getByLabel('Task status', { exact: true }).locator('path')).toHaveAttribute('d', /M15 6C12\.6131/)
   const sidebarTask = page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
   await expect(sidebarTask.getByRole('img', { name: 'Open PR', exact: true })).toBeVisible()
-  await expect(sidebarTask.getByRole('img', { name: 'Ready for review', exact: true })).toHaveCount(0)
-  await expect(merge).toBeEnabled()
-  await expect(open).toBeFocused()
+  await expect(sidebarTask.getByRole('img', { name: 'Ready to ship', exact: true })).toHaveCount(0)
+  await expect(ship).toBeEnabled()
+  await expect(more).toBeFocused()
 })
 
-test('cancelling the PR dialog does not push or merge', async ({ page }) => {
+test('cancelling the PR dialog does not push or ship', async ({ page }) => {
   await page.goto(fixture)
   await page.evaluate(() => {
     window.addEventListener('fixture:open-pr', () => { throw new Error('Unexpected PR creation') })
@@ -52,10 +56,10 @@ test('cancelling the PR dialog does not push or merge', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await page.getByRole('button', { name: 'Open PR', exact: true }).click()
+  await openPullRequest(page)
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByRole('dialog')).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Merge task', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeEnabled()
   expect(errors).toEqual([])
 })
 
@@ -87,7 +91,7 @@ for (const [query, message] of [
   test(`PR confirmation blocks submission for ${query}`, async ({ page }) => {
     await page.goto(`${fixture}&${query}=1`)
     await page.getByRole('tab', { name: /^Changes/ }).click()
-    await page.getByRole('button', { name: 'Open PR', exact: true }).click()
+    await openPullRequest(page)
     const dialog = page.getByRole('dialog')
     await expect(dialog).toContainText(message)
     await expect(dialog.getByRole('button', { name: 'Open PR', exact: true })).toBeDisabled()
@@ -97,7 +101,7 @@ for (const [query, message] of [
 test('PR and drafting failures preserve editable user text', async ({ page }) => {
   await page.goto(`${fixture}&prFailure=1&prDraftFailure=1`)
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await page.getByRole('button', { name: 'Open PR', exact: true }).click()
+  await openPullRequest(page)
   const dialog = page.getByRole('dialog')
   const title = dialog.getByRole('textbox', { name: 'Title', exact: true })
   await title.fill('Keep my title')

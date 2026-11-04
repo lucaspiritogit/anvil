@@ -12,7 +12,7 @@ test('recovers persisted PRs and handles caching, stale tasks, credentials, rate
   const database = join(testHome, 'config.json')
   const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   let store = new Store(database, options)
-  store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const base: Task = {
     workspaceId: 'default',
     id: 'task', projectId: 'project', title: 'Feature', prompt: 'Feature', agentId: 'codex', agentLabel: 'Codex',

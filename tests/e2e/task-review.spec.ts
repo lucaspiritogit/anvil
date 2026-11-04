@@ -1,216 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { TaskIssueSnapshot } from '@anvil/protocol/types'
 
-type ReviewCall = { kind: string; detail: Record<string, unknown> }
-
-test('owner reviews two isolated ranges and rework before the combined final diff', async ({ page }, testInfo) => {
-  await page.goto('/tests/e2e/fixture/?scenario=review')
-  await page.evaluate(async () => {
-    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
-    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'running', deliveryStatus: 'working' } }))
-  })
-  await expect(page.getByRole('log')).toContainText('The sidebar spacing is updated')
-  await page.evaluate(() => {
-    const snapshot: TaskIssueSnapshot = {
-      parent: { id: 'plan', title: 'Two changes', description: '' },
-      execution: { phase: 'reviewing', currentIssueId: 'first', error: null },
-      reviewReady: true,
-      children: ['first', 'second'].map((id) => ({ id, parentId: 'plan', title: `${id} change`, description: '',
-        status: id === 'first' ? 'review' : 'queued', baseCommit: `base-${id}`, headCommit: `head-${id}`,
-        checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] }))
-    }
-    const publish = () => window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'review', snapshot: structuredClone(snapshot) } }))
-    const patch = (id: string) => `diff --git a/${id}.txt b/${id}.txt\nnew file mode 100644\n--- /dev/null\n+++ b/${id}.txt\n@@ -0,0 +1 @@\n+${id} change\n`
-    window.anvil.tasks.issueDiff = async ({ issueId }) => ({ patch: patch(issueId), commits: [] })
-    window.anvil.tasks.diff = async () => ({ patch: patch('first') + patch('second'), commits: [] })
-    window.anvil.tasks.approveIssue = async ({ issueId }) => {
-      snapshot.children.find((child) => child.id === issueId)!.status = 'complete'
-      if (issueId === 'first') {
-        snapshot.children[1].status = 'review'
-        snapshot.execution!.currentIssueId = 'second'
-      } else {
-        snapshot.execution = { phase: 'complete', currentIssueId: null, error: null }
-        const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
-        window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'succeeded', deliveryStatus: 'reviewable' } }))
-      }
-      publish()
-      return (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
-    }
-    window.anvil.tasks.rejectIssue = async ({ issueId, comment }) => {
-      if (issueId !== 'second' || comment !== undefined) throw new Error('Wrong review feedback')
-      snapshot.children[1].status = 'working'
-      snapshot.execution!.phase = 'working'
-      publish()
-      setTimeout(() => {
-        snapshot.children[1].status = 'review'
-        snapshot.children[1].headCommit = 'reworked-second'
-        snapshot.execution!.phase = 'reviewing'
-        publish()
-      }, 1200)
-      return (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
-    }
-    publish()
-    for (const [index, text] of ['Planning history', 'First issue output', 'Second issue output'].entries()) {
-      window.dispatchEvent(new CustomEvent('fixture:output', { detail: { id: `history-${index}`, taskId: 'review',
-        issueId: index ? ['first', 'second'][index - 1] : undefined, ts: Date.now(), stream: 'stdout', kind: 'output', category: 'message', text } }))
-    }
-  })
-  await expect(page.getByLabel('Task status', { exact: true })).toContainText('first change')
-  await page.getByRole('tab', { name: /^Changes/ }).click()
-  const files = page.locator('[data-diff-file]')
-  await expect(page.getByRole('region', { name: 'first.txt' })).toBeVisible()
-  await expect(page.getByLabel('Rework feedback')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Approve step', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'second.txt' })).toBeVisible()
-  await expect(files).toHaveCount(1)
-  await page.getByRole('button', { name: 'Request changes', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'second.txt' })).toBeVisible()
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
-  const rows = page.getByRole('list', { name: 'Subtasks of Review sidebar changes' })
-  await expect(rows.locator('button, a, [tabindex], [aria-current]')).toHaveCount(0)
-  await rows.getByRole('listitem').first().click()
-  await expect(page.getByRole('region', { name: 'second.txt' })).toBeVisible()
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Review sidebar changes')
-  await expect(page.getByRole('button', { name: 'Approve step', exact: true })).toBeInViewport({ ratio: 1 })
-  await page.screenshot({ path: testInfo.outputPath('second-review-wide.png') })
-  await page.setViewportSize({ width: 900, height: 650 })
-  await expect(page.getByRole('button', { name: 'Approve step', exact: true })).toBeInViewport({ ratio: 1 })
-  await expect(page.getByRole('button', { name: 'Request changes', exact: true })).toBeInViewport({ ratio: 1 })
-  await page.screenshot({ path: testInfo.outputPath('second-review-narrow.png') })
-  await page.getByRole('tab', { name: 'Output', exact: true }).click()
-  for (const text of ['Planning history', 'First issue output', 'Second issue output']) await expect(page.getByRole('log')).toContainText(text)
-  await page.screenshot({ path: testInfo.outputPath('continuous-output.png') })
-  await page.getByRole('tab', { name: /^Changes/ }).click()
-  await page.getByRole('button', { name: 'Approve step', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toBeVisible()
-  await expect(files).toHaveCount(2)
-  await expect(files.locator('button[aria-expanded]')).toHaveText(['first.txt', 'second.txt'])
-  await page.screenshot({ path: testInfo.outputPath('combined-final-review.png') })
-})
-
-test('owner handles failed and empty issue diffs with explicit legacy fallback', async ({ page }) => {
-  await page.goto('/tests/e2e/fixture/?scenario=review')
-  await page.evaluate(async () => {
-    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
-    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'running', deliveryStatus: 'working' } }))
-  })
-  await page.evaluate(() => {
-    let attempt = 0
-    window.anvil.tasks.issueDiff = async () => {
-      if (++attempt === 1) throw new Error('Recorded range unavailable')
-      return { patch: '', commits: [] }
-    }
-    window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'review', snapshot: {
-      parent: { id: 'plan', title: 'Plan', description: '' }, reviewReady: true,
-      children: [{ id: 'empty', parentId: 'plan', title: 'No changes', description: '', status: 'review', checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] }]
-    } } }))
-  })
-  await page.getByRole('tab', { name: /^Changes/ }).click()
-  await expect(page.getByRole('alert')).toContainText('Recorded range unavailable')
-  await expect(page.getByRole('button', { name: 'Approve step', exact: true })).toBeDisabled()
-  await page.getByRole('button', { name: 'Retry', exact: true }).click()
-  await expect(page.getByText('No file changes in this range.')).toBeVisible()
-  await expect(page.getByText(/Legacy submission:/)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Approve step', exact: true })).toBeEnabled()
-})
-
-test('a late sibling diff cannot replace the current review', async ({ page }) => {
-  await page.goto('/tests/e2e/fixture/?scenario=review')
-  await page.evaluate(async () => {
-    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
-    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'running', deliveryStatus: 'working' } }))
-  })
-  await expect(page.getByRole('log')).toContainText('The sidebar spacing is updated')
-  await page.evaluate(() => {
-    const snapshot: TaskIssueSnapshot = {
-      parent: { id: 'plan', title: 'Plan', description: '' },
-      children: ['slow', 'next'].map((id) => ({ id, parentId: 'plan', title: id, description: '',
-        status: id === 'slow' ? 'review' : 'queued', checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] }))
-    }
-    const publish = () => window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'review', snapshot: structuredClone(snapshot) } }))
-    window.anvil.tasks.issueDiff = async ({ issueId }) => {
-      if (issueId === 'slow') {
-        setTimeout(() => {
-          snapshot.children[0].status = 'complete'
-          snapshot.children[1].status = 'review'
-          publish()
-        }, 50)
-        await new Promise((resolve) => setTimeout(resolve, 1800))
-        window.dispatchEvent(new Event('fixture:slow-diff-returned'))
-        return { patch: 'stale sibling patch', commits: [] }
-      }
-      return { patch: '', commits: [] }
-    }
-    Object.assign(window, { slowDiffReturned: false })
-    window.addEventListener('fixture:slow-diff-returned', () => Object.assign(window, { slowDiffReturned: true }))
-    publish()
-  })
-  await page.getByRole('tab', { name: /^Changes/ }).click()
-  await expect(page.getByLabel('Task status', { exact: true })).toContainText('next')
-  await expect(page.getByText('No file changes in this range.')).toBeVisible()
-  await expect.poll(() => page.evaluate(() => (window as unknown as { slowDiffReturned: boolean }).slowDiffReturned)).toBe(true)
-  await expect(page.getByText('No file changes in this range.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Approve step', exact: true })).toBeEnabled()
-})
-
-test('sub-task review pauses on the per-issue diff with approve and request-changes actions', async ({ page }, testInfo) => {
-  await page.goto('/tests/e2e/fixture/?scenario=review')
-  await page.evaluate(async () => {
-    const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
-    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, status: 'running', deliveryStatus: 'working' } }))
-  })
-  await page.evaluate(() => {
-    const calls: ReviewCall[] = []
-    Object.assign(window, { subtaskReviewCalls: calls })
-    for (const kind of ['fixture:issue-diff', 'fixture:issue-approval', 'fixture:issue-rejection']) {
-      window.addEventListener(kind, (event) => calls.push({ kind, detail: (event as CustomEvent<Record<string, unknown>>).detail }))
-    }
-  })
-  const calls = (): Promise<ReviewCall[]> =>
-    page.evaluate(() => (window as unknown as { subtaskReviewCalls: ReviewCall[] }).subtaskReviewCalls)
-  const snapshot: TaskIssueSnapshot = {
-    parent: { id: 'plan', anvilTaskId: 'review', title: 'Review sidebar changes', description: '' },
-    children: [
-      { id: 'issue-done', parentId: 'plan', title: 'Read the branch', description: '', status: 'complete', checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] },
-      { id: 'issue-review', parentId: 'plan', title: 'Extract review actions', description: 'Split the review flow', status: 'review', checklist: [], validation: '', labels: [], priority: 'medium', dependencies: [] }
-    ]
-  }
-  const publish = (value: TaskIssueSnapshot): Promise<void> =>
-    page.evaluate((snapshot) => window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'review', snapshot } })), value)
-  await publish(snapshot)
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Review sidebar changes')
-  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Extract review actions')
-  await page.getByRole('tab', { name: /^Changes/ }).click()
-  const review = page.getByRole('region', { name: 'Subtask code changes' })
-  await expect(review.getByRole('status')).toContainText('Waiting for your review')
-  // The diff comes from the per-issue channel, not the whole task diff.
-  const sidebar = review.getByRole('region', { name: 'src/sidebar.ts' })
-  await expect(sidebar).toBeVisible()
-  await expect(sidebar.locator('[data-line]').filter({ hasText: 'spacing: 12' })).toBeVisible()
-  await expect.poll(calls).toContainEqual({ kind: 'fixture:issue-diff', detail: { taskId: 'review', issueId: 'issue-review' } })
-  await sidebar.locator('[data-column-number="2"][data-line-type="change-addition"]').click()
-  await review.getByPlaceholder('Leave a note on this line…').fill('Rename this flag')
-  await review.getByRole('button', { name: 'Add comment', exact: true }).click()
-  await expect(review.getByText('1 line comment will be sent with the rework request.')).toBeVisible()
-  await page.getByRole('button', { name: 'Request changes', exact: true }).click()
-  await expect.poll(calls).toContainEqual({ kind: 'fixture:issue-rejection', detail: { taskId: 'review' } })
-  // Rework restarts the issue; the next review submission refetches the diff.
-  const rework = structuredClone(snapshot)
-  rework.children[1].status = 'working'
-  await publish(rework)
-  await expect(review).toHaveCount(0)
-  rework.children[1].status = 'review'
-  await publish(rework)
-  await expect(review.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('subtask-review-wide.png') })
-  await page.setViewportSize({ width: 900, height: 650 })
-  await page.screenshot({ path: testInfo.outputPath('subtask-review-narrow.png') })
-  await page.getByRole('button', { name: 'Approve step', exact: true }).click()
-  await expect.poll(calls).toContainEqual({ kind: 'fixture:issue-approval', detail: { taskId: 'review' } })
-  await page.screenshot({ path: testInfo.outputPath('subtask-review.png') })
-})
-
 test('review gives Pierre the full width, with per-file viewed state and a preserved output draft', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const errors: string[] = []
@@ -281,69 +71,81 @@ test('file headers stay pinned while scrolling through every change', async ({ p
   expect(betaBox.y + betaBox.height).toBeLessThanOrEqual(headerBox.y + 1)
 })
 
-test('Pierre line comments and merge remain available', async ({ page }, testInfo) => {
+test('line comments go to the agent and Ship lands the task in one click', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
+  await page.evaluate(() => {
+    const calls: unknown[] = []
+    Object.assign(window, { shipCalls: calls })
+    window.addEventListener('fixture:ship', (event) => calls.push((event as CustomEvent).detail))
+  })
   await page.getByRole('tab', { name: /^Changes/ }).click()
   const review = page.getByRole('region', { name: 'Code changes' })
-  const merge = page.getByRole('button', { name: 'Merge task', exact: true })
-  await expect(review.getByText('Select a line to comment')).toBeVisible()
-  await expect(page.getByRole('button', { name: /^Send \d+ comments?$/ })).toHaveCount(0)
+  const ship = page.getByRole('button', { name: 'Ship', exact: true })
+  await expect(review.getByText('Select a line to leave a note for the agent')).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Send \d+ comments? to agent$/ })).toHaveCount(0)
   await review.getByRole('region', { name: 'src/sidebar.ts' }).locator('[data-column-number="2"][data-line-type="change-addition"]').click()
   await review.getByPlaceholder('Leave a note on this line…').fill('Keep this spacing consistent')
   await review.getByRole('button', { name: 'Add comment', exact: true }).click()
   await expect(review.getByText('Keep this spacing consistent', { exact: true })).toBeVisible()
-  await expect(review.getByText('1 comment pending')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Send 1 comment', exact: true })).toBeEnabled()
+  await expect(review.getByText('1 comment for the agent')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Send 1 comment to agent', exact: true })).toBeEnabled()
   await review.getByRole('button', { name: 'Remove', exact: true }).click()
   await expect(review.getByText('Keep this spacing consistent', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /^Send \d+ comments?$/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Send \d+ comments? to agent$/ })).toHaveCount(0)
   await review.locator('summary').click()
   await expect(review.getByRole('button', { name: 'Rebase', exact: true })).toBeEnabled()
   await expect(review.getByText('Update sidebar spacing')).toBeVisible()
-  await merge.click()
-  const confirmation = page.getByRole('alertdialog', { name: 'Merge task?' })
-  await expect(confirmation).toContainText('anvil/review')
-  await expect(confirmation).toContainText('user-current')
-  await expect(confirmation).toContainText('3 commits will be brought in')
-  await page.screenshot({ path: testInfo.outputPath('merge-confirmation.png') })
-  await confirmation.getByRole('button', { name: 'Cancel' }).click()
-  await expect(confirmation).toBeHidden()
-  await expect(merge).toBeFocused()
-  await merge.click()
-  await confirmation.getByRole('button', { name: 'Merge task', exact: true }).click()
-  await expect(confirmation.getByRole('button', { name: 'Merging…' })).toBeDisabled()
-  await expect(confirmation).toBeHidden()
-  // Merge retires the button; the header status carries the result and the PR action stays.
-  await expect(merge).toHaveCount(0)
-  await expect(page.getByRole('main').getByText('Merged', { exact: true })).toHaveCSS('color', 'rgb(95, 211, 138)')
-  await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toBeEnabled()
+  await ship.click()
+  await expect(page.getByRole('button', { name: 'Shipping…' })).toBeDisabled()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(ship).toHaveCount(0)
+  await expect(page.getByRole('main').getByText('Shipped', { exact: true })).toHaveCSS('color', 'rgb(95, 211, 138)')
+  await expect(page.getByRole('button', { name: 'Push', exact: true })).toBeEnabled()
+  expect(await page.evaluate(() => (window as unknown as { shipCalls: unknown[] }).shipCalls)).toEqual([{ taskId: 'review', push: false }])
+  await page.screenshot({ path: testInfo.outputPath('shipped.png') })
+  await page.getByRole('button', { name: 'Push', exact: true }).click()
+  await expect(page.getByText('Shipped & pushed', { exact: true })).toBeVisible()
 })
 
-test('merge errors stay in the confirmation without merging the task', async ({ page }) => {
+test('the Ship menu offers the other push choice and an editable message', async ({ page }) => {
+  await page.goto('/tests/e2e/fixture/?scenario=review')
+  await page.evaluate(() => {
+    const calls: unknown[] = []
+    Object.assign(window, { shipCalls: calls })
+    window.addEventListener('fixture:ship', (event) => calls.push((event as CustomEvent).detail))
+  })
+  await page.getByRole('button', { name: 'More ship actions' }).click()
+  const menu = page.getByRole('menu', { name: 'Ship actions' })
+  await expect(menu.getByRole('menuitem')).toHaveText(['Ship & push', 'Ship with message…', 'Open pull request…'])
+  await menu.getByRole('menuitem', { name: 'Ship with message…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Ship', exact: true })
+  await expect(dialog).toContainText('Squash')
+  await expect(dialog.getByRole('button', { name: 'Ship', exact: true })).toBeDisabled()
+  await dialog.getByRole('button', { name: 'Generate commit message with Codex' }).click()
+  await expect(dialog.getByRole('textbox', { name: 'Commit message' })).toHaveValue('fix: clamp output rows by measured truncation')
+  await dialog.getByRole('textbox', { name: 'Commit message' }).fill('feat: tighten sidebar spacing')
+  await dialog.getByRole('button', { name: 'Ship', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Shipped')
+  expect(await page.evaluate(() => (window as unknown as { shipCalls: unknown[] }).shipCalls))
+    .toEqual([{ taskId: 'review', push: false, message: 'feat: tighten sidebar spacing' }])
+})
+
+test('ship errors stay next to the button without shipping the task', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeFailure=1')
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  const merge = page.getByRole('button', { name: 'Merge task', exact: true })
-  await merge.click()
-  const confirmation = page.getByRole('alertdialog')
-  await confirmation.getByRole('button', { name: 'Merge task', exact: true }).click()
-  await expect(confirmation.getByRole('button', { name: 'Cancel' })).toBeDisabled()
-  await page.keyboard.press('Escape')
-  await expect(confirmation).toBeVisible()
-  await expect(confirmation.getByRole('alert')).toHaveText('Merge failed. The task was not merged.')
-  await page.keyboard.press('Escape')
-  await expect(confirmation).toBeHidden()
-  await expect(merge).toBeEnabled()
-  await expect(merge).toBeFocused()
+  const ship = page.getByRole('button', { name: 'Ship', exact: true })
+  await ship.click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Merge failed. The task was not merged.' })).toBeVisible()
+  await expect(ship).toBeEnabled()
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Ready to ship')
 })
 
-test('merge conflicts leave the modal for an actionable Output resolver', async ({ page }, testInfo) => {
+test('ship conflicts open an actionable Output resolver', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1')
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await page.getByRole('button', { name: 'Merge task', exact: true }).click()
-  const confirmation = page.getByRole('alertdialog', { name: 'Merge task?' })
-  await confirmation.getByRole('button', { name: 'Merge task', exact: true }).click()
+  await page.getByRole('button', { name: 'Ship', exact: true }).click()
 
-  await expect(confirmation).toHaveCount(0)
   await expect(page.getByRole('tab', { name: 'Output', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Merge conflicts with user-current')
   const output = page.getByRole('region', { name: 'Output', exact: true })
@@ -359,9 +161,7 @@ test('merge conflicts leave the modal for an actionable Output resolver', async 
 
 test('conflict loading errors offer a retry against the live checkout', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1&conflictLoadFailure=1')
-  await page.getByRole('button', { name: 'Merge task', exact: true }).click()
-  const confirmation = page.getByRole('alertdialog')
-  await confirmation.getByRole('button', { name: 'Merge task', exact: true }).click()
+  await page.getByRole('button', { name: 'Ship', exact: true }).click()
   const output = page.getByRole('region', { name: 'Output', exact: true })
   await expect(output.getByRole('alert')).toContainText('Could not read the conflicted files')
   await output.getByRole('button', { name: 'Retry', exact: true }).click()
@@ -369,12 +169,10 @@ test('conflict loading errors offer a retry against the live checkout', async ({
   await expect(output.getByRole('alert')).toHaveCount(0)
 })
 
-test('Pierre persists complete files across conflicts and completes the paused merge', async ({ page }, testInfo) => {
+test('Pierre persists complete files across conflicts and completes the paused ship', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 900, height: 650 })
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1')
-  await page.getByRole('button', { name: 'Merge task', exact: true }).click()
-  const confirmation = page.getByRole('alertdialog')
-  await confirmation.getByRole('button', { name: 'Merge task', exact: true }).click()
+  await page.getByRole('button', { name: 'Ship', exact: true }).click()
   const output = page.getByRole('region', { name: 'Output', exact: true })
   const selector = output.getByRole('combobox', { name: 'Conflicted file' })
 
@@ -391,66 +189,47 @@ test('Pierre persists complete files across conflicts and completes the paused m
   await page.screenshot({ path: testInfo.outputPath('merge-conflict-resolved-narrow.png') })
 
   await output.getByRole('button', { name: 'Complete merge' }).click()
-  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Merged')
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Shipped')
   await expect(output.getByRole('log', { name: 'Task output' })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.mergeConflictTest.completions.length)).toBe(1)
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
 })
 
-test('save failures reload the live file and abort returns the task to review', async ({ page }) => {
+test('save failures reload the live file and abort returns the task to Ready to ship', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1&conflictSaveFailure=1')
-  await page.getByRole('button', { name: 'Merge task', exact: true }).click()
-  const confirmation = page.getByRole('alertdialog')
-  await confirmation.getByRole('button', { name: 'Merge task', exact: true }).click()
+  await page.getByRole('button', { name: 'Ship', exact: true }).click()
   const output = page.getByRole('region', { name: 'Output', exact: true })
 
   await output.getByRole('button', { name: 'Accept current change' }).click()
   await expect(output.getByRole('alert')).toContainText('changed after it was loaded')
   await expect(output.locator('[data-line][data-merge-conflict="current"]')).toContainText('14')
   await output.getByRole('button', { name: 'Abort merge' }).click()
-  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Ready to review')
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Ready to ship')
   await expect(output.getByRole('log', { name: 'Task output' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Merge task', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeEnabled()
   await expect.poll(() => page.evaluate(() => window.mergeConflictTest.aborts.length)).toBe(1)
 })
 
 test('unsupported conflicts explain the fallback and Fix with agent dispatches repair', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1&conflictUnsupported=1')
-  await page.getByRole('button', { name: 'Merge task', exact: true }).click()
-  const confirmation = page.getByRole('alertdialog')
-  await confirmation.getByRole('button', { name: 'Merge task', exact: true }).click()
+  await page.getByRole('button', { name: 'Ship', exact: true }).click()
   const output = page.getByRole('region', { name: 'Output', exact: true })
   await output.getByRole('combobox', { name: 'Conflicted file' }).selectOption('public/logo.png')
   await expect(output.getByText('Binary files cannot be resolved in the text conflict editor.')).toBeVisible()
   await output.getByRole('button', { name: 'Fix with agent' }).click()
   await expect(output.getByRole('button', { name: 'Fixing with agent…' })).toBeDisabled()
-  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Merged')
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Shipped')
   await expect.poll(() => page.evaluate(() => window.mergeConflictTest.fixes.length)).toBe(1)
 })
 
-test('preview failures disable merging', async ({ page }) => {
+test('a checkout that cannot be shipped reports why', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergePreviewFailure=1')
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await page.getByRole('button', { name: 'Merge task', exact: true }).click()
-  const confirmation = page.getByRole('alertdialog')
-  await expect(confirmation.getByRole('alert')).toHaveText('Check out a branch before merging')
-  await expect(confirmation.getByRole('button', { name: 'Merge task', exact: true })).toBeDisabled()
-  await confirmation.getByRole('button', { name: 'Cancel' }).click()
-  await expect(confirmation).toBeHidden()
+  await page.getByRole('button', { name: 'Ship', exact: true }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Check out a branch before merging' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeEnabled()
 })
-
-for (const commitCount of [0, 1]) {
-  test(`merge confirmation handles ${commitCount} incoming commits`, async ({ page }) => {
-    await page.goto(`/tests/e2e/fixture/?scenario=review&mergeCommitCount=${commitCount}`)
-    await page.getByRole('tab', { name: /^Changes/ }).click()
-    await page.getByRole('button', { name: 'Merge task', exact: true }).click()
-    const confirmation = page.getByRole('alertdialog')
-    await expect(confirmation).toContainText(`${commitCount} commit${commitCount === 1 ? '' : 's'} will be brought in`)
-    if (!commitCount) await expect(confirmation).toContainText('already merged')
-    await expect(confirmation.getByRole('button', { name: 'Merge task', exact: true })).toBeEnabled()
-  })
-}
 
 test('narrow review switches panels without losing viewed state or steering drafts', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 500 })
@@ -586,69 +365,6 @@ async function deferredReview(page: import('@playwright/test').Page) {
   })
 }
 
-for (const width of [900, 1440]) {
-  test(`review preparation, loaded review and verified no-change Done at ${width}px`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height: 900 })
-    await deferredReview(page)
-    const owner = page.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
-    const approve = page.getByRole('button', { name: 'Approve step', exact: true })
-    const changesTab = page.getByRole('tab', { name: /^Changes/ })
-    await expect(owner.getByRole('img', { name: 'Review', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: 'Expand subtasks: Review sidebar changes', exact: true }).click()
-    const children = page.getByRole('list', { name: 'Subtasks of Review sidebar changes' })
-    await expect(children).toContainText('Verify configurationDone')
-    await expect(children).toContainText('Save sidebar changesReview')
-    await expect(changesTab).toContainText('Loading…')
-    await expect(changesTab).not.toContainText('+3')
-    await changesTab.click()
-    await expect(approve).toBeDisabled()
-    await expect(page.getByRole('region', { name: 'Subtask code changes' })).toContainText('Loading code changes…')
-    expect(await page.evaluate(() => window.finalizedReview.issueReads)).toBe(0)
-    await page.screenshot({ path: testInfo.outputPath(`loading-${width}.png`) })
-    // Navigate immediately after readiness, while the requested committed diff is deferred.
-    await page.getByRole('button', { name: 'Open task: Build streaming support', exact: true }).click()
-    await page.evaluate(() => window.finalizedReview.ready('saved-head'))
-    await owner.click()
-    await expect(changesTab).toContainText('Changes 1')
-    await expect(changesTab).toContainText('+1')
-    await expect(changesTab).toContainText('−0')
-    await changesTab.click()
-    await expect.poll(() => page.evaluate(() => window.finalizedReview.issueReads)).toBe(1)
-    await expect(approve).toBeDisabled()
-    await expect(page.locator('[data-diff-file]')).toHaveCount(0)
-    await expect(page.getByText('No file changes in this range.')).toHaveCount(0)
-    await page.evaluate(() => window.finalizedReview.resolveIssue(0, 'saved.ts'))
-    await expect(page.getByRole('region', { name: 'saved.ts' })).toBeVisible()
-    await expect(approve).toBeEnabled()
-    await expect(approve).toBeInViewport({ ratio: 1 })
-    await page.screenshot({ path: testInfo.outputPath(`populated-${width}.png`) })
-    await page.evaluate(() => window.finalizedReview.rework())
-    await expect(changesTab).toContainText('Loading…')
-    await expect(changesTab).not.toContainText('+1')
-    await expect(approve).toBeDisabled()
-    await page.evaluate(() => window.finalizedReview.ready('obsolete-head'))
-    await expect(changesTab).toContainText('Changes 1')
-    await expect(changesTab).toContainText('+1')
-    await expect(changesTab).toContainText('−0')
-    await expect.poll(() => page.evaluate(() => window.finalizedReview.issueReads)).toBe(2)
-    await page.evaluate(() => window.finalizedReview.complete(false))
-    await expect(page.getByLabel('Task status', { exact: true })).toContainText('Done')
-    await expect(owner.getByRole('img', { name: 'Done', exact: true })).toBeVisible()
-    await expect(approve).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toHaveCount(0)
-    await expect(page.getByText('No code changes to review.')).toBeVisible()
-    await expect(changesTab).toContainText('Changes 0')
-    await expect(changesTab).not.toContainText('+1')
-    await page.evaluate(() => window.finalizedReview.resolveIssue(1, 'obsolete.ts'))
-    await expect(page.locator('[data-diff-file]')).toHaveCount(0)
-    expect(await page.evaluate(() => window.finalizedReview.taskReads)).toBe(0)
-    await page.screenshot({ path: testInfo.outputPath(`done-${width}.png`) })
-    for (const stage of ['loading', 'populated', 'done']) {
-      await testInfo.attach(`${stage}-${width}`, { path: testInfo.outputPath(`${stage}-${width}.png`), contentType: 'image/png' })
-    }
-  })
-}
-
 test('mixed-plan aggregate rejects obsolete heads, navigation and deletion responses', async ({ page }, testInfo) => {
   await deferredReview(page)
   await page.evaluate(() => window.finalizedReview.complete(true))
@@ -679,7 +395,7 @@ test('mixed-plan aggregate rejects obsolete heads, navigation and deletion respo
   await expect(children).toContainText('Save sidebar changesApproved')
   for (const width of [900, 1440]) {
     await page.setViewportSize({ width, height: 900 })
-    await expect(page.getByRole('button', { name: 'Merge task', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeInViewport({ ratio: 1 })
     expect((await file.boundingBox())!.width).toBeGreaterThan(200)
     await page.screenshot({ path: testInfo.outputPath(`mixed-final-${width}.png`) })
     await testInfo.attach(`mixed-final-${width}`, { path: testInfo.outputPath(`mixed-final-${width}.png`), contentType: 'image/png' })

@@ -20,7 +20,7 @@ test('rejects settled steering and preserves stopped resume and live steering pa
   {
     store.addProject({
       id: 'project', name: 'Project', path: testHome, createdAt: 0,
-      monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+      monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
     })
     const agentProcesses = new AgentProcessManager()
     onTestCleanup(async () => {

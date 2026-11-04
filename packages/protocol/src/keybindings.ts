@@ -1,4 +1,4 @@
-export type ShortcutId = 'toggleSidebar' | 'focusTaskComposer' | 'cycleTaskStyle' | 'cycleReviewPolicy' | 'cycleThinking'
+export type ShortcutId = 'toggleSidebar' | 'focusTaskComposer' | 'cycleTaskStyle' | 'cycleThinking'
 
 export interface ShortcutDefinition {
   id: ShortcutId
@@ -25,12 +25,6 @@ export const SHORTCUTS: ShortcutDefinition[] = [
     label: 'Cycle task style',
     hint: 'Switches the composer between Work and Quick.',
     defaultAccelerator: 'Mod+Shift+M'
-  },
-  {
-    id: 'cycleReviewPolicy',
-    label: 'Cycle review policy',
-    hint: 'Switches the composer between Review each step and Review at the end.',
-    defaultAccelerator: 'Mod+Shift+I'
   },
   {
     id: 'cycleThinking',

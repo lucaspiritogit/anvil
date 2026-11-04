@@ -174,7 +174,7 @@ export function TaskMergeConflictOutput({ task, conflict, visible }: {
       </div>}
 
       <p className="shrink-0 border-t border-line px-4 py-2 text-[11px] text-dim">
-        Abort merge discards every resolution saved during this paused merge and returns the task to review.
+        Abort merge discards every resolution saved during this paused merge and returns the task to Ready to ship.
       </p>
     </section>
   )

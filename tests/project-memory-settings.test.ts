@@ -37,7 +37,7 @@ test('gates memory access and discards retrieval when disabled', async () => {
   const taskMemory = createTaskMemory({ store, gitDelivery: {} as TaskContext['gitDelivery'] }, memory)
   try {
     expect(store.getSettings().memoryEnabled).toBe(false)
-    store.addProject({ id: 'project', name: 'Test', path: directory, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    store.addProject({ id: 'project', name: 'Test', path: directory, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
     const task = store.addTask({
       id: 'task', projectId: 'project', title: 'Memory', prompt: 'Fix icon', cwd: directory,
       agentId: 'codex', agentLabel: 'Codex', status: 'succeeded', deliveryStatus: 'reviewable', startedAt: 0,

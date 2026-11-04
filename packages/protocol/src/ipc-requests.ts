@@ -1,4 +1,4 @@
-import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, AgentRateLimitTarget, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskReviewPolicy, TaskCheckoutMode } from './types'
+import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, AgentRateLimitTarget, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskCheckoutMode } from './types'
 import type { BrowserHostResponse } from './browser-host'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
@@ -39,7 +39,7 @@ export interface IpcRequests {
   'projects:import-finish': string
   'projects:import-cancel': string
   'projects:clone': { url: string; workspaceId?: string }
-  'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean }
+  'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean; shipPushes?: boolean }
   'projects:remove': string
   'projects:reveal': string
   'terminals:create': { projectId?: string; taskId?: string; cols: number; rows: number }
@@ -62,7 +62,7 @@ export interface IpcRequests {
   'tasks:events-page': TaskEventsRequest
   'tasks:diff': string
   'tasks:issue-diff': { taskId: string; issueId: string }
-  'tasks:start': { style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; workspaceId?: string; projectId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
+  'tasks:start': { style?: TaskStyle; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; workspaceId?: string; projectId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }
   'tasks:steer': { taskId: string; message: string }
   'tasks:compact': string
   'tasks:stack': { taskId: string; parentTaskId: string }
@@ -87,9 +87,8 @@ export interface IpcRequests {
   'tasks:sync-status': string
   'tasks:pull': { taskId: string; branch: string; localCommit: string; remoteCommit: string }
   'tasks:commit-quick': { taskId: string; push: boolean; message?: string }
+  'tasks:ship': { taskId: string; push?: boolean; message?: string }
   'tasks:draft-commit-message': { taskId: string; message: string }
-  'tasks:approve-issue': { taskId: string; issueId: string; headCommit: string | null }
-  'tasks:reject-issue': { taskId: string; issueId: string; headCommit: string | null; comment?: string }
   'comments:list': string
   'comments:add': Pick<TaskComment, 'taskId' | 'file' | 'side' | 'lineNumber' | 'body'>
   'comments:remove': { taskId: string; id: string }

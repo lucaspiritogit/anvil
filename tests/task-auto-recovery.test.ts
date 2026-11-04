@@ -23,7 +23,7 @@ async function setup() {
   })
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Project', path: testHome, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const task = store.addTask({
     id: 'task', projectId: 'project', agentId: 'opencode', agentLabel: 'OpenCode', model: 'provider/model',
     prompt: 'Make the requested change', title: 'Task', cwd: testHome, status: 'running', startedAt: Date.now(),
@@ -71,7 +71,7 @@ async function setup() {
   return { store, agents, git, task, tracker, issue, execution, finish, fail, notifications }
 }
 
-test('recovers the same claimed issue and session before finalization, then waits for review', async () => {
+test('recovers the same claimed issue and session before finalization, then completes it', async () => {
   const f = await setup()
   await f.fail()
   expect(f.store.getTask(f.task.id)?.status).toBe('running')
@@ -88,8 +88,8 @@ test('recovers the same claimed issue and session before finalization, then wait
   f.tracker.submitForReview(f.issue.id, { checklist: [true], evidence: 'Done' })
   f.agents.finishTurn(f.task.id)
   await tick()
-  expect(f.store.getTaskExecution(f.task.id)?.phase).toBe('reviewing')
-  expect(f.finish).not.toHaveBeenCalled()
+  expect(f.store.getTaskExecution(f.task.id)?.phase).toBe('complete')
+  expect(f.finish).toHaveBeenCalledOnce()
   await vi.advanceTimersByTimeAsync(120_000)
   expect(f.agents.starts).toHaveLength(2)
 })
@@ -100,8 +100,8 @@ test('does not repeat an issue submitted just before the failure', async () => {
   await f.fail()
   await vi.advanceTimersByTimeAsync(120_000)
   expect(f.agents.starts).toHaveLength(1)
-  expect(f.store.getTaskExecution(f.task.id)?.phase).toBe('reviewing')
-  expect(f.finish).not.toHaveBeenCalled()
+  expect(f.store.getTaskExecution(f.task.id)?.phase).toBe('complete')
+  expect(f.finish).toHaveBeenCalledOnce()
 })
 
 test('bounds repeated failures and leaves permanent failures paused', async () => {
@@ -136,8 +136,8 @@ test('honors retry-after, ignores duplicate exits, and reconciles a late review 
   f.tracker.submitForReview(f.issue.id, { checklist: [true], evidence: 'Submitted during disconnect' })
   await vi.advanceTimersByTimeAsync(1_000)
   expect(f.agents.starts).toHaveLength(1)
-  expect(f.store.getTaskExecution(f.task.id)?.phase).toBe('reviewing')
-  expect(f.finish).not.toHaveBeenCalled()
+  expect(f.store.getTaskExecution(f.task.id)?.phase).toBe('complete')
+  expect(f.finish).toHaveBeenCalledOnce()
 })
 
 test('pauses instead of ignoring a retry-after beyond the recovery window', async () => {
@@ -170,7 +170,7 @@ test.each(['cancel', 'delete', 'shutdown'] as const)('invalidates pending recove
   expect(f.agents.starts).toHaveLength(1)
 })
 
-for (const stage of ['working', 'submitted', 'reviewing'] as const) {
+for (const stage of ['working', 'submitted'] as const) {
   test(`cancelling ${stage} work emits one cancelled subtask alert through orchestration`, async () => {
     const f = await setup()
     if (stage !== 'working') {
@@ -180,10 +180,6 @@ for (const stage of ['working', 'submitted', 'reviewing'] as const) {
       expect(f.notifications).toEqual([])
     }
     f.agents.active.delete(f.task.id)
-    if (stage === 'reviewing') {
-      await f.execution.finishTaskTurn({ taskId: f.task.id, code: 0, cancelled: false })
-      expect(f.notifications.map((n) => n.title)).toEqual(['Subtask ready for review: Implement'])
-    }
     f.notifications.length = 0
     await f.execution.finishTaskTurn({ taskId: f.task.id, code: null, cancelled: true })
     expect(f.notifications).toEqual([{ title: 'Subtask cancelled: Implement', body: `Task · ${f.issue.id}` }])

@@ -66,21 +66,21 @@ test('task status icons and highlights remain visible when selected, hovered, an
   const merged = sidebar.getByRole('button', { name: 'Open task: Polish task cards', exact: true })
   const review = sidebar.getByRole('button', { name: 'Open task: Review sidebar changes', exact: true })
   const failed = sidebar.getByRole('button', { name: 'Open task: Retry provider setup', exact: true })
-  await expect(merged.getByRole('img', { name: 'Merged', exact: true })).toHaveCSS('color', 'rgb(95, 211, 138)')
-  await expect(review.getByRole('img', { name: 'Ready for review', exact: true })).toHaveClass(/text-review/)
+  await expect(merged.getByRole('img', { name: 'Shipped', exact: true })).toHaveCSS('color', 'rgb(95, 211, 138)')
+  await expect(review.getByRole('img', { name: 'Ready to ship', exact: true })).toHaveClass(/text-review/)
   await expect(failed.getByRole('img', { name: 'Failed', exact: true })).toHaveCSS('color', 'rgb(255, 95, 95)')
   await expect(merged.locator('..')).not.toHaveClass(/row-selected/)
   await expect(review.locator('..')).not.toHaveClass(/row-selected/)
   await merged.click()
   await merged.hover()
-  await expect(merged.getByRole('img', { name: 'Merged', exact: true })).toBeVisible()
+  await expect(merged.getByRole('img', { name: 'Shipped', exact: true })).toBeVisible()
   await expect(merged.locator('..')).toHaveClass(/row-selected/)
   await page.screenshot({ path: testInfo.outputPath('sidebar-task-statuses.png') })
   await sidebar.getByRole('button', { name: 'Settle task: Polish task cards', exact: true }).click()
   const settled = sidebar.getByRole('region', { name: 'Settled tasks' })
   await settled.getByRole('button', { name: /^Settled/ }).click()
   const settledTask = settled.getByRole('button', { name: 'Open task: Polish task cards', exact: true })
-  await expect(settledTask.getByRole('img', { name: 'Merged', exact: true })).toBeVisible()
+  await expect(settledTask.getByRole('img', { name: 'Shipped', exact: true })).toBeVisible()
   await expect(settledTask.locator('..')).toHaveClass(/hover:bg-hover/)
 })
 
@@ -88,14 +88,14 @@ test('task updates replace the sidebar status without leaving stale success indi
   await page.goto(fixture)
   const task = page.getByRole('button', { name: 'Open task: Build streaming support', exact: true })
   const scenarios = [
-    { status: 'succeeded', deliveryStatus: 'reviewable', hasPullRequest: false, label: 'Ready for review' },
+    { status: 'succeeded', deliveryStatus: 'reviewable', hasPullRequest: false, label: 'Ready to ship' },
     { status: 'succeeded', deliveryStatus: 'reviewable', hasPullRequest: true, label: 'Open PR' },
-    { status: 'succeeded', deliveryStatus: 'approved', hasPullRequest: true, label: 'Merged' },
+    { status: 'succeeded', deliveryStatus: 'approved', hasPullRequest: true, label: 'Shipped' },
     { status: 'running', deliveryStatus: 'approved', hasPullRequest: true, label: 'Working' },
     { status: 'failed', deliveryStatus: 'reviewable', hasPullRequest: true, label: 'Failed' },
     { status: 'succeeded', deliveryStatus: 'failed', hasPullRequest: false, label: 'Failed' },
     { status: 'cancelled', deliveryStatus: 'approved', hasPullRequest: false, label: null },
-    { status: 'succeeded', deliveryStatus: 'no_changes', hasPullRequest: false, label: 'Ready for review' }
+    { status: 'succeeded', deliveryStatus: 'no_changes', hasPullRequest: false, label: 'Ready to ship' }
   ] as const
   await expect(task.getByRole('img', { name: 'Working', exact: true })).toBeVisible()
   for (const scenario of scenarios) {
@@ -128,7 +128,7 @@ test('finished tasks of any style show a review state, sort first, and badge the
 
   await expect(badge).toHaveText('2')
   await expect(badge).toHaveAccessibleName('2 tasks ready for review')
-  await expect(output.getByRole('img', { name: 'Ready for review', exact: true })).toBeVisible()
+  await expect(output.getByRole('img', { name: 'Ready to ship', exact: true })).toBeVisible()
 
   const labels = await page.locator('nav[aria-label="Active tasks"] [data-task-id] button[aria-label^="Open task:"]')
     .evaluateAll((elements) => elements.map((element) => element.getAttribute('aria-label')))
@@ -138,7 +138,7 @@ test('finished tasks of any style show a review state, sort first, and badge the
     const current = (await window.anvil.tasks.list()).find((task) => task.id === 'output')!
     window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...current, style: 'quick', checkoutMode: 'local' } }))
   })
-  await expect(output.getByRole('img', { name: 'Ready for review', exact: true })).toBeVisible()
+  await expect(output.getByRole('img', { name: 'Ready to ship', exact: true })).toBeVisible()
 
   await output.click()
   await expect(output.getByRole('img', { name: 'Done', exact: true })).toBeVisible()
@@ -148,7 +148,7 @@ test('finished tasks of any style show a review state, sort first, and badge the
     const current = (await window.anvil.tasks.list()).find((task) => task.id === 'output')!
     window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...current, deliveryStatus: 'reviewable' } }))
   })
-  await expect(output.getByRole('img', { name: 'Ready for review', exact: true })).toBeVisible()
+  await expect(output.getByRole('img', { name: 'Ready to ship', exact: true })).toBeVisible()
   await expect(badge).toHaveText('2')
 })
 

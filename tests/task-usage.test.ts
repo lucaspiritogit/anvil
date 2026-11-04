@@ -30,7 +30,7 @@ test('replays cumulative usage without double counting and preserves totals on r
   const database = join(directory, 'config.json')
   let store = new Store(database, options)
   try {
-    store.addProject({ id: 'project', name: 'Test', path: directory, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    store.addProject({ id: 'project', name: 'Test', path: directory, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
     store.addTask({
       id: 'task', projectId: 'project', title: 'Usage', prompt: 'Fix icon', cwd: directory,
       agentId: 'codex', agentLabel: 'Codex', status: 'running', deliveryStatus: 'working', startedAt: 0,

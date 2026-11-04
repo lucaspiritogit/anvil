@@ -24,7 +24,7 @@ test('serializes steering and comments through resume, completion and recovery',
   {
     store.addProject({
       id: 'project', name: 'Project', path: testHome, createdAt: 0,
-      monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+      monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
     })
     const agentProcesses = new AgentProcessManager()
     onTestCleanup(async () => {
@@ -88,41 +88,6 @@ test('serializes steering and comments through resume, completion and recovery',
     const finished = store.getTask(task.id)!
     expect(finished.status).toBe('succeeded')
     expect(store.getTaskExecution(task.id)?.phase).toBe('complete')
-
-    store.addTask({
-      ...finished, id: 'reviewing', prompt: 'Review issue context', status: 'running', deliveryStatus: 'working',
-      sessionId: 'review-session'
-    })
-    const reviewState = new TaskIssues(store).initialize('reviewing', testHome)
-    const reviewTracker = store.issueTracker('project', work.id)
-    const [reviewIssue] = reviewTracker.createMany([{
-      key: 'review-composer', parentId: reviewState.parentIssueId, title: 'Review composer issue',
-      description: 'Preserve this issue context', checklist: ['Check review routing'], validation: 'Run focused test'
-    }])
-    reviewTracker.start(reviewIssue.id)
-    reviewTracker.recordCommits(reviewIssue.id, { baseCommit: 'c'.repeat(40) })
-    reviewTracker.submitForReview(reviewIssue.id, { checklist: [true], evidence: 'Focused test passed' })
-    reviewTracker.recordCommits(reviewIssue.id, { headCommit: 'd'.repeat(40) })
-    store.saveTaskExecution({
-      ...reviewState, phase: 'reviewing', issueIds: [reviewIssue.id], currentIssueId: reviewIssue.id,
-      reasoningEffort: 'high'
-    })
-    const startsBeforeReviewRework = agentProcesses.starts.length
-    await steer('reviewing', 'Keep the issue context and tighten validation')
-    const reviewRework = agentProcesses.starts.at(-1)
-    expect(agentProcesses.starts).toHaveLength(startsBeforeReviewRework + 1)
-    expect(agentProcesses.steering, 'Review feedback must resume a turn instead of steering a stopped process').toHaveLength(1)
-    expect(reviewTracker.get(reviewIssue.id).status).toBe('working')
-    expect(store.getTaskExecution('reviewing')).toMatchObject({ phase: 'working', currentIssueId: reviewIssue.id })
-    expect(reviewRework.issueId).toBe(reviewIssue.id)
-    expect(reviewRework.resumeSessionId).toBe('review-session')
-    expect(reviewRework.prompt).toContain(`The developer reviewed issue ${JSON.stringify(reviewIssue.id)}`)
-    expect(reviewRework.prompt).toContain('Keep the issue context and tighten validation')
-    reviewTracker.submitForReview(reviewIssue.id, { checklist: [true], evidence: 'Rework validated' })
-    agentProcesses.finishTurn('reviewing')
-    await tick()
-    expect(store.getTaskExecution('reviewing')?.phase).toBe('reviewing')
-    reviewTracker.close()
 
     const legacyAgent = { id: 'legacy-cli', label: 'Legacy CLI', description: 'Legacy CLI agent', command: 'legacy', args: [] }
     BUILTIN_AGENTS.push(legacyAgent)

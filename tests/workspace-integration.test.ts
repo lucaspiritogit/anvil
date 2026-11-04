@@ -30,7 +30,7 @@ test('runs both agents in both profiles and preserves plans and sessions after r
   }
   let store = open()
   store.addProject({ id: 'project', name: 'Project', path: fixture.project, createdAt: 1,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   store.addTask({ id: 'saved-task', projectId: 'project', agentId: 'codex', agentLabel: 'Codex',
     prompt: 'Saved prompt', title: 'Saved task', cwd: fixture.project, status: 'succeeded', startedAt: 1,
     sessionId: 'saved-session', deliveryStatus: 'unavailable', inputTokens: 0, outputTokens: 0,

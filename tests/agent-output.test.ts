@@ -107,7 +107,7 @@ test('reconciles tool and text snapshots and persists row identity', () => {
   try {
     const database = join(directory, 'config.json')
     store = new Store(database, options)
-    store.addProject({ id: 'project', name: 'Test', path: directory, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    store.addProject({ id: 'project', name: 'Test', path: directory, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
     store.addTask({
       id: input.taskId, projectId: 'project', title: 'Output', prompt: input.prompt, cwd: directory,
       agentId: 'codex', agentLabel: 'Codex', status: 'succeeded', deliveryStatus: 'no_changes', startedAt: 0,

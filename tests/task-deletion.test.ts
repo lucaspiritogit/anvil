@@ -13,7 +13,7 @@ test('deletes finished, active and queued tasks without resurrecting persisted s
   const store = new Store(database, options)
   store.addProject({
     id: 'project', name: 'Test', path: testHome, createdAt: Date.now(),
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
   })
   const releaseWorktree = vi.spyOn(GitDeliveryManager.prototype, 'releaseWorktree')
   const { agentProcesses: registeredAgentProcesses } = registerTestIpc()

@@ -37,11 +37,10 @@ export interface TaskExecution {
   }): Promise<ExitInfo>
   requireFinishedTask(taskId: string): void
   issueReviewReady(taskId: string): boolean
-  approveIssue(taskId: string): Promise<TaskExecutionState>
-  rejectIssue(taskId: string): TaskExecutionState
+  acceptParkedIssueReviews(): Promise<void>
 }
 
-/** Anvil runs one turn per claimed issue and pauses for review when finalized changes remain. */
+/** Anvil runs one turn per claimed issue and continues to the next issue once its changes are finalized. */
 export function registerTaskExecution(
   { store, agentProcesses, gitDelivery, send, recordSystemEvent }: TaskContext & { recordSystemEvent: RecordSystemEvent },
   finishTask: TaskCompletion
@@ -280,13 +279,11 @@ export function registerTaskExecution(
 
   const finishing = new Set<string>()
   const cancelledFinishes = new Set<string>()
-  const acceptIssueReview = async (taskId: string, reviewer: 'developer' | 'unattended', startFollowingIssue: 'now' | 'defer'): Promise<TaskExecutionState> => {
+  const acceptIssueReview = async (taskId: string, startFollowingIssue: 'now' | 'defer'): Promise<TaskExecutionState> => {
     const issueId = store.getTaskExecution(taskId)?.currentIssueId
     const state = issues.approveIssue(taskId)
     notify(taskId)
-    recordSystemEvent(taskId, reviewer === 'developer'
-      ? `Developer approved issue ${issueId}.`
-      : `End-of-task review policy accepted issue ${issueId}.`)
+    recordSystemEvent(taskId, `Completed issue ${issueId}.`)
     if (state.phase === 'complete') {
       const task = store.getTask(taskId)
       const completedDeliveryStatus = task && usesManagedWorktree(task) && task.baseCommit && task.branchName
@@ -410,11 +407,7 @@ export function registerTaskExecution(
       }
       const next = store.getTaskExecution(info.taskId)
       if (next?.phase === 'reviewing') {
-        const task = store.getTask(info.taskId)
-        const pendingComments = store.getComments(info.taskId).some((comment) => comment.sentAt === null)
-        if (task?.reviewPolicy === 'review_at_task_end' && !pendingComments) {
-          await acceptIssueReview(info.taskId, 'unattended', 'defer')
-        }
+        await acceptIssueReview(info.taskId, 'defer')
         return
       }
       if (next?.phase === 'complete') {
@@ -517,32 +510,15 @@ export function registerTaskExecution(
     }
   }
 
-  const approveIssue: TaskExecution['approveIssue'] = async (taskId) => {
-    requireStoppedTurn(taskId)
-    if (store.getTask(taskId)?.restackState) throw new Error('Finish restacking this task before reviewing an issue')
-    if (!issueReviewReady(taskId)) throw new Error('This task is not ready for issue review')
-    return acceptIssueReview(taskId, 'developer', 'now')
-  }
-
-  const rejectIssue: TaskExecution['rejectIssue'] = (taskId) => {
-    requireStoppedTurn(taskId)
-    if (!parentIsReady(taskId)) throw new Error('Wait for the parent task to finish before requesting changes')
-    const task = store.getTask(taskId)
-    if (task?.restackState) throw new Error('Finish restacking this task before reviewing an issue')
-    if (!issueReviewReady(taskId)) throw new Error('This task is not ready for issue review')
-    const issueId = store.getTaskExecution(taskId)?.currentIssueId
-    const state = store.transaction(() => {
-      // Reopen both lifecycle layers before review feedback can be dispatched.
-      const rejected = issues.rejectIssue(taskId)
-      store.updateTask(taskId, {
-        status: 'running', endedAt: undefined, exitCode: null, error: undefined,
-        deliveryStatus: 'working', deliveryError: undefined
-      })
-      return rejected
-    }, task?.workspaceId)
-    notify(taskId)
-    recordSystemEvent(taskId, `Developer requested changes on issue ${issueId}. Restarting its turn with the review feedback.`)
-    return state
+  const acceptParkedIssueReviews: TaskExecution['acceptParkedIssueReviews'] = async () => {
+    for (const task of store.getTasks()) {
+      if (!issueReviewReady(task.id) || task.restackState) continue
+      try {
+        await acceptIssueReview(task.id, 'defer')
+      } catch (error) {
+        recordSystemEvent(task.id, `Could not continue after the finished issue: ${error instanceof Error ? error.message : String(error)}`, 'delivery', 'error')
+      }
+    }
   }
 
   const requireFinishedTask = (taskId: string): void => {
@@ -594,5 +570,5 @@ export function registerTaskExecution(
 
   return { issueReviewReady, initializeTask, resumeTask, acceptTaskResume, rollbackTaskResume,
     stopTask, deferTaskCleanup, skipTaskCleanup, finishTaskTurn, runMergeConflictRepair,
-    requireFinishedTask, approveIssue, rejectIssue }
+    requireFinishedTask, acceptParkedIssueReviews }
 }

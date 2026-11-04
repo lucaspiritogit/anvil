@@ -1,32 +1,34 @@
 import { TaskStacks, requireStackMergeable } from '../tasks/task-stacks'
-import { TaskIssues } from '../tasks/task-issues'
 import type { HandlerRegistry } from '../handler-registry'
 import { randomUUID } from 'node:crypto'
 import { getAgent } from '../agents/registry'
-import { draftCommitMessage } from '../agents/commit-message-draft'
+import { draftCommitMessage, draftCommitMessageOrTitle } from '../agents/commit-message-draft'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { withTaskOperation } from '../tasks/operations'
 import { resumeTaskTurn } from '../tasks/resume'
-import { issueReworkPrompt, mergeConflictRepairPrompt, reviewPrompt } from '../agents/task-prompts'
+import { mergeConflictRepairPrompt, reviewPrompt } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
-import type { BranchSyncStatus, Project, Task, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview } from '@anvil/protocol/types'
+import type { BranchSyncStatus, Project, Task, TaskDiff, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview } from '@anvil/protocol/types'
 import type { MergeConflictResult } from '../git/types'
-import { isTaskSettled } from '@anvil/protocol/task-settlement'
 import { taskStyle } from '@anvil/protocol/task-style'
+import { isLocalQuickTask } from '@anvil/protocol/task-checkout'
+
+const subjectLine = (message: string): string => message.trim().split(/\r?\n/, 1)[0]
 
 interface ReviewHandlerDependencies extends TaskContext {
   recordSystemEvent: RecordSystemEvent
   requireFinishedTask: TaskExecution['requireFinishedTask']
-  approveIssue: TaskExecution['approveIssue']
-  rejectIssue: TaskExecution['rejectIssue']
   runMergeConflictRepair: TaskExecution['runMergeConflictRepair']
 }
 
 export function registerReviewHandlers(ipc: HandlerRegistry, {
-  store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTask, approveIssue, rejectIssue,
+  store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTask,
   runMergeConflictRepair
 }: ReviewHandlerDependencies): void {
+  const shipOf = (conflict: TaskMergeConflict): { targetCommit: string; message: string } | undefined =>
+    conflict.shipMessage ? { targetCommit: conflict.targetCommit, message: conflict.shipMessage } : undefined
+
   const requireReviewableTask = (taskId: string) => {
     requireFinishedTask(taskId)
     const task = store.getTask(taskId)
@@ -43,19 +45,19 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     requireFinishedTask(taskId)
     const task = store.getTask(taskId)
     if (!task) throw new Error('Task not found')
-    if (task.deliveryStatus !== 'approved') throw new Error('Merge this task before pushing its target branch')
+    if (task.deliveryStatus !== 'approved') throw new Error('Ship this task before pushing its target branch')
     if (!task.headCommit) throw new Error('This task has no finalized commit to push')
     const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
-    return { task, project, headCommit: task.headCommit }
+    return { task, project, headCommit: task.shippedCommit ?? task.headCommit }
   }
 
   const requireQuickTask = (taskId: string) => {
     requireFinishedTask(taskId)
     const task = store.getTask(taskId)
     if (!task) throw new Error('Task not found')
-    if (taskStyle(task) !== 'quick' || task.checkoutMode !== 'local') throw new Error('Only local Quick tasks can be committed directly')
-    if (task.deliveryStatus !== 'reviewable') throw new Error('This Quick task is not awaiting review')
+    if (!isLocalQuickTask(task)) throw new Error('Only local Quick tasks can be committed directly')
+    if (task.deliveryStatus !== 'reviewable') throw new Error('This Quick task has nothing to ship')
     if (!task.reviewPaths?.length) throw new Error('This task has no delivered code')
     const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
@@ -105,7 +107,8 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     preview: TaskMergePreview,
     result: MergeConflictResult,
     requestedAction: TaskMergeConflict['requestedAction'],
-    pushPreview?: TaskPushPreview
+    pushPreview?: TaskPushPreview,
+    shipMessage?: string
   ): Task => {
     if (task.projectId === undefined) throw new Error('Git delivery requires a project')
     const mergeConflict: TaskMergeConflict = {
@@ -122,6 +125,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       conflictedFiles: result.conflictedFiles,
       requestedAction,
       ...(pushPreview ? { pushPreview } : {}),
+      ...(shipMessage ? { shipMessage } : {}),
       createdAt: Date.now()
     }
     const conflicted = store.updateTask(task.id, {
@@ -145,29 +149,37 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     requestedAction: TaskMergeConflict['requestedAction'],
     pushPreview: TaskPushPreview | undefined,
     mergeEvent: string,
-    check: (expected?: Task) => Task
+    check: (expected?: Task) => Task,
+    ship?: { targetCommit: string; message: string }
   ): Promise<Task> => {
     if (requestedAction === 'merge_and_push' && !pushPreview) {
       throw new Error('The paused Merge & Push operation has no push ownership metadata.')
     }
-    const approved = store.updateTask(task.id, {
+    const finalCommit = ship
+      ? await gitDelivery.squashMergedCommit(project.path, { targetBranch, targetCommit: ship.targetCommit, mergedCommit }, ship.message, () => check())
+      : mergedCommit
+    let approved = store.updateTask(task.id, {
       deliveryStatus: 'approved',
       reviewedAt: Date.now(),
       mergeConflict: undefined,
-      deliveryError: undefined
+      deliveryError: undefined,
+      ...(ship ? { shippedCommit: finalCommit, shippedHead: sourceCommit, pushedCommit: undefined } : {})
     })
     if (!approved) throw new Error('Task was deleted')
-    recordSystemEvent(task.id, mergeEvent)
+    recordSystemEvent(task.id, ship
+      ? `Shipped to ${targetBranch} as ${finalCommit.slice(0, 8)}: ${subjectLine(ship.message)}`
+      : mergeEvent)
     send('task:updated', approved)
 
     let pushError: unknown
     if (requestedAction === 'merge_and_push') {
       try {
-        await gitDelivery.push(project.path, { ...pushPreview!, targetBranch, targetCommit: mergedCommit }, sourceCommit, () => {
+        await gitDelivery.push(project.path, { ...pushPreview!, targetBranch, targetCommit: finalCommit }, ship ? finalCommit : sourceCommit, () => {
           check(approved)
           requireApprovedTask(task.id)
         })
-        recordSystemEvent(task.id, `Pushed ${targetBranch} at ${mergedCommit} to origin.`)
+        recordSystemEvent(task.id, `Pushed ${targetBranch} at ${finalCommit} to origin.`)
+        approved = (ship ? store.updateTask(task.id, { pushedCommit: finalCommit }) : undefined) ?? approved
         send('task:updated', approved)
       } catch (error) {
         pushError = error
@@ -298,7 +310,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       guard()
       return finishMerge(task, project, mergedCommit, conflict.targetBranch, conflict.sourceCommit,
         conflict.requestedAction, conflict.pushPreview,
-        `Completed the paused merge of ${conflict.sourceBranch} into ${conflict.targetBranch} at ${mergedCommit}.`, check)
+        `Completed the paused merge of ${conflict.sourceBranch} into ${conflict.targetBranch} at ${mergedCommit}.`, check, shipOf(conflict))
     }))
 
   ipc.handle('tasks:merge-conflict-fix-agent', (input): Promise<Task> =>
@@ -351,7 +363,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
         guard()
         return finishMerge(task, project, mergedCommit, conflict.targetBranch, conflict.sourceCommit,
           conflict.requestedAction, conflict.pushPreview,
-          `Agent completed the paused merge of ${conflict.sourceBranch} into ${conflict.targetBranch} at ${mergedCommit}.`, check)
+          `Agent completed the paused merge of ${conflict.sourceBranch} into ${conflict.targetBranch} at ${mergedCommit}.`, check, shipOf(conflict))
       } catch (error) {
         const latest = store.getTask(task.id)
         if (!latest || latest.deliveryStatus !== 'merge_conflict' || latest.mergeConflict?.id !== conflict.id) throw error
@@ -382,7 +394,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
         deliveryError: undefined
       })
       if (!reviewable) throw new Error('Task was deleted')
-      recordSystemEvent(task.id, `Aborted the paused merge into ${conflict.targetBranch}. The task is ready to review again.`)
+      recordSystemEvent(task.id, `Aborted the paused merge into ${conflict.targetBranch}. The task is ready to ship again.`)
       send('task:updated', reviewable)
       return reviewable
     }))
@@ -414,11 +426,22 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
 
   ipc.handle('tasks:draft-commit-message', async ({ taskId, message }): Promise<string> => {
     return withTaskOperation(store, taskId, 'draft', async (check) => {
-      const { task, project } = requireQuickTask(taskId)
-      const workspace = resolveTaskWorkspace(store, task.id)
-      const diff = await gitDelivery.getWorkingTreeDiff(project.path, task.reviewPaths!)
+      const current = store.getTask(taskId)
+      if (!current) throw new Error('Task not found')
+      let diff: TaskDiff
+      let task: Task
+      if (isLocalQuickTask(current)) {
+        const quick = requireQuickTask(taskId)
+        task = quick.task
+        diff = await gitDelivery.getWorkingTreeDiff(quick.project.path, task.reviewPaths!)
+      } else {
+        const reviewable = requireReviewableTask(taskId)
+        task = reviewable.task
+        const base = task.baseCommit ?? (await gitDelivery.getMergePreview(reviewable.project.path, reviewable.branchName)).targetCommit
+        diff = await gitDelivery.getDiff(reviewable.project.path, base, reviewable.headCommit)
+      }
       check()
-      requireQuickTask(taskId)
+      const workspace = resolveTaskWorkspace(store, task.id)
       return await draftCommitMessage(agentProcesses, workspace, task, diff, message, store.getTaskExecution(taskId)?.reasoningEffort)
     })
   })
@@ -493,97 +516,104 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     })
   })
 
-  ipc.handle('tasks:commit-quick', async ({ taskId, push, message }): Promise<Task> => {
-    return withTaskOperation(store, taskId, 'commit', async (check) => {
-      const { task, project } = requireQuickTask(taskId)
-      if (push) {
-        const sync = await gitDelivery.getSyncStatus(project.path)
-        check()
-        if (sync.behind > 0) {
-          throw new Error(`origin/${sync.branch} has ${sync.behind} new commit${sync.behind === 1 ? '' : 's'}. Pull before committing and pushing.`)
-        }
-      }
-      const headCommit = await gitDelivery.commitPaths(project.path, task.reviewPaths!, message?.trim() || task.title)
+  const commitLocalTask = async (
+    taskId: string,
+    push: boolean,
+    resolveMessage: (task: Task, project: Project) => Promise<string>,
+    check: (expected?: Task) => Task,
+    shipped: boolean
+  ): Promise<Task> => {
+    const { task, project } = requireQuickTask(taskId)
+    if (push) {
+      const sync = await gitDelivery.getSyncStatus(project.path)
       check()
-      const committed = store.updateTask(task.id, {
-        deliveryStatus: 'approved',
-        headCommit,
-        pushedCommit: undefined,
-        reviewedAt: Date.now(),
-        deliveryError: undefined
-      })
-      if (!committed) throw new Error('Task was deleted')
-      recordSystemEvent(task.id, `Committed ${task.reviewPaths!.length} task file${task.reviewPaths!.length === 1 ? '' : 's'} as ${headCommit.slice(0, 8)}.`)
-      send('task:updated', committed)
-      await reconcileOverlappingQuickTasks(committed, project, headCommit)
-      if (push) {
-        const preview = await gitDelivery.getPushPreview(project.path, undefined, headCommit)
-        await gitDelivery.push(project.path, preview, headCommit, () => {
-          check(committed)
-          requireApprovedTask(task.id)
-        })
-        recordSystemEvent(task.id, `Pushed ${preview.targetBranch} at ${headCommit} to origin.`)
-        const pushed = store.updateTask(task.id, { pushedCommit: headCommit })
-        if (!pushed) throw new Error('Task was deleted')
-        send('task:updated', pushed)
-        return pushed
+      if (sync.behind > 0) {
+        throw new Error(`origin/${sync.branch} has ${sync.behind} new commit${sync.behind === 1 ? '' : 's'}. Pull before committing and pushing.`)
       }
-      return committed
-    })
-  })
-
-  const requireCurrentReview = (input: { taskId: string; issueId: string; headCommit: string | null }): void => {
-    const state = store.getTaskExecution(input.taskId)
-    if (state?.currentIssueId !== input.issueId ||
-      new TaskIssues(store).issueDiffSource(input.taskId, input.issueId).headCommit !== input.headCommit) {
-      throw new Error('The pending review changed. Refresh and review the latest changes.')
     }
+    const message = await resolveMessage(task, project)
+    check()
+    requireQuickTask(taskId)
+    const headCommit = await gitDelivery.commitPaths(project.path, task.reviewPaths!, message)
+    check()
+    const committed = store.updateTask(task.id, {
+      deliveryStatus: 'approved',
+      headCommit,
+      pushedCommit: undefined,
+      reviewedAt: Date.now(),
+      deliveryError: undefined,
+      ...(shipped ? { shippedCommit: headCommit } : {})
+    })
+    if (!committed) throw new Error('Task was deleted')
+    recordSystemEvent(task.id, shipped
+      ? `Shipped ${task.reviewPaths!.length} task file${task.reviewPaths!.length === 1 ? '' : 's'} as ${headCommit.slice(0, 8)}: ${subjectLine(message)}`
+      : `Committed ${task.reviewPaths!.length} task file${task.reviewPaths!.length === 1 ? '' : 's'} as ${headCommit.slice(0, 8)}.`)
+    send('task:updated', committed)
+    await reconcileOverlappingQuickTasks(committed, project, headCommit)
+    if (!push) return committed
+    const preview = await gitDelivery.getPushPreview(project.path, undefined, headCommit)
+    await gitDelivery.push(project.path, preview, headCommit, () => {
+      check(committed)
+      requireApprovedTask(task.id)
+    })
+    recordSystemEvent(task.id, `Pushed ${preview.targetBranch} at ${headCommit} to origin.`)
+    const pushed = store.updateTask(task.id, { pushedCommit: headCommit })
+    if (!pushed) throw new Error('Task was deleted')
+    send('task:updated', pushed)
+    return pushed
   }
 
-  ipc.handle('tasks:approve-issue', (input): Promise<Task> =>
-    withTaskOperation(store, input.taskId, 'review', async () => {
-      requireCurrentReview(input)
-      const taskId = input.taskId
-      const pending = store.getComments(taskId).filter((comment) => comment.sentAt === null)
-      await approveIssue(taskId)
-      for (const comment of pending) store.removeComment(comment.id)
-      const approved = store.getTask(taskId)
-      if (!approved) throw new Error('Task was deleted')
-      return approved
-    })
-  )
+  ipc.handle('tasks:commit-quick', async ({ taskId, push, message }): Promise<Task> => {
+    return withTaskOperation(store, taskId, 'commit', (check) =>
+      commitLocalTask(taskId, push, async (task) => message?.trim() || task.title, check, false))
+  })
 
-  ipc.handle('tasks:reject-issue', (input): Promise<Task> =>
-    withTaskOperation(store, input.taskId, 'review', async (check) => {
-      requireCurrentReview(input)
-      const body = input.comment?.trim()
-      const state = rejectIssue(input.taskId)
-      const rejected = store.getTask(input.taskId)
-      if (!rejected) throw new Error('Task was deleted')
-      if (body) store.addComment({
-        id: randomUUID(),
-        taskId: input.taskId,
-        file: '',
-        side: 'additions',
-        lineNumber: 0,
-        body,
-        createdAt: Date.now(),
-        sentAt: null
-      })
-      const pending = store.getComments(input.taskId).filter((comment) => comment.sentAt === null)
-      const running = await resumeTaskTurn({ store, agentProcesses, gitDelivery, send }, {
-        check: (expected = rejected) => check(expected),
-        validate: (task) => {
-          if (isTaskSettled(task)) throw new Error('This task is settled and cannot be reworked')
-          if (!state.currentIssueId) throw new Error('This task has no issue to rework')
-        },
-        prompt: () => issueReworkPrompt(state.projectPath, state.currentIssueId!, pending)
-      })
-      if (pending.length) store.markCommentsSent(input.taskId, Date.now(), pending.map((comment) => comment.id))
-      recordSystemEvent(input.taskId, `Sent ${pending.length} pending review ${pending.length === 1 ? 'comment' : 'comments'} back to ${getAgent(running.agentId)!.label}.`)
-      return store.getTask(input.taskId) ?? running
+  const shipMessage = async (task: Task, diff: () => Promise<TaskDiff>, requested?: string): Promise<string> => {
+    const message = requested?.trim()
+    if (message) return message
+    const workspace = resolveTaskWorkspace(store, task.id)
+    const draft = await draftCommitMessageOrTitle(async () => draftCommitMessage(agentProcesses, workspace, task, await diff(), '',
+      store.getTaskExecution(task.id)?.reasoningEffort), task)
+    if (!draft.generated) recordSystemEvent(task.id, `${task.agentLabel} could not write a commit message, so the task title was used.`)
+    return draft.message
+  }
+
+  ipc.handle('tasks:ship', async ({ taskId, push, message }): Promise<Task> => {
+    return withTaskOperation(store, taskId, 'ship', async (check) => {
+      const current = store.getTask(taskId)
+      if (!current) throw new Error('Task not found')
+      const project = store.getProjects(current.workspaceId).find((item) => item.id === current.projectId)
+      if (!project) throw new Error('Project not found')
+      const pushNow = push ?? project.shipPushes
+      if (isLocalQuickTask(current)) {
+        return commitLocalTask(taskId, pushNow, (task, local) =>
+          shipMessage(task, () => gitDelivery.getWorkingTreeDiff(local.path, task.reviewPaths!), message), check, true)
+      }
+      const { task, branchName, headCommit } = requireReviewableTask(taskId)
+      await requireProjectDeliveryAvailable(project, taskId)
+      const subject = await shipMessage(task, async () => {
+        const base = task.baseCommit ?? (await gitDelivery.getMergePreview(project.path, branchName)).targetCommit
+        return gitDelivery.getDiff(project.path, base, headCommit)
+      }, message)
+      check()
+      const preview = await getReviewableMergePreview(taskId)
+      const pushPreview = pushNow ? await gitDelivery.getPushPreview(project.path, preview.targetBranch) : undefined
+      if (pushPreview && pushPreview.targetCommit !== preview.targetCommit) {
+        throw new Error('The target branch changed while preparing to ship. Try again.')
+      }
+      const guard = () => {
+        check()
+        requireReviewableTask(taskId)
+      }
+      guard()
+      const result = await gitDelivery.merge(project.path, branchName, preview, guard)
+      guard()
+      const action = pushNow ? 'merge_and_push' as const : 'merge' as const
+      if (result.status === 'conflicted') return pauseMerge(task, preview, result, action, pushPreview, subject)
+      return finishMerge(task, project, result.commit, preview.targetBranch, headCommit, action, pushPreview,
+        `Merged ${branchName} into ${preview.targetBranch}.`, check, { targetCommit: preview.targetCommit, message: subject })
     })
-  )
+  })
 
   ipc.handle('comments:list', (taskId: string) => store.getComments(taskId))
 

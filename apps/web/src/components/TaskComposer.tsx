@@ -17,12 +17,8 @@ import { ComposerOptionTooltip } from './ComposerOptionTooltip'
 import { MenuSelect } from './MenuSelect'
 import { ProjectBranchSelector } from './ProjectBranchSelector'
 import { TASK_STYLES, TASK_STYLE_LABELS } from '@anvil/protocol/task-style'
-import type { TaskCheckoutMode, TaskReviewPolicy } from '@anvil/protocol/types'
+import type { TaskCheckoutMode } from '@anvil/protocol/types'
 
-const REVIEW_DESCRIPTIONS: Record<TaskReviewPolicy, string> = {
-  review_each_issue: 'Pause after every step to review its changes before continuing.',
-  review_at_task_end: 'Runs unattended until the final review. Merge and push still wait for you.'
-}
 const successDuration = 1800
 export function TaskComposer(): JSX.Element {
   const projectId = useStore((state) => state.activeProjectId)
@@ -46,7 +42,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const imageInputRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLFormElement>(null)
   const preferences = useComposerPreferences()
-  const reviewPolicy = preferences.reviewPolicy ?? 'review_each_issue'
   const agent = agents.find((candidate) => candidate.id === preferences.agentId)
   const agentId = agent?.id ?? ''
   const model = preferences.modelsByAgent[agentId] ?? ''
@@ -105,7 +100,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
 
   const isolated = Boolean(projectId) && (style === 'work' || checkoutMode === 'worktree')
   const styleDescriptions: Record<typeof style, string> = {
-    work: 'Delegate planned work on a task branch. Changes wait for you to merge them.',
+    work: 'Delegate planned work on a task branch. The agent runs to the end, then you ship it.',
     quick: !projectId
       ? 'Ask a question or start a task without a project.'
       : checkoutMode === 'worktree'
@@ -113,7 +108,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         : 'Ask a question or make a focused change in the current checkout.'
   }
   const styleDescription = styleDescriptions[style]
-  const reviewDescription = REVIEW_DESCRIPTIONS[reviewPolicy]
   const submit = async (): Promise<void> => {
     if (useStore.getState().activeProjectId !== projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || switchingBranch || (isolated && isRepository === false) || submitting.current) return
     submitting.current = true
@@ -127,7 +121,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       const task = await startTask({
         projectId,
         style,
-        reviewPolicy: style === 'work' ? reviewPolicy : 'review_each_issue',
         agentId,
         checkoutMode: projectId ? style === 'quick' ? checkoutMode : undefined : 'local',
         parentTaskId: style === 'work' ? parentTaskId || undefined : undefined,
@@ -280,20 +273,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 />
               )}
             </ComposerOptionTooltip>
-            {style === 'work' && <ComposerOptionTooltip title={reviewPolicy === 'review_at_task_end' ? 'Review at the end' : 'Review each step'} description={reviewDescription} disabled={busy}>
-              {(tooltipId) => (
-                <MenuSelect<TaskReviewPolicy>
-                  label="Review policy"
-                  describedBy={tooltipId}
-                  value={reviewPolicy}
-                  options={[
-                    { value: 'review_each_issue', label: 'Review each step', icon: 'table-of-contents', description: REVIEW_DESCRIPTIONS.review_each_issue },
-                    { value: 'review_at_task_end', label: 'Review at the end', icon: 'moon-star', description: REVIEW_DESCRIPTIONS.review_at_task_end }
-                  ]}
-                  onChange={preferences.setReviewPolicy}
-                />
-              )}
-            </ComposerOptionTooltip>}
             <ComposerModelPicker
               agentId={agentId}
               agents={agents}

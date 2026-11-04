@@ -47,7 +47,7 @@ test('toggles sleep prevention for running, paused, concurrent and deleted tasks
   const fixture = setupCaffeine()
   const { store, active, stop, task } = fixture
   try {
-    store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
     expect(store.getSettings().caffeineMode).toBe(false)
     store.addTask(task)
     expect(fixture.starts, 'Running tasks do not block sleep by default').toBe(0)
@@ -98,7 +98,7 @@ test('persists the preference, synchronizes registration and releases protection
   const restarted = new Store(database, options)
   try {
     expect(restarted.getSettings().caffeineMode, 'The preference survives restart').toBe(true)
-    restarted.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    restarted.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
     restarted.addTask(task)
     const close = registerCaffeineMode(createCaffeineActivity(restarted), blocker)
     onTestCleanup(close)
@@ -129,7 +129,7 @@ test('persists the preference, synchronizes registration and releases protection
 
 test('sleep prevention follows running task owners across workspace selection', () => {
   const { store, active, task } = setupCaffeine()
-  store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const work = store.createWorkspace('Work')
   store.setSettings({ caffeineMode: true }, 'default')
   store.addTask(task)

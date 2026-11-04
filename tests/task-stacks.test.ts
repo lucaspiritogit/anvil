@@ -30,7 +30,7 @@ async function fixture() {
   const database = join(root, 'data', 'config.json')
   const store = new Store(database, options)
   onTestCleanup(() => store.close())
-  store.addProject({ id: 'project', name: 'Project', path: repo, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  store.addProject({ id: 'project', name: 'Project', path: repo, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const manager = new GitDeliveryManager(join(root, 'worktrees'))
   const active = new Set<string>()
   const context: TaskContext = { store, gitDelivery: manager, agentProcesses: { isRunning: (id: string) => active.has(id) } as TaskContext['agentProcesses'], send: vi.fn() }

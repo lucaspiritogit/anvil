@@ -599,6 +599,16 @@ export function SettingsPage(): JSX.Element {
               </SettingsPanel>
             )}
             <div hidden={section !== 'source-control'}>
+              {activeProject && <SettingsPanel title="Shipping">
+                <ToggleRow
+                  title="Push to origin when shipping"
+                  description={<>Ship commits the task with an agent-written message. Turn this on to also push <strong className="font-mono">{activeProject.name}</strong>'s branch. The Ship menu always offers the other option.</>}
+                  checked={Boolean((edits[`project:${workspaceId}:${activeProject.id}`]?.draft.shipPushes as boolean | undefined) ?? activeProject.shipPushes)}
+                  onChange={(value) => {
+                    if (workspaceId) autosave(`project:${workspaceId}:${activeProject.id}`, { shipPushes: value })
+                  }}
+                />
+              </SettingsPanel>}
               <SettingsPanel title="Rebase mode">
                 <OptionCards
                   ariaLabel="Rebase mode"

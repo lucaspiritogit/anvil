@@ -25,7 +25,7 @@ import { releaseWorktree, prepareBranch, checkoutBranch, worktreeHead } from './
 import { renameTaskBranch, restackBranch, finalizeBranch } from './task-branches'
 import { rebase } from './rebase'
 import { getPullRequestPreview, pushPullRequestBranch } from './pull-requests'
-import { abortMergeConflict, completeMergeConflict, getMergeConflict, getMergePreview, getPushPreview, merge, push, saveMergeConflictFile, validateMergeConflict } from './merge'
+import { abortMergeConflict, completeMergeConflict, getMergeConflict, getMergePreview, getPushPreview, merge, push, saveMergeConflictFile, squashMergedCommit, validateMergeConflict } from './merge'
 import { getSyncStatus, pull, type BranchSyncTarget } from './sync'
 import { changedFiles, getDiff, getIssueDiff, getWorkingTreeDiff, scopedPaths, workingTreeState } from './diff'
 
@@ -212,6 +212,15 @@ export class GitDeliveryManager {
     check: () => void = () => {}
   ): Promise<void> {
     return abortMergeConflict(this.context, projectPath, conflict, check)
+  }
+
+  squashMergedCommit(
+    projectPath: string,
+    expected: { targetBranch: string; targetCommit: string; mergedCommit: string },
+    message: string,
+    check: () => void = () => {}
+  ): Promise<string> {
+    return squashMergedCommit(this.context, projectPath, expected, message, check)
   }
 
   getPushPreview(projectPath: string, expectedTargetBranch?: string, requiredCommit?: string): Promise<TaskPushPreview> {

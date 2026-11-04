@@ -34,7 +34,7 @@ interface PreviewActions {
 }
 
 const OUTCOME: Record<TaskResultNoticeKind, string> = {
-  reviewable: 'Ready for review',
+  reviewable: 'Ready to ship',
   no_changes: 'No changes needed',
   completed: 'Task completed'
 }
@@ -52,19 +52,19 @@ const PREVIEW_RESULTS: PreviewResult[] = [
   {
     id: 'review',
     title: 'Session refresh handling',
-    detail: 'Ready for review · 4 files · 18 checks passed',
+    detail: 'Ready to ship · 4 files · 18 checks passed',
     noticeKind: 'reviewable',
     taskKind: 'reviewable',
-    actionLabel: 'Review changes',
+    actionLabel: 'View changes',
     rowTone: 'success',
     actionTone: 'accent'
   },
   {
     id: 'reviewed',
     title: 'Settings empty state',
-    detail: 'Ready for review · 2 files · Checks not run',
+    detail: 'Ready to ship · 2 files · Checks not run',
     noticeKind: 'reviewable',
-    actionLabel: 'Review changes',
+    actionLabel: 'View changes',
     rowTone: 'success',
     actionTone: 'muted',
     disabled: true
@@ -186,7 +186,7 @@ function ResultRow({ notice, preview }: { notice: TaskResultNotice; preview?: Pr
   const rowTone = preview?.result.rowTone ?? (notice.kind === 'no_changes' ? 'muted' : 'success')
   const actionTone = preview?.result.actionTone ?? (notice.kind === 'reviewable' ? 'accent' : 'muted')
   const actionLabel = preview?.result.actionLabel ?? (task
-    ? notice.kind === 'reviewable' ? 'Review changes' : 'Open task'
+    ? notice.kind === 'reviewable' ? 'View changes' : 'Open task'
     : 'Acknowledge')
   const informational = notice.kind !== 'reviewable' || !task
   const actionDisabled = preview?.result.disabled === true || preview !== undefined && notice.seenAt !== undefined

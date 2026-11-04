@@ -248,6 +248,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   }
   registerSteeringHandlers(ipc, { ...context, ...taskEvents, ...execution })
   registerReviewHandlers(ipc, reviewContext)
+  void execution.acceptParkedIssueReviews()
   const credentials = (workspaceId: string): GitHubCredentials => new GitHubCredentials(join(store.getWorkspaceDirectory(workspaceId), 'github-token.enc'), encryption)
   const githubClient = new GitHubClient()
   const polls = new Map<string, GitHubPRPolling>()

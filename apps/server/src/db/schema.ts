@@ -1,6 +1,8 @@
 import { sql, type SQL } from 'drizzle-orm'
 import { DEFAULT_WORKSPACE_ID, MAX_WORKSPACE_NAME_LENGTH } from '@anvil/protocol/types'
-import type { ComposerPreferences, TaskCheckoutMode, TaskReviewPolicy } from '@anvil/protocol/types'
+import type { ComposerPreferences, TaskCheckoutMode } from '@anvil/protocol/types'
+
+type TaskReviewPolicy = 'review_each_issue' | 'review_at_task_end'
 import type { Issue } from '@anvil/protocol/anvil-issue-tracker'
 import { type AnySQLiteColumn, check, foreignKey, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
@@ -84,10 +86,12 @@ export const projects = sqliteTable(
     // SQLite has no boolean; `mode: 'boolean'` maps 0/1 to a JS boolean, which
     // also stops booleans reaching the driver, which cannot bind them.
     finishOnPush: integer('finish_on_push', { mode: 'boolean' }).notNull().default(false),
+    shipPushes: integer('ship_pushes', { mode: 'boolean' }).notNull().default(false),
     gitPlatform: text('git_platform').$type<'github'>().notNull().default('github')
   },
   (table) => [
     check('projects_finish_on_push_bool', sql`${table.finishOnPush} IN (0, 1)`),
+    check('projects_ship_pushes_bool', sql`${table.shipPushes} IN (0, 1)`),
     check('projects_git_platform_valid', oneOf(table.gitPlatform, ['github']))
   ]
 )
@@ -141,6 +145,8 @@ export const tasks = sqliteTable(
     baseCommit: text('base_commit'),
     headCommit: text('head_commit'),
     pushedCommit: text('pushed_commit'),
+    shippedCommit: text('shipped_commit'),
+    shippedHead: text('shipped_head'),
     filesChanged: integer('files_changed').notNull().default(0),
     additions: integer('additions').notNull().default(0),
     deletions: integer('deletions').notNull().default(0),

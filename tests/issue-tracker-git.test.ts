@@ -1,5 +1,3 @@
-import { registerTaskNotifications } from '../apps/desktop/src/main/task-notifications'
-import { EventEmitter } from 'node:events'
 import { callIssueTool } from '../apps/server/src/issue-tools/server'
 import { rendererEvent } from './renderer-fixture'
 import { expect, test, vi } from 'vitest'
@@ -44,7 +42,7 @@ async function turnFixture(issueCount = 2) {
   const store = new Store(join(root, 'config.json'), { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Project', path: repo, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const git = new GitDeliveryManager(join(root, 'worktrees'))
   const checkout = await git.prepareBranch(repo, 'task')
   const task = store.addTask({ id: 'task', projectId: 'project', agentId: 'codex', agentLabel: 'Codex',
@@ -141,16 +139,10 @@ test.each([
     expect(f.store.getTaskExecution(f.task.id)?.currentIssueId).toBe(issue.id)
     if (kind === 'changed') writeFileSync(join(f.task.cwd, `change-${index}.txt`), `change ${index}\n`)
     f.submit()
-    const started = kind === 'empty' && index < 2 ? nextAgent(f) : undefined
+    const started = index < 2 ? nextAgent(f) : undefined
     await f.exit()
-    if (kind === 'changed') {
-      expect(f.execution.issueReviewReady(f.task.id)).toBe(true)
-      expect(f.tracker.get(issue.id).status).toBe('review')
-      await f.execution.approveIssue(f.task.id)
-      expect(f.tracker.get(issue.id).reviewedAt).toEqual(expect.any(Number))
-    } else {
-      expect(f.tracker.get(issue.id).reviewedAt).toBeUndefined()
-    }
+    if (kind === 'changed') expect(f.tracker.get(issue.id).reviewedAt).toEqual(expect.any(Number))
+    else expect(f.tracker.get(issue.id).reviewedAt).toBeUndefined()
     await started
     expect(f.tracker.get(issue.id).status).toBe('complete')
   }
@@ -179,7 +171,7 @@ test.each([
   expect(recovered.list(task.id).every((issue) => issue.status === 'complete')).toBe(true)
 })
 
-test.each(['binary', 'rename', 'mode'] as const)('%s changes require developer review even with zero changed text lines', async (kind) => {
+test.each(['binary', 'rename', 'mode'] as const)('%s changes complete the issue and advance without developer review', async (kind) => {
   const f = await turnFixture()
   if (kind === 'binary') writeFileSync(join(f.task.cwd, 'binary.bin'), Buffer.from([0, 1, 2, 0]))
   if (kind === 'rename') runGit(f.task.cwd, 'mv', 'tracked.txt', 'renamed.txt')
@@ -190,41 +182,14 @@ test.each(['binary', 'rename', 'mode'] as const)('%s changes require developer r
   runGit(f.task.cwd, 'add', '--all')
   runGit(f.task.cwd, 'commit', '-m', `Change ${kind}`)
   f.submit()
+  const started = nextAgent(f)
   await f.exit()
-  expect(f.tracker.get(f.issue.id).status).toBe('review')
-  expect(f.tracker.get(f.next.id).status).toBe('queued')
-  expect(f.execution.issueReviewReady(f.task.id)).toBe(true)
+  await started
+  expect(f.tracker.get(f.issue.id).status).toBe('complete')
+  expect(f.tracker.get(f.next.id).status).toBe('working')
+  expect(f.execution.issueReviewReady(f.task.id)).toBe(false)
   expect(f.store.getTask(f.task.id)).toMatchObject({ filesChanged: 1, additions: 0, deletions: 0 })
   expect((await f.git.getIssueDiff(f.repo, f.tracker.get(f.issue.id)))?.patch).not.toBe('')
-  expect(f.agents.starts).toHaveLength(0)
-})
-
-test('rework and recovery complete an empty original review range without repeating submission or approval', async () => {
-  const f = await turnFixture()
-  writeFileSync(join(f.task.cwd, 'tracked.txt'), 'initial implementation\n')
-  f.submit()
-  await f.exit()
-  f.execution.rejectIssue(f.task.id)
-  writeFileSync(join(f.task.cwd, 'tracked.txt'), 'base\n')
-  f.submit()
-  // A restarted scheduler has no in-memory claim but retains the owned submitted issue.
-  const state = f.store.getTaskExecution(f.task.id)!
-  f.store.saveTaskExecution({ ...state, phase: 'blocked', error: 'Interrupted' })
-  const recovered = registerTaskExecution({ store: f.store, gitDelivery: f.git,
-    agentProcesses: f.agents as unknown as RealAgentProcessManager, send: () => {}, recordSystemEvent: () => {} }, f.finish)
-  recovered.resumeTask(f.task.id)
-  const started = nextAgent(f)
-  await recovered.finishTaskTurn({ taskId: f.task.id, code: 0, cancelled: false })
-  await started
-  const issue = f.tracker.get(f.issue.id)
-  expect(issue).toMatchObject({ status: 'complete', baseCommit: f.task.baseCommit })
-  expect(issue.reviewedAt).toBeUndefined()
-  expect((await f.git.getIssueDiff(f.repo, issue))).toMatchObject({ patch: '', commits: expect.any(Array) })
-  expect(runGit(f.task.cwd, 'rev-list', '--count', `${issue.baseCommit}..${issue.headCommit}`)).toBe('2')
-  f.submit()
-  f.agents.active.delete(f.task.id)
-  await recovered.finishTaskTurn({ taskId: f.task.id, code: 0, cancelled: false })
-  expect(f.store.getTask(f.task.id)).toMatchObject({ status: 'succeeded', deliveryStatus: 'no_changes' })
   expect(f.agents.starts).toHaveLength(1)
 })
 
@@ -244,73 +209,6 @@ test.each(['working', 'blocked', 'missing range', 'failed diff', 'unavailable Gi
   expect(f.tracker.get(f.next.id).status).toBe('queued')
   expect(f.snapshots.some((snapshot) => snapshot.ready)).toBe(false)
   expect(f.agents.starts).toHaveLength(0)
-})
-
-test('publishes the saved review range only after exit and delayed finalization, once per turn', async () => {
-  const f = await turnFixture()
-  const alerts: string[] = []
-  class Notification extends EventEmitter {
-    static isSupported = () => true
-    constructor(options: { title?: string }) {
-      super()
-      alerts.push(options.title ?? '')
-    }
-    show() {}
-    close() {}
-  }
-  onTestCleanup(registerTaskNotifications(f.store, Notification, {}, f.execution.issueReviewReady))
-  writeFileSync(join(f.task.cwd, 'tracked.txt'), 'staged\n')
-  runGit(f.task.cwd, 'add', 'tracked.txt')
-  writeFileSync(join(f.task.cwd, 'tracked.txt'), 'staged and unstaged\n')
-  writeFileSync(join(f.task.cwd, 'untracked.txt'), 'new file\n')
-  f.submit()
-  const reviewInput = () => f.execution.approveIssue(f.task.id)
-  expect(f.execution.issueReviewReady(f.task.id)).toBe(false)
-  await expect(reviewInput()).rejects.toThrow(/not finished stopping/)
-  const entered = barrier()
-  const commit = barrier()
-  const saved = barrier()
-  const publish = barrier()
-  const original = f.git.finalizeBranch.bind(f.git)
-  const finalize = vi.spyOn(f.git, 'finalizeBranch').mockImplementation(async (...args) => {
-    entered.release()
-    await commit.promise
-    const result = await original(...args)
-    saved.release()
-    await publish.promise
-    return result
-  })
-  const ending = f.exit()
-  onTestCleanup(async () => { commit.release(); publish.release(); await ending })
-  await entered.promise
-  await f.execution.finishTaskTurn({ taskId: f.task.id, code: 0, cancelled: false })
-  expect(finalize).toHaveBeenCalledTimes(1)
-  expect(f.tracker.get(f.issue.id).headCommit).toBeUndefined()
-  expect(f.execution.issueReviewReady(f.task.id)).toBe(false)
-  await expect(reviewInput()).rejects.toThrow(/not finished stopping/)
-  expect(() => f.execution.rejectIssue(f.task.id)).toThrow(/not finished stopping/)
-  commit.release()
-  await saved.promise
-  const tip = runGit(f.task.cwd, 'rev-parse', 'HEAD')
-  expect(tip).not.toBe(f.task.baseCommit)
-  expect(f.tracker.get(f.issue.id).headCommit).toBeUndefined()
-  expect(f.execution.issueReviewReady(f.task.id)).toBe(false)
-  expect(alerts).toEqual([])
-  publish.release()
-  await ending
-  expect(alerts).toEqual([`Subtask ready for review: ${f.issue.title}`])
-  expect(f.snapshots.at(-1)).toEqual({ ready: true, phase: 'reviewing', head: tip, files: 2 })
-  expect(f.tracker.get(f.issue.id)).toMatchObject({ baseCommit: f.task.baseCommit, headCommit: tip })
-  expect(runGit(f.task.cwd, 'status', '--porcelain')).toBe('')
-  const diff = await f.git.getIssueDiff(f.repo, new TaskIssues(f.store).issueDiffSource(f.task.id, f.issue.id))
-  expect(diff?.patch).toContain('+staged and unstaged')
-  expect(diff?.patch).toContain('untracked.txt')
-  await f.exit()
-  expect(finalize).toHaveBeenCalledTimes(1)
-  expect(f.agents.starts).toHaveLength(0)
-  await reviewInput()
-  expect(f.tracker.get(f.next.id)).toMatchObject({ status: 'working', baseCommit: tip })
-  expect(f.agents.starts).toHaveLength(1)
 })
 
 for (const interruption of ['cancel', 'delete', 'commit failure', 'missing worktree', 'wrong branch', 'invalid range'] as const) {
@@ -367,31 +265,6 @@ for (const interruption of ['cancel', 'delete', 'commit failure', 'missing workt
   })
 }
 
-test('recovery and rework finalize remaining files while retaining the original issue base', async () => {
-  const f = await turnFixture()
-  writeFileSync(join(f.task.cwd, 'tracked.txt'), 'interrupted work\n')
-  f.submit()
-  f.agents.active.delete(f.task.id)
-  const state = f.store.getTaskExecution(f.task.id)!
-  f.store.saveTaskExecution({ ...state, phase: 'blocked', error: 'Restarted' })
-  f.execution.resumeTask(f.task.id)
-  await f.exit()
-  const first = f.tracker.get(f.issue.id)
-  expect(first.headCommit).toBe(runGit(f.task.cwd, 'rev-parse', 'HEAD'))
-  expect(f.execution.issueReviewReady(f.task.id)).toBe(true)
-  f.execution.rejectIssue(f.task.id)
-  writeFileSync(join(f.task.cwd, 'tracked.txt'), 'reworked content\n')
-  f.submit()
-  await f.exit()
-  const reworked = f.tracker.get(f.issue.id)
-  expect(reworked.baseCommit).toBe(f.task.baseCommit)
-  expect(reworked.headCommit).not.toBe(first.headCommit)
-  const diff = await f.git.getIssueDiff(f.repo, reworked)
-  expect(diff?.patch).toContain('+reworked content')
-  expect(diff?.commits).toHaveLength(2)
-  expect(f.snapshots.at(-1)?.ready).toBe(true)
-})
-
 test('the working agent names its temporary branch and delivers sequential changes as one final task diff', async () => {
   const projectPath = join(testHome, 'project')
   mkdirSync(projectPath)
@@ -405,7 +278,7 @@ test('the working agent names its temporary branch and delivers sequential chang
   const database = join(testHome, '.anvil-composer/config.json')
   const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const seed = new Store(database, options)
-  seed.addProject({ id: 'project', name: 'Git test', path: projectPath, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  seed.addProject({ id: 'project', name: 'Git test', path: projectPath, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
 
   const runtime = registerTestIpc()
   const { agentProcesses: realAgentProcesses } = runtime
@@ -530,7 +403,7 @@ test('the working agent names its temporary branch and delivers sequential chang
   seed.close()
 })
 
-test('captures a per-issue diff range at claim and submit, re-captures after rework, and falls back for legacy issues', async () => {
+test('captures a per-issue diff range at claim and submit, advances without review, and falls back for legacy issues', async () => {
   const projectPath = join(testHome, 'issue-ranges-project')
   mkdirSync(projectPath)
   const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -543,7 +416,7 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   const database = join(testHome, '.anvil-composer/config.json')
   const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const store = new Store(database, options)
-  store.addProject({ id: 'issue-ranges', name: 'Issue ranges', path: projectPath, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  store.addProject({ id: 'issue-ranges', name: 'Issue ranges', path: projectPath, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
 
   const { agentProcesses: realAgentProcesses } = registerTestIpc()
   const agentProcesses = realAgentProcesses as unknown as AgentProcessManager
@@ -573,39 +446,19 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   let board = taskState(store, task.id)!
   callIssueTool(store, task.id, store.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[0].id, checklist: [true], evidence: 'Read first.txt and verified its content' })
   agentProcesses.finishTurn(task.id, 'Completed the first issue')
-  await waitFor(() => store.getTaskExecution(task.id)?.phase === 'reviewing')
+  await waitFor(() => agentProcesses.starts.length === 3)
   const firstReview = await call('tasks:issue-diff', { taskId: task.id, issueId: board.items[0].id })
   expect(firstReview.patch).toContain('first.txt')
   expect(firstReview.patch).not.toContain('second.txt')
-  await call('tasks:approve-issue', { taskId: task.id, issueId: board.items[0].id, headCommit: firstHead })
-  await waitFor(() => agentProcesses.starts.length === 3)
 
   const secondCwd = agentProcesses.starts[2].cwd
-  writeFileSync(join(secondCwd, 'second.txt'), 'second attempt\n')
+  writeFileSync(join(secondCwd, 'second.txt'), 'second change\n')
   git(secondCwd, 'add', 'second.txt')
-  git(secondCwd, 'commit', '-m', 'feat: second attempt')
+  git(secondCwd, 'commit', '-m', 'feat: second file')
+  const secondHead = git(secondCwd, 'rev-parse', 'HEAD')
   board = taskState(store, task.id)!
   callIssueTool(store, task.id, store.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[1].id, checklist: [true], evidence: 'Read second.txt and verified its content' })
-  agentProcesses.finishTurn(task.id, 'Second attempt ready for review')
-  await waitFor(() => store.getTaskExecution(task.id)?.phase === 'reviewing')
-  const secondReview = await call('tasks:issue-diff', { taskId: task.id, issueId: board.items[1].id })
-  expect(secondReview.patch).toContain('second.txt')
-  expect(secondReview.patch).not.toContain('first.txt')
-  await call('tasks:reject-issue', { taskId: task.id, issueId: board.items[1].id,
-    headCommit: git(secondCwd, 'rev-parse', 'HEAD'), comment: 'Rework the second file' })
-  await waitFor(() => agentProcesses.starts.length === 4)
-  expect(agentProcesses.starts[3].cwd).toBe(firstCwd)
-  writeFileSync(join(secondCwd, 'second.txt'), 'second rework\n')
-  git(secondCwd, 'add', 'second.txt')
-  git(secondCwd, 'commit', '-m', 'fix: second rework')
-  const reworkHead = git(secondCwd, 'rev-parse', 'HEAD')
-  callIssueTool(store, task.id, store.getTask(task.id)!.workspaceId, 'anvil_submit_review', { id: board.items[1].id, checklist: [true], evidence: 'Rework verified against second.txt' })
-  agentProcesses.finishTurn(task.id, 'Reworked and completed')
-  await waitFor(() => store.getTaskExecution(task.id)?.phase === 'reviewing')
-  const reworkReview = await call('tasks:issue-diff', { taskId: task.id, issueId: board.items[1].id })
-  expect(reworkReview.patch).toContain('second rework')
-  expect(reworkReview.patch).not.toContain('first.txt')
-  await call('tasks:approve-issue', { taskId: task.id, issueId: board.items[1].id, headCommit: reworkHead })
+  agentProcesses.finishTurn(task.id, 'Completed the second issue')
   await waitFor(() => store.getTask(task.id)?.deliveryStatus === 'reviewable')
 
   const [first, second] = taskState(store, task.id)!.items
@@ -614,7 +467,7 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   expect(first.baseCommit, 'Claim records the worktree HEAD as the issue base').toBe(task.baseCommit)
   expect(first.headCommit, 'Turn end records the submitted HEAD').toBe(firstHead)
   expect(second.baseCommit, 'The next issue starts where the previous one ended').toBe(firstHead)
-  expect(second.headCommit, 'Rework resubmission re-records the HEAD').toBe(reworkHead)
+  expect(second.headCommit, 'Turn end records the submitted HEAD').toBe(secondHead)
 
   const firstDiff = await delivery.getIssueDiff(projectPath, {
     baseCommit: first.baseCommit, headCommit: first.headCommit,
@@ -627,7 +480,7 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   const secondDiff = await delivery.getIssueDiff(projectPath, { baseCommit: second.baseCommit, headCommit: second.headCommit })
   expect(secondDiff?.patch).toMatch(/second\.txt/)
   expect(secondDiff?.patch).not.toMatch(/first\.txt/)
-  expect(secondDiff?.commits.map(({ subject }) => subject).sort()).toEqual(['feat: second attempt', 'fix: second rework'])
+  expect(secondDiff?.commits.map(({ subject }) => subject)).toEqual(['feat: second file'])
 
   const connection = new DatabaseSync(store.getWorkspaceDatabasePath('default'))
   try {
@@ -643,7 +496,7 @@ test('captures a per-issue diff range at claim and submit, re-captures after rew
   })
   expect(legacyDiff?.patch).toMatch(/first\.txt/)
   expect(legacyDiff?.patch).toMatch(/second\.txt/)
-  expect(legacyDiff?.commits).toHaveLength(3)
+  expect(legacyDiff?.commits).toHaveLength(2)
   expect(await delivery.getIssueDiff(projectPath, {})).toBeNull()
   expect(await delivery.getIssueDiff(projectPath, {
     baseCommit: task.baseCommit, taskBaseCommit: task.baseCommit, taskHeadCommit: taskHead

@@ -158,8 +158,8 @@ export function Sidebar({ onOpenTerminal, mobileNavigation, mobileNavigationOpen
         {reviewCount > 0 && (
           <span
             role="status"
-            aria-label={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready for review`}
-            title={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready for review`}
+            aria-label={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready to ship`}
+            title={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready to ship`}
             className="ml-2 inline-flex h-[18px] shrink-0 items-center gap-1 bg-review px-1.5 font-mono text-[10px] font-semibold text-canvas"
           >
             <span aria-hidden="true">◆</span>

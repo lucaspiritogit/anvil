@@ -21,7 +21,7 @@ import type {
   TaskMergeConflictSnapshot,
   TaskMergePreview,
   TaskPushPreview,
-  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskReviewPolicy, TaskCheckoutMode,
+  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskCheckoutMode,
   TaskResultNotice, TaskResultNoticeChange
 } from '@anvil/protocol/types'
 import { nextTaskStyle } from '@anvil/protocol/task-style'
@@ -190,13 +190,14 @@ interface AnvilState {
   removeProject: (id: string) => Promise<void>
   updateProject: (
     id: string,
-    patch: Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush'>>,
+    patch: Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush' | 'shipPushes'>>,
     workspaceId?: string
   ) => Promise<void>
   selectProject: (id: string | null) => void
   loadGitStatus: (id: string) => Promise<void>
   initGitRepo: (id: string) => Promise<void>
 
+  shipTask: (taskId: string, input?: { push?: boolean; message?: string }) => Promise<Task>
   approveTask: (taskId: string, preview: TaskMergePreview) => Promise<void>
   mergeAndPushTask: (taskId: string, preview: TaskMergeAndPushPreview) => Promise<void>
   loadMergeConflict: (taskId: string, conflictId: string) => Promise<void>
@@ -205,8 +206,6 @@ interface AnvilState {
   fixMergeConflictWithAgent: (taskId: string, conflictId: string) => Promise<void>
   abortMergeConflict: (taskId: string, conflictId: string) => Promise<void>
   pushTask: (taskId: string, preview: TaskPushPreview) => Promise<void>
-  approveIssue: (taskId: string, issueId: string, headCommit: string | null) => Promise<void>
-  rejectIssue: (taskId: string, issueId: string, headCommit: string | null) => Promise<void>
   openRebase: (taskId: string | null) => void
   rebaseTask: (taskId: string, steps: RebaseStep[]) => Promise<void>
   rebaseWithAgent: (taskId: string) => Promise<void>
@@ -223,7 +222,7 @@ interface AnvilState {
   sendComments: (taskId: string) => Promise<void>
 
   loadAgentModels: (agentId: string) => Promise<void>
-  startTask: (input: { projectId?: string | null; style?: TaskStyle; reviewPolicy?: TaskReviewPolicy; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<Task | undefined>
+  startTask: (input: { projectId?: string | null; style?: TaskStyle; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<Task | undefined>
   steerTask: (taskId: string, message: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string, panel?: TaskPanel) => Promise<void>
@@ -633,14 +632,14 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  startTask: async ({ projectId: requestedProjectId, style, reviewPolicy, checkoutMode, startBase, parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
+  startTask: async ({ projectId: requestedProjectId, style, checkoutMode, startBase, parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
     if (get().workspaceSwitching || !get().ready) throw new Error('Workspace is still loading')
     const generation = workspaceGeneration
     const projectId = requestedProjectId === undefined ? get().activeProjectId : requestedProjectId
     if (get().activeProjectId !== projectId) throw new Error('The selected project changed. Review the task and try again.')
     const task = await window.anvil.tasks.start({
       workspaceId: get().activeWorkspaceId ?? undefined,
-      ...(projectId ? { projectId } : {}), style, reviewPolicy, checkoutMode, parentTaskId, agentId, prompt, model,
+      ...(projectId ? { projectId } : {}), style, checkoutMode, parentTaskId, agentId, prompt, model,
       ...(startBase ? { startBase } : {}),
       ...(images?.length ? { images } : {}),
       ...(fileReferences?.length ? { fileReferences } : {}),
@@ -839,29 +838,13 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  approveIssue: async (taskId, issueId, headCommit) => {
-    const task = await window.anvil.tasks.approveIssue({ taskId, issueId, headCommit })
-    if (!get().tasks.some((item) => item.id === taskId)) return
+  shipTask: async (taskId, input = {}) => {
+    const task = await window.anvil.tasks.ship({ taskId, ...input })
     set((s) => ({
       tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
-      diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== taskId))
+      commentError: null
     }))
-    void get().loadComments(taskId).catch((error: unknown) => {
-      set({ commentError: error instanceof Error ? error.message : String(error) })
-    })
-  },
-
-  rejectIssue: async (taskId, issueId, headCommit) => {
-    const task = await window.anvil.tasks.rejectIssue({ taskId, issueId, headCommit })
-    if (!get().tasks.some((item) => item.id === taskId)) return
-    set((s) => ({
-      tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
-      diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== taskId)),
-      // The issue restarts, so its recorded diff range is stale until the next review.
-      diffsByIssue: Object.fromEntries(Object.entries(s.diffsByIssue).filter(([key]) => key !== issueId)),
-      diffErrorsByIssue: Object.fromEntries(Object.entries(s.diffErrorsByIssue).filter(([key]) => key !== issueId))
-    }))
-    await get().loadComments(taskId)
+    return task
   },
 
   approveTask: async (taskId, preview) => {

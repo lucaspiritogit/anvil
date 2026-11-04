@@ -138,6 +138,7 @@ function toProject(row: ProjectRow): Project {
     monthlyTokenLimit: row.monthlyTokenLimit,
     monthlyCostLimitUsd: row.monthlyCostLimitUsd,
     finishOnPush: row.finishOnPush,
+    shipPushes: row.shipPushes,
     gitPlatform: row.gitPlatform
   }
 }
@@ -146,7 +147,6 @@ function toTask(row: TaskRow): Task {
   return {
     id: row.id,
     style: row.style,
-    reviewPolicy: row.reviewPolicy,
     checkoutMode: row.checkoutMode,
     ...(row.startBase === null ? {} : { startBase: row.startBase }),
     ...(row.projectId === null ? {} : { projectId: row.projectId }),
@@ -188,6 +188,8 @@ function toTask(row: TaskRow): Task {
     ...(row.baseCommit === null ? {} : { baseCommit: row.baseCommit }),
     ...(row.headCommit === null ? {} : { headCommit: row.headCommit }),
     ...(row.pushedCommit === null ? {} : { pushedCommit: row.pushedCommit }),
+    ...(row.shippedCommit === null ? {} : { shippedCommit: row.shippedCommit }),
+    ...(row.shippedHead === null ? {} : { shippedHead: row.shippedHead }),
     filesChanged: row.filesChanged,
     additions: row.additions,
     deletions: row.deletions,
@@ -269,7 +271,6 @@ function toTaskRow(task: Task): typeof tasks.$inferInsert {
   return {
     ...withoutPullRequest(task),
     projectId: task.projectId ?? null,
-    reviewPolicy: task.reviewPolicy ?? 'review_each_issue',
     checkoutMode: task.checkoutMode ?? 'worktree',
     startBase: task.startBase ?? null,
     parentTaskId: task.parentTaskId ?? null,
@@ -528,8 +529,7 @@ export class Store {
     const stringRecord = (value: unknown): boolean => Boolean(value && typeof value === 'object' &&
       !Array.isArray(value) && Object.values(value).every((entry) => typeof entry === 'string'))
     if (!composer || typeof composer.agentId !== 'string' || !stringRecord(composer.modelsByAgent) ||
-        !stringRecord(composer.reasoningByAgentModel) || composer.reviewPolicy !== undefined &&
-        !['review_each_issue', 'review_at_task_end'].includes(composer.reviewPolicy)) {
+        !stringRecord(composer.reasoningByAgentModel)) {
       throw new Error('Invalid composer preferences')
     }
   }
@@ -678,17 +678,19 @@ export class Store {
 
   updateProject(
     id: string,
-    patch: Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush'>>,
+    patch: Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush' | 'shipPushes'>>,
     workspaceId = this.getActiveWorkspace().id
   ): Project | undefined {
     const db = this.workspaceConnection(workspaceId).db
-    if (patch.monthlyTokenLimit === undefined && patch.monthlyCostLimitUsd === undefined && patch.finishOnPush === undefined) {
+    if (patch.monthlyTokenLimit === undefined && patch.monthlyCostLimitUsd === undefined && patch.finishOnPush === undefined &&
+      patch.shipPushes === undefined) {
       return this.getProjects(workspaceId).find((project) => project.id === id)
     }
     db.update(projects).set({
       monthlyTokenLimit: patch.monthlyTokenLimit,
       monthlyCostLimitUsd: patch.monthlyCostLimitUsd,
-      finishOnPush: patch.finishOnPush
+      finishOnPush: patch.finishOnPush,
+      shipPushes: patch.shipPushes
     }).where(eq(projects.id, id)).run()
     const row = db.select().from(projects).where(eq(projects.id, id)).get()
     return row ? toProject(row) : undefined
@@ -904,7 +906,6 @@ export class Store {
     const ownedTask: Task = {
       ...task,
       style: task.style ?? (task.projectId === undefined ? 'quick' : 'work'),
-      reviewPolicy: task.reviewPolicy ?? 'review_each_issue',
       checkoutMode: task.checkoutMode ?? (task.projectId === undefined ? 'local' : 'worktree'),
       workspaceId: task.workspaceId ?? this.getActiveWorkspace().id,
       ...advanceTaskWorkingTime({ workingTimeMs: task.workingTimeMs }, isTaskWorking(task), Date.now())

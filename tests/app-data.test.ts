@@ -10,7 +10,7 @@ test('separates development storage from live packaged tasks', () => {
   const productionDirectory = resolveAppDataDirectory(testHome, true)
   const developmentDirectory = resolveAppDataDirectory(testHome, false)
   const production = new Store(join(productionDirectory, 'config.json'), options)
-  production.addProject({ id: 'project', name: 'Production', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  production.addProject({ id: 'project', name: 'Production', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const task: Task = {
     workspaceId: 'default',
     id: 'live', projectId: 'project', title: 'Live task', prompt: 'Work', agentId: 'codex', agentLabel: 'Codex',

@@ -12,7 +12,7 @@ const task = (id: string, projectId = 'project'): Task => ({
   filesChanged: 0, additions: 0, deletions: 0
 })
 const project = (id: string): Project => ({ id, name: id, path: '/tmp', createdAt: 0,
-  monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
 const event = (sequence: number, taskId = 'a', text = `Event ${sequence}`): TaskEvent & { sequence: number } => ({
   id: `${taskId}-${sequence}`, taskId, sequence, ts: 1, text, stream: 'stdout', kind: 'output', category: 'tool_result'
 })
@@ -449,7 +449,6 @@ test('cycles the composer between Work and Quick with its configured shortcut', 
   await state().openTask('a')
   const focusRequest = state().taskComposerFocusRequest
   expect(DEFAULT_KEYBINDINGS.cycleTaskStyle).toBe('Mod+Shift+M')
-  expect(DEFAULT_KEYBINDINGS.cycleReviewPolicy).toBe('Mod+Shift+I')
   state().cycleTaskComposerStyle()
   expect(state()).toMatchObject({ taskComposerStyle: 'work', view: { kind: 'home' }, taskComposerFocusRequest: focusRequest + 1 })
   state().cycleTaskComposerStyle()

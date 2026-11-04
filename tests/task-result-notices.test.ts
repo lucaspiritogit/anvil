@@ -21,11 +21,11 @@ function setup() {
   })
   const project: Project = {
     id: 'project', name: 'Project', path: join(root, 'project'), createdAt: 1,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
   }
   store.addProject(project)
   const addTask = (id: string, input: Partial<Task> = {}, workspaceId = 'default'): Task => store.addTask({
-    id, workspaceId, projectId: project.id, style: 'work', reviewPolicy: 'review_each_issue', checkoutMode: 'worktree',
+    id, workspaceId, projectId: project.id, style: 'work', checkoutMode: 'worktree',
     agentId: 'codex', agentLabel: 'Codex', prompt: id, title: id, cwd: project.path,
     status: 'running', startedAt: 1, exitCode: null, inputTokens: 0, outputTokens: 0,
     cachedTokens: 0, totalTokens: 0, costUsd: null, deliveryStatus: 'working',

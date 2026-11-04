@@ -53,7 +53,7 @@ test('overview submits the selected project, provider, model, image and path ref
   })))
   expect(requests).toEqual([0, 1].map(() => ({
     workspaceId: 'default', projectId: 'project-1', agentId: 'opencode', model: 'provider/model', prompt: draft.trim(),
-    style: 'quick', reviewPolicy: 'review_each_issue', checkoutMode: 'local', parentTaskId: undefined,
+    style: 'quick', checkoutMode: 'local', parentTaskId: undefined,
     fileReferences: ['workbench/OnlyHere.ts'], images: [{ ...image, bytes: Array.from(image.bytes) }]
   })))
   await expect.poll(async () => (await page.evaluate(() => window.anvil.tasks.list())).find((task) => task.id.startsWith('started-')))

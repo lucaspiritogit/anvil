@@ -17,7 +17,7 @@ test('cascades task-owned plans on project removal', async () => {
   const store = new Store(join(testHome, '.anvil-composer/config.json'), {
     migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations')
   })
-  store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const tracker = store.issueTracker('project')
   const input = { title: 'Unrelated client work', description: 'Keep this outside the Anvil task', checklist: ['Verify'], validation: 'Run test', priority: 'urgent' as const }
   const { agentProcesses: processes } = registerTestIpc()
@@ -67,7 +67,7 @@ function snapshotFixture() {
   const taskId = randomUUID()
   const worktree = join(directory, 'worktree')
   mkdirSync(worktree)
-  store.addProject({ id: projectId, name: 'Snapshot', path: directory, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  store.addProject({ id: projectId, name: 'Snapshot', path: directory, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   store.addTask({
     id: taskId, projectId, title: 'Snapshot', prompt: 'Show issues', cwd: worktree,
     agentId: 'codex', agentLabel: 'Codex', status: 'pending', deliveryStatus: 'working', startedAt: 0,

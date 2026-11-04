@@ -17,8 +17,7 @@ import { enqueueWorkspaceRequest } from '../apps/web/src/state/workspace-request
 const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
 const composer: ComposerPreferences = {
   agentId: 'codex', modelsByAgent: { codex: 'work-model', opencode: 'provider/model' },
-  reasoningByAgentModel: { '["codex","work-model"]': 'high', '["opencode","provider/model"]': 'low' },
-  reviewPolicy: 'review_at_task_end'
+  reasoningByAgentModel: { '["codex","work-model"]': 'high', '["opencode","provider/model"]': 'low' }
 }
 let store: Store
 let database: string
@@ -62,7 +61,7 @@ test('independent settings and composer choices survive selection, rename and SQ
     memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://localhost:1234/v1',
     overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'work.png',
     rebaseMode: 'agent', confirmRebase: false, caffeineMode: true,
-    keybindings: { toggleSidebar: 'Mod+Shift+B', focusTaskComposer: 'Mod+Shift+N', cycleTaskStyle: 'Mod+Shift+M', cycleReviewPolicy: 'Mod+Shift+I', cycleThinking: 'Mod+Shift+T' }
+    keybindings: { toggleSidebar: 'Mod+Shift+B', focusTaskComposer: 'Mod+Shift+N', cycleTaskStyle: 'Mod+Shift+M', cycleThinking: 'Mod+Shift+T' }
   }
   call('settings:set', { workspaceId: work.id, patch })
   call('workspaces:preferences:set', { workspaceId: work.id, patch: { composer } })
@@ -244,7 +243,7 @@ test('hydration ignores stale responses and exposes preferences only with a comp
 test('last selected projects are independent and restored with the workspace snapshot', async () => {
   for (const id of ['first', 'second']) store.addProject({
     id, name: id, path: join(testHome, id), createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null,
-    finishOnPush: false, gitPlatform: 'github'
+    finishOnPush: false, shipPushes: false, gitPlatform: 'github'
   })
   rendererBridge()
   await useStore.getState().load()
@@ -263,7 +262,7 @@ test('last selected projects are independent and restored with the workspace sna
 test('an explicit no-project choice survives workspace switching, hydration and SQLite restart', async () => {
   store.addProject({
     id: 'project', name: 'Project', path: join(testHome, 'project'), createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
   })
   rendererBridge()
   await useStore.getState().load()

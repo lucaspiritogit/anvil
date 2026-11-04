@@ -16,7 +16,7 @@ function setup() {
   onTestCleanup(() => store.close())
   const project: Project = {
     id: 'project', name: 'Project', path: home, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
   }
   store.addProject(project)
   const headCommit = '9'.repeat(40)
@@ -39,32 +39,68 @@ function setup() {
       patch: '', commits: [], paths: [] as string[], filesChanged: 0, additions: 0, deletions: 0
     }))
   }
+  const generateText = vi.fn(async () => 'feat: drafted by the agent')
   const registry = createHandlerRegistry()
   registerReviewHandlers(registry, {
     store,
-    agentProcesses: { isRunning: () => false } as never,
+    agentProcesses: { isRunning: () => false, generateText } as never,
     gitDelivery: gitDelivery as never,
     send: (channel: string, payload: unknown) => {
       if (channel === 'task:updated') updated.push(payload as Task)
     },
     recordSystemEvent: (taskId: string, text: string) => { events.push({ taskId, text }) },
     requireFinishedTask: () => {},
-    approveIssue: (() => {}) as never,
-    rejectIssue: (() => {}) as never,
     runMergeConflictRepair: (() => {}) as never
   })
   const events: { taskId: string; text: string }[] = []
   const addQuickTask = (overrides: Partial<Task> = {}): Task => store.addTask({
     id: randomUUID(), projectId: project.id, agentId: 'codex', agentLabel: 'Codex',
-    style: 'quick', reviewPolicy: 'review_each_issue', checkoutMode: 'local',
+    style: 'quick', checkoutMode: 'local',
     prompt: 'Change', title: 'Change thing', cwd: home, status: 'succeeded', startedAt: Date.now(),
     deliveryStatus: 'reviewable', reviewPaths: ['src/quick.ts'],
     inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,
     filesChanged: 1, additions: 1, deletions: 0,
     ...overrides
   })
-  return { store, registry, headCommit, pushCalls, updated, events, gitDelivery, addQuickTask }
+  return { store, registry, headCommit, pushCalls, updated, events, gitDelivery, generateText, project, addQuickTask }
 }
+
+test('ship commits a local quick task with an agent-written message and records the shipped commit', async () => {
+  const { store, registry, headCommit, pushCalls, gitDelivery, generateText, addQuickTask } = setup()
+  const task = addQuickTask()
+
+  const shipped = await registry.invoke('tasks:ship', { taskId: task.id }) as Task
+
+  expect(generateText).toHaveBeenCalledTimes(1)
+  expect(gitDelivery.commitPaths).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/quick.ts'], 'feat: drafted by the agent')
+  expect(shipped).toMatchObject({ deliveryStatus: 'approved', headCommit, shippedCommit: headCommit })
+  expect(shipped.pushedCommit).toBeUndefined()
+  expect(pushCalls).toHaveLength(0)
+})
+
+test('ship uses the given message without drafting and pushes when the project ships with push', async () => {
+  const { store, registry, headCommit, pushCalls, gitDelivery, generateText, project, addQuickTask } = setup()
+  store.updateProject(project.id, { shipPushes: true })
+  const task = addQuickTask()
+
+  const shipped = await registry.invoke('tasks:ship', { taskId: task.id, message: 'fix: written by hand' }) as Task
+
+  expect(generateText).not.toHaveBeenCalled()
+  expect(gitDelivery.commitPaths).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/quick.ts'], 'fix: written by hand')
+  expect(shipped).toMatchObject({ shippedCommit: headCommit, pushedCommit: headCommit })
+  expect(pushCalls).toHaveLength(1)
+})
+
+test('ship falls back to the task title when the agent cannot write a message', async () => {
+  const { store, registry, gitDelivery, generateText, events, addQuickTask } = setup()
+  generateText.mockRejectedValueOnce(new Error('agent offline'))
+  const task = addQuickTask({ title: 'Recolor the header' })
+
+  await registry.invoke('tasks:ship', { taskId: task.id, push: false })
+
+  expect(gitDelivery.commitPaths).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/quick.ts'], 'Recolor the header')
+  expect(events.some((event) => event.taskId === task.id && event.text.includes('could not write a commit message'))).toBe(true)
+})
 
 test('commit-quick with push records the pushed head commit on the task', async () => {
   const { store, registry, headCommit, pushCalls, updated, addQuickTask } = setup()

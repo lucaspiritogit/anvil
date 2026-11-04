@@ -26,7 +26,7 @@ function addProject(store: Store, id: string, name = id): void {
     createdAt: 0,
     monthlyTokenLimit: null,
     monthlyCostLimitUsd: null,
-    finishOnPush: false,
+    finishOnPush: false, shipPushes: false,
     gitPlatform: 'github'
   })
 }
