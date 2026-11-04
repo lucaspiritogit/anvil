@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { taskState } from './task-state'
 import type { AgentProcessManager as RealAgentProcessManager } from '../apps/server/src/agents/process-manager'
-import { agentRebasePrompt, mergeConflictRepairPrompt } from '../apps/server/src/agents/task-prompts'
+import { mergeConflictRepairPrompt } from '../apps/server/src/agents/task-prompts'
 import type { GitDeliveryManager as RealGitDeliveryManager } from '../apps/server/src/git'
 import { registerAgentHandlers } from '../apps/server/src/handlers/agents'
 import { registerGitHubHandlers } from '../apps/server/src/handlers/github'
@@ -34,7 +34,7 @@ import { withTaskOperation } from '../apps/server/src/tasks/operations'
 import { callIssueTool } from '../apps/server/src/issue-tools/server'
 import { Store } from '../apps/server/src/store'
 import { TaskIssues } from '../apps/server/src/tasks/task-issues'
-import type { Project, ProjectFileList, RebaseStep, Task, TaskComment, TaskEvent } from '@anvil/protocol/types'
+import type { Project, ProjectFileList, Task, TaskComment, TaskEvent } from '@anvil/protocol/types'
 import { AgentProcessManager, GitDeliveryManager, handlers, testHome, shell, dialog } from './issue-tracker-doubles'
 
 function setupIpc(
@@ -402,7 +402,6 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
     for (const patch of [{ prompt: ' ' }, { prompt: 'x'.repeat(100_001) }, { style: 'chat' }, { reviewPolicy: 'review_at_task_end' }, { model: [] }, { reasoningEffort: 42 }]) await invalidRequest('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Task', ...patch })
     await invalidRequest('tasks:issues', { taskId: 'task', projectPath: '/outside', parentIssueId: 'other' })
     await invalidRequest('tasks:steer', { taskId: 'task', message: ' ' })
-    for (const steps of [null, [], [null], [{ sha: 'a'.repeat(40), action: 'exec', message: 'rm' }], [{ sha: '--exec', action: 'pick', message: 'message' }]]) await invalidRequest('tasks:rebase', { taskId: 'task', steps })
     for (const patch of [{ commitCount: NaN }, { commitCount: -1 }, { sourceCommit: '--exec' }, { targetBranch: '-f' }]) await invalidRequest('tasks:approve', { taskId: 'task', preview: { ...validPreview, ...patch } })
     await invalidRequest('github:open-pr', { taskId: 'task', preview: null, title: 'Title', description: '' })
     await invalidRequest('github:draft-pr-field', { taskId: 'task', field: 'command', title: '', description: '' })
@@ -449,7 +448,7 @@ test('updates projects, validates task references and selects supported agents a
   const fallbackSettings = call('settings:get')
   expect(fallbackSettings.defaultAgentId).toBe('opencode')
   expect(fallbackSettings.defaultModel).toBe(call('agents:list')[0].defaultModel)
-  expect(call('settings:set', { confirmRebase: false }).defaultAgentId).toBe('opencode')
+  expect(call('settings:set', { caffeineMode: false }).defaultAgentId).toBe('opencode')
   const codexSettings = call('settings:set', { defaultAgentId: 'codex', defaultModel: 'selected-model' })
   expect(codexSettings.defaultAgentId).toBe('codex')
   expect(codexSettings.defaultModel).toBe('selected-model')
@@ -627,7 +626,7 @@ test('fails worktree Quick tasks without a Git repository', async () => {
 test('executes issues, reviews, handles credentials and PRs, approves, rebases and guards deletion', async () => {
   const comment = { taskId: 'task', file: 'src/file.ts', side: 'additions', lineNumber: 1, body: 'Review' }
   const fixture = setupIpc()
-  const { taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses, gitDelivery, rebaseCalls, mergeCalls, mergeConflictCalls, pushCalls, mergeState, call, tick } = fixture
+  const { taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses, gitDelivery, mergeCalls, mergeConflictCalls, pushCalls, mergeState, call, tick } = fixture
   const task: Task = await call('tasks:start', { projectId: project.id, agentId: 'codex', model: 'chosen-model', reasoningEffort: 'high', prompt: 'Task title\nDetails' })
   await tick()
   expect(task.title).toBe('Task title')
@@ -636,7 +635,7 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   await expect(call('tasks:merge-preview', task.id)).rejects.toThrow(/not finished/)
   await expect(call('github:pr-preview', task.id)).rejects.toThrow(/not finished/)
   expect(() => call('github:open-pr-url', 'file:///etc/passwd')).toThrow(/Invalid GitHub PR URL/)
-  await expect(call('tasks:rebase-agent', task.id)).rejects.toThrow(/not finished/)
+  await expect(call('tasks:rebase-agent', task.id)).rejects.toThrow(/no restack to resolve/)
   const issue = { key: 'first', title: 'Change', description: 'One change', labels: [], priority: 'medium' as const, dependencies: [], checklist: ['Test'], validation: 'Run test' }
   agentProcesses.plan(task.id, [issue, { ...issue, key: 'second', dependencies: ['first'] }])
   await tick()
@@ -866,26 +865,13 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(approved.reviewedAt).toBeTruthy()
   await expect(call('tasks:merge-preview', task.id)).rejects.toThrow(/not awaiting review/)
 
-  await call('tasks:rebase-agent', task.id)
-  await tick()
-  expect(agentProcesses.starts.at(-1).resumeSessionId).toBe('session')
-  expect(agentProcesses.starts.at(-1).prompt).toBe(agentRebasePrompt('base'))
-  agentProcesses.finishTurn(task.id)
-  await tick()
-  const startsBeforeRebase = agentProcesses.starts.length
-  const steps: RebaseStep[] = [{ sha: 'c'.repeat(40), action: 'drop', message: '' }]
-  const rebased: Task = await call('tasks:rebase', { taskId: task.id, steps })
-  expect(rebased.deliveryStatus).toBe('no_changes')
-  expect(rebased.headCommit).toBe('rebased')
-  expect(agentProcesses.starts.length).toBe(startsBeforeRebase)
-  expect(rebaseCalls.map((args) => args.slice(0, 5))).toStrictEqual([[testHome, task.id, 'task', 'base', steps]])
-  expect(events.some((event) => /dropping 1/.test(event.text))).toBeTruthy()
-
-  const pendingRebase = call('tasks:rebase-agent', task.id)
+  await expect(call('tasks:rebase-agent', task.id)).rejects.toThrow(/no restack to resolve/)
+  const startsBeforeFollowUp = agentProcesses.starts.length
+  const pendingFollowUp = call('tasks:steer', { taskId: task.id, message: 'One more change' })
   call('tasks:delete', task.id)
-  await expect(pendingRebase).rejects.toThrow(/Task was deleted/)
+  await expect(pendingFollowUp).rejects.toThrow(/Task was deleted/)
   await tick()
-  expect(agentProcesses.starts.length, 'Deletion during reopen prevents a late agent start').toBe(startsBeforeRebase)
+  expect(agentProcesses.starts.length, 'Deletion during reopen prevents a late agent start').toBe(startsBeforeFollowUp)
   const eventCount = events.length
   agentProcesses.emit('event', { id: randomUUID(), taskId: task.id, text: 'late output' })
   agentProcesses.emit('usage', { taskId: task.id, totalTokens: 100 })

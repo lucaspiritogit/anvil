@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `check_command` text;

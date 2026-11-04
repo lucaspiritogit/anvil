@@ -93,5 +93,5 @@ test('a newly created task discovers planning children and keeps execution and r
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toBeEnabled()
 })

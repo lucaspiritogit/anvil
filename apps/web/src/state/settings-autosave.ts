@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { Settings, Project } from '@anvil/protocol/types'
 import { useStore } from './store'
 
-type Patch = Partial<Settings> & Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush' | 'shipPushes'>>
+type Patch = Partial<Settings> & Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush' | 'shipPushes' | 'autoShip'>> & { checkCommand?: string | null }
 type Edit = { patch: Patch; draft: Record<string, unknown>; status: 'pending' | 'error' | 'saved' }
 
 // Keep accepted edits alive across page dismissal and workspace navigation.

@@ -144,7 +144,7 @@ test('discovers local and remote worktree bases and resolves the origin default 
   await expect(manager.resolveWorktreeBase(repo, 'origin/missing')).rejects.toThrow(/no longer available/)
 })
 
-test('restart preserves unfinished work and follow-ups retain the cumulative diff and rebase', async () => {
+test('restart preserves unfinished work and follow-ups retain the cumulative diff', async () => {
   const { repo, manager, worktrees } = await fixture()
   const task = await manager.prepareBranch(repo, 'resume')
   await writeFile(join(task.cwd, 'app', 'source.ts'), 'interrupted change\n')
@@ -159,12 +159,6 @@ test('restart preserves unfinished work and follow-ups retain the cumulative dif
   const second = await restarted.finalizeBranch(repo, 'resume', task.branchName, task.baseBranch, task.baseCommit, 'Second')
   const commits = (await restarted.getDiff(repo, task.baseCommit, second.headCommit)).commits.reverse()
   expect(commits).toHaveLength(2)
-  const rebased = await restarted.rebase(repo, 'resume', task.branchName, task.baseCommit, [
-    { sha: commits[0].sha, action: 'pick', message: 'Combined task' },
-    { sha: commits[1].sha, action: 'squash', message: '' }
-  ])
-  expect(rebased.commits).toHaveLength(1)
-  expect(git(repo, 'diff', second.headCommit, rebased.headCommit)).toBe('')
   expect(git(repo, 'branch', '--show-current')).toBe('main')
 })
 
@@ -435,7 +429,7 @@ test('rejects a successful commit whose hook leaves additional uncommitted files
   expect(await readFile(join(task.cwd, 'generated.txt'), 'utf8')).toBe('generated\n')
 })
 
-test('ignored task files survive finalization, restart and manual rebase', async () => {
+test('ignored task files survive finalization and restart', async () => {
   const { repo, manager, finish, worktrees } = await fixture()
   const task = await manager.prepareBranch(repo, 'ignored')
   await writeFile(join(task.cwd, '.gitignore'), 'local.env\n')
@@ -444,11 +438,7 @@ test('ignored task files survive finalization, restart and manual rebase', async
   expect(await readFile(join(task.cwd, 'local.env'), 'utf8')).toBe('KEEP=task-local\n')
   const restarted = new GitDeliveryManager(worktrees)
   expect((await restarted.checkoutBranch(repo, 'ignored', task.branchName, task.baseBranch)).cwd).toBe(task.cwd)
-  const commits = (await restarted.getDiff(repo, task.baseCommit, first.headCommit)).commits
-  const result = await restarted.rebase(repo, 'ignored', task.branchName, task.baseCommit, [
-    { sha: commits[0].sha, action: 'pick', message: 'Reworded' }
-  ])
-  expect(result.commits[0].subject).toBe('Reworded')
+  expect((await restarted.getDiff(repo, task.baseCommit, first.headCommit)).commits).toHaveLength(1)
   expect(await readFile(join(task.cwd, 'local.env'), 'utf8')).toBe('KEEP=task-local\n')
   await restarted.releaseWorktree('ignored')
   expect(existsSync(task.cwd)).toBe(false)

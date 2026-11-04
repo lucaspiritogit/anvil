@@ -4,7 +4,7 @@ import { Icon } from '../icons'
 import { SETTINGS_SECTIONS } from '../settings-sections'
 import { useStore } from '../state/store'
 import { cn } from '../ui'
-import { taskNeedsReview } from '@anvil/protocol/task-review'
+import { isShipQueueTask } from './ShipQueue'
 import { useSidebarIssueSnapshots } from '../hooks/use-task-issues'
 import { SidebarTaskList } from './SidebarTaskList'
 import { WorkspacePicker } from './WorkspacePicker'
@@ -47,6 +47,7 @@ export function Sidebar({ onOpenTerminal, mobileNavigation, mobileNavigationOpen
   const setSettingsSection = useStore((state) => state.setSettingsSection)
   const setSettingsOpen = useStore((state) => state.setSettingsOpen)
   const showAnalytics = useStore((state) => state.showAnalytics)
+  const showShipQueue = useStore((state) => state.showShipQueue)
   const focusTaskComposer = useStore((state) => state.focusTaskComposer)
   const sidebarCollapsed = useStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useStore((state) => state.toggleSidebar)
@@ -80,8 +81,7 @@ export function Sidebar({ onOpenTerminal, mobileNavigation, mobileNavigationOpen
   const entries = useMemo(() => sidebarTaskProjects({
     workspaceId, projects, tasks, query, snapshots, taskSeenAt, collapsedProjects, expandedSettledGroups, collapsedStacks
   }), [workspaceId, projects, tasks, query, snapshots, taskSeenAt, collapsedProjects, expandedSettledGroups, collapsedStacks])
-  const reviewCount = useMemo(() => tasks.filter((task) => taskNeedsReview(task, taskSeenAt[task.id])).length,
-    [tasks, taskSeenAt])
+  const reviewCount = useMemo(() => tasks.filter(isShipQueueTask).length, [tasks])
   const listKey = JSON.stringify([workspaceId, search])
   const sidebarHidden = mobileNavigation ? !mobileNavigationOpen : sidebarCollapsed
   const toggleProject = (projectId: string, expanded: boolean): void => {
@@ -156,15 +156,16 @@ export function Sidebar({ onOpenTerminal, mobileNavigation, mobileNavigationOpen
         <AnvilBrand />
         <WorkspacePicker />
         {reviewCount > 0 && (
-          <span
-            role="status"
+          <button
+            type="button"
             aria-label={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready to ship`}
-            title={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready to ship`}
-            className="ml-2 inline-flex h-[18px] shrink-0 items-center gap-1 bg-review px-1.5 font-mono text-[10px] font-semibold text-canvas"
+            title={`${reviewCount} ${reviewCount === 1 ? 'task' : 'tasks'} ready to ship. Open the ship queue.`}
+            className="no-drag ml-2 inline-flex h-[18px] shrink-0 items-center gap-1 bg-review px-1.5 font-mono text-[10px] font-semibold text-canvas hover:brightness-110 focus-visible:outline-2 focus-visible:outline-accent"
+            onClick={() => { showShipQueue(); if (mobileNavigation) onNavigate() }}
           >
             <span aria-hidden="true">◆</span>
             {reviewCount}
-          </span>
+          </button>
         )}
         <button
           ref={mobileNavigation ? mobileNavigationCloseRef : undefined}

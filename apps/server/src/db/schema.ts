@@ -87,11 +87,14 @@ export const projects = sqliteTable(
     // also stops booleans reaching the driver, which cannot bind them.
     finishOnPush: integer('finish_on_push', { mode: 'boolean' }).notNull().default(false),
     shipPushes: integer('ship_pushes', { mode: 'boolean' }).notNull().default(false),
+    checkCommand: text('check_command'),
+    autoShip: integer('auto_ship', { mode: 'boolean' }).notNull().default(false),
     gitPlatform: text('git_platform').$type<'github'>().notNull().default('github')
   },
   (table) => [
     check('projects_finish_on_push_bool', sql`${table.finishOnPush} IN (0, 1)`),
     check('projects_ship_pushes_bool', sql`${table.shipPushes} IN (0, 1)`),
+    check('projects_auto_ship_bool', sql`${table.autoShip} IN (0, 1)`),
     check('projects_git_platform_valid', oneOf(table.gitPlatform, ['github']))
   ]
 )
@@ -147,6 +150,7 @@ export const tasks = sqliteTable(
     pushedCommit: text('pushed_commit'),
     shippedCommit: text('shipped_commit'),
     shippedHead: text('shipped_head'),
+    checks: text('checks', { mode: 'json' }).$type<import('@anvil/protocol/types').TaskChecks>(),
     filesChanged: integer('files_changed').notNull().default(0),
     additions: integer('additions').notNull().default(0),
     deletions: integer('deletions').notNull().default(0),

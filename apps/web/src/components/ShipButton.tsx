@@ -5,6 +5,7 @@ import { useStore } from '../state/store'
 import { btn, cn } from '../ui'
 import { Icon } from '../icons'
 import { ShipMessageModal } from './ShipMessageModal'
+import { checksAreCurrent } from './ShipChecks'
 
 type MenuAction = 'ship-alternate' | 'ship-with-message' | 'open-pr'
 
@@ -15,14 +16,35 @@ export function ShipButton({ task, disabled, disabledReason, onOpenPullRequest }
   onOpenPullRequest?: () => void
 }): JSX.Element {
   const shipTask = useStore((s) => s.shipTask)
+  const undoShip = useStore((s) => s.undoShip)
   const shipPushes = useStore((s) => s.projects.find((project) => project.id === task.projectId)?.shipPushes ?? false)
   const rootRef = useRef<HTMLDivElement>(null)
   const toggleRef = useRef<HTMLButtonElement>(null)
   const firstItemRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState<'ship' | 'push' | null>(null)
+  const [busy, setBusy] = useState<'ship' | 'push' | 'undo' | null>(null)
   const [error, setError] = useState('')
   const [messageModal, setMessageModal] = useState<{ push: boolean } | null>(null)
+  const [targetBranch, setTargetBranch] = useState<string | null>(null)
+  const ready = task.deliveryStatus === 'reviewable'
+
+  useEffect(() => {
+    if (!ready || !task.projectId) return
+    const projectId = task.projectId
+    let current = true
+    const refresh = (): void => {
+      window.anvil.projects.branches(projectId).then(
+        (branches) => { if (current) setTargetBranch(branches.currentBranch) },
+        () => { if (current) setTargetBranch(null) }
+      )
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => {
+      current = false
+      window.removeEventListener('focus', refresh)
+    }
+  }, [ready, task.projectId])
 
   useEffect(() => {
     if (!open) return
@@ -63,6 +85,18 @@ export function ShipButton({ task, disabled, disabledReason, onOpenPullRequest }
     }
   }
 
+  const undo = async (): Promise<void> => {
+    setBusy('undo')
+    setError('')
+    try {
+      await undoShip(task.id)
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const select = (action: MenuAction): void => {
     setOpen(false)
     toggleRef.current?.focus()
@@ -83,14 +117,25 @@ export function ShipButton({ task, disabled, disabledReason, onOpenPullRequest }
           <Icon icon="check" size={14} aria-hidden="true" />
           Shipped &amp; pushed
         </span>
-        : <button className={cn(btn.primary, 'bg-ok')} disabled={disabled || busy !== null} title={disabledReason}
-          onClick={() => void pushShipped()}>
-          {busy === 'push' ? 'Pushing…' : 'Push'}
-        </button>}
+        : <>
+          {task.shippedCommit && <button className={btn.ghost} disabled={busy !== null}
+            title="Move the branch back to before this ship and make the task ready to ship again"
+            onClick={() => void undo()}>
+            {busy === 'undo' ? 'Undoing…' : 'Undo ship'}
+          </button>}
+          <button className={cn(btn.primary, 'bg-ok')} disabled={disabled || busy !== null} title={disabledReason}
+            onClick={() => void pushShipped()}>
+            {busy === 'push' ? 'Pushing…' : 'Push'}
+          </button>
+        </>}
     </div>
   }
 
-  const label = shipPushes ? 'Ship & push' : 'Ship'
+  const destination = targetBranch ? ` to ${targetBranch}` : ''
+  const label = shipPushes ? `Ship & push${destination}` : `Ship${destination}`
+  const offBase = Boolean(targetBranch && task.baseBranch && targetBranch !== task.baseBranch)
+  const checksFailed = task.checks?.status === 'failed' && checksAreCurrent(task)
+  const checksRunning = task.checks?.status === 'running'
   const alternateLabel = shipPushes ? 'Ship without pushing' : 'Ship & push'
   const itemClass = 'block w-full px-3 py-2 text-left font-medium whitespace-nowrap text-fg hover:bg-hover focus:bg-hover focus:outline-none'
 
@@ -111,19 +156,25 @@ export function ShipButton({ task, disabled, disabledReason, onOpenPullRequest }
       }}
     >
       <button
-        className={cn(btn.primary, 'inline-flex items-center gap-1.5 bg-ok')}
+        className={cn(btn.primary, 'inline-flex items-center gap-1.5', checksFailed ? 'bg-warn' : 'bg-ok')}
         disabled={disabled || busy !== null}
-        title={disabledReason ?? (shipPushes
-          ? 'Commit these changes with an agent-written message and push them'
-          : 'Commit these changes with an agent-written message')}
+        title={disabledReason ?? [
+          checksFailed ? 'Checks failed for these changes. Shipping now ships them anyway' : '',
+          checksRunning ? 'Checks are still running' : '',
+          shipPushes
+            ? 'Commit these changes with an agent-written message and push them'
+            : 'Commit these changes with an agent-written message',
+          offBase ? `This task started from ${task.baseBranch}, but the project has ${targetBranch} checked out.` : ''
+        ].filter(Boolean).join('. ')}
         onClick={() => void ship(shipPushes)}
       >
         <Icon icon={busy === 'ship' ? 'loader' : 'arrow-big-up'} size={14} aria-hidden="true" className={busy === 'ship' ? 'animate-spin' : undefined} />
         {busy === 'ship' ? 'Shipping…' : label}
+        {offBase && <Icon icon="git-branch" size={13} aria-label={`Started from ${task.baseBranch}`} className="text-canvas/80" />}
       </button>
       <button
         ref={toggleRef}
-        className={cn(btn.primary, 'border-l border-canvas/25 bg-ok px-2')}
+        className={cn(btn.primary, 'border-l border-canvas/25 px-2', checksFailed ? 'bg-warn' : 'bg-ok')}
         disabled={disabled || busy !== null}
         title={disabledReason ?? 'More ship actions'}
         aria-label="More ship actions"

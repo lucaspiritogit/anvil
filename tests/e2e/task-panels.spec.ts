@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 500 }]) {
+for (const viewport of [{ width: 1280, height: 900 }, { width: 900, height: 500 }]) {
   for (const scenario of ['output', 'review']) {
     test(`task opens Output with Changes available at ${viewport.width}px, ${scenario}`, async ({ page }, testInfo) => {
       await page.setViewportSize(viewport)
@@ -71,12 +71,12 @@ test('completed quick tasks ship their scoped changes, optionally pushing', asyn
     })
   })
 
-  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toBeVisible()
   await page.getByRole('button', { name: 'More ship actions' }).click()
   const menu = page.getByRole('menu', { name: 'Ship actions' })
   await expect(menu.getByRole('menuitem')).toHaveText(['Ship & push', 'Ship with message…'])
   await menu.getByRole('menuitem', { name: 'Ship & push' }).click()
-  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toHaveCount(0)
   expect(await page.evaluate(() => (window as unknown as { lastShip: unknown }).lastShip)).toEqual({ taskId: 'review', push: true })
   await expect(page.getByRole('button', { name: 'Push', exact: true })).toHaveCount(0)
   await expect(page.getByText('Shipped & pushed', { exact: true })).toBeVisible()
@@ -127,7 +127,7 @@ test('ship message drafts fail without losing the typed message', async ({ page 
   await expect(message).toHaveValue('Keep my message')
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toBeEnabled()
 })
 
 test('long task titles truncate to one line and the composer persists across panels', async ({ page }, testInfo) => {
@@ -179,7 +179,7 @@ test('mobile header keeps ship actions and every task panel usable without overf
   expect((await heading.boundingBox())!.height).toBeLessThan(40)
   await expect(main.getByLabel('Task status')).toBeVisible()
   await expect(main.getByRole('button', { name: 'More ship actions' })).toBeVisible()
-  await expect(main.getByRole('button', { name: 'Ship', exact: true })).toBeVisible()
+  await expect(main.getByRole('button', { name: /^Ship( to |$)/ })).toBeVisible()
 
   for (const name of ['Output', 'Changes', 'Issues']) {
     await expect(main.getByRole('tab', { name: new RegExp(`^${name}`) })).toBeVisible()

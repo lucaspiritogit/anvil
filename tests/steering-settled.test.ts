@@ -60,7 +60,7 @@ test('rejects settled steering and preserves stopped resume and live steering pa
     addTask('settled', {
       status: 'succeeded', deliveryStatus: 'reviewable', sessionId: 'saved-session', endedAt: 2, settledAt: 3
     })
-    await expect(steer('settled')).rejects.toThrow(/settled and cannot receive new instructions/)
+    await expect(steer('settled')).rejects.toThrow(/archived and cannot receive new instructions/)
     expect(store.getTask('settled')?.status, 'A settled task stays closed').toBe('succeeded')
     expect(store.getTask('settled')?.settledAt, 'A rejected steer does not unsettle the task').toBe(3)
     expect(agentProcesses.starts.length, 'Settled tasks must not reach the resume path').toBe(0)

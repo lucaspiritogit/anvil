@@ -106,7 +106,6 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
     else expandedSubtasks.delete(task.id)
   }
   const childCount = snapshot?.children.length ?? 0
-  const reviewCount = snapshot?.children.filter((issue) => issue.status === 'review').length ?? 0
   const hasChildren = childCount > 0
   const showChildren = compact || expanded
   const stackRoot = tree !== null && tree.depth === 0 && tree.size > 1
@@ -255,8 +254,6 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
                   ? <span aria-hidden="true" className="invisible font-mono text-[11px]">{tree.size} ▸</span>
                   : blocked
                   ? <span aria-hidden="true" className="font-mono text-[12px] text-warn">⊘</span>
-                  : reviewCount > 0
-                  ? <span title={`${reviewCount} ${reviewCount === 1 ? 'subtask' : 'subtasks'} ready for review`} className="grid h-[18px] min-w-[18px] place-items-center bg-review px-1 font-mono text-[10px] font-semibold text-canvas">{reviewCount}</span>
                   : <span title={TASK_STYLE_LABELS[taskStyle(task)]} className="font-mono text-[11px] text-faint">{STYLE_GLYPHS[taskStyle(task)]}</span>}
               </span>
             </>
@@ -276,8 +273,8 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
         )}
         {!queuedStack && !compact && eligible && (
           <button
-            aria-label={`Settle task: ${task.title}`}
-            title={deadline === undefined ? 'Settle task' : `Settle now. Automatically settles ${new Date(deadline).toLocaleString()}.`}
+            aria-label={`Archive task: ${task.title}`}
+            title={deadline === undefined ? 'Archive task' : `Archive now. Archives automatically ${new Date(deadline).toLocaleString()}.`}
             className="absolute top-1/2 right-2.5 grid size-7 -translate-y-1/2 place-items-center text-dim bg-overlay opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent disabled:opacity-50"
             disabled={settling}
             onClick={() => void settle()}

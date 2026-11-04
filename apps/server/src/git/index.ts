@@ -2,7 +2,6 @@ import { git } from './command'
 import type {
   GitContext,
   PreparedCheckout,
-  RebasedBranch,
   FinalizeOptions,
   FinalizedCheckout,
   IssueDiffSource
@@ -12,7 +11,6 @@ import type {
   ProjectGitStatus,
   ProjectBranches,
   PullRequestGitPreview,
-  RebaseStep,
   TaskDiff,
   TaskMergeConflict,
   TaskMergeConflictSnapshot,
@@ -23,13 +21,12 @@ import type {
 import { status, init, branches, switchProjectBranch, createProjectBranch, resolveWorktreeBase, stackBase, commonBase, withRepoLock } from './repository'
 import { releaseWorktree, prepareBranch, checkoutBranch, worktreeHead } from './worktrees'
 import { renameTaskBranch, restackBranch, finalizeBranch } from './task-branches'
-import { rebase } from './rebase'
 import { getPullRequestPreview, pushPullRequestBranch } from './pull-requests'
-import { abortMergeConflict, completeMergeConflict, getMergeConflict, getMergePreview, getPushPreview, merge, push, saveMergeConflictFile, squashMergedCommit, validateMergeConflict } from './merge'
+import { abortMergeConflict, completeMergeConflict, getMergeConflict, getMergePreview, getPushPreview, merge, push, saveMergeConflictFile, squashMergedCommit, undoShippedCommit, validateMergeConflict } from './merge'
 import { getSyncStatus, pull, type BranchSyncTarget } from './sync'
 import { changedFiles, getDiff, getIssueDiff, getWorkingTreeDiff, scopedPaths, workingTreeState } from './diff'
 
-export type { PreparedCheckout, RebasedBranch, FinalizeOptions, FinalizedCheckout, IssueDiffSource, MergeResult } from './types'
+export type { PreparedCheckout, FinalizeOptions, FinalizedCheckout, IssueDiffSource, MergeResult } from './types'
 
 export class GitDeliveryManager {
   private readonly context: GitContext
@@ -140,17 +137,6 @@ export class GitDeliveryManager {
     return withRepoLock(this.context, repoRoot, action)
   }
 
-  rebase(
-    projectPath: string,
-    taskId: string,
-    branchName: string,
-    baseCommit: string,
-    steps: RebaseStep[],
-    check: () => void = () => {}
-  ): Promise<RebasedBranch> {
-    return rebase(this.context, projectPath, taskId, branchName, baseCommit, steps, check)
-  }
-
   getPullRequestPreview(projectPath: string, branchName: string): Promise<PullRequestGitPreview> {
     return getPullRequestPreview(this.context, projectPath, branchName)
   }
@@ -221,6 +207,15 @@ export class GitDeliveryManager {
     check: () => void = () => {}
   ): Promise<string> {
     return squashMergedCommit(this.context, projectPath, expected, message, check)
+  }
+
+  undoShippedCommit(
+    projectPath: string,
+    shippedCommit: string,
+    paths: string[] | undefined,
+    check: () => void = () => {}
+  ): Promise<{ branch: string; restoredCommit: string }> {
+    return undoShippedCommit(this.context, projectPath, shippedCommit, paths, check)
   }
 
   getPushPreview(projectPath: string, expectedTargetBranch?: string, requiredCommit?: string): Promise<TaskPushPreview> {

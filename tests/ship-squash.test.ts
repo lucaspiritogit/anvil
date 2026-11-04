@@ -77,3 +77,42 @@ test('refuses to squash when the target branch moved after the merge', async () 
     targetBranch: preview.targetBranch, targetCommit: preview.targetCommit, mergedCommit: result.commit
   }, 'feat: ship task')).rejects.toThrow(/moved after the merge/)
 })
+
+test('undo moves the target branch back to before a squashed ship', async () => {
+  const { repo, git, delivery } = repository()
+  const { preview, shipped } = await ship(delivery, repo, 'feat: ship task')
+
+  const undone = await delivery.undoShippedCommit(repo, shipped, undefined)
+
+  expect(undone).toEqual({ branch: 'main', restoredCommit: preview.targetCommit })
+  expect(git('rev-parse', 'main')).toBe(preview.targetCommit)
+  expect(git('status', '--porcelain')).toBe('')
+  expect(git('rev-parse', 'task')).not.toBe(preview.targetCommit)
+})
+
+test('undo refuses once the branch has moved past the shipped commit', async () => {
+  const { repo, git, delivery } = repository()
+  const { shipped } = await ship(delivery, repo, 'feat: ship task')
+  writeFileSync(join(repo, 'later.txt'), 'later\n')
+  git('add', '.')
+  git('commit', '-m', 'Later work')
+
+  await expect(delivery.undoShippedCommit(repo, shipped, undefined)).rejects.toThrow(/has moved since this task was shipped/)
+})
+
+test('undo of a local commit unstages only the task files and keeps other staged work', async () => {
+  const { repo, git, delivery } = repository()
+  const before = git('rev-parse', 'main')
+  writeFileSync(join(repo, 'base.txt'), 'base changed by task\n')
+  writeFileSync(join(repo, 'new.txt'), 'new from task\n')
+  writeFileSync(join(repo, 'mine.txt'), 'my staged work\n')
+  git('add', 'mine.txt')
+  const shipped = await delivery.commitPaths(repo, ['base.txt', 'new.txt'], 'feat: local ship')
+
+  await delivery.undoShippedCommit(repo, shipped, ['base.txt', 'new.txt'])
+
+  expect(git('rev-parse', 'main')).toBe(before)
+  expect(git('diff', '--cached', '--name-only')).toBe('mine.txt')
+  expect(git('diff', '--name-only')).toBe('base.txt')
+  expect(git('ls-files', '--others', '--exclude-standard')).toBe('new.txt')
+})

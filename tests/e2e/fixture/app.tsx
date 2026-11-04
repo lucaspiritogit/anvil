@@ -37,7 +37,8 @@ const subscribeReadiness = (handler: (readiness: AppReadiness) => void): (() => 
 const now = Date.now()
 let projects: Project[] = ['Anvil', 'Workbench'].map((name, index) => ({
   id: `project-${index}`, name, path: `/tmp/${name.toLowerCase()}`, createdAt: now,
-  monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
+  monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github',
+  ...(query.has('checks') ? { checkCommand: 'npm run typecheck && npm test' } : {})
 }))
 const base: Task = {
   workspaceId: 'default',
@@ -130,7 +131,27 @@ index 3333333..4444444 100644
 @@ -1 +1,2 @@
  # Anvil
 +Review the final task diff before approving.
-`
+` + (query.has('risky') ? `diff --git a/apps/server/src/db/migrations/20261104_add_flags/migration.sql b/apps/server/src/db/migrations/20261104_add_flags/migration.sql
+new file mode 100644
+--- /dev/null
++++ b/apps/server/src/db/migrations/20261104_add_flags/migration.sql
+@@ -0,0 +1 @@
++ALTER TABLE \`tasks\` ADD \`flags\` text;
+diff --git a/package-lock.json b/package-lock.json
+index 5555555..6666666 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,2 +1,2 @@
+ {
+-  "version": "1.0.0"
++  "version": "1.0.1"
+diff --git a/.env.production b/.env.production
+new file mode 100644
+--- /dev/null
++++ b/.env.production
+@@ -0,0 +1 @@
++API_URL=https://example.invalid
+` : '')
 }
 let githubTokenConfigured = false
 let comments: TaskComment[] = []
@@ -208,7 +229,7 @@ window.outputTest = {
   release: (fail = false) => { releaseOutput?.(fail); releaseOutput = null }
 }
 
-let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-embed-large', ollamaBaseUrl: 'http://localhost:11434/v1', fontSize: 14, overviewBackgroundMode: 'color', overviewBackgroundColor: '#0c0d10', overviewWallpaperId: null, defaultAgentId: 'codex', defaultModel: '', rebaseMode: 'manual', confirmRebase: true, caffeineMode: false, allowOtherDevices: false, tailscaleHttps: false, keybindings: DEFAULT_KEYBINDINGS, diffThemes: DEFAULT_DIFF_THEMES }
+let settings: Settings = { memoryEnabled: false, memoryEmbeddingModel: 'mxbai-embed-large', ollamaBaseUrl: 'http://localhost:11434/v1', fontSize: 14, overviewBackgroundMode: 'color', overviewBackgroundColor: '#0c0d10', overviewWallpaperId: null, defaultAgentId: 'codex', defaultModel: '', caffeineMode: false, allowOtherDevices: false, tailscaleHttps: false, keybindings: DEFAULT_KEYBINDINGS, diffThemes: DEFAULT_DIFF_THEMES }
 
 declare global {
   interface Window {
@@ -988,6 +1009,30 @@ window.anvil = {
       if (query.has('commitDraftFailure')) throw new Error('The agent could not draft a commit message.')
       return 'fix: clamp output rows by measured truncation'
     },
+    runChecks: async (taskId: string) => {
+      window.dispatchEvent(new CustomEvent('fixture:run-checks', { detail: { taskId } }))
+      const task = tasks.find((item) => item.id === taskId)!
+      const command = 'npm run typecheck && npm test'
+      const startedAt = Date.now()
+      update({ ...task, checks: { status: 'running', command, headCommit: task.headCommit, startedAt, output: '> typecheck\n' } })
+      await new Promise((resolve) => setTimeout(resolve, Number(query.get('checksDelay') ?? 600)))
+      const failed = query.has('checksFailure')
+      return update({ ...tasks.find((item) => item.id === taskId)!, checks: {
+        status: failed ? 'failed' : 'passed', command, headCommit: task.headCommit, startedAt, finishedAt: Date.now(), exitCode: failed ? 1 : 0,
+        output: failed
+          ? '> typecheck\nsrc/sidebar.ts(3,3): error TS2353: Object literal may only specify known properties, and \'showBranch\' does not exist in type \'SidebarOptions\'.\n'
+          : '> typecheck\n> test\n 42 passed (3.1s)\n'
+      } })
+    },
+    undoShip: async (taskId: string) => {
+      window.dispatchEvent(new CustomEvent('fixture:undo-ship', { detail: { taskId } }))
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      if (query.has('undoShipFailure')) throw new Error('main has moved since this task was shipped. Undo only works while the shipped commit is the latest one on the checked-out branch.')
+      return update({
+        ...tasks.find((task) => task.id === taskId)!,
+        deliveryStatus: 'reviewable', shippedCommit: undefined, shippedHead: undefined, pushedCommit: undefined, reviewedAt: undefined
+      })
+    },
     ship: async (input) => {
       window.dispatchEvent(new CustomEvent('fixture:ship', { detail: input }))
       await new Promise((resolve) => setTimeout(resolve, 200))
@@ -1024,7 +1069,6 @@ window.anvil = {
       update({ ...tasks.find((task) => task.id === taskId)!, status: 'cancelled' })
       return true
     },
-    rebase: async ({ taskId }) => tasks.find((task) => task.id === taskId)!,
     rebaseWithAgent: async (taskId) => tasks.find((task) => task.id === taskId)!,
     settle: async (taskId: string) => {
       if (query.has('settleFailure')) throw new Error('Settlement failed for testing')

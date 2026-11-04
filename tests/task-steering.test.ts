@@ -234,7 +234,7 @@ test('serializes steering and comments through resume, completion and recovery',
     agentProcesses.start = originalStart
 
     store.addTask({ ...finished, id: 'settled', prompt: 'Settled task', settledAt: 1 })
-    await expect(steer('settled')).rejects.toThrow(/settled and cannot receive new instructions/)
+    await expect(steer('settled')).rejects.toThrow(/archived and cannot receive new instructions/)
     expect(store.getTask('settled')?.status, 'A settled task stays closed').toBe('succeeded')
   }
   store.close()

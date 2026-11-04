@@ -6,6 +6,7 @@ import { cn } from '../ui'
 import { TaskView } from './TaskView'
 import { ProjectOverview } from './ProjectOverview'
 import { AnalyticsPage } from './AnalyticsPage'
+import { ShipQueue } from './ShipQueue'
 import { AnvilBrand, WindowTitlebar } from './WindowTitlebar'
 
 export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationButtonRef, onToggleNavigation }: {
@@ -43,6 +44,7 @@ export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationBu
           <ProjectOverview project={project} />
         )}
         {view.kind === 'analytics' && <AnalyticsPage />}
+        {view.kind === 'ship-queue' && <ShipQueue />}
         {activeTask && <TaskView key={`${activeTask.id}:${view.kind === 'task' ? view.panel ?? 'default' : 'default'}`} task={activeTask}
           initialPanel={view.kind === 'task' ? view.panel : undefined} />}
       </section>

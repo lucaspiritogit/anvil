@@ -7,7 +7,6 @@ import type { SettingsSectionId } from '../settings-sections'
 import type {
   AgentDefinition,
   ProviderModelList,
-  RebaseStep,
   Project,
   ProjectGitStatus,
   Task,
@@ -94,7 +93,7 @@ export interface MergeConflictState {
 }
 
 export type TaskPanel = 'output' | 'changes' | 'issues'
-export type CenterView = { kind: 'home' } | { kind: 'analytics' } | { kind: 'task'; taskId: string; panel?: TaskPanel }
+export type CenterView = { kind: 'home' } | { kind: 'analytics' } | { kind: 'ship-queue' } | { kind: 'task'; taskId: string; panel?: TaskPanel }
 
 const sortTaskResultNotices = (notices: TaskResultNotice[]): TaskResultNotice[] => [...notices].sort(
   (a, b) => b.createdAt - a.createdAt || b.resultVersion - a.resultVersion || a.id.localeCompare(b.id)
@@ -158,12 +157,8 @@ interface AnvilState {
   loadTaskEvents: (taskId: string, direction?: HistoryDirection) => Promise<void>
   diffsByTask: Record<string, TaskDiff>
   diffErrorsByTask: Record<string, string>
-  diffsByIssue: Record<string, TaskDiff>
-  diffErrorsByIssue: Record<string, string>
   gitStatusByProject: Record<string, ProjectGitStatus>
   commentsByTask: Record<string, TaskComment[]>
-  rebaseTaskId: string | null
-  rebasing: string | null
   sendingComments: string | null
   commentError: string | null
   mergeConflictState: MergeConflictState | null
@@ -190,7 +185,7 @@ interface AnvilState {
   removeProject: (id: string) => Promise<void>
   updateProject: (
     id: string,
-    patch: Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush' | 'shipPushes'>>,
+    patch: Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush' | 'shipPushes' | 'autoShip'>> & { checkCommand?: string | null },
     workspaceId?: string
   ) => Promise<void>
   selectProject: (id: string | null) => void
@@ -198,6 +193,7 @@ interface AnvilState {
   initGitRepo: (id: string) => Promise<void>
 
   shipTask: (taskId: string, input?: { push?: boolean; message?: string }) => Promise<Task>
+  undoShip: (taskId: string) => Promise<Task>
   approveTask: (taskId: string, preview: TaskMergePreview) => Promise<void>
   mergeAndPushTask: (taskId: string, preview: TaskMergeAndPushPreview) => Promise<void>
   loadMergeConflict: (taskId: string, conflictId: string) => Promise<void>
@@ -206,9 +202,6 @@ interface AnvilState {
   fixMergeConflictWithAgent: (taskId: string, conflictId: string) => Promise<void>
   abortMergeConflict: (taskId: string, conflictId: string) => Promise<void>
   pushTask: (taskId: string, preview: TaskPushPreview) => Promise<void>
-  openRebase: (taskId: string | null) => void
-  rebaseTask: (taskId: string, steps: RebaseStep[]) => Promise<void>
-  rebaseWithAgent: (taskId: string) => Promise<void>
 
   loadComments: (taskId: string) => Promise<void>
   addComment: (input: {
@@ -227,9 +220,9 @@ interface AnvilState {
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string, panel?: TaskPanel) => Promise<void>
   loadTaskDiff: (taskId: string) => Promise<void>
-  loadIssueDiff: (taskId: string, issueId: string) => Promise<void>
   showHome: () => void
   showAnalytics: () => void
+  showShipQueue: () => void
   focusTaskComposer: () => void
   setTaskComposerStyle: (style: TaskStyle) => void
   cycleTaskComposerStyle: () => void
@@ -281,12 +274,12 @@ export const useStore = create<AnvilState>((set, get) => ({
       ready: true,
       ...(changed || removed ? { ...evictTaskEvents(), view: changed ? workspaceView : { kind: 'home' as const } } : {}),
       ...(changed ? {
-        view: workspaceView, taskMenu: null, rebaseTaskId: null,
+        view: workspaceView, taskMenu: null,
         taskComposerStyle: 'quick',
         settingsProjectId: null, settingsSection: 'general', caffeineSave: null,
         modelsByAgent: get().modelsByWorkspace[snapshot.workspace.id] ?? {}, loadingModelsAgentId: null,
-        eventsByTask: {}, diffsByTask: {}, diffErrorsByTask: {}, diffsByIssue: {}, diffErrorsByIssue: {},
-        commentsByTask: {}, sendingComments: null, commentError: null, rebasing: null,
+        eventsByTask: {}, diffsByTask: {}, diffErrorsByTask: {},
+        commentsByTask: {}, sendingComments: null, commentError: null,
         gitStatusByProject: {}, gitInitPending: null, gitInitError: null
       } : {})
     })
@@ -440,14 +433,10 @@ export const useStore = create<AnvilState>((set, get) => ({
   taskComposerStyle: 'quick',
   diffsByTask: {},
   diffErrorsByTask: {},
-  diffsByIssue: {},
-  diffErrorsByIssue: {},
   gitStatusByProject: {},
   gitInitPending: null,
   gitInitError: null,
   commentsByTask: {},
-  rebaseTaskId: null,
-  rebasing: null,
   sendingComments: null,
   commentError: null,
   mergeConflictState: null,
@@ -691,8 +680,6 @@ export const useStore = create<AnvilState>((set, get) => ({
         view: state.view.kind === 'task' && state.view.taskId === taskId
           ? { kind: 'home' as const } : state.view,
         taskMenu: state.taskMenu?.taskId === taskId ? null : state.taskMenu,
-        rebaseTaskId: state.rebaseTaskId === taskId ? null : state.rebaseTaskId,
-        rebasing: state.rebasing === taskId ? null : state.rebasing,
         sendingComments: state.sendingComments === taskId ? null : state.sendingComments
       }
     })
@@ -819,29 +806,20 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  loadIssueDiff: async (taskId, issueId) => {
-    try {
-      const diff = await window.anvil.tasks.issueDiff({ taskId, issueId })
-      if (!get().tasks.some((task) => task.id === taskId)) return
-      set((s) => ({
-        diffsByIssue: { ...s.diffsByIssue, [issueId]: diff },
-        diffErrorsByIssue: { ...s.diffErrorsByIssue, [issueId]: '' }
-      }))
-    } catch (error) {
-      if (!get().tasks.some((task) => task.id === taskId)) return
-      set((s) => ({
-        diffErrorsByIssue: {
-          ...s.diffErrorsByIssue,
-          [issueId]: error instanceof Error ? error.message : String(error)
-        }
-      }))
-    }
-  },
-
   shipTask: async (taskId, input = {}) => {
     const task = await window.anvil.tasks.ship({ taskId, ...input })
     set((s) => ({
       tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+      commentError: null
+    }))
+    return task
+  },
+
+  undoShip: async (taskId) => {
+    const task = await window.anvil.tasks.undoShip(taskId)
+    set((s) => ({
+      tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+      diffsByTask: Object.fromEntries(Object.entries(s.diffsByTask).filter(([id]) => id !== taskId)),
       commentError: null
     }))
     return task
@@ -1007,50 +985,6 @@ export const useStore = create<AnvilState>((set, get) => ({
     }))
   },
 
-  openRebase: (taskId) => set({ rebaseTaskId: taskId, commentError: null }),
-
-  /** Applies a plan directly; the diff is reloaded because the commits moved. */
-  rebaseTask: async (taskId, steps) => {
-    set({ rebasing: taskId, commentError: null })
-    try {
-      const task = await window.anvil.tasks.rebase({ taskId, steps })
-      set((s) => ({
-        tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
-        diffsByTask: Object.fromEntries(
-          Object.entries(s.diffsByTask).filter(([key]) => key !== taskId)
-        ),
-        rebasing: null,
-        rebaseTaskId: null
-      }))
-      await get().loadTaskDiff(taskId)
-    } catch (error) {
-      set({
-        rebasing: null,
-        commentError: error instanceof Error ? error.message : String(error)
-      })
-    }
-  },
-
-  rebaseWithAgent: async (taskId) => {
-    set({ rebasing: taskId, rebaseTaskId: null, commentError: null })
-    try {
-      const task = await window.anvil.tasks.rebaseWithAgent(taskId)
-      set((s) => ({
-        tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
-        // The commit list is about to change, so the cached diff is stale.
-        diffsByTask: Object.fromEntries(
-          Object.entries(s.diffsByTask).filter(([key]) => key !== taskId)
-        ),
-        rebasing: null
-      }))
-    } catch (error) {
-      set({
-        rebasing: null,
-        commentError: error instanceof Error ? error.message : String(error)
-      })
-    }
-  },
-
   loadComments: async (taskId) => {
     const comments = await window.anvil.comments.list(taskId)
     if (!get().tasks.some((task) => task.id === taskId)) return
@@ -1099,8 +1033,9 @@ export const useStore = create<AnvilState>((set, get) => ({
 
   showHome: () => set({ ...evictTaskEvents(), view: { kind: 'home' } }),
   showAnalytics: () => set({ ...evictTaskEvents(), view: { kind: 'analytics' } }),
+  showShipQueue: () => set({ ...evictTaskEvents(), view: { kind: 'ship-queue' } }),
   focusTaskComposer: () => set((state) => {
-    if (!state.activeWorkspaceId || state.workspaceSwitching || state.settingsOpen || state.taskMenu || state.rebaseTaskId) return state
+    if (!state.activeWorkspaceId || state.workspaceSwitching || state.settingsOpen || state.taskMenu) return state
     return {
       ...evictTaskEvents(),
       view: { kind: 'home' },
@@ -1109,7 +1044,7 @@ export const useStore = create<AnvilState>((set, get) => ({
   }),
   setTaskComposerStyle: (style) => set((state) => ({ taskComposerStyle: state.activeProjectId ? style : 'quick' })),
   cycleTaskComposerStyle: () => set((state) => {
-    if (!state.activeWorkspaceId || state.workspaceSwitching || state.settingsOpen || state.taskMenu || state.rebaseTaskId) return state
+    if (!state.activeWorkspaceId || state.workspaceSwitching || state.settingsOpen || state.taskMenu) return state
     return {
       ...evictTaskEvents(),
       view: { kind: 'home' },

@@ -1,4 +1,4 @@
-import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, AgentRateLimitTarget, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, RebaseStep, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskCheckoutMode } from './types'
+import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, AgentRateLimitTarget, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskStyle, TaskCheckoutMode } from './types'
 import type { BrowserHostResponse } from './browser-host'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
@@ -39,7 +39,7 @@ export interface IpcRequests {
   'projects:import-finish': string
   'projects:import-cancel': string
   'projects:clone': { url: string; workspaceId?: string }
-  'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean; shipPushes?: boolean }
+  'projects:update': { id: string; workspaceId?: string; monthlyTokenLimit?: number | null; monthlyCostLimitUsd?: number | null; finishOnPush?: boolean; shipPushes?: boolean; checkCommand?: string | null; autoShip?: boolean }
   'projects:remove': string
   'projects:reveal': string
   'terminals:create': { projectId?: string; taskId?: string; cols: number; rows: number }
@@ -71,7 +71,6 @@ export interface IpcRequests {
   'tasks:cancel': string
   'tasks:delete': string
   'tasks:settle': string
-  'tasks:rebase': { taskId: string; steps: RebaseStep[] }
   'tasks:rebase-agent': string
   'tasks:merge-preview': string
   'tasks:approve': { taskId: string; preview: TaskMergePreview }
@@ -88,6 +87,8 @@ export interface IpcRequests {
   'tasks:pull': { taskId: string; branch: string; localCommit: string; remoteCommit: string }
   'tasks:commit-quick': { taskId: string; push: boolean; message?: string }
   'tasks:ship': { taskId: string; push?: boolean; message?: string }
+  'tasks:undo-ship': string
+  'tasks:run-checks': string
   'tasks:draft-commit-message': { taskId: string; message: string }
   'comments:list': string
   'comments:add': Pick<TaskComment, 'taskId' | 'file' | 'side' | 'lineNumber' | 'body'>
