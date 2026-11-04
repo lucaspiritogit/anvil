@@ -24,7 +24,7 @@ function fixture() {
   const store = new Store(databasePath, { migrationsFolder })
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Project', path: directory, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const add = (patch: Partial<Task> = {}) => store.addTask({
     id: 'task', workspaceId: 'default', projectId: 'project', title: 'Task', prompt: 'Task',
     agentId: 'codex', agentLabel: 'Codex', cwd: directory,

@@ -9,12 +9,12 @@ import { registerTestIpc } from './test-ipc'
 import { taskState } from './task-state'
 import { handlers, testHome, AgentProcessManager, GitDeliveryManager } from './issue-tracker-doubles'
 
-test('schedules dependencies and priorities sequentially and retains final task review', async () => {
+test('schedules dependencies and priorities sequentially and advances to a shippable task without step review', async () => {
   const options = { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') }
   const database = join(testHome, '.anvil-composer/config.json')
   const store = new Store(database, options)
   const workspaceDatabase = store.getWorkspaceDatabasePath('default')
-  store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+  store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: Date.now(), monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const { agentProcesses: processes } = registerTestIpc()
   const agentProcesses = processes as unknown as AgentProcessManager
   const call = (name: string, input: unknown): any => handlers.get(name)!(rendererEvent, input)
@@ -25,7 +25,6 @@ test('schedules dependencies and priorities sequentially and retains final task 
     await vi.waitFor(() => expect(agentProcesses.starts.some((entry) => entry.taskId === task.id), prompt).toBe(true))
     return task.id
   }
-  const trackerHead = (taskId: string): string | null => store.issueTracker('project').get(store.getTaskExecution(taskId)!.currentIssueId!).headCommit ?? null
   const submit = async (taskId: string): Promise<string> => {
     const issueId = store.getTaskExecution(taskId)!.currentIssueId!
     callIssueTool(store, taskId, store.getTask(taskId)!.workspaceId, 'anvil_submit_review', { id: issueId, checklist: [true, true], evidence: 'Focused tests passed' })
@@ -34,15 +33,10 @@ test('schedules dependencies and priorities sequentially and retains final task 
     expect(pending.children.find((child: { id: string }) => child.id === issueId).status).toBe('review')
     expect(pending.reviewReady).toBe(false)
     await expect(call('tasks:issue-diff', { taskId, issueId })).rejects.toThrow(/not finished preparing/)
-    await expect(call('tasks:approve-issue', { taskId, issueId: store.getTaskExecution(taskId)!.currentIssueId!, headCommit: trackerHead(taskId) })).rejects.toThrow(/not finished stopping/)
     agentProcesses.finishTurn(taskId, 'Submitted through the issue tool')
     await tick()
-    expect((await call('tasks:issues', taskId)).reviewReady).toBe(true)
+    expect(store.issueTracker('project').get(issueId).status, 'A finished issue completes without developer review').toBe('complete')
     return issueId
-  }
-  const approve = async (taskId: string): Promise<void> => {
-    await call('tasks:approve-issue', { taskId, issueId: store.getTaskExecution(taskId)!.currentIssueId!, headCommit: trackerHead(taskId) })
-    await tick()
   }
 
   const taskId = await start('Build a feature')
@@ -101,74 +95,23 @@ test('schedules dependencies and priorities sequentially and retains final task 
   const issueHead = 'd'.repeat(40)
   GitDeliveryManager.worktreeHeadValue = issueHead
   const firstIssueId = await submit(taskId)
-  await assertReadOnlySnapshot(['queued', 'queued', 'review'])
-  expect(store.getTaskExecution(taskId)?.phase, 'The loop pauses while an issue awaits developer review').toBe('reviewing')
-  expect(store.getTaskExecution(taskId)?.currentIssueId).toBe(firstIssueId)
-  expect(agentProcesses.starts.length, 'No next issue is claimed before approval').toBe(startsBeforeSubmit)
-  expect(store.getTask(taskId)?.status).toBe('running')
-  expect(GitDeliveryManager.head, 'The issue is finalized before review').toBe(deliveriesBeforeCompletion + 1)
-  expect((await call('tasks:issue-diff', { taskId, issueId: firstIssueId })).patch, 'The review diff covers only the reviewed issue').toBe(`base..${issueHead}`)
-  await expect(call('tasks:issue-diff', { taskId, issueId: dependent.id })).rejects.toThrow(/not finished preparing/)
-  await expect(call('tasks:issue-diff', { taskId, issueId: unrelated.id })).rejects.toThrow(/does not belong to this task plan/)
-  agentProcesses.emit('usage', { taskId, inputTokens: 3, outputTokens: 1, cachedTokens: 0, totalTokens: 4, costUsd: null })
-  await expect(call('tasks:approve-issue', { taskId, issueId: firstIssueId, headCommit: 'stale-head' })).rejects.toThrow(/pending review changed/)
-  await expect(call('tasks:reject-issue', { taskId, issueId: unrelated.id, headCommit: null, comment: 'Wrong sibling' })).rejects.toThrow(/pending review changed/)
-  await call('comments:add', { taskId, file: 'first.txt', side: 'additions', lineNumber: 1, body: 'Discard on approval' })
-  await approve(taskId)
-  expect(store.getComments(taskId).filter((comment) => comment.sentAt === null)).toHaveLength(0)
   await assertReadOnlySnapshot(['queued', 'working', 'complete'])
   expect(store.getTaskExecution(taskId)?.phase).toBe('working')
   expect(store.getTaskExecution(taskId)?.currentIssueId).toBe(prerequisite.id)
-  expect(agentProcesses.starts.length, 'Approval claims the next issue').toBe(startsBeforeSubmit + 1)
+  expect(agentProcesses.starts.length, 'Completion claims the next issue').toBe(startsBeforeSubmit + 1)
   expect(store.getTask(taskId)?.status).toBe('running')
+  expect(GitDeliveryManager.head, 'The issue is finalized once').toBe(deliveriesBeforeCompletion + 1)
+  expect((await call('tasks:issue-diff', { taskId, issueId: firstIssueId })).patch, 'The issue diff covers only that issue').toBe(`base..${issueHead}`)
+  await expect(call('tasks:issue-diff', { taskId, issueId: dependent.id })).rejects.toThrow(/not finished preparing/)
+  await expect(call('tasks:issue-diff', { taskId, issueId: unrelated.id })).rejects.toThrow(/does not belong to this task plan/)
+  agentProcesses.emit('usage', { taskId, inputTokens: 3, outputTokens: 1, cachedTokens: 0, totalTokens: 4, costUsd: null })
   expect(store.getTask(taskId)?.totalTokens).toBe(11)
   await submit(taskId)
-  await assertReadOnlySnapshot(['queued', 'review', 'complete'])
-  expect(store.getTaskExecution(taskId)?.currentIssueId).toBe(prerequisite.id)
-  await approve(taskId)
   await assertReadOnlySnapshot(['working', 'complete', 'complete'])
   expect(store.getTaskExecution(taskId)?.currentIssueId).toBe(dependent.id)
   await submit(taskId)
-  await assertReadOnlySnapshot(['review', 'complete', 'complete'])
-  expect(agentProcesses.starts.length, 'The last review pause still claims nothing').toBe(startsBeforeSubmit + 2)
-
-  const finalIssueId = store.getTaskExecution(taskId)!.currentIssueId!
-  await call('tasks:reject-issue', {
-    taskId, issueId: finalIssueId, headCommit: trackerHead(taskId), comment: 'Address the final review suggestion'
-  })
-  expect(store.getTask(taskId)).toMatchObject({ status: 'running', deliveryStatus: 'working' })
-  expect(store.getTaskExecution(taskId)).toMatchObject({ phase: 'working', currentIssueId: finalIssueId })
-  expect(tracker.get(finalIssueId).status).toBe('working')
-  expect(agentProcesses.starts.at(-1).issueId, 'The final issue resumes only after working state is durable').toBe(finalIssueId)
-
-  callIssueTool(store, taskId, store.getTask(taskId)!.workspaceId, 'anvil_submit_review', {
-    id: finalIssueId, checklist: [true, true], evidence: 'Final review suggestion verified'
-  })
-  let releaseFinalize!: () => void
-  let observeFinalize!: () => void
-  const finalizing = new Promise<void>((resolve) => { observeFinalize = resolve })
-  const finalizeGate = new Promise<void>((resolve) => { releaseFinalize = resolve })
-  const originalFinalize = GitDeliveryManager.prototype.finalizeBranch
-  vi.spyOn(GitDeliveryManager.prototype, 'finalizeBranch').mockImplementationOnce(async function (this: GitDeliveryManager, ...args: Parameters<typeof originalFinalize>) {
-    observeFinalize()
-    await finalizeGate
-    return originalFinalize.apply(this, args)
-  })
-  agentProcesses.finishTurn(taskId, 'Reworked the final review suggestion')
-  await finalizing
-  expect(store.getTask(taskId), 'Issue output finalization remains ordinary working state').toMatchObject({
-    status: 'running', deliveryStatus: 'working'
-  })
-  expect(store.getTaskExecution(taskId)).toMatchObject({ phase: 'working', currentIssueId: finalIssueId })
-  releaseFinalize()
-  await tick()
-  await assertReadOnlySnapshot(['review', 'complete', 'complete'])
-  expect(store.getTask(taskId)).toMatchObject({ status: 'running', deliveryStatus: 'working' })
-  expect(store.getTaskExecution(taskId)).toMatchObject({ phase: 'reviewing', currentIssueId: finalIssueId })
-  const finalizationsBeforeApproval = GitDeliveryManager.head
-  await approve(taskId)
-  expect(GitDeliveryManager.head, 'Final approval reuses the reviewed branch snapshot').toBe(finalizationsBeforeApproval)
   await assertReadOnlySnapshot(['complete', 'complete', 'complete'])
+  expect(agentProcesses.starts.length, 'The last issue claims nothing new').toBe(startsBeforeSubmit + 2)
   expect(store.getTaskExecution(taskId)?.phase).toBe('complete')
   expect(store.getTask(taskId)?.deliveryStatus).toBe('reviewable')
   expect((await call('tasks:diff', taskId)).patch).toBe(`base..${issueHead}`)
@@ -262,51 +205,13 @@ test('schedules dependencies and priorities sequentially and retains final task 
   expect(agentProcesses.starts.length).toBe(startsBeforeCancel)
   expect(store.getTask(betweenId)?.status).toBe('cancelled')
 
-  const reworkId = await start('Rework flow')
-  agentProcesses.plan(reworkId, [issue])
-  await tick()
-  const reworkIssueId = store.getTaskExecution(reworkId)!.currentIssueId!
-  await submit(reworkId)
-  expect(store.getTaskExecution(reworkId)?.phase).toBe('reviewing')
-  call('comments:add', { taskId: reworkId, file: 'src/review.ts', side: 'additions', lineNumber: 4, body: 'Extract a helper' })
-  await call('tasks:reject-issue', { taskId: reworkId, issueId: store.getTaskExecution(reworkId)!.currentIssueId!, headCommit: trackerHead(reworkId), comment: 'Also cover the empty-input case' })
-  await tick()
-  expect(tracker.get(reworkIssueId).status, 'Rejection returns the issue to work').toBe('working')
-  expect(store.getTaskExecution(reworkId)?.phase).toBe('working')
-  expect(store.getTaskExecution(reworkId)?.currentIssueId).toBe(reworkIssueId)
-  expect(agentProcesses.starts.at(-1).issueId, 'The same issue reruns without a new claim').toBe(reworkIssueId)
-  expect(store.getComments(reworkId).every((comment) => comment.sentAt !== null)).toBe(true)
-  await submit(reworkId)
-  await approve(reworkId)
-  expect(store.getTask(reworkId)?.deliveryStatus).toBe('reviewable')
-
-  const cancelReviewId = await start('Cancel while in review')
-  agentProcesses.plan(cancelReviewId, [issue])
-  await tick()
-  await submit(cancelReviewId)
-  expect(call('tasks:cancel', cancelReviewId)).toBe(true)
-  await tick()
-  expect(store.getTask(cancelReviewId)?.status).toBe('cancelled')
-  expect(store.getTaskExecution(cancelReviewId)?.phase).toBe('blocked')
-  expect(tracker.get(store.getTaskExecution(cancelReviewId)!.currentIssueId!).status, 'Cancelling a review settles the issue deterministically').toBe('blocked')
-
   const deliveryId = await start('Reviewed delivery')
   agentProcesses.plan(deliveryId, [issue])
   await tick()
   await submit(deliveryId)
-  const reviewedHead = store.getTask(deliveryId)?.headCommit
-  const finalizationsBeforeDeliveryApproval = GitDeliveryManager.head
-  GitDeliveryManager.failFinalize = true
-  await call('tasks:approve-issue', {
-    taskId: deliveryId,
-    issueId: store.getTaskExecution(deliveryId)!.currentIssueId!,
-    headCommit: trackerHead(deliveryId)
-  })
-  expect(store.getTask(deliveryId)).toMatchObject({ deliveryStatus: 'reviewable', headCommit: reviewedHead })
-  expect(GitDeliveryManager.head, 'Approval does not repeat the completed review finalization').toBe(finalizationsBeforeDeliveryApproval)
+  expect(store.getTask(deliveryId)?.deliveryStatus).toBe('reviewable')
   await call('tasks:approve', { taskId: deliveryId, preview: await call('tasks:merge-preview', deliveryId) })
   expect(store.getTask(deliveryId)?.deliveryStatus).toBe('approved')
-  GitDeliveryManager.failFinalize = false
   expect(call('tasks:cancel', unrelatedTaskId)).toBe(true)
   await tick()
   for (const agentId of ['opencode', 'codex']) {
@@ -323,9 +228,7 @@ test('schedules dependencies and priorities sequentially and retains final task 
     expect(agentProcesses.starts.at(-1).issueId).toBe(currentId)
     tracker.submitForReview(currentId, { checklist: [true, true], evidence: 'Server validation passed' })
     await serverExit('Submitted for review.')
-    expect(store.getTaskExecution(serverId)?.phase).toBe('reviewing')
-    await call('tasks:approve-issue', { taskId: serverId, issueId: store.getTaskExecution(serverId)!.currentIssueId!, headCommit: trackerHead(serverId) })
-    await tick()
+    expect(store.getTaskExecution(serverId)?.phase).toBe('complete')
     expect(tracker.get(currentId).evidence).toBe('Server validation passed')
     expect(store.getTask(serverId)?.status, 'Completion needs no assistant output').toBe('succeeded')
     expect(store.getTask(serverId)?.deliveryStatus).toBe('reviewable')

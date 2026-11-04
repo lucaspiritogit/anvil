@@ -13,7 +13,7 @@ test('workspace switching separates projects and creates a database in each work
   const store = new Store(join(directory, 'config.json'), { migrationsFolder })
   onTestCleanup(() => store.close())
   store.addProject({ id: 'personal', name: 'Personal', path: '/test/personal', createdAt: 1,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const work = store.createWorkspace('Work')
   store.selectWorkspace(work.id)
   expect(store.getProjects()).toEqual([])
@@ -45,7 +45,7 @@ test('named workspace folders preserve config, issues and Git worktrees through 
   const worktree = join(oldDirectory, 'worktrees', 'task')
   git(repository, ['worktree', 'add', '-b', 'task', worktree])
   store.addProject({ id: 'project', name: 'Project', path: repository, createdAt: 1,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' }, workspace.id)
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' }, workspace.id)
   store.addTask({ id: 'task', workspaceId: workspace.id, projectId: 'project', agentId: 'codex', agentLabel: 'Codex',
     title: 'Task', prompt: 'Task', cwd: worktree, status: 'succeeded', startedAt: 1, deliveryStatus: 'reviewable',
     inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null, filesChanged: 0, additions: 0, deletions: 0 })

@@ -19,9 +19,9 @@ const TASK_INDICATORS = {
   running: { glyph: 'running', label: 'Working', tone: 'text-run', meta: 'text-run-text' },
   done: { glyph: 'done', label: 'Done', tone: 'text-ok', meta: 'text-ok-text' },
   reviewedIssue: { glyph: 'done', label: 'Approved', tone: 'text-ok', meta: 'text-ok-text' },
-  merged: { glyph: 'done', icon: 'git-branch', label: 'Merged', tone: 'text-ok', meta: 'text-ok-text' },
+  merged: { glyph: 'done', icon: 'git-branch', label: 'Shipped', tone: 'text-ok', meta: 'text-ok-text' },
   openPullRequest: { glyph: 'done', icon: 'git-branch', label: 'Open PR', tone: 'text-ok', meta: 'text-ok-text' },
-  reviewable: { glyph: 'review', label: 'Ready for review', tone: 'text-review', meta: 'text-review-text' },
+  reviewable: { glyph: 'review', label: 'Ready to ship', tone: 'text-review', meta: 'text-review-text' },
   failed: { glyph: 'failed', label: 'Failed', tone: 'text-danger', meta: 'text-danger-text' }
 } as const satisfies Record<string, { glyph: StatusGlyphName; icon?: IconName; label: string; tone: string; meta: string }>
 
@@ -245,7 +245,6 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
                   <span className={cn('shrink-0 lowercase', indicator?.meta ?? 'text-dim')}>
                     {indicator?.label ?? (task.status === 'pending' ? 'Pending' : task.status === 'cancelled' ? 'Cancelled' : relativeAge(task.endedAt ?? task.startedAt, now))}
                   </span>
-                  {task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex shrink-0 text-warn" title="Runs unattended until the final review"><Icon icon="moon-star" size={11} aria-hidden="true" /><span className="sr-only">Review at the end</span></span>}
                   {task.restackState && <span className="shrink-0 text-warn">· restack {task.restackState}</span>}
                   <span aria-hidden="true" className="shrink-0 text-faint">·</span>
                   <span className="min-w-0 truncate text-faint">{tree?.collapsed ? `+${tree.size - 1} stacked${tree.hiddenWorking ? ` · ${tree.hiddenWorking} working` : ''}` : task.branchName ?? task.agentLabel}</span>

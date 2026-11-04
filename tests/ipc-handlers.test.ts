@@ -50,7 +50,7 @@ function setupIpc(
   const notifications: { channel: string; payload: unknown }[] = []
   const project: Project = {
     id: 'project', name: 'Project', path: testHome, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
   }
   store.addProject(project)
   const agentProcesses = new AgentProcessManager(databaseFile)
@@ -183,13 +183,12 @@ function setupIpc(
   }
 }
 
-test('runs unattended issue reviews and stops at final task review', async () => {
+test('runs every issue unattended and finishes ready to ship', async () => {
   const { store, trackers, events, project, agentProcesses, call, tick } = setupIpc()
   const task: Task = await call('tasks:start', {
     projectId: project.id,
     agentId: 'codex',
-    prompt: 'Complete this task unattended',
-    reviewPolicy: 'review_at_task_end'
+    prompt: 'Complete this task unattended'
   })
   await tick()
   const issue = {
@@ -225,17 +224,15 @@ test('runs unattended issue reviews and stops at final task review', async () =>
   expect(trackers.get(task.id)!.items.find((item) => item.id === secondIssueId)?.status).toBe('complete')
   expect(store.getTaskExecution(task.id)?.phase).toBe('complete')
   expect(store.getTask(task.id)).toMatchObject({
-    reviewPolicy: 'review_at_task_end',
     status: 'succeeded',
     deliveryStatus: 'reviewable'
   })
-  expect(events.filter((event) => event.text.includes('End-of-task review policy accepted issue'))).toHaveLength(2)
+  expect(events.filter((event) => event.text.includes('Completed issue'))).toHaveLength(2)
 
   const commentedTask: Task = await call('tasks:start', {
     projectId: project.id,
     agentId: 'codex',
-    prompt: 'Pause unattended work when comments exist',
-    reviewPolicy: 'review_at_task_end'
+    prompt: 'Keep going when notes are pending'
   })
   await tick()
   agentProcesses.plan(commentedTask.id, [issue])
@@ -259,11 +256,9 @@ test('runs unattended issue reviews and stops at final task review', async () =>
   agentProcesses.finishTurn(commentedTask.id, 'Commented change ready for review')
   await tick()
 
-  expect(store.getTaskExecution(commentedTask.id)).toMatchObject({
-    phase: 'reviewing',
-    currentIssueId: commentedIssueId
-  })
-  expect(trackers.get(commentedTask.id)!.items.find((item) => item.id === commentedIssueId)?.status).toBe('review')
+  expect(store.getTaskExecution(commentedTask.id)?.phase).toBe('complete')
+  expect(trackers.get(commentedTask.id)!.items.find((item) => item.id === commentedIssueId)?.status).toBe('complete')
+  expect(store.getComments(commentedTask.id).filter((comment) => comment.sentAt === null)).toHaveLength(1)
 })
 
 test('persists task ownership before preparation and retains it when selection changes', async () => {
@@ -391,20 +386,20 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
       { projectId: project.id, path: '/outside' }, { projectId: project.id, query: '../outside' },
       { projectId: project.id, limit: 1_000_000 }
     ]) await invalidRequest('projects:files', payload)
-    for (const channel of ['projects:remove', 'projects:reveal', 'projects:git-init', 'tasks:delete', 'tasks:cancel', 'tasks:issues', 'tasks:approve-issue', 'comments:send']) {
+    for (const channel of ['projects:remove', 'projects:reveal', 'projects:git-init', 'tasks:delete', 'tasks:cancel', 'tasks:issues', 'comments:send']) {
       for (const id of ['', ' ', '../project', 'x'.repeat(129)]) await invalidRequest(channel, id)
     }
     for (const patch of [{ taskId: 'task', issueId: '' }, { taskId: 'task', issueId: 42 }, { taskId: 'task', issueId: 'ok', extra: 1 }]) {
       await invalidRequest('tasks:issue-diff', patch)
     }
-    for (const patch of [{ taskId: '' }, { taskId: 'task', comment: ' ' }, { taskId: 'task', comment: 42 }]) {
-      await invalidRequest('tasks:reject-issue', patch)
+    for (const patch of [{ taskId: '' }, { taskId: 'task', push: 'yes' }, { taskId: 'task', message: 42 }, { taskId: 'task', extra: 1 }]) {
+      await invalidRequest('tasks:ship', patch)
     }
     for (const patch of [{ side: 'left' }, { lineNumber: 0 }, { lineNumber: NaN }, { lineNumber: 1.5 }, { file: '/etc/passwd' }, { file: '../outside' }, { file: 'a/../b' }, { file: 'C:\\outside' }, { file: '' }, { body: ' ' }, { body: 'x'.repeat(20_001) }]) {
       await invalidRequest('comments:add', { ...comment, ...patch })
     }
     for (const patch of [{ defaultAgentId: null }, { rebaseMode: 'shell' }, { confirmRebase: 1 }, { keybindings: [] }, { keybindings: { toggleSidebar: 'x' } }, { diffThemes: { dark: 'bad theme', light: 'github-light' } }, { unexpected: true }]) await invalidRequest('settings:set', patch)
-    for (const patch of [{ prompt: ' ' }, { prompt: 'x'.repeat(100_001) }, { style: 'chat' }, { reviewPolicy: 'always' }, { model: [] }, { reasoningEffort: 42 }]) await invalidRequest('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Task', ...patch })
+    for (const patch of [{ prompt: ' ' }, { prompt: 'x'.repeat(100_001) }, { style: 'chat' }, { reviewPolicy: 'review_at_task_end' }, { model: [] }, { reasoningEffort: 42 }]) await invalidRequest('tasks:start', { projectId: project.id, agentId: 'codex', prompt: 'Task', ...patch })
     await invalidRequest('tasks:issues', { taskId: 'task', projectPath: '/outside', parentIssueId: 'other' })
     await invalidRequest('tasks:steer', { taskId: 'task', message: ' ' })
     for (const steps of [null, [], [null], [{ sha: 'a'.repeat(40), action: 'exec', message: 'rm' }], [{ sha: '--exec', action: 'pick', message: 'message' }]]) await invalidRequest('tasks:rebase', { taskId: 'task', steps })

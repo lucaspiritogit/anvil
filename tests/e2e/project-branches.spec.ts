@@ -261,7 +261,7 @@ test('project import keeps the initiating workspace when the user switches works
       onProgress(1, 2)
       await new Promise<void>((resolve) => { release = resolve })
       return { id: 'late-import', name: 'late', path: `/fixture/workspaces/${workspaceId}/projects/late`, createdAt: Date.now(),
-        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' }
+        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' }
     }
     window.addEventListener('fixture:release-import', () => release?.())
   })
@@ -300,7 +300,7 @@ test('Quick can run in an isolated worktree without switching the local checkout
   await prompt.fill('Focus on an isolated change')
   await composer.getByRole('button', { name: 'Send', exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.composerTest.starts[0])).toEqual({
-    workspaceId: 'default', projectId: 'project-0', style: 'quick', reviewPolicy: 'review_each_issue',
+    workspaceId: 'default', projectId: 'project-0', style: 'quick',
     checkoutMode: 'worktree', startBase: 'refs/remotes/origin/main', agentId: 'codex', model: 'gpt-5',
     prompt: 'Focus on an isolated change', parentTaskId: undefined, reasoningEffort: 'high'
   })
@@ -315,7 +315,7 @@ test('new worktrees use the selected base without switching the local checkout',
   await chooseProject(project, 'workbench', 'Workbench')
   const composer = page.getByRole('form', { name: 'Start a task' })
   await chooseMenuOption(composer.getByRole('combobox', { name: 'Task style' }), 'Work')
-  await expectMenuOptions(composer.getByRole('combobox', { name: 'Review policy' }), ['Review each step', 'Review at the end'])
+  await expect(composer.getByRole('combobox', { name: 'Review policy' })).toHaveCount(0)
   const location = page.getByLabel('Execution location', { exact: true })
   await expect(location).toHaveText(/Isolated worktree/)
 
@@ -326,7 +326,7 @@ test('new worktrees use the selected base without switching the local checkout',
   await page.evaluate(() => { window.composerTest.failNextStart = true })
   await composer.getByRole('button', { name: 'Send', exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.composerTest.starts[0])).toEqual({
-    workspaceId: 'default', projectId: 'project-1', style: 'work', reviewPolicy: 'review_each_issue',
+    workspaceId: 'default', projectId: 'project-1', style: 'work',
     startBase: 'refs/remotes/origin/main', agentId: 'codex', model: 'gpt-5',
     prompt: 'Use an isolated checkout', parentTaskId: undefined, reasoningEffort: 'high'
   })
@@ -340,7 +340,7 @@ test('new worktrees use the selected base without switching the local checkout',
 
   await composer.getByRole('button', { name: 'Send', exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.composerTest.starts[1])).toEqual({
-    workspaceId: 'default', projectId: 'project-1', style: 'work', reviewPolicy: 'review_each_issue',
+    workspaceId: 'default', projectId: 'project-1', style: 'work',
     startBase: 'refs/heads/main', agentId: 'codex', model: 'gpt-5',
     prompt: 'Use an isolated checkout', parentTaskId: undefined, reasoningEffort: 'high'
   })

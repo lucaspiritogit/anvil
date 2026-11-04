@@ -37,7 +37,7 @@ const subscribeReadiness = (handler: (readiness: AppReadiness) => void): (() => 
 const now = Date.now()
 let projects: Project[] = ['Anvil', 'Workbench'].map((name, index) => ({
   id: `project-${index}`, name, path: `/tmp/${name.toLowerCase()}`, createdAt: now,
-  monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+  monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
 }))
 const base: Task = {
   workspaceId: 'default',
@@ -545,7 +545,7 @@ window.anvil = {
     importFromDisk: async (workspaceId: string, onProgress: (done: number, total: number) => void) => {
       onProgress(1, 1)
       const project: Project = { id: 'imported-project', name: 'local-app', path: `/fixture/workspaces/${workspaceId}/projects/local-app`, createdAt: now,
-        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' }
+        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' }
       projects = [...projects.filter((item) => item.id !== project.id), project]
       return project
     },
@@ -553,7 +553,7 @@ window.anvil = {
       const name = path.split('/').filter(Boolean).at(-1) ?? path
       const project: Project = {
         id: 'added-project', name, path, createdAt: now,
-        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
       }
       projects = [...projects.filter((item) => item.id !== project.id), project]
       return project
@@ -562,7 +562,7 @@ window.anvil = {
       const name = new URL(url).pathname.replace(/\/$/, '').split('/').at(-1)!.replace(/\.git$/i, '')
       const project: Project = {
         id: 'cloned-project', name, path: `/fixture/workspaces/default/projects/${name}`, createdAt: now,
-        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
       }
       projects = [...projects.filter((item) => item.id !== project.id), project]
       return project
@@ -958,7 +958,8 @@ window.anvil = {
     push: async (input) => {
       window.dispatchEvent(new CustomEvent('fixture:push', { detail: input }))
       const task = tasks.find((task) => task.id === input.taskId)!
-      return update({ ...task, ...(task.headCommit ? { pushedCommit: task.headCommit } : {}) })
+      const pushed = task.shippedCommit ?? task.headCommit
+      return update({ ...task, ...(pushed ? { pushedCommit: pushed } : {}) })
     },
     syncStatus: async (): Promise<BranchSyncStatus> => {
       const behind = Number(query.get('quickBehind') ?? 0)
@@ -987,17 +988,18 @@ window.anvil = {
       if (query.has('commitDraftFailure')) throw new Error('The agent could not draft a commit message.')
       return 'fix: clamp output rows by measured truncation'
     },
-    approveIssue: async ({ taskId }: { taskId: string; issueId: string; headCommit: string | null }) => {
-      window.dispatchEvent(new CustomEvent('fixture:issue-approval', { detail: { taskId } }))
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      if (query.has('approveIssueFailure')) throw new Error('This task is not waiting for an issue review')
-      return tasks.find((task) => task.id === taskId)!
-    },
-    rejectIssue: async (input: { taskId: string; comment?: string }) => {
-      window.dispatchEvent(new CustomEvent('fixture:issue-rejection', { detail: { taskId: input.taskId, ...(input.comment ? { comment: input.comment } : {}) } }))
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      if (query.has('rejectIssueFailure')) throw new Error('This task is not waiting for an issue review')
-      return tasks.find((task) => task.id === input.taskId)!
+    ship: async (input) => {
+      window.dispatchEvent(new CustomEvent('fixture:ship', { detail: input }))
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      if (query.has('shipFailure')) throw new Error('Commit or stash local changes in the project before merging this task.')
+      if (query.has('mergeFailure')) throw new Error('Merge failed. The task was not merged.')
+      if (query.has('mergePreviewFailure')) throw new Error('Check out a branch before merging')
+      if (query.has('mergeConflict')) return beginConflict(input.taskId, input.push ? 'merge_and_push' : 'merge')
+      return update({
+        ...tasks.find((task) => task.id === input.taskId)!,
+        deliveryStatus: 'approved', shippedCommit: 'shipped-commit', reviewedAt: Date.now(),
+        ...(input.push ? { pushedCommit: 'shipped-commit' } : {})
+      })
     },
     onEvent: (listener: (event: TaskEvent) => void) => {
       const receive = (event: Event) => {

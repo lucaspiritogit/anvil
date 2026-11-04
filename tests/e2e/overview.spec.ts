@@ -11,7 +11,7 @@ test('overview keeps the floating composer visible in a short window', async ({ 
   const main = page.getByRole('main')
   await expect(main.getByRole('heading', { name: 'Usage this month' })).toHaveCount(0)
   await expect(main.getByRole('heading', { name: /Describe what to build/ })).toHaveCount(0)
-  await expect(main.getByRole('heading', { name: /^(Running|Ready for review|Completed)$/ })).toHaveCount(0)
+  await expect(main.getByRole('heading', { name: /^(Running|Ready to ship|Completed)$/ })).toHaveCount(0)
   await expect(main.getByRole('button', { name: 'Edit limits' })).toHaveCount(0)
   await expect(main.getByRole('button', { name: 'Start new task' })).toHaveCount(0)
   await expect(main.getByRole('button', { name: 'Send', exact: true })).toBeInViewport()

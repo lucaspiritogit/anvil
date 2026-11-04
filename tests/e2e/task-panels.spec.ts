@@ -21,7 +21,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 500 
       if (scenario === 'review') {
         await expect(page.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
       } else {
-        await expect(page.getByText(/No code changes to review\.|There is no final diff available for review\./)).toBeVisible()
+        await expect(page.getByText(/No code changes to ship\.|There is no diff available to ship\./)).toBeVisible()
       }
       await outputTab.click()
       await expect(page.getByRole('log', { name: 'Task output' })).toBeVisible()
@@ -37,7 +37,7 @@ test('switching to another task resets the active tab to Output', async ({ page 
   await expect(page.getByRole('log', { name: 'Task output' })).toBeVisible()
   await expect(page.getByRole('tab', { name: /^Changes/ })).toBeEnabled()
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await expect(page.getByText('The final task diff will appear here when it is ready for review.')).toBeVisible()
+  await expect(page.getByText('The task diff will appear here when the agent finishes.')).toBeVisible()
 })
 
 test('quick tasks keep the Changes panel available', async ({ page }) => {
@@ -57,7 +57,7 @@ test('quick tasks keep the Changes panel available', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
 })
 
-test('completed quick tasks can commit their scoped changes or commit and push', async ({ page }) => {
+test('completed quick tasks ship their scoped changes, optionally pushing', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const { useStore } = await import('/apps/web/src/state/store.ts')
@@ -66,40 +66,31 @@ test('completed quick tasks can commit their scoped changes or commit and push',
         ? { ...task, style: 'quick', checkoutMode: 'local', reviewPaths: ['src/sidebar.ts', 'README.md'] }
         : task)
     }))
-  })
-
-  await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Merge task', exact: true })).toHaveCount(0)
-  await page.evaluate(() => {
-    window.addEventListener('fixture:quick-commit', (event) => {
-      Object.assign(window, { lastQuickCommit: (event as CustomEvent).detail })
+    window.addEventListener('fixture:ship', (event) => {
+      Object.assign(window, { lastShip: (event as CustomEvent).detail })
     })
   })
-  await expect(page.getByRole('button', { name: 'Commit', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'More commit actions' }).click()
-  await page.getByRole('menuitem', { name: 'Commit & Push' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Commit & Push', exact: true })
-  const message = dialog.getByRole('textbox', { name: 'Commit message', exact: true })
-  await expect(message).toHaveValue('Review sidebar changes')
-  await dialog.getByRole('button', { name: 'Generate commit message with Codex' }).click()
-  await expect(message).toHaveValue('fix: clamp output rows by measured truncation')
-  await message.fill('test: scoped quick commit')
-  await dialog.getByRole('button', { name: 'Commit & Push', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Commit', exact: true })).toHaveCount(0)
-  expect(await page.evaluate(() => (window as unknown as { lastQuickCommit: unknown }).lastQuickCommit)).toEqual({ taskId: 'review', push: true, message: 'test: scoped quick commit' })
+
+  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'More ship actions' }).click()
+  const menu = page.getByRole('menu', { name: 'Ship actions' })
+  await expect(menu.getByRole('menuitem')).toHaveText(['Ship & push', 'Ship with message…'])
+  await menu.getByRole('menuitem', { name: 'Ship & push' }).click()
+  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => (window as unknown as { lastShip: unknown }).lastShip)).toEqual({ taskId: 'review', push: true })
   await expect(page.getByRole('button', { name: 'Push', exact: true })).toHaveCount(0)
-  await expect(page.getByText('Pushed', { exact: true })).toBeVisible()
+  await expect(page.getByText('Shipped & pushed', { exact: true })).toBeVisible()
   await page.getByRole('tab', { name: /^Changes/ }).click()
   await expect(page.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
 })
 
-test('committed quick tasks push their head commit and hide the push action', async ({ page }) => {
+test('shipped quick tasks push their shipped commit and hide the push action', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'review'
-        ? { ...task, style: 'quick', checkoutMode: 'local', deliveryStatus: 'approved', headCommit: 'quick-head', reviewPaths: ['src/sidebar.ts'] }
+        ? { ...task, style: 'quick', checkoutMode: 'local', deliveryStatus: 'approved', headCommit: 'quick-head', shippedCommit: 'quick-head', reviewPaths: ['src/sidebar.ts'] }
         : task)
     }))
     window.addEventListener('fixture:push', (event) => {
@@ -110,13 +101,13 @@ test('committed quick tasks push their head commit and hide the push action', as
   await page.getByRole('tab', { name: 'Output', exact: true }).click()
   await page.getByRole('button', { name: 'Push', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Push', exact: true })).toHaveCount(0)
-  await expect(page.getByText('Pushed', { exact: true })).toBeVisible()
+  await expect(page.getByText('Shipped & pushed', { exact: true })).toBeVisible()
   const detail = await page.evaluate(() => (window as unknown as { lastQuickPush: { taskId: string; preview: { targetBranch: string } } }).lastQuickPush)
   expect(detail.taskId).toBe('review')
   expect(detail.preview.targetBranch).toBe('user-current')
 })
 
-test('quick commit modal drafts fail without losing the typed message', async ({ page }) => {
+test('ship message drafts fail without losing the typed message', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&commitDraftFailure=1')
   await page.evaluate(async () => {
     const { useStore } = await import('/apps/web/src/state/store.ts')
@@ -126,8 +117,9 @@ test('quick commit modal drafts fail without losing the typed message', async ({
         : task)
     }))
   })
-  await page.getByRole('button', { name: 'Commit', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Commit task changes', exact: true })
+  await page.getByRole('button', { name: 'More ship actions' }).click()
+  await page.getByRole('menuitem', { name: 'Ship with message…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Ship', exact: true })
   const message = dialog.getByRole('textbox', { name: 'Commit message', exact: true })
   await message.fill('Keep my message')
   await dialog.getByRole('button', { name: 'Generate commit message with Codex' }).click()
@@ -135,7 +127,7 @@ test('quick commit modal drafts fail without losing the typed message', async ({
   await expect(message).toHaveValue('Keep my message')
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Commit', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeEnabled()
 })
 
 test('long task titles truncate to one line and the composer persists across panels', async ({ page }, testInfo) => {
@@ -165,7 +157,7 @@ test('long task titles truncate to one line and the composer persists across pan
   await page.screenshot({ path: testInfo.outputPath('long-title-changes.png') })
 })
 
-test('mobile header keeps review actions and every task panel usable without overflow', async ({ page }, testInfo) => {
+test('mobile header keeps ship actions and every task panel usable without overflow', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 720 })
   await page.goto('/tests/e2e/fixture/?scenario=review')
   const longTitle = 'Review a narrow layout with an exceptionally long title '.repeat(5)
@@ -186,8 +178,8 @@ test('mobile header keeps review actions and every task panel usable without ove
   await expect(heading).toHaveText(longTitle)
   expect((await heading.boundingBox())!.height).toBeLessThan(40)
   await expect(main.getByLabel('Task status')).toBeVisible()
-  await expect(main.getByRole('button', { name: 'Open PR', exact: true })).toBeVisible()
-  await expect(main.getByRole('button', { name: 'Merge task', exact: true })).toBeVisible()
+  await expect(main.getByRole('button', { name: 'More ship actions' })).toBeVisible()
+  await expect(main.getByRole('button', { name: 'Ship', exact: true })).toBeVisible()
 
   for (const name of ['Output', 'Changes', 'Issues']) {
     await expect(main.getByRole('tab', { name: new RegExp(`^${name}`) })).toBeVisible()
@@ -206,7 +198,8 @@ test('mobile header keeps review actions and every task panel usable without ove
   expect(overflow.document).toBeLessThanOrEqual(1)
   expect(overflow.main).toBeLessThanOrEqual(1)
 
-  await main.getByRole('button', { name: 'Open PR', exact: true }).click()
+  await main.getByRole('button', { name: 'More ship actions' }).click()
+  await page.getByRole('menuitem', { name: 'Open pull request…' }).click()
   await expect(page.getByRole('dialog', { name: 'Open PR' })).toBeVisible()
   await page.getByRole('button', { name: 'Cancel' }).click()
   await page.screenshot({ path: testInfo.outputPath('mobile-review-header.png') })

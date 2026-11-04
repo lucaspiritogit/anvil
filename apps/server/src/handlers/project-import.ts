@@ -167,7 +167,7 @@ export function createProjectImporter(store: Store, projectsChanged?: (workspace
       clearTimeout(session.timer)
       const project: Project = {
         id: randomUUID(), name: session.name, path: session.destination, createdAt: Date.now(),
-        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+        monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
       }
       let added: Project
       try {

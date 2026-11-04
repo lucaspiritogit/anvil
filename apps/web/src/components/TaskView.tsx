@@ -1,4 +1,4 @@
-import { issueIsReviewReady, issuePresentation, taskIssuePresentation } from '@anvil/protocol/task-issue-presentation'
+import { issueIsReviewReady, taskIssuePresentation } from '@anvil/protocol/task-issue-presentation'
 import type { JSX, ReactNode } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons'
@@ -8,7 +8,6 @@ import { useStore, type TaskPanel } from '../state/store'
 import { btn, cn, deliveryTone, dot, field, ISSUE_STATUS, statusTone } from '../ui'
 import { AgentIcon } from './AgentIcon'
 import { AgentRebaseModal } from './AgentRebaseModal'
-import { ApproveTaskModal, type TaskDeliveryAction } from './ApproveTaskModal'
 import { OpenPullRequestModal } from './OpenPullRequestModal'
 import { CopyableText } from './CopyableText'
 import { RebaseModal } from './RebaseModal'
@@ -16,7 +15,7 @@ import { TaskSteeringComposer } from './TaskSteeringComposer'
 import { TaskIssues } from './TaskIssues'
 import { useTaskIssues } from '../hooks/use-task-issues'
 import { TaskOutput } from './TaskOutput'
-import { QuickCommitActions } from './QuickCommitActions'
+import { ShipButton } from './ShipButton'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
 import type { DiffThemes } from '@anvil/protocol/diff-themes'
 import { DEFAULT_DIFF_THEMES } from '@anvil/protocol/diff-themes'
@@ -29,7 +28,7 @@ import type {
   TaskStatus
 } from '@anvil/protocol/types'
 import { taskStyle } from '@anvil/protocol/task-style'
-import { taskCheckoutMode } from '@anvil/protocol/task-checkout'
+import { isLocalQuickTask, taskCheckoutMode } from '@anvil/protocol/task-checkout'
 import { TaskStyleBadge } from './TaskStyleBadge'
 
 interface Props {
@@ -328,11 +327,11 @@ const DELIVERY_LABEL: Record<DeliveryStatus, string> = {
   working: 'Branch active',
   finalizing: 'Branch active',
   did_not_commit: 'Branch active',
-  reviewable: 'Ready to review',
+  reviewable: 'Ready to ship',
   merge_conflict: 'Merge conflicts with target branch',
-  approved: 'Merged',
+  approved: 'Shipped',
   no_changes: 'No code changes',
-  agent_failed: 'Code not reviewable',
+  agent_failed: 'Nothing to ship',
   failed: 'Delivery failed',
   unavailable: 'Not tracked by Git'
 }
@@ -408,113 +407,16 @@ function Notice({ tone = 'danger', children }: { tone?: 'danger' | 'warn'; child
   )
 }
 
-function MergeActions({ disabled, title, onSelect }: {
-  disabled: boolean
-  title?: string
-  onSelect: (action: 'merge' | 'merge-and-push') => void
-}): JSX.Element {
-  const rootRef = useRef<HTMLDivElement>(null)
-  const toggleRef = useRef<HTMLButtonElement>(null)
-  const menuItemRef = useRef<HTMLButtonElement>(null)
-  const [open, setOpen] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    menuItemRef.current?.focus()
-    const close = (event: PointerEvent): void => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', close)
-    return () => document.removeEventListener('pointerdown', close)
-  }, [open])
-
-  useEffect(() => {
-    if (disabled) setOpen(false)
-  }, [disabled])
-
-  const select = (action: 'merge' | 'merge-and-push'): void => {
-    if (action === 'merge-and-push') toggleRef.current?.focus()
-    setOpen(false)
-    onSelect(action)
-  }
-
-  return (
-    <div
-      ref={rootRef}
-      className="relative inline-flex shrink-0"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape' && open) {
-          event.preventDefault()
-          setOpen(false)
-          toggleRef.current?.focus()
-        }
-      }}
-    >
-      <button
-        className={cn(btn.primary, 'bg-ok')}
-        disabled={disabled}
-        title={title ?? 'Integrate the finished task into the target branch'}
-        onClick={() => select('merge')}
-      >
-        Merge task
-      </button>
-      <button
-        ref={toggleRef}
-        className={cn(btn.primary, 'border-l border-canvas/25 bg-ok px-2')}
-        disabled={disabled}
-        title={title ?? 'More merge actions'}
-        aria-label="More merge actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown') {
-            event.preventDefault()
-            setOpen(true)
-          }
-        }}
-      >
-        <Icon icon="chevron-down" size={14} aria-hidden="true" />
-      </button>
-      {open && <div
-        role="menu"
-        aria-label="Merge actions"
-        className="absolute right-0 top-full z-30 mt-1.5 w-max min-w-full border border-line-strong bg-overlay p-1 shadow-[0_0_0_1px_var(--color-void)]"
-      >
-        <button
-          ref={menuItemRef}
-          role="menuitem"
-          className="block w-full px-3 py-2 text-left font-medium whitespace-nowrap text-fg hover:bg-hover focus:bg-hover focus:outline-none"
-          onClick={() => select('merge-and-push')}
-        >
-          Merge &amp; Push
-        </button>
-      </div>}
-    </div>
-  )
-}
-
 export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element {
   const style = taskStyle(task)
   const work = style === 'work'
   const integrates = work || taskCheckoutMode(task) === 'worktree'
-  const { snapshot, error: issueError, refresh } = useTaskIssues(task.id, work)
-  const issue = task.status !== 'succeeded' && task.status !== 'cancelled' ? snapshot?.children.find((child) => child.status === 'review' &&
-    (!snapshot.execution?.currentIssueId || child.id === snapshot.execution.currentIssueId)) : undefined
+  const { snapshot } = useTaskIssues(task.id, work)
   const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? task.workspaceId)
   const project = useStore((s) => s.projects.find((item) => item.id === task.projectId))
   const diff = useStore((s) => s.diffsByTask[task.id])
   const diffError = useStore((s) => s.diffErrorsByTask[task.id])
   const loadTaskDiff = useStore((s) => s.loadTaskDiff)
-  const [issueDiffState, setIssueDiffState] = useState<{ key: string; diff?: TaskDiff; error?: string }>({ key: '' })
-  const [diffAttempt, setDiffAttempt] = useState(0)
-  const approveIssue = useStore((s) => s.approveIssue)
-  const rejectIssue = useStore((s) => s.rejectIssue)
-  const [reviewBusy, setReviewBusy] = useState<'approve' | 'reject' | null>(null)
-  const [reviewError, setReviewError] = useState<string | null>(null)
 
   const comments = useStore((s) => s.commentsByTask[task.id])
   const loadComments = useStore((s) => s.loadComments)
@@ -540,15 +442,14 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   const rebaseWithAgent = useStore((s) => s.rebaseWithAgent)
   const rebasing = useStore((s) => s.rebasing === task.id)
   const rebaseTaskId = useStore((s) => s.rebaseTaskId)
-  const [deliveryRequest, setDeliveryRequest] = useState<{ taskId: string; action: TaskDeliveryAction } | null>(null)
   const [pullRequestTaskId, setPullRequestTaskId] = useState<string | null>(null)
   const approved = task.deliveryStatus === 'approved'
   const openPullRequest = task.deliveryStatus === 'reviewable' ? task.pullRequest : undefined
 
   const [now, setNow] = useState(Date.now())
   const done = task.status === 'succeeded' && (task.deliveryStatus === 'no_changes' || !work)
-  const reviewable = !issue && (task.deliveryStatus === 'reviewable' || approved)
-  const issueReviewPending = Boolean(issue && !issueIsReviewReady(snapshot))
+  const reviewable = task.deliveryStatus === 'reviewable' || approved
+  const shippable = reviewable && (integrates || isLocalQuickTask(task))
   const finalDiffPending = task.status === 'running' || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit'
   const [activePanel, setActivePanel] = useState<TaskPanel>(initialPanel)
   const openChanges = useCallback(() => setActivePanel('changes'), [])
@@ -569,56 +470,6 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   useEffect(() => {
     if (reviewable && !diff && !diffError) void loadTaskDiff(task.id)
   }, [diff, diffError, loadTaskDiff, reviewable, task.id, task.headCommit, task.baseCommit])
-
-  const issueDiffKey = issue && (issue.status === 'review' || issue.status === 'complete')
-    ? JSON.stringify([task.id, issue.id, issue.baseCommit, issue.headCommit, snapshot?.reviewReady, task.headCommit, task.deliveryStatus]) : ''
-  const reviewRevision = useRef({ key: issueDiffKey, version: 0 })
-  if (reviewRevision.current.key !== issueDiffKey) {
-    reviewRevision.current = { key: issueDiffKey, version: reviewRevision.current.version + 1 }
-  }
-  const issueDiff = issueDiffState.key === issueDiffKey ? issueDiffState.diff : undefined
-  const issueDiffError = issueDiffState.key === issueDiffKey ? issueDiffState.error : undefined
-  useEffect(() => {
-    setDraft(null)
-    setReviewError(null)
-  }, [issueDiffKey])
-  useEffect(() => {
-    let active = true
-    setIssueDiffState({ key: issueDiffKey })
-    if (issue && issueDiffKey && issueIsReviewReady(snapshot)) {
-      void window.anvil.tasks.issueDiff({ taskId: task.id, issueId: issue.id }).then((diff) => {
-        if (active) setIssueDiffState({ key: issueDiffKey, diff })
-      }).catch((error: unknown) => {
-        if (active) setIssueDiffState({ key: issueDiffKey, error: error instanceof Error ? error.message : String(error) })
-      })
-    }
-    return () => { active = false }
-  }, [issueDiffKey, diffAttempt, task.id])
-
-  const retryIssueDiff = (): void => setDiffAttempt((value) => value + 1)
-  const reviewDisabled = compactBusy || !!reviewBusy || !!issueError || !issueIsReviewReady(snapshot) || !issueDiff
-
-  const reviewIssue = async (action: 'approve' | 'reject'): Promise<void> => {
-    if (!issue || issue.status !== 'review' || reviewDisabled) return
-    const submittedVersion = reviewRevision.current.version
-    setReviewBusy(action)
-    setReviewError(null)
-    try {
-      if (action === 'approve') await approveIssue(task.id, issue.id, issue.headCommit ?? null)
-      else {
-        await rejectIssue(task.id, issue.id, issue.headCommit ?? null)
-      }
-      if (reviewRevision.current.version === submittedVersion) {
-        setIssueDiffState({ key: '' })
-        setDraft(null)
-      }
-      refresh()
-    } catch (error) {
-      if (reviewRevision.current.version === submittedVersion) setReviewError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setReviewBusy(null)
-    }
-  }
 
   const rebase = (): void => {
     if (settings?.rebaseMode !== 'agent') openRebase(task.id)
@@ -641,14 +492,6 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
       {pullRequestTaskId === task.id && (
         <OpenPullRequestModal key={task.id} task={task} onClose={() => setPullRequestTaskId(null)} />
       )}
-      {deliveryRequest?.taskId === task.id && (
-        <ApproveTaskModal
-          key={`${task.id}:${deliveryRequest.action}`}
-          taskId={task.id}
-          action={deliveryRequest.action}
-          onClose={() => setDeliveryRequest(null)}
-        />
-      )}
       {rebaseTaskId === task.id &&
         (settings?.rebaseMode === 'agent' ? (
           <AgentRebaseModal taskId={task.id} />
@@ -662,59 +505,34 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
           <div className="flex min-w-0 flex-1 items-center gap-2 @max-[760px]:w-full @max-[760px]:flex-none">
             <h1 className="min-w-0 truncate font-mono text-[15px] font-semibold leading-snug tracking-[-0.01em]" title={task.title}>{task.title}</h1>
             <TaskStyleBadge style={style} />
-            {work && task.reviewPolicy === 'review_at_task_end' && <span className="inline-flex h-[18px] shrink-0 items-center gap-1.5 border border-warn/30 bg-warn-tint px-1.5 font-mono text-[10px] font-medium tracking-[0.06em] text-warn-text uppercase"><Icon icon="moon-star" size={12} aria-hidden="true" />Review at the end</span>}
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
-            {issue ? <>
-              <span aria-label="Task status" className={cn('min-w-0 font-mono font-medium [overflow-wrap:anywhere]', ISSUE_STATUS[issuePresentation(issue).status].tone)}>{issuePresentation(issue).label}{`: ${issue.title}`}</span>
-              {issue.status === 'review' && <>
-                <button className={cn(btn.ghost, 'ml-2')} disabled={reviewDisabled} onClick={() => void reviewIssue('reject')}>
-                  {reviewBusy === 'reject' ? 'Sending…' : 'Request changes'}
-                </button>
-                <button className={cn(btn.primary, 'bg-ok')} title="Accept this step and continue inside the task workspace" disabled={reviewDisabled} onClick={() => void reviewIssue('approve')}>
-                  {reviewBusy === 'approve' ? 'Approving…' : 'Approve step'}
-                </button>
+            <span aria-label="Task status" className="flex min-w-0 flex-wrap items-center gap-2">
+              {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
+              <span className={dot(task.status)} />
+              <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : STATUS_LABEL[task.status]}</span>
+              {integrates && <><span className="text-dim">·</span>
+              <span className={cn('flex items-center gap-1.5', openPullRequest ? 'text-ok' : deliveryTone(task.deliveryStatus))}>
+                {openPullRequest && <Icon icon="git-branch" size={14} aria-hidden="true" />}
+                {openPullRequest
+                  ? 'Open PR'
+                  : task.deliveryStatus === 'merge_conflict' && task.mergeConflict
+                    ? `Merge conflicts with ${task.mergeConflict.targetBranch}`
+                    : DELIVERY_LABEL[task.deliveryStatus]}
+              </span></>}
               </>}
-            </> : <>
-              <span aria-label="Task status" className="flex min-w-0 flex-wrap items-center gap-2">
-                {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
-                <span className={dot(task.status)} />
-                <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : STATUS_LABEL[task.status]}</span>
-                {integrates && <><span className="text-dim">·</span>
-                <span className={cn('flex items-center gap-1.5', openPullRequest ? 'text-ok' : deliveryTone(task.deliveryStatus))}>
-                  {openPullRequest && <Icon icon="git-branch" size={14} aria-hidden="true" />}
-                  {openPullRequest
-                    ? 'Open PR'
-                    : task.deliveryStatus === 'merge_conflict' && task.mergeConflict
-                      ? `Merge conflicts with ${task.mergeConflict.targetBranch}`
-                      : DELIVERY_LABEL[task.deliveryStatus]}
-                </span></>}
-                </>}
-              </span>
-              {reviewable && (integrates || !approved && pending.length > 0) && <span className="ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
-                {!approved && pending.length > 0 && <button className={btn.ghost} disabled={sending} onClick={() => void sendComments(task.id)}>
-                  {sending ? 'Sending…' : `Send ${pending.length} comment${pending.length === 1 ? '' : 's'}`}
-                </button>}
-                {integrates && <><button className={btn.ghost} disabled={!diff || rebasing || sending} onClick={() => setPullRequestTaskId(task.id)}>
-                  Open PR
-                </button>
-                {!approved
-                  ? <MergeActions
-                    disabled={!!reviewBusy || !diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)}
-                    title={task.restackState ? 'Finish restacking before merging' : task.parentTaskId ? 'Merge the parent task first' : undefined}
-                    onSelect={(action) => setDeliveryRequest({ taskId: task.id, action })}
-                  />
-                  : <button
-                    className={cn(btn.primary, 'bg-ok')}
-                    disabled={!diff || rebasing || sending || Boolean(task.parentTaskId || task.restackState)}
-                    title={task.restackState ? 'Finish restacking before pushing' : task.parentTaskId ? 'Merge the parent task first' : undefined}
-                    onClick={() => setDeliveryRequest({ taskId: task.id, action: 'push' })}
-                  >
-                    Push
-                  </button>}</>}
-              </span>}
-            </>}
-            <QuickCommitActions task={task} />
+            </span>
+            {reviewable && (shippable || !approved && pending.length > 0) && <span className="ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
+              {!approved && pending.length > 0 && <button className={btn.ghost} disabled={sending} onClick={() => void sendComments(task.id)}>
+                {sending ? 'Sending…' : `Send ${pending.length} comment${pending.length === 1 ? '' : 's'} to agent`}
+              </button>}
+              {shippable && <ShipButton
+                task={task}
+                disabled={!diff || rebasing || sending || compactBusy || Boolean(task.parentTaskId || task.restackState)}
+                disabledReason={task.restackState ? 'Finish restacking before shipping' : task.parentTaskId ? 'Ship the parent task first' : undefined}
+                onOpenPullRequest={integrates && !approved ? () => setPullRequestTaskId(task.id) : undefined}
+              />}
+            </span>}
           </div>
         </div>
         <div className="mt-1.5 font-mono text-[11.5px] text-dim @max-[760px]:hidden">
@@ -729,11 +547,9 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
         </details>
       </header>
 
-      {issue && issueError && <Notice>Could not refresh subtask. Showing last known data. <button className={btn.text} onClick={refresh}>Retry</button></Notice>}
       {(task.error || (task.restackState !== 'conflict' && task.deliveryError)) && <Notice>{task.error || task.deliveryError}</Notice>}
       {task.contextCompactionError && <Notice>{task.contextCompactionError}</Notice>}
-      {reviewError && <Notice>{reviewError}</Notice>}
-      {(reviewable || issue) && commentError && <Notice>{commentError}</Notice>}
+      {reviewable && commentError && <Notice>{commentError}</Notice>}
 
       <div className="flex min-w-0 shrink-0 items-stretch gap-1 border-b border-line px-3 @max-[760px]:gap-0 @max-[760px]:px-2" role="tablist" aria-label="Task panels">
         {panels.map((panel) => {
@@ -756,8 +572,8 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
               {panel === 'issues' && 'Issues'}
               {panel === 'changes' && <>
                 Changes{' '}
-                <span className="font-mono text-[11px] font-normal tabular-nums text-faint">{issueReviewPending || reviewable && !diff ? 'Loading…' : task.filesChanged}</span>
-                {!issueReviewPending && (!reviewable || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono text-[11px] font-normal tabular-nums">
+                <span className="font-mono text-[11px] font-normal tabular-nums text-faint">{reviewable && !diff ? 'Loading…' : task.filesChanged}</span>
+                {(!reviewable || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono text-[11px] font-normal tabular-nums">
                   <span className="text-ok">+{task.additions}</span> <span className="text-danger">−{task.deletions}</span>
                 </span></>}
               </>}
@@ -769,39 +585,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
       <div className="flex flex-1 min-h-0 min-w-0">
         {work && <TaskIssues taskId={task.id} active={activePanel === 'issues'} />}
 
-        {issue && <section id="task-panel-changes" aria-label="Subtask code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
-          {issue.status === 'review' && <div className="shrink-0 px-4 py-2 border-b border-line bg-warn/5">
-            <p role="status" className="text-xs text-warn">{!issueDiff ? 'Loading code changes…' : 'Waiting for your review. The agent pauses until you approve or request changes.'}</p>
-            {pending.length > 0 && <p className="mt-1.5 text-[11px] text-dim">{pending.length} line comment{pending.length === 1 ? '' : 's'} will be sent with the rework request.</p>}
-          </div>}
-          <>
-            {issueDiff && (!issue.baseCommit || !issue.headCommit) && <p className="px-4 py-2 text-xs text-dim">Legacy submission: showing the available recorded range, with task commit fallback.</p>}
-            {!issueDiff && !issueDiffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
-            {issueDiffError && <div role="alert" className="p-5 text-sm text-danger">
-              <p>{issueDiffError}</p>
-              <button className={cn(btn.ghost, 'mt-3')} onClick={retryIssueDiff}>Retry</button>
-            </div>}
-            {issueDiff && <Suspense fallback={<p className="p-5 text-sm text-dim">Loading diff renderer…</p>}>
-              <PatchFiles
-                key={issueDiffKey}
-                patch={issueDiff.patch}
-                comments={pending}
-                draft={draft}
-                themes={settings?.diffThemes ?? DEFAULT_DIFF_THEMES}
-                trailing={issue.status === 'review' && pending.length === 0 && <span>Select a line to comment</span>}
-                onSelectLine={issue.status === 'review' && !reviewDisabled ? setDraft : () => {}}
-                onSubmit={(target, body) => {
-                  if (issue && reviewDisabled) return
-                  void addComment({ taskId: task.id, ...target, body })
-                  setDraft(null)
-                }}
-                onRemove={(id) => { if (!reviewDisabled) void removeComment(task.id, id) }}
-              />
-            </Suspense>}
-          </>
-        </section>}
-
-        {!issue && <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
+        <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
           {reviewable ? <>
             {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
             {diffError && <div role="alert" className="p-5 text-sm text-danger">
@@ -816,7 +600,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                 draft={draft}
                 themes={settings?.diffThemes ?? DEFAULT_DIFF_THEMES}
                 trailing={<>
-                  {!approved && <span>{pending.length ? `${pending.length} comment${pending.length === 1 ? '' : 's'} pending` : 'Select a line to comment'}</span>}
+                  {!approved && <span>{pending.length ? `${pending.length} comment${pending.length === 1 ? '' : 's'} for the agent` : 'Select a line to leave a note for the agent'}</span>}
                   {work && <CommitsMenu diff={diff} disabled={approved} rebasing={rebasing} onRebase={rebase} />}
                 </>}
                 onSelectLine={approved ? () => {} : setDraft}
@@ -829,9 +613,9 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
             </Suspense>}
           </> : <div className={EMPTY_PANEL}>
             <p>{done ? 'Done' : finalDiffPending ? 'The agent is working on this task.' : DELIVERY_LABEL[task.deliveryStatus]}</p>
-            <p className="text-xs">{done ? 'No code changes to review.' : finalDiffPending ? 'The final task diff will appear here when it is ready for review.' : 'There is no final diff available for review.'}</p>
+            <p className="text-xs">{done ? 'No code changes to ship.' : finalDiffPending ? 'The task diff will appear here when the agent finishes.' : 'There is no diff available to ship.'}</p>
           </div>}
-        </section>}
+        </section>
 
         <TaskOutput key={task.id} task={task} visible={activePanel === 'output'} presentation={presentation} onOpenChanges={openChanges} />
       </div>

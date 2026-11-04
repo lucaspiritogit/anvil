@@ -26,7 +26,7 @@ function fixture() {
   mkdirSync(projectPath)
   onTestCleanup(() => rmSync(projectPath, { recursive: true, force: true }))
   store.addProject({ id: projectId, name: 'Project', path: projectPath, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const start = async () => {
     const task = await handlers.get('tasks:start')!(rendererEvent, { projectId, agentId: 'codex', prompt: 'Check startup' })
     await tick()

@@ -44,7 +44,7 @@ test('orders siblings under their parent oldest first', () => {
 })
 
 function project(id: string): Project {
-  return { id, name: id, path: `/tmp/${id}`, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' }
+  return { id, name: id, path: `/tmp/${id}`, createdAt: 0, monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' }
 }
 
 function projectEntries(overrides: Partial<Parameters<typeof sidebarTaskProjects>[0]> = {}) {

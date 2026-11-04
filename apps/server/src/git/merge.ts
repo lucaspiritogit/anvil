@@ -361,6 +361,34 @@ export async function abortMergeConflict(
   })
 }
 
+export async function squashMergedCommit(
+  context: GitContext,
+  projectPath: string,
+  expected: { targetBranch: string; targetCommit: string; mergedCommit: string },
+  message: string,
+  check: () => void = () => {}
+): Promise<string> {
+  const repoRoot = await repositoryRoot(projectPath)
+  return withRepoLock(context, repoRoot, async () => {
+    const [branch, head, mergeHead] = await Promise.all([
+      git(repoRoot, ['branch', '--show-current']),
+      git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}']),
+      git(repoRoot, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], [0, 1])
+    ])
+    if (branch.stdout.trim() !== expected.targetBranch || head.stdout.trim() !== expected.mergedCommit || mergeHead.exitCode === 0) {
+      throw new Error(`${expected.targetBranch} moved after the merge. Inspect the repository before shipping again.`)
+    }
+    if (expected.mergedCommit === expected.targetCommit) return expected.mergedCommit
+    const tree = (await git(repoRoot, ['rev-parse', '--verify', `${expected.mergedCommit}^{tree}`])).stdout.trim()
+    const subject = message.trim()
+    if (!subject) throw new Error('A commit message is required to ship.')
+    check()
+    const squashed = (await git(repoRoot, ['commit-tree', tree, '-p', expected.targetCommit, '-m', subject])).stdout.trim()
+    await git(repoRoot, ['update-ref', '-m', 'anvil: ship task', `refs/heads/${expected.targetBranch}`, squashed, expected.mergedCommit])
+    return squashed
+  })
+}
+
 export async function originPushUrl(projectPath: string): Promise<string> {
   let output: string
   try {

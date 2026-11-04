@@ -106,7 +106,7 @@ const settingsPatch = object<IpcRequests['settings:set']['patch']>({
   rebaseMode: optional(oneOf('manual', 'agent')), confirmRebase: optional(boolean), caffeineMode: optional(boolean),
   allowOtherDevices: optional(boolean),
   tailscaleHttps: optional(boolean),
-  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false), cycleTaskStyle: text(128, false), cycleReviewPolicy: text(128, false), cycleThinking: text(128, false) })),
+  keybindings: optional(object({ toggleSidebar: text(128, false), focusTaskComposer: text(128, false), cycleTaskStyle: text(128, false), cycleThinking: text(128, false) })),
   diffThemes: optional(object({
     dark: (value, field) => {
       if (!isDiffThemeName(value)) invalid(field, 'must name a diff theme')
@@ -128,8 +128,7 @@ const stringRecord: Check<Record<string, string>> = (value, field) => {
 const composer = object({
   agentId: text(128, false),
   modelsByAgent: stringRecord,
-  reasoningByAgentModel: stringRecord,
-  reviewPolicy: optional(oneOf('review_each_issue', 'review_at_task_end'))
+  reasoningByAgentModel: stringRecord
 })
 
 const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
@@ -197,7 +196,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'projects:import-finish': id,
   'projects:import-cancel': id,
   'projects:clone': object({ url: text(2048), workspaceId: optional(workspaceId) }),
-  'projects:update': object({ id, workspaceId: optional(workspaceId), monthlyTokenLimit: optional(nullable(number(0))), monthlyCostLimitUsd: optional(nullable(number(0, Number.MAX_SAFE_INTEGER, false))), finishOnPush: optional(boolean) }),
+  'projects:update': object({ id, workspaceId: optional(workspaceId), monthlyTokenLimit: optional(nullable(number(0))), monthlyCostLimitUsd: optional(nullable(number(0, Number.MAX_SAFE_INTEGER, false))), finishOnPush: optional(boolean), shipPushes: optional(boolean) }),
   'projects:remove': id,
   'projects:reveal': id,
   'terminals:create': object({ projectId: optional(id), taskId: optional(id), cols: number(2, 500), rows: number(1, 300) }),
@@ -232,7 +231,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:diff': id,
   'tasks:issue-diff': object({ taskId: id, issueId: id }),
   'tasks:start': (value, field) => {
-    const input = object<IpcRequests['tasks:start']>({ style: optional(oneOf('work', 'quick')), reviewPolicy: optional(oneOf('review_each_issue', 'review_at_task_end')), checkoutMode: optional(oneOf('worktree', 'local')), startBase: optional(branch), parentTaskId: optional(id), workspaceId: optional(id), projectId: optional(id), agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
+    const input = object<IpcRequests['tasks:start']>({ style: optional(oneOf('work', 'quick')), checkoutMode: optional(oneOf('worktree', 'local')), startBase: optional(branch), parentTaskId: optional(id), workspaceId: optional(id), projectId: optional(id), agentId: id, prompt: text(100_000, false), model: optional(text(512, false)), reasoningEffort: optional(identifier), images: optional(parseTaskImages), fileReferences: optional(array(text(4096), 1000)) })(value, field)
     if (!hasTaskContent(input.prompt, input.images)) invalid(field, 'requires a prompt or an image')
     return input
   },
@@ -265,10 +264,9 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:sync-status': id,
   'tasks:pull': object({ taskId: id, branch, localCommit: sha, remoteCommit: sha }),
   'tasks:commit-quick': object({ taskId: id, push: boolean, message: optional(text(65_536)) }),
+  'tasks:ship': object({ taskId: id, push: optional(boolean), message: optional(text(65_536)) }),
   'tasks:draft-commit-message': object({ taskId: id, message: text(65_536, false) }),
   'tasks:push': object({ taskId: id, preview: object(pushPreview) }),
-  'tasks:approve-issue': object({ taskId: id, issueId: id, headCommit: nullable(id) }),
-  'tasks:reject-issue': object({ taskId: id, issueId: id, headCommit: nullable(id), comment: optional(text(20_000)) }),
   'comments:list': id,
   'comments:add': object({ taskId: id, file, side: oneOf('additions', 'deletions'), lineNumber: number(1), body: text(20_000) }),
   'comments:remove': object({ taskId: id, id }),

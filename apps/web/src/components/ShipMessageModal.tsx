@@ -1,8 +1,10 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { BranchSyncStatus, Task } from '@anvil/protocol/types'
+import { useStore } from '../state/store'
 import { btn, cn, field, modal } from '../ui'
 import { AiGenerateButton } from './AiGenerateButton'
+import { isLocalQuickTask } from '@anvil/protocol/task-checkout'
 
 type SyncState =
   | { kind: 'checking' }
@@ -51,14 +53,16 @@ function SyncBanner({ sync, push, pulling, onPull }: {
   </div>
 }
 
-export function CommitQuickTaskModal({ task, push, onClose }: { task: Task; push: boolean; onClose: () => void }): JSX.Element {
+export function ShipMessageModal({ task, push, onClose }: { task: Task; push: boolean; onClose: () => void }): JSX.Element {
+  const shipTask = useStore((s) => s.shipTask)
+  const local = isLocalQuickTask(task)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const previousFocus = useRef(document.activeElement)
   const inFlight = useRef(false)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState<'drafting' | 'committing' | 'pulling' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [sync, setSync] = useState<SyncState>({ kind: 'checking' })
+  const [sync, setSync] = useState<SyncState | null>(local ? { kind: 'checking' } : null)
 
   useEffect(() => {
     const dialog = dialogRef.current!
@@ -71,16 +75,17 @@ export function CommitQuickTaskModal({ task, push, onClose }: { task: Task; push
   }, [])
 
   useEffect(() => {
+    if (!local) return
     let current = true
     window.anvil.tasks.syncStatus(task.id).then(
       (status) => { if (current) setSync({ kind: 'ready', status }) },
       (failure: unknown) => { if (current) setSync({ kind: 'failed', message: failure instanceof Error ? failure.message : String(failure) }) }
     )
     return () => { current = false }
-  }, [task.id])
+  }, [local, task.id])
 
   const pull = async (): Promise<void> => {
-    if (inFlight.current || sync.kind !== 'ready' || !sync.status.remoteCommit) return
+    if (inFlight.current || sync?.kind !== 'ready' || !sync.status.remoteCommit) return
     inFlight.current = true
     setBusy('pulling')
     setError(null)
@@ -101,7 +106,7 @@ export function CommitQuickTaskModal({ task, push, onClose }: { task: Task; push
     setBusy('committing')
     setError(null)
     try {
-      await window.anvil.tasks.commitQuick({ taskId: task.id, push, message: message.trim() })
+      await shipTask(task.id, { push, message: message.trim() })
       onClose()
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
@@ -111,8 +116,8 @@ export function CommitQuickTaskModal({ task, push, onClose }: { task: Task; push
     }
   }
 
-  const fileCount = task.reviewPaths?.length ?? 0
-  const pushBlocked = push && sync.kind === 'ready' && sync.status.behind > 0
+  const fileCount = local ? task.reviewPaths?.length ?? 0 : task.filesChanged
+  const pushBlocked = push && sync?.kind === 'ready' && sync.status.behind > 0
 
   return (
     <dialog
@@ -122,12 +127,13 @@ export function CommitQuickTaskModal({ task, push, onClose }: { task: Task; push
       className={cn(modal.panel, modal.width.normal, 'm-auto text-fg backdrop:bg-black/55')}
       onCancel={(event) => { event.preventDefault(); if (!inFlight.current && busy === null) onClose() }}
     >
-      <h2 id="commit-quick-title" className={modal.title}>{push ? 'Commit & Push' : 'Commit task changes'}</h2>
+      <h2 id="commit-quick-title" className={modal.title}>{push ? 'Ship & push' : 'Ship'}</h2>
       <p id="commit-quick-description" className={cn(modal.copy, 'break-words')}>
-        Commit {fileCount} file{fileCount === 1 ? '' : 's'} this task modified to the current branch{push ? ', then push it to the remote' : ''}.
-        Other staged or working-tree changes are left untouched.
+        {local
+          ? <>Commit {fileCount} file{fileCount === 1 ? '' : 's'} this task modified to the current branch{push ? ', then push it to the remote' : ''}. Other staged or working-tree changes are left untouched.</>
+          : <>Squash {fileCount} changed file{fileCount === 1 ? '' : 's'} from {task.branchName ?? 'the task branch'} into one commit on the checked-out branch{push ? ', then push it to the remote' : ''}.</>}
       </p>
-      <SyncBanner sync={sync} push={push} pulling={busy === 'pulling'} onPull={() => void pull()} />
+      {sync && <SyncBanner sync={sync} push={push} pulling={busy === 'pulling'} onPull={() => void pull()} />}
       <div className={field.wrap}>
         <label htmlFor="commit-message" className={field.label}>Commit message</label>
         <div className="flex gap-2">
@@ -155,13 +161,13 @@ export function CommitQuickTaskModal({ task, push, onClose }: { task: Task; push
         </div>
       </div>
       {busy && busy !== 'pulling' && <p role="status" className="text-xs text-dim">
-        {busy === 'committing' ? push ? 'Committing and pushing…' : 'Committing…' : `${task.agentLabel} is writing the commit message…`}
+        {busy === 'committing' ? push ? 'Shipping and pushing…' : 'Shipping…' : `${task.agentLabel} is writing the commit message…`}
       </p>}
       {error && <p role="alert" className="mt-2 text-xs text-danger whitespace-pre-wrap break-words">{error}</p>}
       <div className={cn(modal.actions, 'justify-end')}>
         <button autoFocus className={btn.ghost} disabled={busy !== null} onClick={onClose}>Cancel</button>
         <button className={btn.primary} disabled={!message.trim() || busy !== null || pushBlocked} onClick={() => void commit()}>
-          {busy === 'committing' ? 'Committing…' : push ? 'Commit & Push' : 'Commit'}
+          {busy === 'committing' ? 'Shipping…' : push ? 'Ship & push' : 'Ship'}
         </button>
       </div>
     </dialog>

@@ -34,7 +34,7 @@ function rawDatabase(path: string): DatabaseSync {
 function addProject(store: Store, id = 'project', workspaceId = store.getActiveWorkspace().id): void {
   store.addProject({
     id, name: id, path: `/test/${id}`, createdAt: 1, monthlyTokenLimit: null,
-    monthlyCostLimitUsd: null, finishOnPush: true, gitPlatform: 'github'
+    monthlyCostLimitUsd: null, finishOnPush: true, shipPushes: false, gitPlatform: 'github'
   }, workspaceId)
 }
 
@@ -62,7 +62,7 @@ test('creates one Default workspace and starts new profiles with independent app
     fontSize: 18, overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'test.png',
     defaultAgentId: 'codex', defaultModel: 'custom-model', rebaseMode: 'agent', confirmRebase: false,
     caffeineMode: true, allowOtherDevices: true, tailscaleHttps: true,
-    keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K', cycleTaskStyle: 'Mod+Shift+M', cycleReviewPolicy: 'Mod+Shift+I', cycleThinking: 'Mod+Shift+T' },
+    keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K', cycleTaskStyle: 'Mod+Shift+M', cycleThinking: 'Mod+Shift+T' },
     diffThemes: { dark: 'github-dark', light: 'github-light' }
   }
   expect(Object.keys(custom).sort()).toEqual(Object.keys(defaults).sort())
@@ -204,7 +204,7 @@ test('renaming moves credentials to the named folder and keeps workspace identit
   mkdirSync(projectPath, { recursive: true })
   store.addProject({
     id: 'cloned', name: 'cloned', path: projectPath, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
   })
   store.renameWorkspace(initial.id, 'Personal')
   expect(store.getProjects(initial.id)[0].path).toBe(join(directory, '..', 'Personal', 'projects', 'cloned'))

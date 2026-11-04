@@ -117,6 +117,7 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
       monthlyTokenLimit: null,
       monthlyCostLimitUsd: null,
       finishOnPush: false,
+      shipPushes: false,
       gitPlatform: 'github'
     }
     const added = store.addProject(project, workspaceId)
@@ -147,6 +148,7 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
         monthlyTokenLimit: null,
         monthlyCostLimitUsd: null,
         finishOnPush: false,
+        shipPushes: false,
         gitPlatform: 'github'
       }
       const added = store.addProject(project, workspaceId)
@@ -201,7 +203,8 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
     const project = store.updateProject(input.id, {
       monthlyTokenLimit: input.monthlyTokenLimit,
       monthlyCostLimitUsd: input.monthlyCostLimitUsd,
-      finishOnPush: input.finishOnPush
+      finishOnPush: input.finishOnPush,
+      shipPushes: input.shipPushes
     }, workspaceId)
     projectsChanged?.(workspaceId)
     return project

@@ -51,7 +51,6 @@ export const TASK_IMAGE_LIMITS = {
 
 export type TaskStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type TaskStyle = 'work' | 'quick'
-export type TaskReviewPolicy = 'review_each_issue' | 'review_at_task_end'
 export type TaskCheckoutMode = 'worktree' | 'local'
 
 export type TaskResultNoticeKind = 'reviewable' | 'no_changes' | 'completed'
@@ -97,6 +96,7 @@ export interface Project {
   monthlyTokenLimit: number | null
   monthlyCostLimitUsd: number | null
   finishOnPush: boolean
+  shipPushes: boolean
   gitPlatform: 'github'
 }
 
@@ -167,6 +167,7 @@ export interface TaskMergeConflict {
   conflictedFiles: string[]
   requestedAction: 'merge' | 'merge_and_push'
   pushPreview?: TaskPushPreview
+  shipMessage?: string
   createdAt: number
 }
 
@@ -401,7 +402,6 @@ export interface ComposerPreferences {
   agentId: string
   modelsByAgent: Record<string, string>
   reasoningByAgentModel: Record<string, string>
-  reviewPolicy?: TaskReviewPolicy
 }
 
 export interface WorkspaceSnapshot {
@@ -460,7 +460,6 @@ export interface TaskStackTarget {
 
 export interface Task {
   style?: TaskStyle
-  reviewPolicy?: TaskReviewPolicy
   checkoutMode?: TaskCheckoutMode
   startBase?: string
   parentTaskId?: string
@@ -503,6 +502,8 @@ export interface Task {
   baseCommit?: string
   headCommit?: string
   pushedCommit?: string
+  shippedCommit?: string
+  shippedHead?: string
   /** Current PR for this task's reviewable head revision. Derived from persisted link metadata. */
   pullRequest?: TaskPullRequest
   filesChanged: number

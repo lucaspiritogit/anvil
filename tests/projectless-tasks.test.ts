@@ -206,8 +206,7 @@ test('rejects project-dependent settings before creating a projectless task', as
     { checkoutMode: 'worktree' },
     { parentTaskId: 'parent' },
     { startBase: 'main' },
-    { fileReferences: ['src/main.ts'] },
-    { reviewPolicy: 'review_at_task_end' }
+    { fileReferences: ['src/main.ts'] }
   ]) {
     await expect(f.registry.invoke('tasks:start', { agentId: 'codex', prompt: 'Invalid task', ...input })).rejects.toThrow(/require|Only Work tasks/)
   }
@@ -239,7 +238,7 @@ test('preserves project tasks, executions, events, comments, stack references an
     rmSync(root, { recursive: true, force: true })
   })
   store.addProject({ id: 'project', name: 'Project', path: join(root, 'project'), createdAt: 1,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const parent = store.addTask({ id: randomUUID(), projectId: 'project', style: 'work', checkoutMode: 'worktree',
     agentId: 'codex', agentLabel: 'Codex', title: 'Parent', prompt: 'Parent task', cwd: join(root, 'project'),
     status: 'running', startedAt: 1, deliveryStatus: 'working', branchName: 'task/parent', baseCommit: 'base',

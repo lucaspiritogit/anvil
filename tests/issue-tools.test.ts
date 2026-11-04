@@ -23,7 +23,7 @@ function fixture() {
   const issues = new TaskIssues(store)
   const addTask = (id: string) => {
     store.addProject({ id: 'project', name: 'Project', path: directory, createdAt: 1,
-      monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+      monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
     store.addTask({ id, projectId: 'project', agentId: 'codex', agentLabel: 'Codex', title: id,
       prompt: 'Implement a change', cwd: directory, status: 'running', deliveryStatus: 'working', startedAt: 1,
       inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,

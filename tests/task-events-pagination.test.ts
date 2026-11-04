@@ -18,7 +18,7 @@ function setup(database = join(testHome, randomUUID(), 'config.json')) {
   const store = new Store(database, options)
   onTestCleanup(() => store.close())
   store.addProject({ id: 'project', name: 'Test', path: testHome, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   for (const id of ['task', 'other', 'empty']) store.addTask({
     id, projectId: 'project', title: id, prompt: 'Summarize this task', cwd: testHome,
     agentId: 'codex', agentLabel: 'Codex', status: 'succeeded', deliveryStatus: 'no_changes', startedAt: 0,

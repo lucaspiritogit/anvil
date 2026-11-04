@@ -34,7 +34,7 @@ function setup(options: NotificationDeliveryOptions = {}) {
   }
   const project = {
     id: 'project', name: 'Test', path: task.cwd, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false,
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false,
     gitPlatform: 'github' as const
   }
   store.addProject(project)

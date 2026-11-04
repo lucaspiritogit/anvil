@@ -15,7 +15,7 @@ test('settles eligible tasks at the review TTL and persists manual settlement', 
   registerTestIpc()
   store.addProject({
     id: 'project', name: 'Test', path: testHome, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
   })
   const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, input)
   let now = 1_800_000_000_000
@@ -102,7 +102,7 @@ test('retries branch-aware cleanup for tasks settled before startup', () => {
   const store = new Store(database, options)
   store.addProject({
     id: 'project', name: 'Test', path: testHome, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github'
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github'
   })
   store.addTask({
     workspaceId: 'default', id: 'settled', projectId: 'project', title: 'Settled', prompt: 'Settled',

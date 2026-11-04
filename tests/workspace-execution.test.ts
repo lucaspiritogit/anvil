@@ -31,7 +31,7 @@ function fixture(): { store: Store; work: string; personal: string; task: Task; 
   const personal = store.createWorkspace('Personal').id
   store.selectWorkspace(work)
   store.addProject({ id: 'project', name: 'Project', path: testHome, createdAt: 0,
-    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, gitPlatform: 'github' })
+    monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   const task = store.addTask({ id: 'work-task', workspaceId: work, projectId: 'project',
     agentId: 'codex', agentLabel: 'Codex', prompt: 'Work task', title: 'Work task', cwd: testHome,
     style: 'quick', checkoutMode: 'local',

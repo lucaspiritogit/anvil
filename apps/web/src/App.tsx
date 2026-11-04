@@ -109,13 +109,6 @@ export function App(): JSX.Element {
     if (next) preferences.setReasoningEffort(agentId, model, next.id)
   }, [])
 
-  const cycleReviewPolicy = useCallback((): void => {
-    const preferences = useComposerPreferences.getState()
-    preferences.setReviewPolicy(preferences.reviewPolicy === 'review_at_task_end'
-      ? 'review_each_issue'
-      : 'review_at_task_end')
-  }, [])
-
   useEffect(() => {
     const media = window.matchMedia('(max-width: 700px)')
     const onChange = (event: MediaQueryListEvent): void => {
@@ -225,7 +218,6 @@ export function App(): JSX.Element {
       toggleSidebar: toggleNavigation,
       focusTaskComposer,
       cycleTaskStyle: cycleTaskComposerStyle,
-      cycleReviewPolicy,
       cycleThinking
     }
     const onKey = (event: KeyboardEvent): void => {
@@ -266,7 +258,7 @@ export function App(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keybindings, toggleNavigation, focusTaskComposer, cycleTaskComposerStyle, cycleReviewPolicy, cycleThinking, settingsOpen, setSettingsOpen,
+  }, [keybindings, toggleNavigation, focusTaskComposer, cycleTaskComposerStyle, cycleThinking, settingsOpen, setSettingsOpen,
     mobileNavigation, mobileNavigationOpen, closeMobileNavigation, commandPaletteOpen, terminalOpen, openTerminal])
 
   useEffect(() => {
