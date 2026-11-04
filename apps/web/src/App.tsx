@@ -59,7 +59,6 @@ export function App(): JSX.Element {
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const focusTaskComposer = useStore((s) => s.focusTaskComposer)
-  const cycleTaskComposerStyle = useStore((s) => s.cycleTaskComposerStyle)
   const keybindings = useStore((s) => s.settings?.keybindings) ?? DEFAULT_KEYBINDINGS
 
   useEffect(() => {
@@ -217,7 +216,6 @@ export function App(): JSX.Element {
     const actions: Record<ShortcutId, () => void> = {
       toggleSidebar: toggleNavigation,
       focusTaskComposer,
-      cycleTaskStyle: cycleTaskComposerStyle,
       cycleThinking
     }
     const onKey = (event: KeyboardEvent): void => {
@@ -258,7 +256,7 @@ export function App(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keybindings, toggleNavigation, focusTaskComposer, cycleTaskComposerStyle, cycleThinking, settingsOpen, setSettingsOpen,
+  }, [keybindings, toggleNavigation, focusTaskComposer, cycleThinking, settingsOpen, setSettingsOpen,
     mobileNavigation, mobileNavigationOpen, closeMobileNavigation, commandPaletteOpen, terminalOpen, openTerminal])
 
   useEffect(() => {

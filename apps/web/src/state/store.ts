@@ -20,10 +20,9 @@ import type {
   TaskMergeConflictSnapshot,
   TaskMergePreview,
   TaskPushPreview,
-  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskStyle, TaskCheckoutMode,
+  Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskCheckoutMode,
   TaskResultNotice, TaskResultNoticeChange
 } from '@anvil/protocol/types'
-import { nextTaskStyle } from '@anvil/protocol/task-style'
 
 const MAX_LINES_IN_MEMORY = MAX_TASK_EVENT_PAGE_SIZE
 
@@ -166,7 +165,6 @@ interface AnvilState {
   gitInitError: string | null
 
   taskComposerFocusRequest: number
-  taskComposerStyle: TaskStyle
   settingsOpen: boolean
   settingsSection: SettingsSectionId
   settingsProjectId: string | null
@@ -215,7 +213,7 @@ interface AnvilState {
   sendComments: (taskId: string) => Promise<void>
 
   loadAgentModels: (agentId: string) => Promise<void>
-  startTask: (input: { projectId?: string | null; style?: TaskStyle; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<Task | undefined>
+  startTask: (input: { projectId?: string | null; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<Task | undefined>
   steerTask: (taskId: string, message: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string, panel?: TaskPanel) => Promise<void>
@@ -224,8 +222,6 @@ interface AnvilState {
   showAnalytics: () => void
   showShipQueue: () => void
   focusTaskComposer: () => void
-  setTaskComposerStyle: (style: TaskStyle) => void
-  cycleTaskComposerStyle: () => void
 
   applyEvent: (event: TaskEvent) => void
   applyTaskUpdate: (task: Task) => void
@@ -275,7 +271,6 @@ export const useStore = create<AnvilState>((set, get) => ({
       ...(changed || removed ? { ...evictTaskEvents(), view: changed ? workspaceView : { kind: 'home' as const } } : {}),
       ...(changed ? {
         view: workspaceView, taskMenu: null,
-        taskComposerStyle: 'quick',
         settingsProjectId: null, settingsSection: 'general', caffeineSave: null,
         modelsByAgent: get().modelsByWorkspace[snapshot.workspace.id] ?? {}, loadingModelsAgentId: null,
         eventsByTask: {}, diffsByTask: {}, diffErrorsByTask: {},
@@ -430,7 +425,6 @@ export const useStore = create<AnvilState>((set, get) => ({
   view: { kind: 'home' },
   eventsByTask: {},
   taskEventHistory: null,
-  taskComposerStyle: 'quick',
   diffsByTask: {},
   diffErrorsByTask: {},
   gitStatusByProject: {},
@@ -535,7 +529,6 @@ export const useStore = create<AnvilState>((set, get) => ({
         tasks,
         taskResultNotices: s.taskResultNotices.filter((notice) => notice.projectId !== id),
         activeProjectId: s.activeProjectId === id ? (projects[0]?.id ?? null) : s.activeProjectId,
-        ...(s.activeProjectId === id ? { taskComposerStyle: 'quick' as const } : {}),
         view: view.kind === 'task' && !tasks.some((task) => task.id === view.taskId) ? { kind: 'home' } : view
       }
     })
@@ -556,7 +549,7 @@ export const useStore = create<AnvilState>((set, get) => ({
     const workspaceId = get().activeWorkspaceId
     if (!workspaceId || get().workspaceSwitching) return
     if (id !== null && !get().projects.some((project) => project.id === id)) return
-    set({ ...evictTaskEvents(), activeProjectId: id, taskComposerStyle: 'quick', view: { kind: 'home' } })
+    set({ ...evictTaskEvents(), activeProjectId: id, view: { kind: 'home' } })
     void enqueueWorkspaceRequest(() => window.anvil.workspaces.setPreferences(workspaceId, { lastProjectId: id }))
       .catch((error: unknown) => {
         if (get().activeWorkspaceId === workspaceId) set({ workspaceError: error instanceof Error ? error.message : 'Could not save project selection' })
@@ -621,14 +614,14 @@ export const useStore = create<AnvilState>((set, get) => ({
     }
   },
 
-  startTask: async ({ projectId: requestedProjectId, style, checkoutMode, startBase, parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
+  startTask: async ({ projectId: requestedProjectId, checkoutMode, startBase, parentTaskId, agentId, prompt, model, reasoningEffort, images, fileReferences }) => {
     if (get().workspaceSwitching || !get().ready) throw new Error('Workspace is still loading')
     const generation = workspaceGeneration
     const projectId = requestedProjectId === undefined ? get().activeProjectId : requestedProjectId
     if (get().activeProjectId !== projectId) throw new Error('The selected project changed. Review the task and try again.')
     const task = await window.anvil.tasks.start({
       workspaceId: get().activeWorkspaceId ?? undefined,
-      ...(projectId ? { projectId } : {}), style, checkoutMode, parentTaskId, agentId, prompt, model,
+      ...(projectId ? { projectId } : {}), checkoutMode, parentTaskId, agentId, prompt, model,
       ...(startBase ? { startBase } : {}),
       ...(images?.length ? { images } : {}),
       ...(fileReferences?.length ? { fileReferences } : {}),
@@ -1039,16 +1032,6 @@ export const useStore = create<AnvilState>((set, get) => ({
     return {
       ...evictTaskEvents(),
       view: { kind: 'home' },
-      taskComposerFocusRequest: state.taskComposerFocusRequest + 1
-    }
-  }),
-  setTaskComposerStyle: (style) => set((state) => ({ taskComposerStyle: state.activeProjectId ? style : 'quick' })),
-  cycleTaskComposerStyle: () => set((state) => {
-    if (!state.activeWorkspaceId || state.workspaceSwitching || state.settingsOpen || state.taskMenu) return state
-    return {
-      ...evictTaskEvents(),
-      view: { kind: 'home' },
-      taskComposerStyle: state.activeProjectId ? nextTaskStyle(state.taskComposerStyle) : 'quick',
       taskComposerFocusRequest: state.taskComposerFocusRequest + 1
     }
   }),

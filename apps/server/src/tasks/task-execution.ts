@@ -128,7 +128,7 @@ export function registerTaskExecution(
       const agent = getAgent(task.agentId)
       if (!agent) throw new Error('Agent not found')
       const workspace = resolveTaskWorkspace(store, task.id)
-      if (!usesManagedWorktree(task) || !task.branchName) throw new Error('Work tasks require an isolated worktree')
+      if (!usesManagedWorktree(task) || !task.branchName) throw new Error('Planned tasks require an isolated worktree')
       let cwd = task.cwd
       let baseCommit: string | undefined
       const checkout = await gitDelivery.checkoutBranch(project.path, taskId, task.branchName, task.baseBranch, () => {
@@ -248,7 +248,7 @@ export function registerTaskExecution(
           const cwd = project?.path ?? resolveProjectlessTaskDirectory(store, task)
           if (cwd !== state.projectPath) throw new Error('Task project or directory is unavailable')
           requireProjectCheckoutAvailable(store, task)
-          if (!quick && (!usesManagedWorktree(task) || !task.branchName)) throw new Error('Work tasks require an isolated worktree')
+          if (!quick && (!usesManagedWorktree(task) || !task.branchName)) throw new Error('Planned tasks require an isolated worktree')
           const guidance = quick ? '' : GIT_SYSTEM_PROMPT
           recordSystemEvent(task.id, `Resuming the saved agent session, attempt ${attempt}/${MAX_RECOVERY_ATTEMPTS}.`)
           agentProcesses.start({

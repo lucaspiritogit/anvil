@@ -7,7 +7,9 @@ const FINISH_ISSUE = 'Commit finished work and call anvil_submit_review. Call an
 
 export function planningPrompt(task: string, _state: Pick<TaskExecutionState, 'projectPath' | 'parentIssueId'>): string {
   return [
-    'Create a queued issue plan. Do not implement it.',
+    'Decide how to handle this task.',
+    'If it is a question, a small change or a single focused fix, do it directly now: answer, or make the change, validate it and commit it. Do not create issues.',
+    'If it needs several separable steps, create a queued issue plan instead and do not implement it yet. Anvil runs the plan one issue at a time.',
     `Task: ${task}`,
     TOOLS
   ].join('\n')

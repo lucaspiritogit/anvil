@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { ProjectBranches, TaskCheckoutMode, TaskStyle } from '@anvil/protocol/types'
+import type { ProjectBranches, TaskCheckoutMode } from '@anvil/protocol/types'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import { ChoicePickerDialog } from './ChoicePickerDialog'
@@ -8,7 +8,6 @@ import { ProjectPicker } from './ProjectPicker'
 
 interface Props {
   projectId: string | null
-  style: TaskStyle
   checkoutMode: TaskCheckoutMode
   parentBranch?: string
   startBase?: string
@@ -25,7 +24,7 @@ const BRANCH_RECOVERY_INTERVAL_MS = 60_000
 const BRANCH_RETRY_INTERVAL_MS = 1_000
 const BRANCH_RETRY_LIMIT = 5
 
-export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBranch, startBase, disabled,
+export function ProjectBranchSelector({ projectId, checkoutMode, parentBranch, startBase, disabled,
   onCheckoutModeChange, onStartBaseChange, onTransitioning }: Props): JSX.Element {
   const projects = useStore((state) => state.projects)
   const project = projects.find((project) => project.id === projectId)
@@ -125,10 +124,10 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
   }, [projectId, isRepository, taskRevision, workspaceSwitching])
 
   useEffect(() => {
-    if (style !== 'work' && checkoutMode !== 'worktree') return
+    if (checkoutMode !== 'worktree') return
     if (parentBranch || startBase || !branches) return
     onStartBaseChange(branches.defaultWorktreeBase?.ref)
-  }, [style, checkoutMode, parentBranch, startBase, branches, onStartBaseChange])
+  }, [checkoutMode, parentBranch, startBase, branches, onStartBaseChange])
 
   const checkout = async (branchName: string): Promise<void> => {
     if (!projectId || changing.current || disabled || branchName === branches?.currentBranch || branches?.branches.find((branch) => branch.name === branchName)?.checkedOut) return
@@ -207,12 +206,11 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
   const base = branches?.worktreeBases?.find((candidate) => candidate.ref === startBase)
     ?? (!startBase ? branches?.defaultWorktreeBase : null) ?? null
   const baseLabel = parentBranch ?? base?.name ?? (startBase ? 'unavailable branch' : branches ? 'default branch' : 'Loading base…')
-  const work = style === 'work'
-  const worktree = work || checkoutMode === 'worktree'
+  const worktree = checkoutMode === 'worktree'
   const branchLabel = worktree ? `starting from ${baseLabel}` : localBranchLabel
   const locationLabel = worktree ? 'Isolated worktree' : 'Local checkout'
   const controlsDisabled = disabled || transitioning
-  const branchDisabled = disabled || !projectId || !isRepository || !branches || (work && Boolean(parentBranch))
+  const branchDisabled = disabled || !projectId || !isRepository || !branches || (worktree && Boolean(parentBranch))
 
   return (
     <div className="mb-3 min-w-0">
@@ -222,7 +220,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
           data-project-selector
           type="button"
           aria-label="Project"
-          aria-description={project ? `${project.name}, ${project.path}` : 'No project, Quick task in this workspace'}
+          aria-description={project ? `${project.name}, ${project.path}` : 'No project, task in this workspace'}
           aria-haspopup="dialog"
           aria-expanded={open === 'project'}
           title={project?.path ?? 'No project. Choose or add a project'}
@@ -234,11 +232,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
           <span data-testid="composer-project-name" className="max-w-56 truncate font-semibold text-fg">{project?.name ?? 'No project'}</span>
           <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
         </button>
-        {projectId && (work ? <span aria-label="Execution location" className="inline-flex min-w-0 items-center gap-1.5 px-2 py-1.5 font-mono text-[13px] text-dim" title="Work runs on a dedicated branch in an isolated worktree">
-          <Icon icon="layers" size={15} className="shrink-0" aria-hidden="true" />
-          <span className="truncate">{locationLabel}</span>
-          <span aria-hidden="true">·</span>
-        </span> : <>
+        {projectId && <>
         <button
           ref={locationRef}
           type="button"
@@ -246,7 +240,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
           aria-description={locationLabel}
           aria-haspopup="dialog"
           aria-expanded={open === 'location'}
-          title={worktree ? 'Quick runs on a dedicated branch in an isolated worktree' : 'Quick runs in the project’s current checkout'}
+          title={worktree ? 'Runs on a dedicated branch in an isolated worktree, then lands through Ship' : 'Runs in the project’s current checkout as a single turn'}
           className={triggerClass}
           disabled={controlsDisabled}
           onClick={() => setOpen('location')}
@@ -256,7 +250,7 @@ export function ProjectBranchSelector({ projectId, style, checkoutMode, parentBr
           <Icon icon="chevron-down" size={12} className="shrink-0" aria-hidden="true" />
         </button>
         <span aria-hidden="true" className="text-sm text-faint">·</span>
-        </>)}
+        </>}
         {projectId && <button
           ref={branchRef}
           type="button"

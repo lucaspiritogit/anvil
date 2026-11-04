@@ -321,15 +321,9 @@ test('tasks cannot start under a stale project or no-project selection', async (
   expect(window.anvil.tasks.start).not.toHaveBeenCalled()
 })
 
-test('the composer can focus without projects and keeps tasks in Quick style', () => {
-  state().setTaskComposerStyle('work')
+test('the composer can focus without projects', () => {
   state().selectProject(null)
   useStore.setState({ projects: [], view: { kind: 'analytics' } })
-  expect(state().taskComposerStyle).toBe('quick')
-  state().setTaskComposerStyle('work')
-  expect(state().taskComposerStyle).toBe('quick')
-  state().cycleTaskComposerStyle()
-  expect(state().taskComposerStyle).toBe('quick')
   const focusRequest = state().taskComposerFocusRequest
   state().focusTaskComposer()
   expect(state()).toMatchObject({ view: { kind: 'home' }, taskComposerFocusRequest: focusRequest + 1 })
@@ -445,12 +439,6 @@ test('unrelated project/task deletion and blocked composer focus preserve the ac
   expect(cached()).toBe(retained)
 })
 
-test('cycles the composer between Work and Quick with its configured shortcut', async () => {
-  await state().openTask('a')
-  const focusRequest = state().taskComposerFocusRequest
-  expect(DEFAULT_KEYBINDINGS.cycleTaskStyle).toBe('Mod+Shift+M')
-  state().cycleTaskComposerStyle()
-  expect(state()).toMatchObject({ taskComposerStyle: 'work', view: { kind: 'home' }, taskComposerFocusRequest: focusRequest + 1 })
-  state().cycleTaskComposerStyle()
-  expect(state().taskComposerStyle).toBe('quick')
+test('the task style shortcut is gone now that every task works the same way', () => {
+  expect(Object.keys(DEFAULT_KEYBINDINGS)).not.toContain('cycleTaskStyle')
 })

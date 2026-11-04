@@ -10,7 +10,7 @@ import { useStore } from '../state/store'
 import { IS_MAC } from '../keys'
 import { cn } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
-import { TASK_STYLE_LABELS, taskStyle } from '@anvil/protocol/task-style'
+import { taskStyle } from '@anvil/protocol/task-style'
 import { StatusGlyph, type StatusGlyphName } from './StatusGlyph'
 import type { SidebarStackTree } from './sidebar-task-stacks'
 
@@ -25,7 +25,6 @@ const TASK_INDICATORS = {
   failed: { glyph: 'failed', label: 'Failed', tone: 'text-danger', meta: 'text-danger-text' }
 } as const satisfies Record<string, { glyph: StatusGlyphName; icon?: IconName; label: string; tone: string; meta: string }>
 
-const STYLE_GLYPHS = { work: '▣', quick: '»' } as const
 
 function taskIndicator(task: Task, finishedUnseen: boolean): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
   if (task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit') return TASK_INDICATORS.running
@@ -254,7 +253,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
                   ? <span aria-hidden="true" className="invisible font-mono text-[11px]">{tree.size} ▸</span>
                   : blocked
                   ? <span aria-hidden="true" className="font-mono text-[12px] text-warn">⊘</span>
-                  : <span title={TASK_STYLE_LABELS[taskStyle(task)]} className="font-mono text-[11px] text-faint">{STYLE_GLYPHS[taskStyle(task)]}</span>}
+                  : null}
               </span>
             </>
           )}

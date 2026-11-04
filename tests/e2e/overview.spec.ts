@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { chooseMenuOption, chooseProject, chooseProvider, restoreComposerSelection } from './composer-setup'
+import { chooseProject, chooseProvider, restoreComposerSelection } from './composer-setup'
 
 test.beforeEach(async ({ page }) => restoreComposerSelection(page))
 
@@ -42,7 +42,7 @@ test('Send dispatches the prompt and selected model to the current project', asy
   await expect(page.getByRole('log', { name: 'Task output' })).toBeVisible()
 })
 
-test('Quick and Work starts show a brief composer confirmation that can replay', async ({ page }, testInfo) => {
+test('task starts show a brief composer confirmation that can replay', async ({ page }, testInfo) => {
   await page.goto(fixture)
   const overview = page.getByTestId('project-overview')
   const composer = overview.getByRole('form', { name: 'Start a task' })
@@ -61,7 +61,6 @@ test('Quick and Work starts show a brief composer confirmation that can replay',
   await expect(status).toHaveCount(0)
 
   await page.setViewportSize({ width: 600, height: 800 })
-  await chooseMenuOption(composer.getByRole('combobox', { name: 'Task style' }), 'Work')
   await prompt.fill('Second work task')
   await prompt.press('Enter')
   await expect(composer).toHaveClass(/task-composer-success/)
@@ -69,8 +68,8 @@ test('Quick and Work starts show a brief composer confirmation that can replay',
   await expect(composer).toBeInViewport()
   await expect(page.getByRole('log', { name: 'Task output' })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('composer-success-compact.png') })
-  await expect.poll(async () => (await page.evaluate(() => window.anvil.tasks.list())).filter((task) => task.id.startsWith('started-')).map((task) => task.style).sort())
-    .toEqual(['quick', 'work'])
+  await expect.poll(async () => (await page.evaluate(() => window.anvil.tasks.list())).filter((task) => task.id.startsWith('started-')).length)
+    .toBe(2)
 })
 
 test('reduced motion keeps the composer confirmation static', async ({ page }, testInfo) => {

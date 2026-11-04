@@ -13,13 +13,17 @@ import { useComposerImages } from '../state/composer-images'
 import { cn } from '../ui'
 import { ComposerModelPicker } from './ComposerModelPicker'
 import { ComposerOverflowOptions } from './ComposerOverflowOptions'
-import { ComposerOptionTooltip } from './ComposerOptionTooltip'
 import { MenuSelect } from './MenuSelect'
 import { ProjectBranchSelector } from './ProjectBranchSelector'
-import { TASK_STYLES, TASK_STYLE_LABELS } from '@anvil/protocol/task-style'
 import type { TaskCheckoutMode } from '@anvil/protocol/types'
 
 const successDuration = 1800
+const CHECKOUT_MODE_KEY = 'anvil.composerCheckoutMode'
+
+function readCheckoutMode(): TaskCheckoutMode {
+  try { return window.localStorage.getItem(CHECKOUT_MODE_KEY) === 'local' ? 'local' : 'worktree' } catch { return 'worktree' }
+}
+
 export function TaskComposer(): JSX.Element {
   const projectId = useStore((state) => state.activeProjectId)
   const workspaceId = useStore((state) => state.activeWorkspaceId)
@@ -35,8 +39,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const agents = useStore((state) => state.agents)
   const startTask = useStore((state) => state.startTask)
   const taskComposerFocusRequest = useStore((state) => state.taskComposerFocusRequest)
-  const style = useStore((state) => projectId ? state.taskComposerStyle : 'quick')
-  const setStyle = useStore((state) => state.setTaskComposerStyle)
   const isRepository = useStore((state) => projectId ? state.gitStatusByProject[projectId]?.isRepository : false)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -56,7 +58,11 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   }, [])
   const [busy, setBusy] = useState(false)
   const [switchingBranch, setSwitchingBranch] = useState(false)
-  const [checkoutMode, setCheckoutMode] = useState<TaskCheckoutMode>('local')
+  const [checkoutMode, setCheckoutModeState] = useState<TaskCheckoutMode>(readCheckoutMode)
+  const setCheckoutMode = (mode: TaskCheckoutMode): void => {
+    setCheckoutModeState(mode)
+    try { window.localStorage.setItem(CHECKOUT_MODE_KEY, mode) } catch {}
+  }
   const [startBase, setStartBase] = useState<string>()
   const [error, setError] = useState<string | null>(null)
   const [showSuccess, setShowSuccess] = useState(false)
@@ -98,16 +104,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     prompt.setSelectionRange(prompt.value.length, prompt.value.length)
   }, [taskComposerFocusRequest])
 
-  const isolated = Boolean(projectId) && (style === 'work' || checkoutMode === 'worktree')
-  const styleDescriptions: Record<typeof style, string> = {
-    work: 'Delegate planned work on a task branch. The agent runs to the end, then you ship it.',
-    quick: !projectId
-      ? 'Ask a question or start a task without a project.'
-      : checkoutMode === 'worktree'
-        ? 'Ask a question or make a focused change in an isolated worktree.'
-        : 'Ask a question or make a focused change in the current checkout.'
-  }
-  const styleDescription = styleDescriptions[style]
+  const isolated = Boolean(projectId) && checkoutMode === 'worktree'
   const submit = async (): Promise<void> => {
     if (useStore.getState().activeProjectId !== projectId || !hasTaskContent(prompt, attachments.ready) || attachments.pending || !agent || !model.trim() || loadingEfforts || switchingBranch || (isolated && isRepository === false) || submitting.current) return
     submitting.current = true
@@ -120,10 +117,9 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     try {
       const task = await startTask({
         projectId,
-        style,
         agentId,
-        checkoutMode: projectId ? style === 'quick' ? checkoutMode : undefined : 'local',
-        parentTaskId: style === 'work' ? parentTaskId || undefined : undefined,
+        checkoutMode: projectId ? checkoutMode : 'local',
+        parentTaskId: isolated ? parentTaskId || undefined : undefined,
         ...(isolated && !parentTaskId && startBase ? { startBase } : {}),
         prompt: prompt.trim(),
         ...(mentions.references.length ? { fileReferences: mentions.references } : {}),
@@ -135,7 +131,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       if (mounted.current) {
         attachments.reset()
         setParentTaskId('')
-        setStyle('quick')
         const project = useStore.getState().projects.find((entry) => entry.id === task?.projectId)?.name ?? 'no project'
         setCreated(task ? { title: task.title, project, offscreen: false } : null)
         setShowSuccess(true)
@@ -162,9 +157,8 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   return (
     <div>
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
-      {style === 'work' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">Work requires a Git repository so Anvil can create an isolated branch and worktree.</p>}
-      {style === 'quick' && checkoutMode === 'worktree' && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">An isolated worktree requires a Git repository. Use the current checkout instead.</p>}
-      {style === 'work' && parents.length > 0 && <div className="mb-2 inline-flex items-center gap-2 font-mono text-xs text-dim">
+      {isolated && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">An isolated worktree requires a Git repository. Use the current checkout instead.</p>}
+      {isolated && parents.length > 0 && <div className="mb-2 inline-flex items-center gap-2 font-mono text-xs text-dim">
         <Icon icon="layers" size={14} aria-hidden="true" />
         <span aria-hidden="true">Stack on task</span>
         <MenuSelect
@@ -178,8 +172,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       <ProjectBranchSelector
         key={projectId ?? 'no-project'}
         projectId={projectId}
-        style={style}
-        checkoutMode={style === 'quick' ? checkoutMode : 'worktree'}
+        checkoutMode={projectId ? checkoutMode : 'local'}
         onCheckoutModeChange={setCheckoutMode}
         parentBranch={parentBranch}
         startBase={startBase}
@@ -203,7 +196,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
             ref={promptRef}
             rows={5}
             className="block w-full resize-none bg-transparent px-5 pb-3 pt-4 text-[15px] leading-relaxed outline-none placeholder:text-faint max-[700px]:min-h-[clamp(10rem,28dvh,12rem)] max-[700px]:px-4"
-            placeholder={style === 'work' ? 'Describe the work you want done' : 'Ask a question or describe a focused change'}
+            placeholder="Describe what you want done, or ask a question"
             value={prompt}
             onChange={(event) => { setPrompt(event.target.value); mentions.syncSelection() }}
             onSelect={mentions.syncSelection}
@@ -255,24 +248,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 event.currentTarget.value = ''
               }}
             />
-            <ComposerOptionTooltip title={TASK_STYLE_LABELS[style]} description={styleDescription} disabled={busy}>
-              {(tooltipId) => (
-                <MenuSelect
-                  label="Task style"
-                  aside="⇧ tab cycles"
-                  describedBy={tooltipId}
-                  value={style}
-                  options={TASK_STYLES.map((option) => ({
-                    value: option,
-                    label: TASK_STYLE_LABELS[option],
-                    icon: option === 'quick' ? 'rabbit' : 'anvil',
-                    description: !projectId && option === 'work' ? 'Needs a project.' : styleDescriptions[option],
-                    disabled: !projectId && option === 'work'
-                  }))}
-                  onChange={setStyle}
-                />
-              )}
-            </ComposerOptionTooltip>
             <ComposerModelPicker
               agentId={agentId}
               agents={agents}
