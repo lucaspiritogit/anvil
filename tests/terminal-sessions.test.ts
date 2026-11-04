@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { TerminalSessionManager, ensureNodePtySpawnHelperExecutable } from '../apps/server/src/terminal-sessions'
 import { validateIpcRequest } from '../apps/server/src/handlers/validation'
 import type { Store } from '../apps/server/src/store'
-import { claudeWorkspaceEnvironment } from '../apps/server/src/agents/claude-workspace'
+import { claudeAuthEnvironment } from '../apps/server/src/agents/claude-workspace'
 
 const native = vi.hoisted(() => ({ spawn: vi.fn(), resolveCommand: vi.fn() }))
 vi.mock('node-pty', () => native)
@@ -119,12 +119,12 @@ test('Claude auth delegates subscription login and logout to its isolated native
   const exit = vi.fn()
   f.manager.createClaudeAuth(workspace, false, exit)
   expect(native.spawn).toHaveBeenCalledWith('/bin/claude', ['auth', 'login', '--claudeai'], expect.objectContaining({
-    cwd: '/work/home', env: claudeWorkspaceEnvironment(workspace)
+    cwd: '/work/home', env: claudeAuthEnvironment(workspace)
   }))
   f.exit(0)
   expect(exit).toHaveBeenCalledWith(0)
   f.manager.createClaudeAuth(workspace, true, exit)
-  expect(native.spawn).toHaveBeenLastCalledWith('/bin/claude', ['auth', 'logout'], expect.objectContaining({ env: claudeWorkspaceEnvironment(workspace) }))
+  expect(native.spawn).toHaveBeenLastCalledWith('/bin/claude', ['auth', 'logout'], expect.objectContaining({ env: claudeAuthEnvironment(workspace) }))
   native.resolveCommand.mockReturnValue(null)
   expect(() => f.manager.createClaudeAuth(workspace, false, exit)).toThrow('Claude Code requires a directly executable CLI')
 })

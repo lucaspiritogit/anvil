@@ -63,7 +63,8 @@ export async function openExternalPullRequest(value: unknown): Promise<void> {
 export async function openExternalLink(value: unknown): Promise<void> {
   const isPullRequest = typeof value === 'string' && isGitHubPullRequestUrl(value)
   const isDitherKit = value === DITHER_KIT_URL
-  if (typeof value !== 'string' || (!isPullRequest && !isDitherKit) || new URL(value).href !== value) {
+  const isClaudeLogin = typeof value === 'string' && isClaudeLoginUrl(value)
+  if (typeof value !== 'string' || (!isPullRequest && !isDitherKit && !isClaudeLogin) || new URL(value).href !== value) {
     throw new Error('Invalid external URL.')
   }
   try {
@@ -88,6 +89,14 @@ export function protectRendererWindow(window: BrowserWindow, rendererUrl: string
     void openExternalLink(url).catch((error) => console.warn('External window denied or unavailable:', error.message))
     return { action: 'deny' }
   })
+}
+
+export function isClaudeLoginUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && ['claude.ai', 'claude.com', 'platform.claude.com'].includes(url.hostname) &&
+      /\/oauth\//.test(url.pathname) && !url.username && !url.password && !url.port && url.href === value
+  } catch { return false }
 }
 
 export function isCodexLoginUrl(value: string): boolean {

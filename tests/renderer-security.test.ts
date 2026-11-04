@@ -2,7 +2,7 @@ import { onTestCleanup } from './test-cleanup'
 import { test, expect } from 'vitest'
 import { EventEmitter } from 'node:events'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
-import { isCodexLoginUrl, openExternalCodexLogin, createDesktopIpc, isRendererSender, isRendererUrl, openExternalLink, openExternalPullRequest, protectRendererWindow } from '../apps/desktop/src/main/renderer-security'
+import { isClaudeLoginUrl, isCodexLoginUrl, openExternalCodexLogin, createDesktopIpc, isRendererSender, isRendererUrl, openExternalLink, openExternalPullRequest, protectRendererWindow } from '../apps/desktop/src/main/renderer-security'
 import { DITHER_KIT_URL } from '@anvil/protocol/external-links'
 import { handlers, shell } from './issue-tracker-doubles'
 import { rendererContents, rendererEvent, rendererFrame, rendererUrl, rendererWindow } from './renderer-fixture'
@@ -140,5 +140,19 @@ test('Codex browser login allows only canonical HTTPS native account hosts', asy
   for (const url of ['javascript:alert(1)', 'file:///tmp/auth', 'http://auth.openai.com/login', 'https://auth.openai.com.evil.test/', 'https://evil.test/?next=https://auth.openai.com', 'https://user:secret@auth.openai.com/', 'https://auth.openai.com:444/', ' https://auth.openai.com/']) {
     expect(isCodexLoginUrl(url)).toBe(false)
     await expect(openExternalCodexLogin(url)).rejects.toThrow('Invalid Codex sign-in URL')
+  }
+})
+
+test('Claude OAuth links from the terminal open externally only for canonical HTTPS Claude hosts', async () => {
+  const opened: string[] = []
+  Object.assign(shell, { openExternal: async (url: string) => { opened.push(url) } })
+  for (const url of ['https://claude.com/cai/oauth/authorize?code=true&state=fixture', 'https://claude.ai/oauth/authorize?state=fixture', 'https://platform.claude.com/oauth/authorize?state=fixture']) {
+    expect(isClaudeLoginUrl(url)).toBe(true)
+    await openExternalLink(url)
+  }
+  expect(opened).toHaveLength(3)
+  for (const url of ['http://claude.ai/oauth/authorize', 'https://claude.ai/settings', 'https://claude.ai.evil.test/oauth/authorize', 'https://user:secret@claude.ai/oauth/authorize', 'https://claude.ai:444/oauth/authorize', ' https://claude.ai/oauth/authorize']) {
+    expect(isClaudeLoginUrl(url)).toBe(false)
+    await expect(openExternalLink(url)).rejects.toThrow()
   }
 })

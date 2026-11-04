@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
-import { claudeWorkspaceEnvironment } from '../apps/server/src/agents/claude-workspace'
+import { claudeAuthEnvironment, claudeWorkspaceEnvironment } from '../apps/server/src/agents/claude-workspace'
 import { resolveWorkspaceExecution } from '../apps/server/src/agents/workspace-execution'
 import { onTestCleanup } from './test-cleanup'
 
@@ -55,6 +55,27 @@ test('Claude on Linux and Windows keeps the workspace home without consulting th
     expect(Object.isFrozen(environment)).toBe(true)
   }
   expect(native.userInfo).not.toHaveBeenCalled()
+})
+
+test('Claude auth on Windows restores the native desktop profile so the opened browser starts normally', () => {
+  native.userInfo.mockReset().mockReturnValue({ homedir: 'C:\Users\native' })
+  const inherited = {
+    PATH: process.env.PATH, USERPROFILE: 'C:\Users\native', APPDATA: 'C:\Users\native\AppData\Roaming',
+    LOCALAPPDATA: 'C:\Users\native\AppData\Local', ProgramFiles: 'C:\Program Files', 'ProgramFiles(x86)': 'C:\Program Files (x86)',
+    ProgramData: 'C:\ProgramData', ANTHROPIC_API_KEY: 'personal-key', CLAUDE_CONFIG_DIR: '/personal-claude'
+  }
+  const { workspace } = fixture(inherited)
+  const environment = claudeAuthEnvironment(workspace, 'win32', inherited)
+  expect(environment).toMatchObject({
+    HOME: workspace.home, CLAUDE_CONFIG_DIR: workspace.claudeHome, USERPROFILE: inherited.USERPROFILE, APPDATA: inherited.APPDATA,
+    LOCALAPPDATA: inherited.LOCALAPPDATA, ProgramFiles: inherited.ProgramFiles, 'ProgramFiles(x86)': inherited['ProgramFiles(x86)'],
+    ProgramData: inherited.ProgramData, XDG_CONFIG_HOME: workspace.environment.XDG_CONFIG_HOME
+  })
+  expect(environment.ANTHROPIC_API_KEY).toBeUndefined()
+  expect(Object.keys(environment).filter((key) => key.toUpperCase() === 'APPDATA')).toEqual(['APPDATA'])
+  expect(workspace.environment.USERPROFILE).toBe(workspace.home)
+  expect(Object.isFrozen(environment)).toBe(true)
+  expect(claudeAuthEnvironment(workspace, 'linux', inherited)).toEqual(claudeWorkspaceEnvironment(workspace, 'linux'))
 })
 
 test('Claude Git commands keep the workspace author-only configuration despite the restored macOS home', () => {
