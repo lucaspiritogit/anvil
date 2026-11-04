@@ -2,6 +2,7 @@ import { closeProcessTree } from './process-tree'
 import { randomUUID } from 'node:crypto'
 import { chmodSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
 import type { Store } from './store'
@@ -9,7 +10,7 @@ import type { TerminalSnapshot } from '@anvil/protocol/terminal'
 import type { WorkspaceExecutionContext } from './agents/workspace-execution'
 import { openCodeWorkspaceCommand } from './agents/opencode-workspace'
 import { resolveCommand } from './agents/resolve'
-import { claudeWorkspaceEnvironment } from './agents/claude-workspace'
+import { claudeAuthEnvironment } from './agents/claude-workspace'
 
 const requireForNodePty = createRequire(import.meta.url)
 
@@ -50,15 +51,19 @@ export class TerminalSessionManager {
     private readonly broadcast: (channel: string, payload: unknown) => void
   ) {}
 
-  createProject(input: { projectId: string; taskId?: string; cols: number; rows: number }): { sessionId: string } {
-    const project = this.store.getProjects().find((project) => project.id === input.projectId)
-    if (!project) throw new Error('Project not found')
-    const task = input.taskId ? this.store.getTask(input.taskId) : undefined
-    if (input.taskId && task?.projectId !== project.id) throw new Error('Task not found in this project')
-    const cwd = task && existsSync(task.cwd) ? task.cwd : project.path
+  createProject(input: { projectId?: string; taskId?: string; cols: number; rows: number }): { sessionId: string } {
+    const cwd = input.projectId ? this.projectCwd(input.projectId, input.taskId) : homedir()
     return this.create('project', this.store.getActiveWorkspace().id,
       process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/sh', [],
       cwd, process.env, input.cols, input.rows)
+  }
+
+  private projectCwd(projectId: string, taskId?: string): string {
+    const project = this.store.getProjects().find((project) => project.id === projectId)
+    if (!project) throw new Error('Project not found')
+    const task = taskId ? this.store.getTask(taskId) : undefined
+    if (taskId && task?.projectId !== project.id) throw new Error('Task not found in this project')
+    return task && existsSync(task.cwd) ? task.cwd : project.path
   }
 
   createOpenCodeAuth(workspace: WorkspaceExecutionContext, logout: boolean, onExit: (exitCode: number) => void): { sessionId: string } {
@@ -82,7 +87,7 @@ export class TerminalSessionManager {
     if (!resolved || resolved.viaShell) throw new Error('Claude Code requires a directly executable CLI')
     const args = logout ? ['auth', 'logout'] : ['auth', 'login', '--claudeai']
     return this.create('auth', workspace.workspaceId, resolved.command, [...resolved.prefixArgs, ...args],
-      workspace.home, claudeWorkspaceEnvironment(workspace), 80, 10, onExit)
+      workspace.home, claudeAuthEnvironment(workspace), 80, 10, onExit)
   }
 
   private create(kind: Session['kind'], workspaceId: string, command: string, args: string[], cwd: string,

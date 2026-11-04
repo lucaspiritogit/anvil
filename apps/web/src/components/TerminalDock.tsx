@@ -27,7 +27,7 @@ function storeRatio(value: number): void {
 }
 
 function TerminalSession({ projectId, taskId, active, visible, onExit }: {
-  projectId: string
+  projectId?: string
   taskId?: string
   active: boolean
   visible: boolean
@@ -40,7 +40,7 @@ function TerminalSession({ projectId, taskId, active, visible, onExit }: {
   useEffect(() => {
     let cancelled = false
     let id: string | undefined
-    void window.anvil.terminals.create({ projectId, ...(taskId ? { taskId } : {}), cols: 120, rows: 24 }).then((session) => {
+    void window.anvil.terminals.create({ ...(projectId ? { projectId } : {}), ...(taskId ? { taskId } : {}), cols: 120, rows: 24 }).then((session) => {
       id = session.sessionId
       if (cancelled) void window.anvil.terminals.dispose(id).catch(() => {})
       else setSessionId(id)
@@ -53,7 +53,7 @@ function TerminalSession({ projectId, taskId, active, visible, onExit }: {
 
   return (
     <div className={cn('min-h-0 flex-1 flex-col', active ? 'flex' : 'hidden')}>
-      {error ? <p role="alert" className="p-3 text-xs text-danger">Could not open the project terminal. Close the session and try again.</p>
+      {error ? <p role="alert" className="p-3 text-xs text-danger">Could not open the {projectId ? 'project ' : ''}terminal. Close the session and try again.</p>
         : sessionId ? <>
           <GhosttyTerminal key={sessionId} sessionId={sessionId} visible={visible && active} className="min-h-0 flex-1"
             onExit={(code) => { setExited(true); onExit(code) }} />
@@ -66,7 +66,7 @@ function TerminalSession({ projectId, taskId, active, visible, onExit }: {
 }
 
 export function TerminalDock({ projectId, projectName, task, open, onOpen, onCollapse, onCloseAll }: {
-  projectId: string
+  projectId?: string
   projectName: string
   task?: Task
   open: boolean
@@ -170,7 +170,7 @@ export function TerminalDock({ projectId, projectName, task, open, onOpen, onCol
               const exit = exits[tab.id]
               return <div key={tab.id} className={cn('group flex shrink-0 items-center border-r border-line', selected ? 'bg-void text-fg shadow-[inset_0_2px_0_var(--color-accent)]' : 'text-dim hover:bg-hover hover:text-fg')}>
                 <button type="button" role="tab" aria-selected={selected} onClick={() => setActiveId(tab.id)}
-                  title={tab.taskId ? 'Opens in the task worktree' : 'Opens at the project root'}
+                  title={tab.taskId ? 'Opens in the task worktree' : projectId ? 'Opens at the project root' : 'Opens in the home folder'}
                   className="flex h-full max-w-56 items-center gap-1.5 pl-3 pr-1.5 focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent">
                   <span aria-hidden="true" className={tab.taskId ? 'text-ember-400' : 'text-faint'}>{tab.taskId ? '⎇' : '~'}</span>
                   <span className="truncate">{tab.label}</span>

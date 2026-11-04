@@ -26,10 +26,9 @@ function loadCollapsedProjects(): Record<string, string[]> {
   }
 }
 
-export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, mobileNavigationOpen,
+export function Sidebar({ onOpenTerminal, mobileNavigation, mobileNavigationOpen,
   mobileNavigationCloseRef, onCloseMobileNavigation, onNavigate }: {
   onOpenTerminal: () => void
-  terminalAvailable: boolean
   mobileNavigation: boolean
   mobileNavigationOpen: boolean
   mobileNavigationCloseRef: RefObject<HTMLButtonElement | null>
@@ -195,7 +194,6 @@ export function Sidebar({ onOpenTerminal, terminalAvailable, mobileNavigation, m
           className="flex h-9 shrink-0 items-center gap-2 border border-line-strong bg-overlay px-2.5 text-xs text-fg enabled:hover:bg-hover disabled:text-faint focus-visible:outline focus-visible:outline-accent"
           aria-label="Open terminal"
           title="Open terminal"
-          disabled={!terminalAvailable}
           onClick={onOpenTerminal}
         >
           <Icon icon="terminal" size={16} aria-hidden="true" />

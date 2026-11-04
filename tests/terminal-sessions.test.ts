@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { chmodSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TerminalSessionManager, ensureNodePtySpawnHelperExecutable } from '../apps/server/src/terminal-sessions'
 import { validateIpcRequest } from '../apps/server/src/handlers/validation'
@@ -147,6 +147,17 @@ test('task sessions open in the task worktree and fall back to the project root'
     expect(native.spawn).toHaveBeenLastCalledWith(expect.any(String), [], expect.objectContaining({ cwd: '/project' }))
     expect(() => f.manager.createProject({ projectId: 'project', taskId: 'other', cols: 80, rows: 24 })).toThrow('Task not found in this project')
     expect(validateIpcRequest('terminals:create', [{ projectId: 'project', taskId: 'task', cols: 80, rows: 24 }])).toMatchObject({ taskId: 'task' })
+  } finally {
+    rmSync(f.worktree, { recursive: true, force: true })
+  }
+})
+
+test('sessions without a project open in the home folder', () => {
+  const f = fixture()
+  try {
+    expect(validateIpcRequest('terminals:create', [{ cols: 80, rows: 24 }])).toEqual({ cols: 80, rows: 24 })
+    f.manager.createProject({ cols: 80, rows: 24 })
+    expect(native.spawn).toHaveBeenLastCalledWith(expect.any(String), [], expect.objectContaining({ cwd: homedir() }))
   } finally {
     rmSync(f.worktree, { recursive: true, force: true })
   }

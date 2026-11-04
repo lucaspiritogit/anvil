@@ -88,10 +88,9 @@ export function App(): JSX.Element {
   }, [closeMobileNavigation, mobileNavigation, mobileNavigationOpen, toggleSidebar])
 
   const openTerminal = useCallback((): void => {
-    if (!projectId) return
     setTerminalCreated(true)
     setTerminalOpen(true)
-  }, [projectId])
+  }, [])
 
   const cycleThinking = useCallback((): void => {
     const preferences = useComposerPreferences.getState()
@@ -236,11 +235,9 @@ export function App(): JSX.Element {
       if (commandPaletteOpen) return
       if (isTerminalShortcut(event) || (event.ctrlKey && !event.metaKey && !event.altKey && event.code === 'Backquote')) {
         event.preventDefault()
-        if (projectId) {
-          setSettingsOpen(false)
-          if (terminalOpen) setTerminalOpen(false)
-          else openTerminal()
-        }
+        setSettingsOpen(false)
+        if (terminalOpen) setTerminalOpen(false)
+        else openTerminal()
         return
       }
       if ((event.target as HTMLElement)?.closest('[data-terminal]')) return
@@ -269,7 +266,7 @@ export function App(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keybindings, toggleNavigation, focusTaskComposer, cycleTaskComposerStyle, cycleReviewPolicy, cycleThinking, settingsOpen, setSettingsOpen, projectId,
+  }, [keybindings, toggleNavigation, focusTaskComposer, cycleTaskComposerStyle, cycleReviewPolicy, cycleThinking, settingsOpen, setSettingsOpen,
     mobileNavigation, mobileNavigationOpen, closeMobileNavigation, commandPaletteOpen, terminalOpen, openTerminal])
 
   useEffect(() => {
@@ -317,8 +314,7 @@ export function App(): JSX.Element {
             mobileNavigationCloseRef={mobileNavigationCloseRef}
             onCloseMobileNavigation={() => closeMobileNavigation(true)}
             onNavigate={() => closeMobileNavigation(false)}
-            terminalAvailable={Boolean(projectId)} onOpenTerminal={() => {
-            if (!projectId) return
+            onOpenTerminal={() => {
             openTerminal()
             if (mobileNavigation) closeMobileNavigation(false)
           }} />
@@ -328,8 +324,8 @@ export function App(): JSX.Element {
           inert={settingsOpen || switching || (mobileNavigation && mobileNavigationOpen)}>
           <div className="min-h-0 min-w-0 flex-1"><Workspace key={workspaceId} mobileNavigation={mobileNavigation}
             mobileNavigationOpen={mobileNavigationOpen} navigationButtonRef={mobileNavigationButtonRef} onToggleNavigation={toggleNavigation} /></div>
-          {!settingsOpen && terminalCreated && projectId && <TerminalDock key={`${workspaceId}:${projectId}`} projectId={projectId}
-            projectName={activeProject?.name ?? 'project'} task={terminalTask} open={terminalOpen}
+          {!settingsOpen && terminalCreated && <TerminalDock key={`${workspaceId}:${projectId ?? ''}`} projectId={projectId ?? undefined}
+            projectName={projectId ? activeProject?.name ?? 'project' : '~'} task={terminalTask} open={terminalOpen}
             onOpen={openTerminal} onCollapse={() => setTerminalOpen(false)}
             onCloseAll={() => { setTerminalOpen(false); setTerminalCreated(false) }} />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
