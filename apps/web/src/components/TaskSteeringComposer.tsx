@@ -1,12 +1,22 @@
 import { useRef, useState, type JSX } from 'react'
-import type { Task } from '@anvil/protocol/types'
+import type { Task, TaskComment } from '@anvil/protocol/types'
 import { useStore } from '../state/store'
 import { TaskContextControl, type TaskContextControlProps } from './TaskContextControl'
 import { StatusGlyph } from './StatusGlyph'
 
-export function TaskSteeringComposer({ task, contextControl }: {
+const NOTES_ONLY_MESSAGE = 'Address the notes on the diff.'
+
+function noteLocation(note: TaskComment): string {
+  const name = note.file.slice(note.file.lastIndexOf('/') + 1)
+  return note.file ? `${name}:${note.lineNumber}` : 'Note'
+}
+
+export function TaskSteeringComposer({ task, contextControl, notes = [], onRemoveNote, onSent }: {
   task: Task
   contextControl?: TaskContextControlProps
+  notes?: TaskComment[]
+  onRemoveNote?: (id: string) => void
+  onSent?: () => void
 }): JSX.Element {
   const supported = useStore((state) => state.agents.find((agent) => agent.id === task.agentId)?.supportsSteering)
   const steerTask = useStore((state) => state.steerTask)
@@ -19,15 +29,17 @@ export function TaskSteeringComposer({ task, contextControl }: {
   const waitingForTurn = task.status === 'running' && (!supported || !task.sessionId)
   const unavailable = waitingForTurn || ['preparing', 'finalizing', 'did_not_commit'].includes(task.deliveryStatus)
   // With an empty input, the action slot stops a running task instead of sending.
-  const stopMode = task.status === 'running' && !message.trim()
+  const hasContent = Boolean(message.trim() || notes.length)
+  const stopMode = task.status === 'running' && !hasContent
   const send = async (): Promise<void> => {
-    if (pending.current || unavailable || !message.trim()) return
+    if (pending.current || unavailable || !hasContent) return
     pending.current = true
     setSending(true)
     setError(null)
     try {
-      await steerTask(task.id, message.trim())
+      await steerTask(task.id, message.trim() || NOTES_ONLY_MESSAGE)
       setMessage('')
+      onSent?.()
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
     } finally {
@@ -55,13 +67,23 @@ export function TaskSteeringComposer({ task, contextControl }: {
       onSubmit={(event) => { event.preventDefault(); void send() }}
     >
       <div className="border border-line-strong bg-raised transition-colors focus-within:border-accent/60">
+        {notes.length > 0 && <ul aria-label="Notes for the agent" className="flex flex-wrap gap-1.5 border-b border-dashed border-line px-3 py-2">
+          {notes.map((note) => <li key={note.id} className="flex max-w-full min-w-0 items-center gap-1.5 border border-line-strong bg-overlay py-0.5 pr-1 pl-2 text-xs" title={note.file ? `${note.file}:${note.lineNumber}\n${note.body}` : note.body}>
+            <span className="shrink-0 font-mono text-[11px] text-ember-400">{noteLocation(note)}</span>
+            <span className="min-w-0 truncate text-soft">{note.body}</span>
+            {onRemoveNote && <button type="button" aria-label={`Remove note: ${note.body}`} className="grid size-5 shrink-0 place-items-center text-dim hover:bg-hover hover:text-fg"
+              disabled={sending} onClick={() => onRemoveNote(note.id)}>
+              <span aria-hidden="true">×</span>
+            </button>}
+          </li>)}
+        </ul>}
         <textarea
           aria-label="Message to agent"
           className="block max-h-40 min-h-11 w-full min-w-0 resize-none overflow-y-auto bg-transparent px-4 py-[11px] text-sm leading-[22px] text-fg outline-none field-sizing-content placeholder:text-faint disabled:text-faint"
           rows={1}
           value={message}
           disabled={sending || unavailable}
-          placeholder={task.status === 'running' ? 'Steer the agent…' : 'Follow up…'}
+          placeholder={notes.length ? `Add instructions, or send the ${notes.length === 1 ? 'note' : `${notes.length} notes`} as is…` : task.status === 'running' ? 'Steer the agent…' : 'Follow up…'}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing) {
@@ -92,7 +114,7 @@ export function TaskSteeringComposer({ task, contextControl }: {
                 aria-label="Send message"
                 title="Send message"
                 className="inline-flex h-6 items-center gap-1.5 px-1.5 text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent enabled:[&:not(:hover)]:text-ember-400 disabled:text-faint"
-                disabled={sending || unavailable || !message.trim()}
+                disabled={sending || unavailable || !hasContent}
               >
                 {sending ? <StatusGlyph glyph="running" /> : <span aria-hidden="true">↵</span>}
                 <span aria-hidden="true">send</span>

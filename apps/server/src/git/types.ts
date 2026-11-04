@@ -1,4 +1,3 @@
-import type { TaskCommit } from '@anvil/protocol/types'
 import type { git } from './command'
 
 export interface GitContext {
@@ -22,14 +21,6 @@ export interface PreparedCheckout {
   baseCommit: string
   cwd: string
   initializedRepository: boolean
-}
-
-export interface RebasedBranch {
-  headCommit: string
-  commits: TaskCommit[]
-  filesChanged: number
-  additions: number
-  deletions: number
 }
 
 export interface FinalizeOptions {

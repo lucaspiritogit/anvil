@@ -29,7 +29,13 @@ import { ServerAuth } from './server-auth'
 import { createProjectMemory } from './memory/project-memory'
 import { WorkspaceProjectMemory } from './memory/workspace-project-memory'
 import { createTaskMemory } from './memory/task-memory'
-import { createTaskCompletion } from './tasks/completion'
+import { createTaskCompletion, type TaskCompletion } from './tasks/completion'
+import { createTaskChecks } from './tasks/task-checks'
+import { taskRiskFlags, type RiskKind } from '@anvil/protocol/task-risk'
+import { isLocalQuickTask } from '@anvil/protocol/task-checkout'
+import type { Task } from '@anvil/protocol/types'
+
+const AUTO_SHIP_BLOCKERS = new Set<RiskKind>(['secrets', 'migration', 'ci', 'deletion'])
 import type { PublishEvent } from './tasks/context'
 import { registerTaskEvents } from './tasks/events'
 import { registerTaskExecution } from './tasks/task-execution'
@@ -142,7 +148,15 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   const context = { store, agentProcesses, gitDelivery, send }
   const taskEvents = registerTaskEvents(context)
   const taskMemory = createTaskMemory(context, projectMemory, (workspaceId) => projectMemory.forWorkspace(workspaceId))
-  const finishTask = createTaskCompletion(context, taskEvents.recordSystemEvent, taskMemory)
+  let autoShip: (task: Task) => void = () => {}
+  const taskChecks = createTaskChecks(context, taskEvents.recordSystemEvent, undefined, (task) => autoShip(task))
+  const completeTask = createTaskCompletion(context, taskEvents.recordSystemEvent, taskMemory)
+  const finishTask: TaskCompletion = async (info, options) => {
+    await completeTask(info, options)
+    const task = store.getTask(info.taskId)
+    if (task?.status === 'succeeded' && task.deliveryStatus === 'reviewable') taskChecks.runIfConfigured(task.id)
+  }
+  ipc.handle('tasks:run-checks', (taskId: string) => taskChecks.run(taskId))
   const execution = registerTaskExecution({ ...context, recordSystemEvent: taskEvents.recordSystemEvent }, finishTask)
 
   const wallpaperLibraries = new Map<string, WallpaperLibrary>()
@@ -247,7 +261,27 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     requireFinishedTask: execution.requireFinishedTask
   }
   registerSteeringHandlers(ipc, { ...context, ...taskEvents, ...execution })
-  registerReviewHandlers(ipc, reviewContext)
+  const review = registerReviewHandlers(ipc, reviewContext)
+  autoShip = (task) => {
+    const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
+    if (!project?.autoShip || task.checks?.status !== 'passed' || task.checks.headCommit !== task.headCommit) return
+    if (task.deliveryStatus !== 'reviewable' || task.parentTaskId || task.restackState || task.settledAt !== undefined) return
+    void (async () => {
+      const diff = isLocalQuickTask(task)
+        ? await gitDelivery.getWorkingTreeDiff(project.path, task.reviewPaths ?? [])
+        : task.baseCommit && task.headCommit ? await gitDelivery.getDiff(project.path, task.baseCommit, task.headCommit) : undefined
+      if (!diff) return
+      const blocking = taskRiskFlags(diff.patch, task.expectedFiles).filter((flag) => AUTO_SHIP_BLOCKERS.has(flag.kind))
+      if (blocking.length) {
+        taskEvents.recordSystemEvent(task.id, `Not shipped automatically: ${blocking.map((flag) => flag.label.toLowerCase()).join(', ')} need a look first.`)
+        return
+      }
+      taskEvents.recordSystemEvent(task.id, 'Checks passed, shipping automatically.')
+      await review.shipTask(task.id)
+    })().catch((error: unknown) => {
+      taskEvents.recordSystemEvent(task.id, `Automatic ship failed: ${error instanceof Error ? error.message : String(error)}`, 'delivery', 'error')
+    })
+  }
   void execution.acceptParkedIssueReviews()
   const credentials = (workspaceId: string): GitHubCredentials => new GitHubCredentials(join(store.getWorkspaceDirectory(workspaceId), 'github-token.enc'), encryption)
   const githubClient = new GitHubClient()
@@ -296,6 +330,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
       const results = await Promise.allSettled([
         closeProjectImports(),
         connections.close(),
+        Promise.resolve().then(() => taskChecks.close()),
         Promise.resolve().then(() => terminals.disposeAll()),
         Promise.resolve().then(() => agentProcesses.close()),
         Promise.resolve().then(() => accounts.close()),

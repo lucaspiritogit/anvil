@@ -14,6 +14,8 @@ import type { MergeConflictResult } from '../git/types'
 import { taskStyle } from '@anvil/protocol/task-style'
 import { isLocalQuickTask } from '@anvil/protocol/task-checkout'
 
+export type ShipTask = (taskId: string, options?: { push?: boolean; message?: string }) => Promise<Task>
+
 const subjectLine = (message: string): string => message.trim().split(/\r?\n/, 1)[0]
 
 interface ReviewHandlerDependencies extends TaskContext {
@@ -25,7 +27,7 @@ interface ReviewHandlerDependencies extends TaskContext {
 export function registerReviewHandlers(ipc: HandlerRegistry, {
   store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTask,
   runMergeConflictRepair
-}: ReviewHandlerDependencies): void {
+}: ReviewHandlerDependencies): { shipTask: ShipTask } {
   const shipOf = (conflict: TaskMergeConflict): { targetCommit: string; message: string } | undefined =>
     conflict.shipMessage ? { targetCommit: conflict.targetCommit, message: conflict.shipMessage } : undefined
 
@@ -578,7 +580,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     return draft.message
   }
 
-  ipc.handle('tasks:ship', async ({ taskId, push, message }): Promise<Task> => {
+  const shipTask: ShipTask = async (taskId, { push, message } = {}) => {
     return withTaskOperation(store, taskId, 'ship', async (check) => {
       const current = store.getTask(taskId)
       if (!current) throw new Error('Task not found')
@@ -612,6 +614,43 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       if (result.status === 'conflicted') return pauseMerge(task, preview, result, action, pushPreview, subject)
       return finishMerge(task, project, result.commit, preview.targetBranch, headCommit, action, pushPreview,
         `Merged ${branchName} into ${preview.targetBranch}.`, check, { targetCommit: preview.targetCommit, message: subject })
+    })
+  }
+
+  ipc.handle('tasks:ship', ({ taskId, push, message }): Promise<Task> => shipTask(taskId, { push, message }))
+
+  ipc.handle('tasks:undo-ship', async (taskId: string): Promise<Task> => {
+    return withTaskOperation(store, taskId, 'ship', async (check) => {
+      requireFinishedTask(taskId)
+      const task = store.getTask(taskId)
+      if (!task) throw new Error('Task not found')
+      if (task.deliveryStatus !== 'approved' || !task.shippedCommit) throw new Error('This task has no ship to undo')
+      if (task.settledAt !== undefined) throw new Error('This task is archived and its ship cannot be undone')
+      if (task.pushedCommit === task.shippedCommit) {
+        throw new Error('This ship was already pushed to origin. Revert it with a new commit instead.')
+      }
+      const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
+      if (!project) throw new Error('Project not found')
+      const dependents = store.getTasks(task.workspaceId).filter((other) => other.id !== task.id &&
+        other.projectId === task.projectId && (other.baseCommit === task.shippedCommit || other.restackTarget?.commit === task.shippedCommit))
+      if (dependents.length) {
+        throw new Error(`${dependents.length} task${dependents.length === 1 ? ' was' : 's were'} restacked onto this ship, so it cannot be undone.`)
+      }
+      const local = isLocalQuickTask(task)
+      const { branch, restoredCommit } = await gitDelivery.undoShippedCommit(project.path, task.shippedCommit, local ? task.reviewPaths ?? [] : undefined, () => check())
+      const reopened = store.updateTask(task.id, {
+        deliveryStatus: 'reviewable',
+        shippedCommit: undefined,
+        shippedHead: undefined,
+        pushedCommit: undefined,
+        reviewedAt: undefined,
+        deliveryError: undefined,
+        ...(local ? { headCommit: undefined } : {})
+      })
+      if (!reopened) throw new Error('Task was deleted')
+      recordSystemEvent(task.id, `Undid the ship: moved ${branch} back to ${restoredCommit.slice(0, 8)}. The task is ready to ship again.`)
+      send('task:updated', reopened)
+      return reopened
     })
   })
 
@@ -663,4 +702,5 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       return { task: running, comments: store.getComments(taskId) }
     })
   })
+  return { shipTask }
 }

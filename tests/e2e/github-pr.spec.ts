@@ -10,7 +10,7 @@ async function openPullRequest(page: Page): Promise<void> {
 test('Open PR previews the remote, drafts editable fields, and shows created PR details', async ({ page }, testInfo) => {
   await page.goto(fixture)
   // Ship actions live in the task header, so they are reachable from any panel.
-  const ship = page.getByRole('button', { name: 'Ship', exact: true })
+  const ship = page.getByRole('button', { name: /^Ship( to |$)/ })
   const more = page.getByRole('button', { name: 'More ship actions' })
   await expect(ship).toBeEnabled()
   await openPullRequest(page)
@@ -59,7 +59,7 @@ test('cancelling the PR dialog does not push or ship', async ({ page }) => {
   await openPullRequest(page)
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByRole('dialog')).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toBeEnabled()
   expect(errors).toEqual([])
 })
 

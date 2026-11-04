@@ -36,7 +36,7 @@ export async function resumeTaskTurn(
   if (style === 'work') requireParentFinished(task)
   if (style === 'work' && task.restackState && !allowRestack) throw new Error('Finish restacking this task before resuming')
   const workspace = resolveTaskWorkspace(store, task.id)
-  if (task.settledAt !== undefined) throw new Error('This task is settled and cannot be resumed')
+  if (task.settledAt !== undefined) throw new Error('This task is archived and cannot be resumed')
   const agent = getAgent(task.agentId)
   if (!agent) throw new Error(`Unknown agent: ${task.agentId}`)
   if (task.sessionId && !agent.executionProtocol && !agent.resumeArgs) throw new Error('This agent cannot resume its saved session')

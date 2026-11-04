@@ -60,7 +60,7 @@ test('creates one Default workspace and starts new profiles with independent app
     autoCompactContext: false, contextCompactionThreshold: 85,
     memoryEnabled: true, memoryEmbeddingModel: 'custom-model', ollamaBaseUrl: 'http://127.0.0.1:1234/v1',
     fontSize: 18, overviewBackgroundMode: 'image', overviewBackgroundColor: '#123456', overviewWallpaperId: 'test.png',
-    defaultAgentId: 'codex', defaultModel: 'custom-model', rebaseMode: 'agent', confirmRebase: false,
+    defaultAgentId: 'codex', defaultModel: 'custom-model',
     caffeineMode: true, allowOtherDevices: true, tailscaleHttps: true,
     keybindings: { toggleSidebar: 'Mod+Y', focusTaskComposer: 'Mod+K', cycleTaskStyle: 'Mod+Shift+M', cycleThinking: 'Mod+Shift+T' },
     diffThemes: { dark: 'github-dark', light: 'github-light' }

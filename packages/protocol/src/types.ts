@@ -97,6 +97,8 @@ export interface Project {
   monthlyCostLimitUsd: number | null
   finishOnPush: boolean
   shipPushes: boolean
+  checkCommand?: string
+  autoShip?: boolean
   gitPlatform: 'github'
 }
 
@@ -504,6 +506,7 @@ export interface Task {
   pushedCommit?: string
   shippedCommit?: string
   shippedHead?: string
+  checks?: TaskChecks
   /** Current PR for this task's reviewable head revision. Derived from persisted link metadata. */
   pullRequest?: TaskPullRequest
   filesChanged: number
@@ -516,6 +519,21 @@ export interface Task {
   contextCompacting?: boolean
   /** Agent session to resume, so review follow-ups keep the original context. */
   sessionId?: string
+}
+
+export type TaskChecksStatus = 'running' | 'passed' | 'failed'
+
+/** The project check command's latest run against this task's changes. */
+export interface TaskChecks {
+  status: TaskChecksStatus
+  command: string
+  /** The task head the checks ran against; a different current head means the result is out of date. */
+  headCommit?: string
+  startedAt: number
+  finishedAt?: number
+  exitCode?: number | null
+  /** The tail of combined stdout and stderr. */
+  output: string
 }
 
 /** A review note the developer left on a line of a task's diff. */
@@ -633,23 +651,6 @@ export interface WorkspaceAnalytics {
   }
 }
 
-/**
- * Who rewrites a task's commits. `manual` opens a small interactive-rebase
- * editor and Anvil performs the rebase itself; `agent` hands the job to the
- * agent that wrote the code and accepts whatever it produces.
- */
-export type RebaseMode = 'manual' | 'agent'
-
-/** What to do with one commit, spelled the way `git rebase -i` spells it. */
-export type RebaseAction = 'pick' | 'squash' | 'drop'
-
-export interface RebaseStep {
-  sha: string
-  action: RebaseAction
-  /** The resulting commit's message. Only read for a `pick`. */
-  message: string
-}
-
 export interface Wallpaper {
   id: string
   name: string
@@ -669,9 +670,6 @@ export interface Settings {
   overviewWallpaperId: string | null
   defaultAgentId: string
   defaultModel: string
-  rebaseMode: RebaseMode
-  /** Whether handing a rebase to the agent asks for confirmation first. */
-  confirmRebase: boolean
   /** Keep the system and display awake while tasks are running. */
   caffeineMode: boolean
   /** Allow authenticated HTTP clients on other devices to reach the server. */

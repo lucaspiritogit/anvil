@@ -35,8 +35,6 @@ const DEFAULT_SETTINGS: Settings = {
   overviewWallpaperId: null,
   defaultAgentId: 'opencode',
   defaultModel: 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
-  rebaseMode: 'manual',
-  confirmRebase: true,
   caffeineMode: false,
   allowOtherDevices: false,
   tailscaleHttps: false,
@@ -79,8 +77,6 @@ const SETTING_KEYS = [
   'fontSize',
   'defaultAgentId',
   'defaultModel',
-  'rebaseMode',
-  'confirmRebase',
   'caffeineMode',
   'allowOtherDevices',
   'tailscaleHttps',
@@ -92,7 +88,7 @@ const SETTING_KEYS = [
 ] as const
 
 function encodeSetting(key: keyof Settings, value: Settings[keyof Settings]): string {
-  if (key === 'autoCompactContext' || key === 'confirmRebase' || key === 'caffeineMode' || key === 'memoryEnabled' || key === 'allowOtherDevices' || key === 'tailscaleHttps') return String(value === true)
+  if (key === 'autoCompactContext' || key === 'caffeineMode' || key === 'memoryEnabled' || key === 'allowOtherDevices' || key === 'tailscaleHttps') return String(value === true)
   if (key === 'keybindings') return JSON.stringify(value)
   if (key === 'diffThemes') return JSON.stringify(value)
   if (key === 'overviewWallpaperId') return isWallpaperId(value) ? value : ''
@@ -139,6 +135,8 @@ function toProject(row: ProjectRow): Project {
     monthlyCostLimitUsd: row.monthlyCostLimitUsd,
     finishOnPush: row.finishOnPush,
     shipPushes: row.shipPushes,
+    ...(row.checkCommand === null ? {} : { checkCommand: row.checkCommand }),
+    ...(row.autoShip ? { autoShip: true } : {}),
     gitPlatform: row.gitPlatform
   }
 }
@@ -190,6 +188,7 @@ function toTask(row: TaskRow): Task {
     ...(row.pushedCommit === null ? {} : { pushedCommit: row.pushedCommit }),
     ...(row.shippedCommit === null ? {} : { shippedCommit: row.shippedCommit }),
     ...(row.shippedHead === null ? {} : { shippedHead: row.shippedHead }),
+    ...(row.checks === null ? {} : { checks: row.checks }),
     filesChanged: row.filesChanged,
     additions: row.additions,
     deletions: row.deletions,
@@ -599,7 +598,7 @@ export class Store {
       .all()
       .reduce<Settings>(
         (current, row) => {
-          if (row.key === 'autoCompactContext' || row.key === 'confirmRebase' || row.key === 'caffeineMode' || row.key === 'memoryEnabled' || row.key === 'allowOtherDevices' || row.key === 'tailscaleHttps') current[row.key] = row.value === 'true'
+          if (row.key === 'autoCompactContext' || row.key === 'caffeineMode' || row.key === 'memoryEnabled' || row.key === 'allowOtherDevices' || row.key === 'tailscaleHttps') current[row.key] = row.value === 'true'
           else if (row.key === 'overviewBackgroundMode') current.overviewBackgroundMode = row.value === 'image' ? 'image' : 'color'
           else if (row.key === 'overviewBackgroundColor') current.overviewBackgroundColor = OVERVIEW_COLOR_PATTERN.test(row.value) ? row.value : DEFAULT_OVERVIEW_COLOR
           else if (row.key === 'overviewWallpaperId') current.overviewWallpaperId = isWallpaperId(row.value) ? row.value : null
@@ -609,9 +608,7 @@ export class Store {
           else if (row.key === 'fontSize') current.fontSize = normalizeFontSize(Number(row.value))
           else if (row.key === 'keybindings') current.keybindings = decodeKeybindings(row.value)
           else if (row.key === 'diffThemes') current.diffThemes = decodeDiffThemes(row.value)
-          else if (row.key === 'rebaseMode') {
-            current.rebaseMode = row.value === 'agent' ? 'agent' : 'manual'
-          } else if (row.key === 'defaultAgentId' || row.key === 'defaultModel') {
+          else if (row.key === 'defaultAgentId' || row.key === 'defaultModel') {
             current[row.key] = row.value
           }
           return current
@@ -678,19 +675,21 @@ export class Store {
 
   updateProject(
     id: string,
-    patch: Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush' | 'shipPushes'>>,
+    patch: Partial<Pick<Project, 'monthlyTokenLimit' | 'monthlyCostLimitUsd' | 'finishOnPush' | 'shipPushes' | 'autoShip'>> & { checkCommand?: string | null },
     workspaceId = this.getActiveWorkspace().id
   ): Project | undefined {
     const db = this.workspaceConnection(workspaceId).db
     if (patch.monthlyTokenLimit === undefined && patch.monthlyCostLimitUsd === undefined && patch.finishOnPush === undefined &&
-      patch.shipPushes === undefined) {
+      patch.shipPushes === undefined && patch.checkCommand === undefined && patch.autoShip === undefined) {
       return this.getProjects(workspaceId).find((project) => project.id === id)
     }
     db.update(projects).set({
       monthlyTokenLimit: patch.monthlyTokenLimit,
       monthlyCostLimitUsd: patch.monthlyCostLimitUsd,
       finishOnPush: patch.finishOnPush,
-      shipPushes: patch.shipPushes
+      shipPushes: patch.shipPushes,
+      checkCommand: patch.checkCommand === undefined ? undefined : patch.checkCommand?.trim() || null,
+      autoShip: patch.autoShip
     }).where(eq(projects.id, id)).run()
     const row = db.select().from(projects).where(eq(projects.id, id)).get()
     return row ? toProject(row) : undefined

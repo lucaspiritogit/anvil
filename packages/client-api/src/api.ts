@@ -266,8 +266,6 @@ export function createAnvilApi(url: string, host: ClientHost) {
       cancel: (taskId: string): Promise<boolean> => invoke('tasks:cancel', taskId),
       delete: (taskId: string): Promise<void> => invoke('tasks:delete', taskId),
       settle: (taskId: string): Promise<Task> => invoke('tasks:settle', taskId),
-      rebase: (input: IpcRequests['tasks:rebase']): Promise<Task> =>
-        invoke('tasks:rebase', input),
       rebaseWithAgent: (taskId: string): Promise<Task> =>
         invoke('tasks:rebase-agent', taskId),
       mergePreview: (taskId: string): Promise<TaskMergePreview> => invoke('tasks:merge-preview', taskId),
@@ -290,6 +288,8 @@ export function createAnvilApi(url: string, host: ClientHost) {
       pull: (input: IpcRequests['tasks:pull']): Promise<BranchSyncStatus> => invoke('tasks:pull', input),
       commitQuick: (input: IpcRequests['tasks:commit-quick']): Promise<Task> => invoke('tasks:commit-quick', input),
       ship: (input: IpcRequests['tasks:ship']): Promise<Task> => invoke('tasks:ship', input),
+      undoShip: (taskId: string): Promise<Task> => invoke('tasks:undo-ship', taskId),
+      runChecks: (taskId: string): Promise<Task> => invoke('tasks:run-checks', taskId),
       draftCommitMessage: (input: IpcRequests['tasks:draft-commit-message']): Promise<string> =>
         invoke('tasks:draft-commit-message', input),
       onEvent: (handler: (event: TaskEvent) => void): (() => void) =>

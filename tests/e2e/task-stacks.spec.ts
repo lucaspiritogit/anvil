@@ -47,13 +47,13 @@ test('a parent with stacked children ships, and a pending restack blocks shippin
     const child = (await window.anvil.tasks.list()).find((task) => task.id === 'running')!
     window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...child, parentTaskId: 'review' } }))
   })
-  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toBeEnabled()
   await page.evaluate(async () => {
     const task = (await window.anvil.tasks.list()).find((task) => task.id === 'review')!
     window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...task, restackState: 'pending' } }))
   })
   await expect(page.getByText('Restack pending. Changes will apply after the current turn.')).toBeVisible()
-  const ship = page.getByRole('button', { name: 'Ship', exact: true })
+  const ship = page.getByRole('button', { name: /^Ship( to |$)/ })
   await expect(ship).toBeDisabled()
   await expect(ship).toHaveAttribute('title', 'Finish restacking before shipping')
 })

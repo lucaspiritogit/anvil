@@ -204,7 +204,9 @@ export function registerProjectHandlers(ipc: HandlerRegistry, {
       monthlyTokenLimit: input.monthlyTokenLimit,
       monthlyCostLimitUsd: input.monthlyCostLimitUsd,
       finishOnPush: input.finishOnPush,
-      shipPushes: input.shipPushes
+      shipPushes: input.shipPushes,
+      checkCommand: input.checkCommand,
+      autoShip: input.autoShip
     }, workspaceId)
     projectsChanged?.(workspaceId)
     return project

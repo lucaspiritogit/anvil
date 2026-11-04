@@ -389,6 +389,38 @@ export async function squashMergedCommit(
   })
 }
 
+export async function undoShippedCommit(
+  context: GitContext,
+  projectPath: string,
+  shippedCommit: string,
+  paths: string[] | undefined,
+  check: () => void = () => {}
+): Promise<{ branch: string; restoredCommit: string }> {
+  const repoRoot = await repositoryRoot(projectPath)
+  return withRepoLock(context, repoRoot, async () => {
+    const branch = (await git(repoRoot, ['branch', '--show-current'])).stdout.trim()
+    if (!branch) throw new Error('Check out the branch this task was shipped to before undoing.')
+    const head = (await git(repoRoot, ['rev-parse', '--verify', 'HEAD^{commit}'])).stdout.trim()
+    if (head !== shippedCommit) {
+      throw new Error(`${branch} has moved since this task was shipped. Undo only works while the shipped commit is the latest one on the checked-out branch.`)
+    }
+    const mergeHead = await git(repoRoot, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], [0, 1])
+    if (mergeHead.exitCode === 0) throw new Error('Finish or abort the merge in progress before undoing a ship.')
+    const restoredCommit = (await git(repoRoot, ['rev-parse', '--verify', `${shippedCommit}^1`])).stdout.trim()
+    if (paths) {
+      check()
+      await git(repoRoot, ['update-ref', '-m', 'anvil: undo ship', `refs/heads/${branch}`, restoredCommit, shippedCommit])
+      if (paths.length) await git(repoRoot, ['reset', '-q', restoredCommit, '--', ...paths])
+      return { branch, restoredCommit }
+    }
+    const dirty = (await git(repoRoot, ['status', '--porcelain=v1', '--untracked-files=no'])).stdout.trim()
+    if (dirty) throw new Error('Commit or stash local changes in the project before undoing a ship.')
+    check()
+    await git(repoRoot, ['reset', '--keep', restoredCommit])
+    return { branch, restoredCommit }
+  })
+}
+
 export async function originPushUrl(projectPath: string): Promise<string> {
   let output: string
   try {

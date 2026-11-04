@@ -65,19 +65,17 @@ function commentNotes(comments: TaskComment[]): string {
     .join('\n')
 }
 
+export function withDiffNotes(message: string, comments: TaskComment[]): string {
+  if (!comments.length) return message
+  return [message, '', 'Notes on specific lines of the diff:', commentNotes(comments)].join('\n')
+}
+
 export function issueReworkPrompt(_projectPath: string, issueId: string, comments: TaskComment[]): string {
   return [
     `The developer reviewed issue ${JSON.stringify(issueId)}.`,
     commentNotes(comments),
     FINISH_ISSUE,
     TOOLS
-  ].join('\n')
-}
-
-export function agentRebasePrompt(baseCommit: string): string {
-  return [
-    `Run \`git reset --soft ${baseCommit}\` and commit once.`,
-    'Do not change files or earlier history.'
   ].join('\n')
 }
 

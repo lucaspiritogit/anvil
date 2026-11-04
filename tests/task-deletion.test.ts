@@ -131,11 +131,11 @@ test('deletes finished, active and queued tasks without resurrecting persisted s
     await new Promise<void>((resolve) => { finishReopen = resolve })
     return this.prepareBranch()
   }
-  const rebase = call('tasks:rebase-agent', followUp.id)
+  const reopen = call('tasks:steer', { taskId: followUp.id, message: 'Follow up' })
   await vi.waitFor(() => expect(finishReopen).toBeTypeOf('function'))
   call('tasks:delete', followUp.id)
   finishReopen!()
-  await expect(rebase).rejects.toThrow(/deleted/)
+  await expect(reopen).rejects.toThrow(/deleted/)
   await tick()
   assertDeleted(followUp.id)
   expect(agentProcesses.isRunning(followUp.id)).toBe(false)

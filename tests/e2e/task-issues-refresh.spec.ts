@@ -30,7 +30,7 @@ test('collapsed owner surfaces every issue transition without becoming final-del
         const snapshot = await window.anvil.tasks.issues('output')
         window.dispatchEvent(new CustomEvent('fixture:issues', { detail: { taskId: 'output', snapshot: { ...snapshot, reviewReady: true } } }))
       })
-      await expect(page.getByRole('button', { name: 'Ship', exact: true })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toHaveCount(0)
     }
     await page.screenshot({ path: testInfo.outputPath(`parent-${status}.png`) })
   }

@@ -127,11 +127,11 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
           }
           if (entry.kind === 'settled') {
             return <li key={entry.key} {...rowProps}>
-              <button type="button" aria-label={entry.project ? `Settled tasks in ${entry.project.name}` : 'Settled tasks with no project'}
+              <button type="button" aria-label={entry.project ? `Archived tasks in ${entry.project.name}` : 'Archived tasks with no project'}
                 aria-expanded={entry.expanded} onClick={() => onToggleSettled(entry.groupId, entry.expanded)}
                 className="flex min-h-9 w-full items-center gap-2 px-4 font-mono text-[11px] text-faint hover:text-fg focus-visible:outline focus-visible:outline-accent">
                 <Icon icon="chevron-down" size={13} className={cn('transition-transform', !entry.expanded && '-rotate-90')} aria-hidden="true" />
-                <span>Settled</span>
+                <span>Archived</span>
                 <span className="text-faint">{entry.taskCount}</span>
                 <span className="h-px flex-1 border-t border-dashed border-line-strong" />
               </button>

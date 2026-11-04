@@ -21,7 +21,7 @@ import { DEFAULT_EMBEDDING_MODEL, DEFAULT_OLLAMA_BASE_URL } from '@anvil/protoco
 import { DEFAULT_DIFF_THEMES, DIFF_THEME_NAMES, type DiffThemes } from '@anvil/protocol/diff-themes'
 import { serverAddress, type ServerTarget } from '@anvil/protocol/server-address'
 import type { DesktopServerConnectionState } from '@anvil/protocol/desktop-requests'
-import type { ConnectionsStatus, RebaseMode, Settings } from '@anvil/protocol/types'
+import type { ConnectionsStatus, Settings } from '@anvil/protocol/types'
 
 const DiffThemePreview = lazy(async () => ({
   default: (await import('./DiffThemePreview')).DiffThemePreview
@@ -435,6 +435,33 @@ function ShortcutField({
   )
 }
 
+function CheckCommandRow({ value, projectName, onSave }: {
+  value: string
+  projectName: string
+  onSave: (value: string) => void
+}): JSX.Element {
+  const [draft, setDraft] = useState(value)
+  const save = (): void => {
+    if (draft !== value) onSave(draft)
+  }
+  return <SettingRow
+    title="Check command"
+    description={<>Runs in the task's checkout when it is ready to ship, so you can see whether <strong className="font-mono">{projectName}</strong>'s checks pass before shipping. Leave empty to skip.</>}
+  >
+    <input
+      aria-label="Check command"
+      className={cn(field.sized, 'w-[min(320px,60vw)] font-mono text-xs')}
+      placeholder="npm run typecheck && npm test"
+      value={draft}
+      maxLength={2_000}
+      spellCheck={false}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={save}
+      onKeyDown={(event) => { if (event.key === 'Enter') save() }}
+    />
+  </SettingRow>
+}
+
 export function SettingsPage(): JSX.Element {
   const pageRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => { pageRef.current?.focus() }, [])
@@ -457,8 +484,6 @@ export function SettingsPage(): JSX.Element {
 
   const [autoCompactContext, setAutoCompactContext] = useState(settings?.autoCompactContext ?? true)
   const [contextCompactionThreshold, setContextCompactionThreshold] = useState(settings?.contextCompactionThreshold ?? 75)
-  const [confirmRebase, setConfirmRebase] = useState(settings?.confirmRebase ?? true)
-  const [rebaseMode, setRebaseMode] = useState<RebaseMode>(settings?.rebaseMode ?? 'manual')
   const [keybindings, setKeybindings] = useState<Keybindings>(
     settings?.keybindings ?? DEFAULT_KEYBINDINGS
   )
@@ -489,8 +514,6 @@ export function SettingsPage(): JSX.Element {
     setOllamaBaseUrl(hydrated.ollamaBaseUrl)
     setFontSize(hydrated.fontSize)
     setDiffThemes(hydrated.diffThemes ?? DEFAULT_DIFF_THEMES)
-    setRebaseMode(hydrated.rebaseMode)
-    setConfirmRebase(hydrated.confirmRebase)
     setAutoCompactContext(hydrated.autoCompactContext ?? true)
     setContextCompactionThreshold(hydrated.contextCompactionThreshold ?? 75)
     setKeybindings(hydrated.keybindings)
@@ -608,38 +631,24 @@ export function SettingsPage(): JSX.Element {
                     if (workspaceId) autosave(`project:${workspaceId}:${activeProject.id}`, { shipPushes: value })
                   }}
                 />
-              </SettingsPanel>}
-              <SettingsPanel title="Rebase mode">
-                <OptionCards
-                  ariaLabel="Rebase mode"
-                  value={rebaseMode}
-                  onChange={(value) => {
-                    const mode = value as RebaseMode
-                    setRebaseMode(mode)
-                    persist({ rebaseMode: mode })
-                  }}
-                  options={[
-                    {
-                      value: 'manual',
-                      label: 'Manual',
-                      description: 'Choose what happens to each commit. Rebase opens a small interactive editor and Anvil performs the rebase.'
-                    },
-                    {
-                      value: 'agent',
-                      label: 'Agent',
-                      description: 'Let the agent rewrite the history. Rebase hands the branch to the agent that wrote the code and accepts its result.'
-                    }
-                  ]}
-                />
                 <ToggleRow
-                  title="Ask before handing a rebase to an agent"
-                  checked={confirmRebase}
+                  title="Ship automatically when checks pass"
+                  description="Ships a task as soon as its checks pass. Tasks that touch secrets, migrations, CI config or delete a lot of code still wait for you."
+                  disabled={!((edits[`project:${workspaceId}:${activeProject.id}`]?.draft.checkCommand as string | undefined) ?? activeProject.checkCommand)?.trim()}
+                  checked={Boolean((edits[`project:${workspaceId}:${activeProject.id}`]?.draft.autoShip as boolean | undefined) ?? activeProject.autoShip)}
                   onChange={(value) => {
-                    setConfirmRebase(value)
-                    persist({ confirmRebase: value })
+                    if (workspaceId) autosave(`project:${workspaceId}:${activeProject.id}`, { autoShip: value })
                   }}
                 />
-              </SettingsPanel>
+                <CheckCommandRow
+                  key={`${workspaceId}:${activeProject.id}`}
+                  value={(edits[`project:${workspaceId}:${activeProject.id}`]?.draft.checkCommand as string | undefined) ?? activeProject.checkCommand ?? ''}
+                  projectName={activeProject.name}
+                  onSave={(value) => {
+                    if (workspaceId) autosave(`project:${workspaceId}:${activeProject.id}`, { checkCommand: value.trim() || null }, { checkCommand: value })
+                  }}
+                />
+              </SettingsPanel>}
               <GitHubSettings />
             </div>
             {section === 'shortcuts' && <SettingsPanel title="Shortcuts" aside="Select a shortcut, then press the keys you want to use. Escape cancels.">

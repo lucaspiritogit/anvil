@@ -1,5 +1,5 @@
 import { issueIsReviewReady, taskIssuePresentation } from '@anvil/protocol/task-issue-presentation'
-import type { JSX, ReactNode } from 'react'
+import type { JSX, ReactNode, RefObject } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
@@ -7,15 +7,15 @@ import { TaskStackStatus } from './TaskStackStatus'
 import { useStore, type TaskPanel } from '../state/store'
 import { btn, cn, deliveryTone, dot, field, ISSUE_STATUS, statusTone } from '../ui'
 import { AgentIcon } from './AgentIcon'
-import { AgentRebaseModal } from './AgentRebaseModal'
 import { OpenPullRequestModal } from './OpenPullRequestModal'
 import { CopyableText } from './CopyableText'
-import { RebaseModal } from './RebaseModal'
 import { TaskSteeringComposer } from './TaskSteeringComposer'
 import { TaskIssues } from './TaskIssues'
 import { useTaskIssues } from '../hooks/use-task-issues'
 import { TaskOutput } from './TaskOutput'
 import { ShipButton } from './ShipButton'
+import { ShipChecks } from './ShipChecks'
+import { RiskFlags } from './RiskFlags'
 import type { DiffLineAnnotation } from '@pierre/diffs/react'
 import type { DiffThemes } from '@anvil/protocol/diff-themes'
 import { DEFAULT_DIFF_THEMES } from '@anvil/protocol/diff-themes'
@@ -24,7 +24,6 @@ import type {
   DeliveryStatus,
   Task,
   TaskComment,
-  TaskDiff,
   TaskStatus
 } from '@anvil/protocol/types'
 import { taskStyle } from '@anvil/protocol/task-style'
@@ -262,58 +261,6 @@ function CommentComposer({
   )
 }
 
-/**
- * The commit list and its rebase action live behind one disclosure in the diff
- * toolbar, so the review surface stays about the code until the developer asks.
- */
-function CommitsMenu({ diff, disabled, rebasing, onRebase }: {
-  diff: TaskDiff
-  disabled: boolean
-  rebasing: boolean
-  onRebase: () => void
-}): JSX.Element {
-  const ref = useRef<HTMLDetailsElement>(null)
-  const [open, setOpen] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    const close = (event: PointerEvent): void => {
-      if (!ref.current?.contains(event.target as Node)) ref.current?.removeAttribute('open')
-    }
-    document.addEventListener('pointerdown', close)
-    return () => document.removeEventListener('pointerdown', close)
-  }, [open])
-
-  const count = diff.commits.length
-  return (
-    <details ref={ref} className="relative" onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary className="flex cursor-pointer select-none list-none items-center gap-1 hover:text-fg [&::-webkit-details-marker]:hidden">
-        {count} commit{count === 1 ? '' : 's'}
-        <Icon icon="chevron-down" size={14} aria-hidden="true" />
-      </summary>
-      <div className="absolute right-0 top-full z-20 mt-1.5 w-[min(460px,80vw)] border border-line-strong bg-overlay p-3 text-fg shadow-[0_0_0_1px_var(--color-void)]">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <span className="text-[11px] text-dim">Commits on this branch</span>
-          <button
-            className={cn(btn.ghost, 'py-1 text-xs')}
-            disabled={disabled || count < 2 || rebasing}
-            title={count < 2 ? 'Nothing to rebase: this branch has a single commit' : 'Rewrite these commits'}
-            onClick={onRebase}
-          >
-            {rebasing ? 'Rebasing…' : 'Rebase'}
-          </button>
-        </div>
-        <ul className="max-h-64 overflow-y-auto">
-          {diff.commits.map((commit) => <li key={commit.sha} className="flex gap-2 py-1.5 border-t border-line">
-            <code className="shrink-0 text-accent">{commit.sha.slice(0, 8)}</code>
-            <span className="min-w-0 break-words">{commit.subject}</span>
-          </li>)}
-        </ul>
-      </div>
-    </details>
-  )
-}
-
 const STATUS_LABEL: Record<TaskStatus, string> = {
   pending: 'Pending',
   running: 'Running',
@@ -407,6 +354,68 @@ function Notice({ tone = 'danger', children }: { tone?: 'danger' | 'warn'; child
   )
 }
 
+const WIDE_LAYOUT_PX = 1100
+const CHANGES_PANE_KEY = 'anvil.changesPane'
+const CHANGES_WIDTH_KEY = 'anvil.changesPaneWidth'
+
+function readPreference(key: string): string | null {
+  try { return window.localStorage.getItem(key) } catch { return null }
+}
+
+function writePreference(key: string, value: string): void {
+  try { window.localStorage.setItem(key, value) } catch {}
+}
+
+function useWideLayout(ref: RefObject<HTMLElement | null>): boolean {
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const measure = (): void => setWide(element.getBoundingClientRect().width >= WIDE_LAYOUT_PX)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [ref])
+  return wide
+}
+
+function ResizeHandle({ containerRef, width, onResize }: {
+  containerRef: RefObject<HTMLElement | null>
+  width: number
+  onResize: (width: number) => void
+}): JSX.Element {
+  const clamp = (value: number): number => {
+    const total = containerRef.current?.getBoundingClientRect().width ?? 0
+    return Math.max(360, Math.min(value, total - 360))
+  }
+  return <div
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Resize changes pane"
+    tabIndex={0}
+    className="w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-accent/40 focus-visible:bg-accent/60 focus-visible:outline-none"
+    onPointerDown={(event) => {
+      const container = containerRef.current
+      if (!container) return
+      event.currentTarget.setPointerCapture(event.pointerId)
+      const right = container.getBoundingClientRect().right
+      const move = (moveEvent: PointerEvent): void => onResize(clamp(right - moveEvent.clientX))
+      const up = (): void => {
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', up)
+      }
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', up)
+    }}
+    onKeyDown={(event) => {
+      const current = width || (containerRef.current?.getBoundingClientRect().width ?? 0) / 2
+      if (event.key === 'ArrowLeft') onResize(clamp(current + 40))
+      if (event.key === 'ArrowRight') onResize(clamp(current - 40))
+    }}
+  />
+}
+
 export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element {
   const style = taskStyle(task)
   const work = style === 'work'
@@ -422,7 +431,6 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   const loadComments = useStore((s) => s.loadComments)
   const addComment = useStore((s) => s.addComment)
   const removeComment = useStore((s) => s.removeComment)
-  const sendComments = useStore((s) => s.sendComments)
   const sending = useStore((s) => s.sendingComments === task.id)
   const commentError = useStore((s) => s.commentError)
   const [draft, setDraft] = useState<CommentDraft | null>(null)
@@ -438,10 +446,6 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
     catch (error) { setCompactError(error instanceof Error ? error.message : String(error)) }
     finally { setCompacting(false) }
   }
-  const openRebase = useStore((s) => s.openRebase)
-  const rebaseWithAgent = useStore((s) => s.rebaseWithAgent)
-  const rebasing = useStore((s) => s.rebasing === task.id)
-  const rebaseTaskId = useStore((s) => s.rebaseTaskId)
   const [pullRequestTaskId, setPullRequestTaskId] = useState<string | null>(null)
   const approved = task.deliveryStatus === 'approved'
   const openPullRequest = task.deliveryStatus === 'reviewable' ? task.pullRequest : undefined
@@ -471,12 +475,6 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
     if (reviewable && !diff && !diffError) void loadTaskDiff(task.id)
   }, [diff, diffError, loadTaskDiff, reviewable, task.id, task.headCommit, task.baseCommit])
 
-  const rebase = (): void => {
-    if (settings?.rebaseMode !== 'agent') openRebase(task.id)
-    else if (settings.confirmRebase === false) void rebaseWithAgent(task.id)
-    else openRebase(task.id)
-  }
-
   useEffect(() => {
     if ((work || reviewable) && !comments) void loadComments(task.id)
   }, [comments, loadComments, reviewable, task.id, work])
@@ -485,20 +483,61 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   // Submission is visible immediately, even while the turn is still stopping.
   const presentation = taskIssuePresentation(task, snapshot)
 
-  const panels: readonly TaskPanel[] = work ? ['output', 'changes', 'issues'] : ['output', 'changes']
+  const rootRef = useRef<HTMLDivElement>(null)
+  const wide = useWideLayout(rootRef)
+  const [paneHidden, setPaneHidden] = useState(() => readPreference(CHANGES_PANE_KEY) === 'hidden')
+  const [paneWidth, setPaneWidth] = useState(() => Number(readPreference(CHANGES_WIDTH_KEY)) || 0)
+  const split = wide && reviewable && !paneHidden
+  const panels: readonly TaskPanel[] = split
+    ? work ? ['output', 'issues'] : ['output']
+    : work ? ['output', 'changes', 'issues'] : ['output', 'changes']
+  const visiblePanel = split && activePanel === 'changes' ? 'output' : activePanel
+  const togglePane = (): void => {
+    const next = !paneHidden
+    setPaneHidden(next)
+    writePreference(CHANGES_PANE_KEY, next ? 'hidden' : 'shown')
+    if (!next && activePanel === 'changes') setActivePanel('output')
+  }
+
+  const changesSection = (
+    <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', !split && activePanel !== 'changes' && 'hidden')}>
+      {reviewable ? <>
+        {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
+        {diffError && <div role="alert" className="p-5 text-sm text-danger">
+          <p>{diffError}</p>
+          <button className={cn(btn.ghost, 'mt-3')} onClick={() => void loadTaskDiff(task.id)}>Retry</button>
+        </div>}
+        {diff && !approved && <RiskFlags patch={diff.patch} expectedFiles={task.expectedFiles} />}
+        {diff && <Suspense fallback={<p className="p-5 text-sm text-dim">Loading diff renderer…</p>}>
+          <PatchFiles
+            key={diff.patch}
+            patch={diff.patch}
+            comments={comments ?? []}
+            draft={draft}
+            themes={settings?.diffThemes ?? DEFAULT_DIFF_THEMES}
+            trailing={<>
+              {!approved && <span>{pending.length ? `${pending.length} note${pending.length === 1 ? '' : 's'} waiting in the message box` : 'Select a line to leave a note for the agent'}</span>}
+            </>}
+            onSelectLine={approved ? () => {} : setDraft}
+            onSubmit={(target, body) => {
+              void addComment({ taskId: task.id, ...target, body })
+              setDraft(null)
+            }}
+            onRemove={(id) => void removeComment(task.id, id)}
+          />
+        </Suspense>}
+      </> : <div className={EMPTY_PANEL}>
+        <p>{done ? 'Done' : finalDiffPending ? 'The agent is working on this task.' : DELIVERY_LABEL[task.deliveryStatus]}</p>
+        <p className="text-xs">{done ? 'No code changes to ship.' : finalDiffPending ? 'The task diff will appear here when the agent finishes.' : 'There is no diff available to ship.'}</p>
+      </div>}
+    </section>
+  )
 
   return (
-    <div className="@container relative flex flex-col h-full min-w-0 min-h-0 overflow-hidden">
+    <div ref={rootRef} className="@container relative flex flex-col h-full min-w-0 min-h-0 overflow-hidden">
       {pullRequestTaskId === task.id && (
         <OpenPullRequestModal key={task.id} task={task} onClose={() => setPullRequestTaskId(null)} />
       )}
-      {rebaseTaskId === task.id &&
-        (settings?.rebaseMode === 'agent' ? (
-          <AgentRebaseModal taskId={task.id} />
-        ) : (
-          diff && <RebaseModal taskId={task.id} commits={diff.commits} />
-        ))}
-
       <TaskStackStatus key={`stack-${task.id}`} task={task} />
       <header className="shrink-0 px-5 pt-3 pb-2 @max-[760px]:px-4 @max-[760px]:pt-2">
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 @max-[760px]:flex-col">
@@ -522,13 +561,11 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
               </span></>}
               </>}
             </span>
-            {reviewable && (shippable || !approved && pending.length > 0) && <span className="ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
-              {!approved && pending.length > 0 && <button className={btn.ghost} disabled={sending} onClick={() => void sendComments(task.id)}>
-                {sending ? 'Sending…' : `Send ${pending.length} comment${pending.length === 1 ? '' : 's'} to agent`}
-              </button>}
+            {shippable && <span className="relative ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
+              {shippable && !approved && <ShipChecks task={task} />}
               {shippable && <ShipButton
                 task={task}
-                disabled={!diff || rebasing || sending || compactBusy || Boolean(task.parentTaskId || task.restackState)}
+                disabled={!diff || sending || compactBusy || Boolean(task.parentTaskId || task.restackState)}
                 disabledReason={task.restackState ? 'Finish restacking before shipping' : task.parentTaskId ? 'Ship the parent task first' : undefined}
                 onOpenPullRequest={integrates && !approved ? () => setPullRequestTaskId(task.id) : undefined}
               />}
@@ -551,9 +588,11 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
       {task.contextCompactionError && <Notice>{task.contextCompactionError}</Notice>}
       {reviewable && commentError && <Notice>{commentError}</Notice>}
 
+      <div className="flex flex-1 min-h-0 min-w-0">
+      <div className="flex flex-1 min-h-0 min-w-0 flex-col">
       <div className="flex min-w-0 shrink-0 items-stretch gap-1 border-b border-line px-3 @max-[760px]:gap-0 @max-[760px]:px-2" role="tablist" aria-label="Task panels">
         {panels.map((panel) => {
-          const selected = activePanel === panel
+          const selected = visiblePanel === panel
           return (
             <button
               key={panel}
@@ -580,49 +619,32 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
             </button>
           )
         })}
+        {wide && reviewable && <button
+          type="button"
+          className="ml-auto flex items-center gap-1.5 self-center px-2 py-1 font-mono text-[11px] text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+          aria-pressed={split}
+          title={split ? 'Show changes as a tab' : 'Show changes beside the output'}
+          onClick={togglePane}
+        >
+          <Icon icon={split ? 'arrow-right-to-line' : 'arrow-left-to-line'} size={13} aria-hidden="true" />
+          {split ? 'Hide changes' : 'Changes beside output'}
+        </button>}
       </div>
 
       <div className="flex flex-1 min-h-0 min-w-0">
-        {work && <TaskIssues taskId={task.id} active={activePanel === 'issues'} />}
+        {work && <TaskIssues taskId={task.id} active={visiblePanel === 'issues'} />}
 
-        <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', activePanel !== 'changes' && 'hidden')}>
-          {reviewable ? <>
-            {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
-            {diffError && <div role="alert" className="p-5 text-sm text-danger">
-              <p>{diffError}</p>
-              <button className={cn(btn.ghost, 'mt-3')} onClick={() => void loadTaskDiff(task.id)}>Retry</button>
-            </div>}
-            {diff && <Suspense fallback={<p className="p-5 text-sm text-dim">Loading diff renderer…</p>}>
-              <PatchFiles
-                key={diff.patch}
-                patch={diff.patch}
-                comments={comments ?? []}
-                draft={draft}
-                themes={settings?.diffThemes ?? DEFAULT_DIFF_THEMES}
-                trailing={<>
-                  {!approved && <span>{pending.length ? `${pending.length} comment${pending.length === 1 ? '' : 's'} for the agent` : 'Select a line to leave a note for the agent'}</span>}
-                  {work && <CommitsMenu diff={diff} disabled={approved} rebasing={rebasing} onRebase={rebase} />}
-                </>}
-                onSelectLine={approved ? () => {} : setDraft}
-                onSubmit={(target, body) => {
-                  void addComment({ taskId: task.id, ...target, body })
-                  setDraft(null)
-                }}
-                onRemove={(id) => void removeComment(task.id, id)}
-              />
-            </Suspense>}
-          </> : <div className={EMPTY_PANEL}>
-            <p>{done ? 'Done' : finalDiffPending ? 'The agent is working on this task.' : DELIVERY_LABEL[task.deliveryStatus]}</p>
-            <p className="text-xs">{done ? 'No code changes to ship.' : finalDiffPending ? 'The task diff will appear here when the agent finishes.' : 'There is no diff available to ship.'}</p>
-          </div>}
-        </section>
+        {!split && changesSection}
 
-        <TaskOutput key={task.id} task={task} visible={activePanel === 'output'} presentation={presentation} onOpenChanges={openChanges} />
+        <TaskOutput key={task.id} task={task} visible={visiblePanel === 'output'} presentation={presentation} onOpenChanges={openChanges} />
       </div>
 
       {!isTaskSettled(task) && <TaskSteeringComposer
         key={`composer-${task.id}`}
         task={task}
+        notes={pending}
+        onRemoveNote={(id) => void removeComment(task.id, id)}
+        onSent={() => void loadComments(task.id)}
         contextControl={{
           compactVisible: Boolean(supportsCompaction && task.sessionId),
           busy: compactBusy,
@@ -635,6 +657,18 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
           onCompact: () => void compact()
         }}
       />}
+      </div>
+      {split && <>
+        <ResizeHandle containerRef={rootRef} width={paneWidth} onResize={(width) => {
+          setPaneWidth(width)
+          writePreference(CHANGES_WIDTH_KEY, String(Math.round(width)))
+        }} />
+        <aside aria-label="Changes pane" className="flex min-h-0 min-w-0 shrink-0 flex-col border-l border-line"
+          style={{ width: paneWidth ? `${paneWidth}px` : '50%', maxWidth: 'calc(100% - 360px)', minWidth: 360 }}>
+          {changesSection}
+        </aside>
+      </>}
+      </div>
     </div>
   )
 }

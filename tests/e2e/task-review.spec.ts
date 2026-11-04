@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { TaskIssueSnapshot } from '@anvil/protocol/types'
 
 test('review gives Pierre the full width, with per-file viewed state and a preserved output draft', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.setViewportSize({ width: 1280, height: 900 })
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/tests/e2e/fixture/?scenario=review')
@@ -80,21 +80,20 @@ test('line comments go to the agent and Ship lands the task in one click', async
   })
   await page.getByRole('tab', { name: /^Changes/ }).click()
   const review = page.getByRole('region', { name: 'Code changes' })
-  const ship = page.getByRole('button', { name: 'Ship', exact: true })
+  const ship = page.getByRole('button', { name: /^Ship( to |$)/ })
   await expect(review.getByText('Select a line to leave a note for the agent')).toBeVisible()
-  await expect(page.getByRole('button', { name: /^Send \d+ comments? to agent$/ })).toHaveCount(0)
+  const notes = page.getByRole('list', { name: 'Notes for the agent' })
+  await expect(notes).toHaveCount(0)
   await review.getByRole('region', { name: 'src/sidebar.ts' }).locator('[data-column-number="2"][data-line-type="change-addition"]').click()
   await review.getByPlaceholder('Leave a note on this line…').fill('Keep this spacing consistent')
   await review.getByRole('button', { name: 'Add comment', exact: true }).click()
   await expect(review.getByText('Keep this spacing consistent', { exact: true })).toBeVisible()
-  await expect(review.getByText('1 comment for the agent')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Send 1 comment to agent', exact: true })).toBeEnabled()
-  await review.getByRole('button', { name: 'Remove', exact: true }).click()
+  await expect(review.getByText('1 note waiting in the message box')).toBeVisible()
+  await expect(notes.getByRole('listitem')).toHaveText(['sidebar.ts:2Keep this spacing consistent×'])
+  await expect(page.getByRole('button', { name: 'Send message' })).toBeEnabled()
+  await notes.getByRole('button', { name: 'Remove note: Keep this spacing consistent' }).click()
   await expect(review.getByText('Keep this spacing consistent', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /^Send \d+ comments? to agent$/ })).toHaveCount(0)
-  await review.locator('summary').click()
-  await expect(review.getByRole('button', { name: 'Rebase', exact: true })).toBeEnabled()
-  await expect(review.getByText('Update sidebar spacing')).toBeVisible()
+  await expect(notes).toHaveCount(0)
   await ship.click()
   await expect(page.getByRole('button', { name: 'Shipping…' })).toBeDisabled()
   await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -134,7 +133,7 @@ test('the Ship menu offers the other push choice and an editable message', async
 test('ship errors stay next to the button without shipping the task', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeFailure=1')
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  const ship = page.getByRole('button', { name: 'Ship', exact: true })
+  const ship = page.getByRole('button', { name: /^Ship( to |$)/ })
   await ship.click()
   await expect(page.getByRole('alert').filter({ hasText: 'Merge failed. The task was not merged.' })).toBeVisible()
   await expect(ship).toBeEnabled()
@@ -144,7 +143,7 @@ test('ship errors stay next to the button without shipping the task', async ({ p
 test('ship conflicts open an actionable Output resolver', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1')
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await page.getByRole('button', { name: 'Ship', exact: true }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
 
   await expect(page.getByRole('tab', { name: 'Output', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Merge conflicts with user-current')
@@ -161,7 +160,7 @@ test('ship conflicts open an actionable Output resolver', async ({ page }, testI
 
 test('conflict loading errors offer a retry against the live checkout', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1&conflictLoadFailure=1')
-  await page.getByRole('button', { name: 'Ship', exact: true }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
   const output = page.getByRole('region', { name: 'Output', exact: true })
   await expect(output.getByRole('alert')).toContainText('Could not read the conflicted files')
   await output.getByRole('button', { name: 'Retry', exact: true }).click()
@@ -172,7 +171,7 @@ test('conflict loading errors offer a retry against the live checkout', async ({
 test('Pierre persists complete files across conflicts and completes the paused ship', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 900, height: 650 })
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1')
-  await page.getByRole('button', { name: 'Ship', exact: true }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
   const output = page.getByRole('region', { name: 'Output', exact: true })
   const selector = output.getByRole('combobox', { name: 'Conflicted file' })
 
@@ -198,7 +197,7 @@ test('Pierre persists complete files across conflicts and completes the paused s
 
 test('save failures reload the live file and abort returns the task to Ready to ship', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1&conflictSaveFailure=1')
-  await page.getByRole('button', { name: 'Ship', exact: true }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
   const output = page.getByRole('region', { name: 'Output', exact: true })
 
   await output.getByRole('button', { name: 'Accept current change' }).click()
@@ -207,13 +206,13 @@ test('save failures reload the live file and abort returns the task to Ready to 
   await output.getByRole('button', { name: 'Abort merge' }).click()
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Ready to ship')
   await expect(output.getByRole('log', { name: 'Task output' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toBeEnabled()
   await expect.poll(() => page.evaluate(() => window.mergeConflictTest.aborts.length)).toBe(1)
 })
 
 test('unsupported conflicts explain the fallback and Fix with agent dispatches repair', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1&conflictUnsupported=1')
-  await page.getByRole('button', { name: 'Ship', exact: true }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
   const output = page.getByRole('region', { name: 'Output', exact: true })
   await output.getByRole('combobox', { name: 'Conflicted file' }).selectOption('public/logo.png')
   await expect(output.getByText('Binary files cannot be resolved in the text conflict editor.')).toBeVisible()
@@ -226,9 +225,9 @@ test('unsupported conflicts explain the fallback and Fix with agent dispatches r
 test('a checkout that cannot be shipped reports why', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergePreviewFailure=1')
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await page.getByRole('button', { name: 'Ship', exact: true }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Check out a branch before merging' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toBeEnabled()
 })
 
 test('narrow review switches panels without losing viewed state or steering drafts', async ({ page }) => {
@@ -395,7 +394,7 @@ test('mixed-plan aggregate rejects obsolete heads, navigation and deletion respo
   await expect(children).toContainText('Save sidebar changesApproved')
   for (const width of [900, 1440]) {
     await page.setViewportSize({ width, height: 900 })
-    await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toBeInViewport({ ratio: 1 })
     expect((await file.boundingBox())!.width).toBeGreaterThan(200)
     await page.screenshot({ path: testInfo.outputPath(`mixed-final-${width}.png`) })
     await testInfo.attach(`mixed-final-${width}`, { path: testInfo.outputPath(`mixed-final-${width}.png`), contentType: 'image/png' })
