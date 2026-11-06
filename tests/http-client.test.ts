@@ -87,7 +87,7 @@ test('project import uploads a client folder to the connected server with a fixe
     platform: 'linux', onSettingsOpen: () => () => {}, pickWallpaper: async () => null,
     pickProjectFolder: async () => ({ name: 'checkout', entries: [{ path: '.git/HEAD', type: 'file', size: contents.length,
       read: async (offset, length) => contents.slice(offset, offset + length) }], dispose: release }),
-    openPath: async () => '', openPullRequest: async () => {}, openLoginUrl: async () => {},
+    openPath: async () => '', openPullRequest: async () => {}, openLoginUrl: async () => {}, openAnvilUrl: async () => {},
     browserState: async (taskId) => ({ taskId, open: false, viewport: 'desktop' }),
     browserLayout: async () => {}, browserViewport: async ({ taskId, viewport }) => ({ taskId, open: false, viewport }),
     onBrowserChanged: () => () => {}
@@ -120,7 +120,7 @@ test('project import cancellation does not start a transfer and a failed chunk c
   const release = vi.fn(async () => {})
   const host: import('@anvil/client-api').ClientHost = {
     platform: 'linux', onSettingsOpen: () => () => {}, pickWallpaper: async () => null,
-    pickProjectFolder: async () => selection, openPath: async () => '', openPullRequest: async () => {}, openLoginUrl: async () => {},
+    pickProjectFolder: async () => selection, openPath: async () => '', openPullRequest: async () => {}, openLoginUrl: async () => {}, openAnvilUrl: async () => {},
     browserState: async (taskId) => ({ taskId, open: false, viewport: 'desktop' }),
     browserLayout: async () => {}, browserViewport: async ({ taskId, viewport }) => ({ taskId, open: false, viewport }),
     onBrowserChanged: () => () => {}

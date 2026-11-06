@@ -13,6 +13,9 @@ import { acceleratorFromEvent, IS_MAC } from '../keys'
 import { autosave, retryAutosave, useSettingsAutosave } from '../state/settings-autosave'
 import { useStore } from '../state/store'
 import { useComposerPreferences } from '../state/composer-preferences'
+import { useUpdatePreferences } from '../state/update-preferences'
+import { buildInfo } from '../build-info'
+import { checkForUpdatesNow, type ManualUpdateCheckResult } from './UpdateNotifier'
 import { btn, cn, field } from '../ui'
 import { DEFAULT_KEYBINDINGS, formatAccelerator, SHORTCUTS } from '@anvil/protocol/keybindings'
 import type { Keybindings, ShortcutDefinition } from '@anvil/protocol/keybindings'
@@ -26,6 +29,47 @@ import type { ConnectionsStatus, Settings } from '@anvil/protocol/types'
 const DiffThemePreview = lazy(async () => ({
   default: (await import('./DiffThemePreview')).DiffThemePreview
 }))
+
+function UpdateSettings(): JSX.Element {
+  const checksEnabled = useUpdatePreferences((s) => s.checksEnabled)
+  const setChecksEnabled = useUpdatePreferences((s) => s.setChecksEnabled)
+  const [checking, setChecking] = useState(false)
+  const [result, setResult] = useState<ManualUpdateCheckResult | null>(null)
+  const available = buildInfo.updateChecksEnabled && !import.meta.env.DEV
+  const checkNow = (): void => {
+    setChecking(true)
+    setResult(null)
+    void checkForUpdatesNow()
+      .then(setResult, (error: unknown) => setResult({ kind: 'error', message: errorMessage(error, 'Could not check for updates.') }))
+      .finally(() => setChecking(false))
+  }
+  const resultText = result?.kind === 'update-available'
+    ? `${result.aheadBy} new ${result.aheadBy === 1 ? 'commit' : 'commits'} on main.`
+    : result?.kind === 'up-to-date' ? 'You are on the latest version.'
+    : result?.kind === 'unavailable' ? 'Update checks are not available for this build.'
+    : result?.kind === 'error' ? `Could not check for updates: ${result.message}` : null
+  return (
+    <SettingsPanel title="Updates" aside={<span className="font-mono">build {buildInfo.shortSha}</span>}>
+      <ToggleRow
+        title="Automatic update checks"
+        description="Notify me when new commits land on Anvil's main branch."
+        checked={checksEnabled}
+        disabled={!buildInfo.updateChecksEnabled}
+        onChange={setChecksEnabled}
+      />
+      <SettingRow
+        title="Check for updates"
+        description={resultText
+          ? <span role="status" className={result?.kind === 'error' ? 'text-danger-text' : undefined}>{resultText}</span>
+          : available ? 'Check main now and show the update notification if a new version is available.' : 'Update checks are not available for this build.'}
+      >
+        <button type="button" className={btn.ghost} disabled={!available || checking} onClick={checkNow}>
+          {checking ? 'Checking…' : 'Check now'}
+        </button>
+      </SettingRow>
+    </SettingsPanel>
+  )
+}
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
@@ -602,6 +646,7 @@ export function SettingsPage(): JSX.Element {
                 </SettingRow>
               </SettingsPanel>
             </>}
+            {section === 'general' && <UpdateSettings />}
             {section === 'general' && activeProject && (
               <SettingsPanel title={<><span aria-hidden="true">▲ </span>Danger zone</>} tone="danger">
                 <SettingRow

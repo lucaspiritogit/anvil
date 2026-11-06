@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, Menu, shell, powerSaveBlocker, WebContentsV
 import { showNotificationSettings } from './mac-notifications'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
-import { createDesktopIpc, openExternalCodexLogin, openExternalPullRequest, protectRendererWindow } from './renderer-security'
+import { createDesktopIpc, openExternalAnvilUrl, openExternalCodexLogin, openExternalPullRequest, protectRendererWindow } from './renderer-security'
 import { registerAppShutdown } from './app-shutdown'
 import { registerCaffeineMode } from './caffeine-mode'
 import { createServerCaffeineActivity } from './server-activity'
@@ -262,6 +262,7 @@ if (ownsInstance) app.whenReady().then(async () => {
     desktop.handle('desktop:open-path', (path) => shell.openPath(path))
     desktop.handle('desktop:open-pr-url', openExternalPullRequest)
     desktop.handle('desktop:open-login-url', openExternalCodexLogin)
+    desktop.handle('desktop:open-anvil-url', openExternalAnvilUrl)
     desktop.handle('desktop:browser-state', (taskId) => browserSessions.state(taskId))
     desktop.handle('desktop:browser-layout', (layout) => browserSessions.layout(layout))
     desktop.handle('desktop:browser-viewport', (input) => browserSessions.viewport(input.taskId, input.viewport))

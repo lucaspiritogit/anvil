@@ -1,6 +1,6 @@
 import { ipcMain, shell, type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { isDesktopRequest, type DesktopRequests } from '@anvil/protocol/desktop-requests'
-import { DITHER_KIT_URL } from '@anvil/protocol/external-links'
+import { DITHER_KIT_URL, isAnvilRepositoryUrl } from '@anvil/protocol/external-links'
 import { isGitHubPullRequestUrl } from '@anvil/protocol/github-repository'
 
 interface TrustedRenderer {
@@ -57,6 +57,15 @@ export async function openExternalPullRequest(value: unknown): Promise<void> {
     await shell.openExternal(value)
   } catch (error) {
     throw new Error('Could not open the GitHub PR in your browser.', { cause: error })
+  }
+}
+
+export async function openExternalAnvilUrl(value: unknown): Promise<void> {
+  if (!isAnvilRepositoryUrl(value)) throw new Error('Invalid Anvil repository URL.')
+  try {
+    await shell.openExternal(value)
+  } catch (error) {
+    throw new Error('Could not open the Anvil repository in your browser.', { cause: error })
   }
 }
 

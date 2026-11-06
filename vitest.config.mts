@@ -17,6 +17,7 @@ const unitSuites = [
   'tests/server-process.test.ts',
   'tests/http-client.test.ts',
   'tests/task-duration.test.ts',
+  'tests/update-check.test.ts',
   'tests/wallpaper-cache.test.ts',
   'tests/wallpapers.test.ts'
 ]

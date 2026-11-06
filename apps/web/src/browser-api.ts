@@ -1,5 +1,6 @@
 import { createAnvilApi } from '@anvil/client-api'
 import type { BrowserObservationState } from '@anvil/protocol/browser-observation'
+import { isAnvilRepositoryUrl } from '@anvil/protocol/external-links'
 
 async function openUrl(value: string): Promise<void> {
   const url = new URL(value)
@@ -7,6 +8,11 @@ async function openUrl(value: string): Promise<void> {
     throw new Error('Invalid external URL')
   }
   window.open(url.href, '_blank', 'noopener,noreferrer')
+}
+
+async function openAnvilUrl(value: string): Promise<void> {
+  if (!isAnvilRepositoryUrl(value)) throw new Error('Invalid Anvil repository URL')
+  window.open(value, '_blank', 'noopener,noreferrer')
 }
 
 // Electron supplies its bridge before this module runs. Browsers use the same
@@ -22,6 +28,7 @@ if (!window.anvil) {
     },
     openPullRequest: openUrl,
     openLoginUrl: openUrl,
+    openAnvilUrl,
     browserState: async (taskId): Promise<BrowserObservationState> => ({ taskId, open: false, viewport: 'desktop' }),
     browserLayout: async () => {},
     browserViewport: async ({ taskId, viewport }): Promise<BrowserObservationState> => ({ taskId, open: false, viewport }),

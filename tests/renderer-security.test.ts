@@ -2,8 +2,9 @@ import { onTestCleanup } from './test-cleanup'
 import { test, expect } from 'vitest'
 import { EventEmitter } from 'node:events'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
-import { isClaudeLoginUrl, isCodexLoginUrl, openExternalCodexLogin, createDesktopIpc, isRendererSender, isRendererUrl, openExternalLink, openExternalPullRequest, protectRendererWindow } from '../apps/desktop/src/main/renderer-security'
-import { DITHER_KIT_URL } from '@anvil/protocol/external-links'
+import { isClaudeLoginUrl, isCodexLoginUrl, openExternalAnvilUrl, openExternalCodexLogin, createDesktopIpc, isRendererSender, isRendererUrl, openExternalLink, openExternalPullRequest, protectRendererWindow } from '../apps/desktop/src/main/renderer-security'
+import { ANVIL_RELEASES_URL, DITHER_KIT_URL } from '@anvil/protocol/external-links'
+import { isDesktopRequest } from '@anvil/protocol/desktop-requests'
 import { handlers, shell } from './issue-tracker-doubles'
 import { rendererContents, rendererEvent, rendererFrame, rendererUrl, rendererWindow } from './renderer-fixture'
 
@@ -155,4 +156,36 @@ test('Claude OAuth links from the terminal open externally only for canonical HT
     expect(isClaudeLoginUrl(url)).toBe(false)
     await expect(openExternalLink(url)).rejects.toThrow()
   }
+})
+
+test('Anvil update links open externally only for the canonical Anvil repository', async () => {
+  const opened: string[] = []
+  Object.assign(shell, { openExternal: async (url: string) => { opened.push(url) } })
+  const allowed = [
+    ANVIL_RELEASES_URL,
+    'https://github.com/lucaspiritogit/anvil',
+    `https://github.com/lucaspiritogit/anvil/compare/${'a'.repeat(40)}...${'b'.repeat(40)}`
+  ]
+  for (const url of allowed) {
+    expect(isDesktopRequest('desktop:open-anvil-url', url), url).toBe(true)
+    await openExternalAnvilUrl(url)
+  }
+  expect(opened).toEqual(allowed)
+  for (const url of [
+    'http://github.com/lucaspiritogit/anvil',
+    'https://github.com/lucaspiritogit/anvil-evil',
+    'https://github.com/lucaspiritogit/anvilx/releases',
+    'https://github.com/other/anvil',
+    'https://evil.com/lucaspiritogit/anvil',
+    'https://github.com.evil.com/lucaspiritogit/anvil',
+    'https://user@github.com/lucaspiritogit/anvil',
+    'https://github.com:8443/lucaspiritogit/anvil',
+    'https://github.com/lucaspiritogit/anvil/../../other/repo',
+    'javascript:alert(1)',
+    ''
+  ]) {
+    expect(isDesktopRequest('desktop:open-anvil-url', url), url).toBe(false)
+    await expect(openExternalAnvilUrl(url)).rejects.toThrow('Invalid Anvil repository URL')
+  }
+  expect(opened).toEqual(allowed)
 })

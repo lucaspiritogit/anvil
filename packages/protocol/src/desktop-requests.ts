@@ -1,5 +1,6 @@
 import type { BrowserObservationLayout, BrowserViewportRequest } from './browser-observation'
 import type { ServerTarget } from './server-address'
+import { isAnvilRepositoryUrl } from './external-links'
 
 export interface DesktopServerConnectionState {
   target: ServerTarget
@@ -14,6 +15,7 @@ export interface DesktopRequests {
   'desktop:open-path': string
   'desktop:open-pr-url': string
   'desktop:open-login-url': string
+  'desktop:open-anvil-url': string
   'desktop:browser-state': string
   'desktop:browser-layout': BrowserObservationLayout
   'desktop:browser-viewport': BrowserViewportRequest
@@ -74,6 +76,7 @@ export function isDesktopRequest<C extends keyof DesktopRequests>(channel: C, va
     case 'desktop:browser-layout': return browserLayout(value)
     case 'desktop:browser-viewport': return browserViewport(value)
     case 'desktop:set-server-target': return serverTarget(value)
+    case 'desktop:open-anvil-url': return isAnvilRepositoryUrl(value)
     default: return text(value)
   }
 }

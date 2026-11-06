@@ -8,6 +8,8 @@ import { Workspace } from './components/Workspace'
 import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@anvil/protocol/appearance'
 import { TaskContextMenu } from './components/TaskContextMenu'
 import { CommandPalette } from './components/CommandPalette'
+import { Toaster } from './components/Toaster'
+import { UpdateNotifier } from './components/UpdateNotifier'
 import { matchesAccelerator, isTerminalShortcut } from './keys'
 import { cn } from './ui'
 import { useStore } from './state/store'
@@ -328,6 +330,8 @@ export function App(): JSX.Element {
         <button className="mt-2 text-accent" onClick={() => { void load() }}>Retry workspace</button>
       </div>}
       <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenTerminal={openTerminal} />
+      <UpdateNotifier />
+      <Toaster />
     </>
   )
 }

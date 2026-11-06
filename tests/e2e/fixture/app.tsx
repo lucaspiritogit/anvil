@@ -506,7 +506,8 @@ window.anvil = {
   platform: query.get('platform') === 'darwin' ? 'darwin' : query.get('platform') === 'win32' ? 'win32' : 'linux',
   app: {
     onReady: (handler: () => void) => subscribeReadiness((value) => { if (value.ok) handler() }),
-    onInitFailed: (handler: (message: string) => void) => subscribeReadiness((value) => { if (!value.ok) handler(value.message) })
+    onInitFailed: (handler: (message: string) => void) => subscribeReadiness((value) => { if (!value.ok) handler(value.message) }),
+    openRepositoryUrl: async () => {}
   },
   browser: {
     state: async (taskId) => ({ taskId, open: query.has('browser'), viewport: 'desktop' }),

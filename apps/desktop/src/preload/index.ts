@@ -49,6 +49,7 @@ const api = createAnvilApi(url, {
   openPath: (path) => ipcRenderer.invoke('desktop:open-path', path),
   openPullRequest: (value) => ipcRenderer.invoke('desktop:open-pr-url', value),
   openLoginUrl: (value) => ipcRenderer.invoke('desktop:open-login-url', value),
+  openAnvilUrl: (value) => ipcRenderer.invoke('desktop:open-anvil-url', value),
   browserState: (taskId) => ipcRenderer.invoke('desktop:browser-state', taskId),
   browserLayout: (layout) => ipcRenderer.invoke('desktop:browser-layout', layout),
   browserViewport: (input) => ipcRenderer.invoke('desktop:browser-viewport', input),

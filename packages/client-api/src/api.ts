@@ -55,6 +55,7 @@ export interface ClientHost {
   openPath(path: string): Promise<string>
   openPullRequest(url: string): Promise<void>
   openLoginUrl(url: string): Promise<void>
+  openAnvilUrl(url: string): Promise<void>
   browserState(taskId: string): Promise<BrowserObservationState>
   browserLayout(layout: BrowserObservationLayout): Promise<void>
   browserViewport(input: BrowserViewportRequest): Promise<BrowserObservationState>
@@ -142,7 +143,8 @@ export function createAnvilApi(url: string, host: ClientHost) {
       onReady: (handler: () => void): (() => void) =>
         appReadiness.subscribe((readiness) => { if (readiness.ok) handler() }),
       onInitFailed: (handler: (message: string) => void): (() => void) =>
-        appReadiness.subscribe((readiness) => { if (!readiness.ok) handler(readiness.message) })
+        appReadiness.subscribe((readiness) => { if (!readiness.ok) handler(readiness.message) }),
+      openRepositoryUrl: host.openAnvilUrl
     },
     browser: {
       state: host.browserState,
