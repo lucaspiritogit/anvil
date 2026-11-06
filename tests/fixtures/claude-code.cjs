@@ -76,6 +76,24 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     }
     return
   }
+  if (scenario === 'background-agents') {
+    write({ type: 'system', subtype: 'task_started', task_id: 'agent-a', task_type: 'local_agent', is_backgrounded: true, session_id: sessionId })
+    write({ type: 'system', subtype: 'task_started', task_id: 'agent-b', task_type: 'local_agent', is_backgrounded: true, session_id: sessionId })
+    write({ type: 'system', subtype: 'task_started', task_id: 'server', task_type: 'local_bash', is_backgrounded: true, session_id: sessionId })
+    write({ type: 'assistant', session_id: sessionId, message: { id: 'spawn', content: [{ type: 'text', text: 'Waiting for agents' }] } })
+    write({ type: 'result', subtype: 'success', is_error: false, result: 'Waiting for agents', session_id: sessionId, modelUsage: usage(5) })
+    setTimeout(() => {
+      write({ type: 'system', subtype: 'task_notification', task_id: 'agent-a', status: 'completed', session_id: sessionId })
+      write({ type: 'assistant', session_id: sessionId, message: { id: 'partial', content: [{ type: 'text', text: 'One agent done' }] } })
+      write({ type: 'result', subtype: 'success', is_error: false, result: 'One agent done', session_id: sessionId, modelUsage: usage(7) })
+    }, 50)
+    setTimeout(() => {
+      write({ type: 'system', subtype: 'task_updated', task_id: 'agent-b', patch: { status: 'completed' }, session_id: sessionId })
+      write({ type: 'assistant', session_id: sessionId, message: { id: 'final', content: [{ type: 'text', text: 'All agents done' }] } })
+      write({ type: 'result', subtype: 'success', is_error: false, result: 'All agents done', session_id: sessionId, modelUsage: usage(10) })
+    }, 100)
+    return
+  }
   if (scenario === 'quota' || scenario === 'transient') {
     write({ type: 'result', subtype: 'error_during_execution', is_error: true,
       terminal_reason: scenario === 'quota' ? 'blocking_limit' : 'api_error', api_error_status: 429,

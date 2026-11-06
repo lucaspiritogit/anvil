@@ -57,6 +57,21 @@ function requireSubscription(initialized: ClaudeObject, usage: ClaudeObject): vo
   }
 }
 
+const AWAITED_TASK_TYPES = new Set(['local_agent', 'local_workflow'])
+const FINISHED_TASK_STATUSES = new Set(['completed', 'failed', 'stopped', 'killed', 'cancelled', 'error'])
+
+function trackBackgroundTask(tasks: Set<string>, message: ClaudeObject): void {
+  if (typeof message.task_id !== 'string') return
+  if (message.subtype === 'task_started') {
+    if (typeof message.task_type === 'string' && AWAITED_TASK_TYPES.has(message.task_type)) tasks.add(message.task_id)
+  } else if (message.subtype === 'task_notification') {
+    tasks.delete(message.task_id)
+  } else if (message.subtype === 'task_updated') {
+    const patch = message.patch && typeof message.patch === 'object' ? message.patch as ClaudeObject : {}
+    if (typeof patch.status === 'string' && FINISHED_TASK_STATUSES.has(patch.status)) tasks.delete(message.task_id)
+  }
+}
+
 function terminalRetry(result: ClaudeObject, message: string): TaskResult['retry'] {
   if (['blocking_limit', 'rapid_refill_breaker', 'budget_exhausted'].includes(String(result.terminal_reason))) return undefined
   return retryableAgentFailure({ message, statusCode: result.api_error_status })
@@ -185,6 +200,7 @@ export class ClaudeCodeClient implements AgentExecutor {
       let resolveResult!: (result: ClaudeObject) => void
       let rejectInterrupted!: (error: Error) => void
       let startupFailure: string | undefined
+      const backgroundTasks = new Set<string>()
       const result = new Promise<ClaudeObject>((resolve) => { resolveResult = resolve })
       const interrupted = new Promise<never>((_, reject) => { rejectInterrupted = reject })
       void interrupted.catch(() => {})
@@ -205,10 +221,12 @@ export class ClaudeCodeClient implements AgentExecutor {
           resumeSessionId: sessionId, mcpServers: input.mcpServers, readOnly: input.readOnly,
           noSessionPersistence: input.readOnly, safeMode: input.readOnly }, {
           message: (message) => {
+            if (message.type === 'system') trackBackgroundTask(backgroundTasks, message)
             if (message.type === 'result') {
               terminal = message
               if (dispatched) startedTurn()
-              resolveResult(message)
+              const failed = message.subtype !== 'success' || message.is_error === true
+              if (!dispatched || failed || backgroundTasks.size === 0) resolveResult(message)
             }
             if (typeof message.session_id === 'string' && message.session_id && message.session_id !== sessionId) {
               sessionId = message.session_id

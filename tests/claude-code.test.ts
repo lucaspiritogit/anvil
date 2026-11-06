@@ -135,6 +135,13 @@ test('missing saved sessions recover only from explicitly supplied task recovery
   }
 })
 
+test('keeps the turn running until background subagents finish', async () => {
+  const f = await fixture('background-agents')
+  const result = await f.client.execute(f.input, () => {})
+  expect(result.status, result.error).toBe('succeeded')
+  expect(result.output).toContain('All agents done')
+})
+
 test('accepts native subscription metadata when initialization omits its optional token source and plan', async () => {
   const f = await fixture('subscription-metadata')
   const result = await f.client.execute(f.input, () => {})
