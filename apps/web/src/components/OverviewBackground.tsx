@@ -4,7 +4,7 @@ import { useStore } from '../state/store'
 import { renderWallpaper } from './wallpaper-effects'
 import { loadWallpaper } from '../state/wallpaper-cache'
 import { DEFAULT_OVERVIEW_COLOR } from '@anvil/protocol/appearance'
-import { cn } from '../ui'
+import { AsciiField } from './AsciiField'
 
 function WallpaperLayer({ image, color }: { image: HTMLImageElement; color: string }): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -58,6 +58,7 @@ function OverviewBackgroundImpl(): JSX.Element | null {
   const wallpaperMode = useStore((s) => s.settings?.overviewBackgroundMode)
   const wallpaperId = useStore((s) => s.settings?.overviewWallpaperId)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -66,23 +67,32 @@ function OverviewBackgroundImpl(): JSX.Element | null {
       return
     }
     setImage(null)
+    setFailed(false)
     void loadWallpaper(wallpaperId, { workspaceId }).then((entry) => {
       if (cancelled) return
       setImage(entry ? entry.image : null)
-    }).catch(() => { if (!cancelled) setImage(null) })
+      setFailed(!entry)
+    }).catch(() => {
+      if (cancelled) return
+      setImage(null)
+      setFailed(true)
+    })
     return () => { cancelled = true }
   }, [visible, wallpaperMode, wallpaperId, workspaceId])
 
   if (!visible) return null
 
+  const showAscii = !image && (wallpaperMode !== 'image' || !wallpaperId || failed)
+
   return (
     <div
       aria-hidden
       data-testid="overview-background"
-      className={cn('pointer-events-none absolute inset-0 -z-10', !image && 'dot-field')}
+      className="pointer-events-none absolute inset-0 -z-10"
       style={{ backgroundColor: color }}
     >
       {image && <WallpaperLayer image={image} color={color} />}
+      {showAscii && <AsciiField />}
     </div>
   )
 }
