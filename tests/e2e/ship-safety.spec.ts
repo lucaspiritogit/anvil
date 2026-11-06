@@ -3,10 +3,19 @@ import { expect, test } from '@playwright/test'
 const review = '/tests/e2e/fixture/?scenario=review'
 const ship = (page: import('@playwright/test').Page) => page.getByRole('button', { name: /^Ship( to |$)/ })
 
-test('Ship names its target branch and a shipped task can be undone', async ({ page }) => {
+test('Ship needs a hold, then commits and pushes', async ({ page }) => {
   await page.goto(review)
-  await expect(page.getByRole('button', { name: 'Ship to main', exact: true })).toBeEnabled()
   await ship(page).click()
+  await expect(page.getByLabel('Task status', { exact: true })).toContainText('Ready to ship')
+  await ship(page).click({ delay: 1000 })
+  await expect(page.getByText('Shipped & pushed', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Undo ship', exact: true })).toHaveCount(0)
+})
+
+test('Ship names its target branch and an unpushed ship can be undone', async ({ page }) => {
+  await page.goto(`${review}&shipWithoutPush=1`)
+  await expect(page.getByRole('button', { name: 'Ship to main', exact: true })).toBeEnabled()
+  await ship(page).click({ delay: 1000 })
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Shipped')
   await page.getByRole('button', { name: 'Undo ship', exact: true }).click()
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Ready to ship')
@@ -14,8 +23,8 @@ test('Ship names its target branch and a shipped task can be undone', async ({ p
 })
 
 test('undo errors stay next to the button', async ({ page }) => {
-  await page.goto(`${review}&undoShipFailure=1`)
-  await ship(page).click()
+  await page.goto(`${review}&undoShipFailure=1&shipWithoutPush=1`)
+  await ship(page).click({ delay: 1000 })
   await page.getByRole('button', { name: 'Undo ship', exact: true }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'has moved since this task was shipped' })).toBeVisible()
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Shipped')

@@ -1043,7 +1043,7 @@ window.anvil = {
       return update({
         ...tasks.find((task) => task.id === input.taskId)!,
         deliveryStatus: 'approved', shippedCommit: 'shipped-commit', reviewedAt: Date.now(),
-        ...(input.push ? { pushedCommit: 'shipped-commit' } : {})
+        ...(input.push && !query.has('shipWithoutPush') ? { pushedCommit: 'shipped-commit' } : {})
       })
     },
     onEvent: (listener: (event: TaskEvent) => void) => {

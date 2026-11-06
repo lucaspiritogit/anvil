@@ -69,7 +69,7 @@ test('ship commits a local quick task with an agent-written message and records 
   const { store, registry, headCommit, pushCalls, gitDelivery, generateText, addQuickTask } = setup()
   const task = addQuickTask()
 
-  const shipped = await registry.invoke('tasks:ship', { taskId: task.id }) as Task
+  const shipped = await registry.invoke('tasks:ship', { taskId: task.id, push: false }) as Task
 
   expect(generateText).toHaveBeenCalledTimes(1)
   expect(gitDelivery.commitPaths).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/quick.ts'], 'feat: drafted by the agent')
@@ -78,9 +78,8 @@ test('ship commits a local quick task with an agent-written message and records 
   expect(pushCalls).toHaveLength(0)
 })
 
-test('ship uses the given message without drafting and pushes when the project ships with push', async () => {
-  const { store, registry, headCommit, pushCalls, gitDelivery, generateText, project, addQuickTask } = setup()
-  store.updateProject(project.id, { shipPushes: true })
+test('ship uses the given message without drafting and pushes by default', async () => {
+  const { store, registry, headCommit, pushCalls, gitDelivery, generateText, addQuickTask } = setup()
   const task = addQuickTask()
 
   const shipped = await registry.invoke('tasks:ship', { taskId: task.id, message: 'fix: written by hand' }) as Task

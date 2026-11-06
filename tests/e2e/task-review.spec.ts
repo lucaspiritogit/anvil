@@ -71,7 +71,7 @@ test('file headers stay pinned while scrolling through every change', async ({ p
   expect(betaBox.y + betaBox.height).toBeLessThanOrEqual(headerBox.y + 1)
 })
 
-test('line comments go to the agent and Ship lands the task in one click', async ({ page }, testInfo) => {
+test('line comments go to the agent and a held Ship commits and pushes the task', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(() => {
     const calls: unknown[] = []
@@ -94,19 +94,17 @@ test('line comments go to the agent and Ship lands the task in one click', async
   await notes.getByRole('button', { name: 'Remove note: Keep this spacing consistent' }).click()
   await expect(review.getByText('Keep this spacing consistent', { exact: true })).toHaveCount(0)
   await expect(notes).toHaveCount(0)
-  await ship.click()
-  await expect(page.getByRole('button', { name: 'Shipping…' })).toBeDisabled()
+  await ship.click({ delay: 1000 })
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(ship).toHaveCount(0)
   await expect(page.getByRole('main').getByText('Shipped', { exact: true })).toHaveCSS('color', 'rgb(95, 211, 138)')
-  await expect(page.getByRole('button', { name: 'Push', exact: true })).toBeEnabled()
-  expect(await page.evaluate(() => (window as unknown as { shipCalls: unknown[] }).shipCalls)).toEqual([{ taskId: 'review', push: false }])
+  await expect(page.getByRole('button', { name: 'Push', exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => (window as unknown as { shipCalls: unknown[] }).shipCalls)).toEqual([{ taskId: 'review', push: true }])
   await page.screenshot({ path: testInfo.outputPath('shipped.png') })
-  await page.getByRole('button', { name: 'Push', exact: true }).click()
   await expect(page.getByText('Shipped & pushed', { exact: true })).toBeVisible()
 })
 
-test('the Ship menu offers the other push choice and an editable message', async ({ page }) => {
+test('the Ship menu offers an editable message', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(() => {
     const calls: unknown[] = []
@@ -115,26 +113,26 @@ test('the Ship menu offers the other push choice and an editable message', async
   })
   await page.getByRole('button', { name: 'More ship actions' }).click()
   const menu = page.getByRole('menu', { name: 'Ship actions' })
-  await expect(menu.getByRole('menuitem')).toHaveText(['Ship & push', 'Ship with message…', 'Open pull request…'])
+  await expect(menu.getByRole('menuitem')).toHaveText(['Ship with message…', 'Open pull request…'])
   await menu.getByRole('menuitem', { name: 'Ship with message…' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Ship', exact: true })
+  const dialog = page.getByRole('dialog', { name: 'Ship & push', exact: true })
   await expect(dialog).toContainText('Squash')
-  await expect(dialog.getByRole('button', { name: 'Ship', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: 'Ship & push', exact: true })).toBeDisabled()
   await dialog.getByRole('button', { name: 'Generate commit message with Codex' }).click()
   await expect(dialog.getByRole('textbox', { name: 'Commit message' })).toHaveValue('fix: clamp output rows by measured truncation')
   await dialog.getByRole('textbox', { name: 'Commit message' }).fill('feat: tighten sidebar spacing')
-  await dialog.getByRole('button', { name: 'Ship', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Ship & push', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Shipped')
   expect(await page.evaluate(() => (window as unknown as { shipCalls: unknown[] }).shipCalls))
-    .toEqual([{ taskId: 'review', push: false, message: 'feat: tighten sidebar spacing' }])
+    .toEqual([{ taskId: 'review', push: true, message: 'feat: tighten sidebar spacing' }])
 })
 
 test('ship errors stay next to the button without shipping the task', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeFailure=1')
   await page.getByRole('tab', { name: /^Changes/ }).click()
   const ship = page.getByRole('button', { name: /^Ship( to |$)/ })
-  await ship.click()
+  await ship.click({ delay: 1000 })
   await expect(page.getByRole('alert').filter({ hasText: 'Merge failed. The task was not merged.' })).toBeVisible()
   await expect(ship).toBeEnabled()
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Ready to ship')
@@ -143,7 +141,7 @@ test('ship errors stay next to the button without shipping the task', async ({ p
 test('ship conflicts open an actionable Output resolver', async ({ page }, testInfo) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1')
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click({ delay: 1000 })
 
   await expect(page.getByRole('tab', { name: 'Output', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Task status', { exact: true })).toContainText('Merge conflicts with user-current')
@@ -160,7 +158,7 @@ test('ship conflicts open an actionable Output resolver', async ({ page }, testI
 
 test('conflict loading errors offer a retry against the live checkout', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1&conflictLoadFailure=1')
-  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click({ delay: 1000 })
   const output = page.getByRole('region', { name: 'Output', exact: true })
   await expect(output.getByRole('alert')).toContainText('Could not read the conflicted files')
   await output.getByRole('button', { name: 'Retry', exact: true }).click()
@@ -171,7 +169,7 @@ test('conflict loading errors offer a retry against the live checkout', async ({
 test('Pierre persists complete files across conflicts and completes the paused ship', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 900, height: 650 })
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1')
-  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click({ delay: 1000 })
   const output = page.getByRole('region', { name: 'Output', exact: true })
   const selector = output.getByRole('combobox', { name: 'Conflicted file' })
 
@@ -197,7 +195,7 @@ test('Pierre persists complete files across conflicts and completes the paused s
 
 test('save failures reload the live file and abort returns the task to Ready to ship', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1&conflictSaveFailure=1')
-  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click({ delay: 1000 })
   const output = page.getByRole('region', { name: 'Output', exact: true })
 
   await output.getByRole('button', { name: 'Accept current change' }).click()
@@ -212,7 +210,7 @@ test('save failures reload the live file and abort returns the task to Ready to 
 
 test('unsupported conflicts explain the fallback and Fix with agent dispatches repair', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergeConflict=1&conflictUnsupported=1')
-  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click({ delay: 1000 })
   const output = page.getByRole('region', { name: 'Output', exact: true })
   await output.getByRole('combobox', { name: 'Conflicted file' }).selectOption('public/logo.png')
   await expect(output.getByText('Binary files cannot be resolved in the text conflict editor.')).toBeVisible()
@@ -225,7 +223,7 @@ test('unsupported conflicts explain the fallback and Fix with agent dispatches r
 test('a checkout that cannot be shipped reports why', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review&mergePreviewFailure=1')
   await page.getByRole('tab', { name: /^Changes/ }).click()
-  await page.getByRole('button', { name: /^Ship( to |$)/ }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click({ delay: 1000 })
   await expect(page.getByRole('alert').filter({ hasText: 'Check out a branch before merging' })).toBeVisible()
   await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toBeEnabled()
 })

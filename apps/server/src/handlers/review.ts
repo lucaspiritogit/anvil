@@ -586,7 +586,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       if (!current) throw new Error('Task not found')
       const project = store.getProjects(current.workspaceId).find((item) => item.id === current.projectId)
       if (!project) throw new Error('Project not found')
-      const pushNow = push ?? project.shipPushes
+      const pushNow = push ?? true
       if (isLocalQuickTask(current)) {
         return commitLocalTask(taskId, pushNow, (task, local) =>
           shipMessage(task, () => gitDelivery.getWorkingTreeDiff(local.path, task.reviewPaths!), message), check, true)

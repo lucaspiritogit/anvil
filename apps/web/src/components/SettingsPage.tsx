@@ -624,14 +624,6 @@ export function SettingsPage(): JSX.Element {
             <div hidden={section !== 'source-control'}>
               {activeProject && <SettingsPanel title="Shipping">
                 <ToggleRow
-                  title="Push to origin when shipping"
-                  description={<>Ship commits the task with an agent-written message. Turn this on to also push <strong className="font-mono">{activeProject.name}</strong>'s branch. The Ship menu always offers the other option.</>}
-                  checked={Boolean((edits[`project:${workspaceId}:${activeProject.id}`]?.draft.shipPushes as boolean | undefined) ?? activeProject.shipPushes)}
-                  onChange={(value) => {
-                    if (workspaceId) autosave(`project:${workspaceId}:${activeProject.id}`, { shipPushes: value })
-                  }}
-                />
-                <ToggleRow
                   title="Ship automatically when checks pass"
                   description="Ships a task as soon as its checks pass. Tasks that touch secrets, migrations, CI config or delete a lot of code still wait for you."
                   disabled={!((edits[`project:${workspaceId}:${activeProject.id}`]?.draft.checkCommand as string | undefined) ?? activeProject.checkCommand)?.trim()}

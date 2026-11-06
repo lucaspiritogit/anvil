@@ -57,7 +57,7 @@ test('quick tasks keep the Changes panel available', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
 })
 
-test('completed quick tasks ship their scoped changes, optionally pushing', async ({ page }) => {
+test('completed quick tasks ship and push their scoped changes', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const { useStore } = await import('/apps/web/src/state/store.ts')
@@ -72,10 +72,7 @@ test('completed quick tasks ship their scoped changes, optionally pushing', asyn
   })
 
   await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toBeVisible()
-  await page.getByRole('button', { name: 'More ship actions' }).click()
-  const menu = page.getByRole('menu', { name: 'Ship actions' })
-  await expect(menu.getByRole('menuitem')).toHaveText(['Ship & push', 'Ship with message…'])
-  await menu.getByRole('menuitem', { name: 'Ship & push' }).click()
+  await page.getByRole('button', { name: /^Ship( to |$)/ }).click({ delay: 1000 })
   await expect(page.getByRole('button', { name: /^Ship( to |$)/ })).toHaveCount(0)
   expect(await page.evaluate(() => (window as unknown as { lastShip: unknown }).lastShip)).toEqual({ taskId: 'review', push: true })
   await expect(page.getByRole('button', { name: 'Push', exact: true })).toHaveCount(0)
@@ -119,7 +116,7 @@ test('ship message drafts fail without losing the typed message', async ({ page 
   })
   await page.getByRole('button', { name: 'More ship actions' }).click()
   await page.getByRole('menuitem', { name: 'Ship with message…' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Ship', exact: true })
+  const dialog = page.getByRole('dialog', { name: 'Ship & push', exact: true })
   const message = dialog.getByRole('textbox', { name: 'Commit message', exact: true })
   await message.fill('Keep my message')
   await dialog.getByRole('button', { name: 'Generate commit message with Codex' }).click()
