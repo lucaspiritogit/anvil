@@ -75,7 +75,11 @@ if (query.has('steering')) {
     ...(query.has('pending') ? { status: 'pending', deliveryStatus: 'agent_failed' } : {}),
     ...(query.has('running') ? { status: 'running', deliveryStatus: 'working', endedAt: undefined } : {}),
     ...(query.has('unsupported') ? { agentId: 'legacy-cli', agentLabel: 'Legacy CLI' } : {}),
-    ...(query.has('agent') ? { agentId: query.get('agent')!, agentLabel: query.get('agent')! } : {})
+    ...(query.has('agent') ? { agentId: query.get('agent')!, agentLabel: query.get('agent')! } : {}),
+    ...(query.has('queued') ? { promptQueue: [
+      { id: 'queued-1', message: 'Also update the README with the new keyboard shortcuts once the tests pass', queuedAt: Date.now() - 60_000 },
+      { id: 'queued-2', message: 'Run the e2e suite', queuedAt: Date.now() - 30_000 }
+    ] } : {})
   } : task)
 }
 if (query.has('cancelled')) {
@@ -920,12 +924,34 @@ window.anvil = {
       tasks = [task, ...tasks]
       return task
     },
-    steer: async (input: { taskId: string; message: string }) => {
+    steer: async (input) => {
       window.dispatchEvent(new CustomEvent('fixture:steering', { detail: input }))
       await new Promise((resolve) => setTimeout(resolve, 200))
       if (query.has('steerFailure')) throw new Error('The agent rejected steering')
       const task = tasks.find((task) => task.id === input.taskId)!
+      if (task.status === 'running' && input.mode === 'queue') {
+        update({ ...task, promptQueue: [...(task.promptQueue ?? []), { id: `queued-${Date.now()}`, message: input.message, queuedAt: Date.now() }] })
+        return
+      }
       update({ ...task, status: 'running', deliveryStatus: 'working', endedAt: undefined })
+    },
+    removeQueued: async (input) => {
+      window.dispatchEvent(new CustomEvent('fixture:queue', { detail: { action: 'remove', ...input } }))
+      const { taskId, id } = input
+      const task = tasks.find((task) => task.id === taskId)!
+      update({ ...task, promptQueue: (task.promptQueue ?? []).filter((item) => item.id !== id) })
+    },
+    editQueued: async (input) => {
+      window.dispatchEvent(new CustomEvent('fixture:queue', { detail: { action: 'edit', ...input } }))
+      const { taskId, id, message } = input
+      const task = tasks.find((task) => task.id === taskId)!
+      update({ ...task, promptQueue: (task.promptQueue ?? []).map((item) => item.id === id ? { ...item, message } : item) })
+    },
+    steerQueued: async (input) => {
+      window.dispatchEvent(new CustomEvent('fixture:queue', { detail: { action: 'steer', ...input } }))
+      const { taskId, id } = input
+      const task = tasks.find((task) => task.id === taskId)!
+      update({ ...task, promptQueue: (task.promptQueue ?? []).filter((item) => item.id !== id) })
     },
     events: async (taskId: string) => taskHistory(taskId),
     eventsPage: async (input) => {

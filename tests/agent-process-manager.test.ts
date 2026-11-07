@@ -247,3 +247,29 @@ test('omits browser guidance when the browser task tool is unavailable', async (
   expect(received[0]?.prompt).not.toContain('anvil_browser')
   expect(received[0]?.mcpServers?.map((server) => server.name)).toEqual(['anvil_issue_tracker'])
 })
+
+test('routes live steering to running Claude turns and rejects it once the turn ends', async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join, resolve } = await import('node:path')
+  const { ClaudeCodeClient } = await import('../apps/server/src/agents/claude-code')
+  const { getAgent } = await import('../apps/server/src/agents/registry')
+  const directory = await mkdtemp(join(tmpdir(), 'anvil-claude-steer-'))
+  onTestCleanup(() => rm(directory, { recursive: true, force: true }))
+  const manager = new AgentProcessManager(undefined, undefined, (_agentId, workspace) => new ClaudeCodeClient({ workspace, command: process.execPath,
+    args: [resolve('tests/fixtures/claude-code.cjs'), 'steer', join(directory, 'transcript.jsonl')], requestTimeoutMs: 1000 }))
+  onTestCleanup(() => manager.close())
+  const events: TaskEvent[] = []
+  let sessionId = ''
+  manager.on('event', (event: TaskEvent) => events.push(event))
+  manager.on('session', (event: { sessionId: string }) => { sessionId = event.sessionId })
+  const agent = getAgent('claude')!
+  expect(agent.supportsSteering).toBe(true)
+  const exited = once(manager, 'exit')
+  await manager.startResumed({ workspace: testWorkspace(), taskId: 'claude-steer', agent, prompt: 'Implement it', cwd: directory })
+  await manager.steer({ taskId: 'claude-steer', sessionId, message: 'Prefer small commits' })
+  const [exit] = await exited as [ExitInfo]
+  expect(exit.code).toBe(0)
+  expect(events.some((event) => event.text.includes('Steered Prefer small commits'))).toBe(true)
+  await expect(manager.steer({ taskId: 'claude-steer', sessionId, message: 'Too late' })).rejects.toThrow(/no active agent turn/)
+})

@@ -7,7 +7,7 @@ import type { GitDeliveryManager as RealGitDeliveryManager } from '../apps/serve
 import { BUILTIN_AGENTS, getAgent } from '../apps/server/src/agents/registry'
 import { registerTaskHandlers } from '../apps/server/src/handlers/tasks'
 import { registerReviewHandlers } from '../apps/server/src/handlers/review'
-import { registerSteeringHandlers } from '../apps/server/src/handlers/steering'
+import { STEER_FALLBACK_NOTICE, registerSteeringHandlers } from '../apps/server/src/handlers/steering'
 import { createTaskMemory } from '../apps/server/src/memory/task-memory'
 import { createTaskCompletion } from '../apps/server/src/tasks/completion'
 import { registerTaskEvents } from '../apps/server/src/tasks/events'
@@ -44,11 +44,17 @@ test('serializes steering and comments through resume, completion and recovery',
     registerReviewHandlers(rendererIpc, { ...context, ...taskEvents, ...execution })
     const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, input)
     const steer = (taskId: string, message = 'Check the empty state'): Promise<void> => call('tasks:steer', { taskId, message })
+    const queued = (taskId: string): string[] => (store.getTask(taskId)?.promptQueue ?? []).map((item) => item.message)
+    const clearQueue = (taskId: string): void => {
+      for (const item of store.getTask(taskId)?.promptQueue ?? []) call('tasks:queue:remove', { taskId, id: item.id })
+    }
+    const notices = (taskId: string): number => store.readEvents(taskId).filter((event) => event.text === STEER_FALLBACK_NOTICE).length
     const tick = async (): Promise<void> => {
       for (let index = 0; index < 8; index++) await new Promise((resolve) => setImmediate(resolve))
     }
     expect(getAgent('codex')?.supportsSteering).toBe(true)
     expect(getAgent('opencode')?.supportsSteering).toBe(true)
+    expect(getAgent('claude')?.supportsSteering).toBe(true)
     expect(() => call('tasks:steer', null)).toThrow(/Invalid IPC request/)
     expect(() => call('tasks:steer', { taskId: 'task', message: 42 })).toThrow(/Invalid IPC request/)
     await expect(steer('missing')).rejects.toThrow(/Task not found/)
@@ -64,23 +70,30 @@ test('serializes steering and comments through resume, completion and recovery',
     expect(call('tasks:list')).toEqual([])
     expect(agentProcesses.starts[0].workspace.workspaceId).toBe(work.id)
     expect(() => steer(task.id, '  ')).toThrow(/Invalid IPC request/)
-    await expect(steer(task.id)).rejects.toThrow(/session yet/)
+    await steer(task.id)
+    expect(queued(task.id), 'Input before the session exists waits for the turn').toEqual(['Check the empty state'])
+    expect(notices(task.id)).toBe(1)
+    clearQueue(task.id)
+    expect(store.getTask(task.id)?.promptQueue).toBeUndefined()
     agentProcesses.emit('session', { taskId: task.id, sessionId: 'old-session' })
     agentProcesses.emit('session', { taskId: task.id, sessionId: 'latest-session' })
     await steer(task.id, '  Check the empty state  ')
     expect(agentProcesses.steering).toStrictEqual([{ taskId: task.id, sessionId: 'latest-session', message: 'Check the empty state' }])
     expect(agentProcesses.starts.length, 'Live steering must not start or cancel an execution').toBe(1)
     expect(store.getTask(task.id)?.prompt).toBe('Original task')
-    expect(store.readEvents(task.id).some((event) => event.text === 'You:\nCheck the empty state')).toBeTruthy()
+    expect(store.readEvents(task.id).some((event) => event.text === 'You (steered):\nCheck the empty state')).toBeTruthy()
 
     const originalSteer = agentProcesses.steer.bind(agentProcesses)
     agentProcesses.steer = async () => { throw new Error('Agent rejected steering') }
     const eventsBeforeRejection = store.readEvents(task.id).length
-    await expect(steer(task.id)).rejects.toThrow(/Agent rejected/)
-    expect(store.readEvents(task.id).length, 'Do not report rejected input as sent').toBe(eventsBeforeRejection)
+    await steer(task.id, 'Rejected input')
+    expect(queued(task.id)).toEqual(['Rejected input'])
+    expect(store.readEvents(task.id).length, 'Rejected input is queued, not reported as sent').toBe(eventsBeforeRejection + 1)
     agentProcesses.steer = originalSteer
     agentProcesses.active.delete(task.id)
-    await expect(steer(task.id)).rejects.toThrow(/between turns/)
+    await steer(task.id, 'Between turns')
+    expect(queued(task.id)).toEqual(['Rejected input', 'Between turns'])
+    clearQueue(task.id)
     agentProcesses.active.add(task.id)
     agentProcesses.emit('usage', { taskId: task.id, inputTokens: 10, outputTokens: 5, cachedTokens: 0, totalTokens: 15, costUsd: null })
     agentProcesses.finishTurn(task.id)
@@ -92,7 +105,8 @@ test('serializes steering and comments through resume, completion and recovery',
     const legacyAgent = { id: 'legacy-cli', label: 'Legacy CLI', description: 'Legacy CLI agent', command: 'legacy', args: [] }
     BUILTIN_AGENTS.push(legacyAgent)
     store.addTask({ ...finished, id: 'unsupported', agentId: 'legacy-cli', status: 'running', deliveryStatus: 'working' })
-    await expect(steer('unsupported')).rejects.toThrow(/cannot accept input while running/)
+    await steer('unsupported')
+    expect(queued('unsupported')).toEqual(['Check the empty state'])
     BUILTIN_AGENTS.splice(BUILTIN_AGENTS.indexOf(legacyAgent), 1)
     store.updateTask('unsupported', { status: 'failed', deliveryStatus: 'agent_failed' })
     store.updateTask(task.id, { deliveryStatus: 'finalizing' })
@@ -135,7 +149,9 @@ test('serializes steering and comments through resume, completion and recovery',
     agentProcesses.finishTurn(task.id)
     await tick()
     const continuation = trackReopen(steer(task.id, 'Use the saved settings'))
-    await expect(steer(task.id)).rejects.toThrow(/already being sent/)
+    await steer(task.id, 'Second message')
+    expect(queued(task.id), 'A message sent while another is dispatching waits').toEqual(['Second message'])
+    clearQueue(task.id)
     // The UI sends no session or settings. Main must use the latest stored values,
     // even when a session update arrives while a worktree is being reopened.
     store.updateTask(task.id, { sessionId: 'newest-session' })

@@ -20,6 +20,7 @@ const usage = (extra = 0) => ({ fable: {
   cacheReadInputTokens: baseline + extra * 3, cacheCreationInputTokens: baseline + extra * 4,
   costUSD: 25, contextWindow: 200000
 } })
+const userTurns = []
 record({ event: 'spawn', cwd: process.cwd(), config: process.env.CLAUDE_CONFIG_DIR, args })
 
 createInterface({ input: process.stdin }).on('line', (line) => {
@@ -63,6 +64,29 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   }
   if (message.type !== 'user') return
   write({ type: 'command_lifecycle', command_uuid: message.uuid, state: 'queued', session_id: sessionId })
+  if (scenario === 'steer' || scenario === 'steer-folded') {
+    userTurns.push(message.uuid)
+    const text = message.message.content[0]?.text
+    if (userTurns.length === 1) {
+      write({ type: 'command_lifecycle', command_uuid: message.uuid, state: 'started', session_id: sessionId })
+      write({ type: 'system', subtype: 'init', session_id: sessionId })
+      write({ type: 'assistant', session_id: sessionId, message: { id: 'working', content: [{ type: 'text', text: 'Working' }] } })
+      return
+    }
+    if (scenario === 'steer-folded') {
+      write({ type: 'assistant', session_id: sessionId, message: { id: 'folded', content: [{ type: 'text', text: `Folded ${text}` }] } })
+      write({ type: 'result', subtype: 'success', is_error: false, result: `Folded ${text}`, session_id: sessionId, modelUsage: usage(5) })
+      return
+    }
+    write({ type: 'result', subtype: 'success', is_error: false, result: 'Working', session_id: sessionId, modelUsage: usage(5) })
+    setTimeout(() => {
+      write({ type: 'command_lifecycle', command_uuid: message.uuid, state: 'started', session_id: sessionId })
+      write({ type: 'assistant', session_id: sessionId, message: { id: 'steered', content: [{ type: 'text', text: `Steered ${text}` }] } })
+      write({ type: 'result', subtype: 'success', is_error: false, result: `Steered ${text}`, session_id: sessionId, modelUsage: usage(10) })
+      write({ type: 'command_lifecycle', command_uuid: message.uuid, state: 'completed', session_id: sessionId })
+    }, 50)
+    return
+  }
   write({ type: 'system', subtype: 'init', session_id: sessionId, capabilities: ['msg_lifecycle_v1', 'interrupt_cancel_queued_v1'] })
   if (scenario === 'hang' || scenario === 'partial-hang' || scenario === 'mixed' && message.message.content[0]?.text === 'Hang') {
     const descendant = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: 'inherit' })

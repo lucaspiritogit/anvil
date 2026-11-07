@@ -38,13 +38,30 @@ export interface TaskExecution {
   requireFinishedTask(taskId: string): void
   issueReviewReady(taskId: string): boolean
   acceptParkedIssueReviews(): Promise<void>
+  turnStopped(taskId: string): boolean
+  onTurnSettled(listener: (taskId: string) => void): void
 }
 
 /** Anvil runs one turn per claimed issue and continues to the next issue once its changes are finalized. */
 export function registerTaskExecution(
   { store, agentProcesses, gitDelivery, send, recordSystemEvent }: TaskContext & { recordSystemEvent: RecordSystemEvent },
-  finishTask: TaskCompletion
+  completeTask: TaskCompletion
 ): TaskExecution {
+  const settledListeners: ((taskId: string) => void)[] = []
+  const turnSettled = (taskId: string): void => {
+    setImmediate(() => {
+      for (const listener of settledListeners) {
+        try { listener(taskId) } catch (error) { console.warn('Turn settlement listener failed:', error) }
+      }
+    })
+  }
+  const finishTask: TaskCompletion = async (info, options) => {
+    try {
+      await completeTask(info, options)
+    } finally {
+      turnSettled(info.taskId)
+    }
+  }
   const stacks = new TaskStacks({ store, agentProcesses, gitDelivery, send })
   const issues = new TaskIssues(store)
   // Retries belong to this running scheduler. App restarts retain the existing
@@ -439,6 +456,7 @@ export function registerTaskExecution(
       if (issueReviewReady(info.taskId)) {
         recordSystemEvent(info.taskId, `Issue ${store.getTaskExecution(info.taskId)!.currentIssueId} is awaiting developer review. Approve it or request changes to continue.`)
       }
+      turnSettled(info.taskId)
     }
   }
 
@@ -568,7 +586,11 @@ export function registerTaskExecution(
     } catch { return false }
   }
 
-  return { issueReviewReady, initializeTask, resumeTask, acceptTaskResume, rollbackTaskResume,
+  const turnStopped = (taskId: string): boolean =>
+    !starting.has(taskId) && !finishing.has(taskId) && !agentProcesses.isRunning(taskId)
+  const onTurnSettled = (listener: (taskId: string) => void): void => { settledListeners.push(listener) }
+
+  return { turnStopped, onTurnSettled, issueReviewReady, initializeTask, resumeTask, acceptTaskResume, rollbackTaskResume,
     stopTask, deferTaskCleanup, skipTaskCleanup, finishTaskTurn, runMergeConflictRepair,
     requireFinishedTask, acceptParkedIssueReviews }
 }

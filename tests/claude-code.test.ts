@@ -142,6 +142,69 @@ test('keeps the turn running until background subagents finish', async () => {
   expect(result.output).toContain('All agents done')
 })
 
+test('steers a running turn and keeps it open until the steered message is answered', async () => {
+  const f = await fixture('steer')
+  await expect(f.client.steer({ taskId: 'task', sessionId: 'none', message: 'Early' })).rejects.toThrow(/no active Claude turn/)
+  let sessionId = ''
+  let started!: () => void
+  const accepted = new Promise<void>((resolve) => { started = resolve })
+  const execution = f.client.execute({ ...f.input, onStarted: started }, (event) => {
+    if (event.type === 'session') sessionId = event.sessionId
+  })
+  await accepted
+  await expect(f.client.steer({ taskId: 'task', sessionId, message: '   ' })).rejects.toThrow(/needs some text/)
+  await expect(f.client.steer({ taskId: 'task', sessionId: 'other-session', message: 'Wrong' })).rejects.toThrow(/no longer matches/)
+  await f.client.steer({ taskId: 'task', sessionId, message: 'Use tabs' })
+  const result = await execution
+  expect(result.status, result.error).toBe('succeeded')
+  expect(result.output).toContain('Steered Use tabs')
+  const messages = userMessages(await f.entries())
+  expect(messages).toHaveLength(2)
+  expect(messages[1]).toMatchObject({ session_id: sessionId, origin: { kind: 'human' }, message: { content: [{ type: 'text', text: 'Use tabs' }] } })
+  expect(messages[1].uuid).not.toBe(messages[0].uuid)
+  await expect(f.client.steer({ taskId: 'task', sessionId, message: 'Late' })).rejects.toThrow(/no active Claude turn/)
+})
+
+test('settles a steered turn when Claude folds the message into the running turn', async () => {
+  const f = await fixture('steer-folded')
+  f.client = new ClaudeCodeClient({ workspace: f.workspace, command: process.execPath,
+    args: [resolve('tests/fixtures/claude-code.cjs'), 'steer-folded', f.transcript], requestTimeoutMs: 1000, steerSettleMs: 20 })
+  onTestCleanup(() => f.client.close())
+  let sessionId = ''
+  let started!: () => void
+  const accepted = new Promise<void>((resolve) => { started = resolve })
+  const execution = f.client.execute({ ...f.input, onStarted: started }, (event) => {
+    if (event.type === 'session') sessionId = event.sessionId
+  })
+  await accepted
+  await f.client.steer({ taskId: 'task', sessionId, message: 'Rename it' })
+  const result = await execution
+  expect(result.status, result.error).toBe('succeeded')
+  expect(result.output).toContain('Folded Rename it')
+})
+
+test('rejects steering during compaction and after cancellation', async () => {
+  const f = await fixture('hang')
+  const controller = new AbortController()
+  let started!: () => void
+  const accepted = new Promise<void>((resolve) => { started = resolve })
+  const execution = f.client.execute({ ...f.input, resumeSessionId: 'saved-session', signal: controller.signal, onStarted: started }, () => {})
+  await accepted
+  controller.abort()
+  await expect(f.client.steer({ taskId: 'task', sessionId: 'saved-session', message: 'Too late' })).rejects.toThrow(/not accepting input|no active Claude turn/)
+  expect((await execution).status).toBe('cancelled')
+  const compacting = await fixture('hang')
+  let compactStarted!: () => void
+  const compactAccepted = new Promise<void>((resolve) => { compactStarted = resolve })
+  const compactController = new AbortController()
+  const compaction = compacting.client.execute({ ...compacting.input, resumeSessionId: 'saved-session', compactOnly: true,
+    signal: compactController.signal, onStarted: compactStarted }, () => {})
+  await compactAccepted
+  await expect(compacting.client.steer({ taskId: 'task', sessionId: 'saved-session', message: 'Wait' })).rejects.toThrow(/not accepting input/)
+  compactController.abort()
+  expect((await compaction).status).toBe('cancelled')
+})
+
 test('accepts native subscription metadata when initialization omits its optional token source and plan', async () => {
   const f = await fixture('subscription-metadata')
   const result = await f.client.execute(f.input, () => {})

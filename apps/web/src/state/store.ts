@@ -21,7 +21,7 @@ import type {
   TaskMergePreview,
   TaskPushPreview,
   Settings, Workspace, WorkspaceSnapshot, WorkspaceSettingsChange, TaskCheckoutMode,
-  TaskResultNotice, TaskResultNoticeChange
+  TaskResultNotice, TaskResultNoticeChange, TaskSteerMode
 } from '@anvil/protocol/types'
 
 const MAX_LINES_IN_MEMORY = MAX_TASK_EVENT_PAGE_SIZE
@@ -214,7 +214,10 @@ interface AnvilState {
 
   loadAgentModels: (agentId: string) => Promise<void>
   startTask: (input: { projectId?: string | null; checkoutMode?: TaskCheckoutMode; startBase?: string; parentTaskId?: string; agentId: string; prompt: string; model?: string; reasoningEffort?: string; images?: TaskImageAttachment[]; fileReferences?: string[] }) => Promise<Task | undefined>
-  steerTask: (taskId: string, message: string) => Promise<void>
+  steerTask: (taskId: string, message: string, mode?: TaskSteerMode) => Promise<void>
+  removeQueuedPrompt: (taskId: string, id: string) => Promise<void>
+  editQueuedPrompt: (taskId: string, id: string, message: string) => Promise<void>
+  steerQueuedPrompt: (taskId: string, id: string) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   openTask: (taskId: string, panel?: TaskPanel) => Promise<void>
   loadTaskDiff: (taskId: string) => Promise<void>
@@ -637,10 +640,22 @@ export const useStore = create<AnvilState>((set, get) => ({
     return task
   },
 
-  steerTask: async (taskId, message) => {
+  steerTask: async (taskId, message, mode) => {
     // Task/session selection and inherited settings are authoritative in main.
     // Updates arrive through task:updated, not a potentially stale IPC snapshot.
-    await window.anvil.tasks.steer({ taskId, message })
+    await window.anvil.tasks.steer(mode ? { taskId, message, mode } : { taskId, message })
+  },
+
+  removeQueuedPrompt: async (taskId, id) => {
+    await window.anvil.tasks.removeQueued({ taskId, id })
+  },
+
+  editQueuedPrompt: async (taskId, id, message) => {
+    await window.anvil.tasks.editQueued({ taskId, id, message })
+  },
+
+  steerQueuedPrompt: async (taskId, id) => {
+    await window.anvil.tasks.steerQueued({ taskId, id })
   },
 
   cancelTask: async (taskId) => {

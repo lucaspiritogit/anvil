@@ -235,7 +235,10 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
     if (!hasTaskContent(input.prompt, input.images)) invalid(field, 'requires a prompt or an image')
     return input
   },
-  'tasks:steer': object({ taskId: id, message: text(100_000) }),
+  'tasks:steer': object({ taskId: id, message: text(100_000), mode: optional(oneOf('steer', 'queue')) }),
+  'tasks:queue:remove': object({ taskId: id, id }),
+  'tasks:queue:edit': object({ taskId: id, id, message: text(100_000) }),
+  'tasks:queue:steer': object({ taskId: id, id }),
   'tasks:compact': id,
   'tasks:stack': object({ taskId: id, parentTaskId: id }),
   'tasks:stack-dismiss': id,

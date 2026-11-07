@@ -46,7 +46,7 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     command: 'claude',
     args: [],
     executionProtocol: 'claude-code',
-    supportsSteering: false,
+    supportsSteering: true,
     supportsCompaction: true,
     models: { kind: 'adapter', adapterId: 'claude' }
   }

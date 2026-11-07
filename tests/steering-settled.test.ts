@@ -93,6 +93,6 @@ test('rejects settled steering and preserves stopped resume and live steering pa
     expect(agentProcesses.starts.length, 'Live steering must not restart the task').toBe(startsBeforeSteering)
     expect(store.getTask('running')?.status, 'A running task keeps running through steering').toBe('running')
     expect(store.getTask('running')?.sessionId).toBe('live-session')
-    expect(store.readEvents('running').some((event) => event.text === 'You:\nLive adjustment')).toBeTruthy()
+    expect(store.readEvents('running').some((event) => event.text === 'You (steered):\nLive adjustment')).toBeTruthy()
   }
 })

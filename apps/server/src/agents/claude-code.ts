@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import type { ProviderModelList } from '@anvil/protocol/types'
 import { canonicalReasoningOptions } from '@anvil/protocol/reasoning-levels'
-import type { AgentExecutor, TaskEvent, TaskInput, TaskResult } from './agent-executor'
+import type { AgentExecutor, TaskEvent, TaskInput, TaskResult, TaskSteeringInput } from './agent-executor'
 import type { WorkspaceExecutionContext } from './workspace-execution'
 import { retryableAgentFailure } from './agent-failure'
 import { ClaudeCodeConnection, type ClaudeCodeConnectionOptions, type ClaudeCodeConnectionHandlers, type ClaudeObject } from './claude-code-connection'
@@ -21,6 +21,7 @@ export interface ClaudeCodeOptions {
   command?: string
   args?: string[]
   requestTimeoutMs?: number
+  steerSettleMs?: number
   connection?: (options: ClaudeCodeConnectionOptions, handlers: ClaudeCodeConnectionHandlers) => ClaudeCodeTransport
 }
 
@@ -28,6 +29,7 @@ interface ClaudeExecution {
   taskId: string
   sessionId?: string
   connection?: ClaudeCodeTransport
+  steer?(message: string): Promise<void>
   cancel(): void
   completion: Promise<void>
 }
@@ -140,6 +142,15 @@ export class ClaudeCodeClient implements AgentExecutor {
     }
   }
 
+  async steer(input: TaskSteeringInput): Promise<void> {
+    if (!input.message.trim()) throw new Error('A steering message needs some text')
+    const execution = [...this.executions].find((entry) => entry.taskId === input.taskId)
+    if (!execution) throw new Error('This task has no active Claude turn')
+    if (!execution.sessionId || execution.sessionId !== input.sessionId) throw new Error('This Claude session no longer matches the active turn')
+    if (!execution.steer) throw new Error('The Claude turn is not accepting input. Wait and try again.')
+    await execution.steer(input.message)
+  }
+
   compact(input: TaskInput, onEvent: (event: TaskEvent) => void): Promise<TaskResult> {
     if (!input.resumeSessionId) throw new Error('Compaction requires a saved Claude session')
     return this.execute({ ...input, compactOnly: true, images: undefined, resumeFallbackPrompt: undefined }, onEvent)
@@ -201,12 +212,31 @@ export class ClaudeCodeClient implements AgentExecutor {
       let rejectInterrupted!: (error: Error) => void
       let startupFailure: string | undefined
       const backgroundTasks = new Set<string>()
+      const steered = new Map<string, boolean>()
+      let settleTimer: ReturnType<typeof setTimeout> | undefined
+      let settled = false
+      const clearSettle = (): void => {
+        if (settleTimer) clearTimeout(settleTimer)
+        settleTimer = undefined
+      }
+      const finishTurn = (message: ClaudeObject): void => {
+        clearSettle()
+        settled = true
+        execution.steer = undefined
+        resolveResult(message)
+      }
+      const awaitSteered = (message: ClaudeObject): void => {
+        clearSettle()
+        settleTimer = setTimeout(() => { finishTurn(message) }, this.options.steerSettleMs ?? 2_000)
+      }
       const result = new Promise<ClaudeObject>((resolve) => { resolveResult = resolve })
       const interrupted = new Promise<never>((_, reject) => { rejectInterrupted = reject })
       void interrupted.catch(() => {})
       const request = <Response>(promise: Promise<Response>): Promise<Response> => Promise.race([promise, interrupted, connection!.failure])
       const cancel = (): void => {
         rejectInterrupted(new Error('Task cancelled.'))
+        execution.steer = undefined
+        clearSettle()
         if (!connection) return
         void connection.request('interrupt', { cancel_queued: true }).catch(() => {})
         void connection.close().catch(() => {})
@@ -222,11 +252,25 @@ export class ClaudeCodeClient implements AgentExecutor {
           noSessionPersistence: input.readOnly, safeMode: input.readOnly }, {
           message: (message) => {
             if (message.type === 'system') trackBackgroundTask(backgroundTasks, message)
-            if (message.type === 'result') {
+            if (message.type === 'command_lifecycle' && typeof message.command_uuid === 'string' && steered.has(message.command_uuid)) {
+              if (message.state === 'started') {
+                steered.set(message.command_uuid, true)
+                clearSettle()
+              } else if (message.state !== 'queued') {
+                steered.delete(message.command_uuid)
+              }
+            }
+            if (settleTimer && (message.type === 'assistant' || message.type === 'stream_event' || message.type === 'system' && message.subtype === 'init')) clearSettle()
+            if (message.type === 'result' && !settled) {
               terminal = message
               if (dispatched) startedTurn()
               const failed = message.subtype !== 'success' || message.is_error === true
-              if (!dispatched || failed || backgroundTasks.size === 0) resolveResult(message)
+              for (const [uuid, started] of steered) if (started) steered.delete(uuid)
+              if (!dispatched || failed) finishTurn(message)
+              else if (backgroundTasks.size === 0) {
+                if (steered.size === 0) finishTurn(message)
+                else awaitSteered(message)
+              }
             }
             if (typeof message.session_id === 'string' && message.session_id && message.session_id !== sessionId) {
               sessionId = message.session_id
@@ -259,6 +303,23 @@ export class ClaudeCodeClient implements AgentExecutor {
         signal.throwIfAborted()
         input.beforeDispatch?.()
         dispatched = true
+        const active = connection
+        if (!input.compactOnly && !input.readOnly) {
+          execution.steer = async (text) => {
+            if (settled || signal.aborted) throw new Error('The Claude turn is finishing. Wait and try again.')
+            const uuid = randomUUID()
+            steered.set(uuid, false)
+            if (settleTimer && terminal) awaitSteered(terminal)
+            try {
+              await request(active.send({ type: 'user', uuid, session_id: sessionId ?? '',
+                parent_tool_use_id: null, origin: { kind: 'human' },
+                message: { role: 'user', content: [{ type: 'text', text: /^\s*\//.test(text) ? `User request:\n\n${text}` : text }] } }))
+            } catch (failure) {
+              steered.delete(uuid)
+              throw failure
+            }
+          }
+        }
         await request(connection.send({ type: 'user', uuid: userMessageId, session_id: sessionId ?? '',
           parent_tool_use_id: null, origin: { kind: 'human' },
           message: { role: 'user', content: input.compactOnly ? '/compact' : [
@@ -303,6 +364,9 @@ export class ClaudeCodeClient implements AgentExecutor {
         }
       } finally {
         signal.removeEventListener('abort', cancel)
+        execution.steer = undefined
+        settled = true
+        clearSettle()
         try {
           await connection?.close()
         } catch (failure) {

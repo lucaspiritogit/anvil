@@ -151,6 +151,7 @@ export const tasks = sqliteTable(
     shippedCommit: text('shipped_commit'),
     shippedHead: text('shipped_head'),
     checks: text('checks', { mode: 'json' }).$type<import('@anvil/protocol/types').TaskChecks>(),
+    promptQueue: text('prompt_queue', { mode: 'json' }).$type<import('@anvil/protocol/types').TaskQueuedPrompt[]>(),
     filesChanged: integer('files_changed').notNull().default(0),
     additions: integer('additions').notNull().default(0),
     deletions: integer('deletions').notNull().default(0),

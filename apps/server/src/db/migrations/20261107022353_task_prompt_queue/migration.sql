@@ -1,0 +1,1 @@
+ALTER TABLE `tasks` ADD `prompt_queue` text;

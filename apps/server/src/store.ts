@@ -189,6 +189,7 @@ function toTask(row: TaskRow): Task {
     ...(row.shippedCommit === null ? {} : { shippedCommit: row.shippedCommit }),
     ...(row.shippedHead === null ? {} : { shippedHead: row.shippedHead }),
     ...(row.checks === null ? {} : { checks: row.checks }),
+    ...(row.promptQueue?.length ? { promptQueue: row.promptQueue } : {}),
     filesChanged: row.filesChanged,
     additions: row.additions,
     deletions: row.deletions,
@@ -297,7 +298,8 @@ function toTaskRow(task: Task): typeof tasks.$inferInsert {
     contextUsed: task.contextUsed ?? null,
     contextSize: task.contextSize ?? null,
     contextCompactionError: task.contextCompactionError ?? null,
-    sessionId: task.sessionId ?? null
+    sessionId: task.sessionId ?? null,
+    promptQueue: task.promptQueue?.length ? task.promptQueue : null
   }
 }
 

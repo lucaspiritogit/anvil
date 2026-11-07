@@ -507,6 +507,7 @@ export interface Task {
   shippedCommit?: string
   shippedHead?: string
   checks?: TaskChecks
+  promptQueue?: TaskQueuedPrompt[]
   /** Current PR for this task's reviewable head revision. Derived from persisted link metadata. */
   pullRequest?: TaskPullRequest
   filesChanged: number
@@ -524,6 +525,14 @@ export interface Task {
 export type TaskChecksStatus = 'running' | 'passed' | 'failed'
 
 /** The project check command's latest run against this task's changes. */
+export type TaskSteerMode = 'steer' | 'queue'
+
+export interface TaskQueuedPrompt {
+  id: string
+  message: string
+  queuedAt: number
+}
+
 export interface TaskChecks {
   status: TaskChecksStatus
   command: string
