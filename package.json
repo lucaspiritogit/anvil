@@ -43,6 +43,7 @@
     "build:server": "npm run build:web && npm run build --workspace @anvil/server",
     "build:desktop": "npm run build:server && npm run build --workspace @anvil/desktop",
     "package:server": "npm run build:server && node scripts/package-server.mjs",
+    "deploy:server": "node scripts/deploy-local-server.mjs",
     "serve": "npm run build:server && node out/server/index.js --headless",
     "serve:lan": "npm run build:server && node out/server/index.js --headless --lan",
     "serve:tailscale": "npm run build:server && node out/server/index.js --headless --tailscale"
