@@ -160,6 +160,7 @@ interface AnvilState {
   commentsByTask: Record<string, TaskComment[]>
   sendingComments: string | null
   commentError: string | null
+  shippingTaskIds: Record<string, true>
   mergeConflictState: MergeConflictState | null
   gitInitPending: string | null
   gitInitError: string | null
@@ -436,6 +437,7 @@ export const useStore = create<AnvilState>((set, get) => ({
   commentsByTask: {},
   sendingComments: null,
   commentError: null,
+  shippingTaskIds: {},
   mergeConflictState: null,
 
   taskComposerFocusRequest: 0,
@@ -815,12 +817,20 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
 
   shipTask: async (taskId, input = {}) => {
-    const task = await window.anvil.tasks.ship({ taskId, ...input })
-    set((s) => ({
-      tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
-      commentError: null
-    }))
-    return task
+    set((s) => ({ shippingTaskIds: { ...s.shippingTaskIds, [taskId]: true } }))
+    try {
+      const task = await window.anvil.tasks.ship({ taskId, ...input })
+      set((s) => ({
+        tasks: s.tasks.map((item) => (item.id === task.id ? task : item)),
+        commentError: null
+      }))
+      return task
+    } finally {
+      set((s) => {
+        const { [taskId]: _, ...shippingTaskIds } = s.shippingTaskIds
+        return { shippingTaskIds }
+      })
+    }
   },
 
   undoShip: async (taskId) => {
