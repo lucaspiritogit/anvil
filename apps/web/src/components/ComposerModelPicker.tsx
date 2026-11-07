@@ -10,12 +10,13 @@ import { ProviderIcon } from './ProviderIcon'
 
 import { catalogueModelOptions, describeModel, groupModelsBySubscription, modelMatchesQuery, type ModelOption } from '../model-options'
 
-export function ComposerModelPicker({ agents, agentId, selectedModels, value, onChange }: {
+export function ComposerModelPicker({ agents, agentId, selectedModels, value, onChange, ghost }: {
   agents: AgentDefinition[]
   agentId: string
   selectedModels: Record<string, string>
   value: string
   onChange: (agentId: string, model: string) => void
+  ghost?: boolean
 }): JSX.Element {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -35,7 +36,7 @@ export function ComposerModelPicker({ agents, agentId, selectedModels, value, on
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(true)}
-        className="flex h-[30px] min-w-0 max-w-full items-center gap-2 overflow-hidden border border-line-strong bg-overlay px-2 font-mono text-xs hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:text-faint"
+        className={cn('flex h-[30px] min-w-0 max-w-full items-center gap-2 overflow-hidden border border-line-strong px-2 font-mono text-xs hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:text-faint', !ghost && 'bg-overlay')}
       >
         {agent && selected.name ? <AgentIcon agentId={agentId} label={agent.label} size={16} />
           : <Icon icon="brain-circuit" size={16} className="shrink-0 text-dim" aria-hidden="true" />}

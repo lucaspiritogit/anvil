@@ -14,7 +14,7 @@ export type MenuSelectOption<T extends string = string> = {
 
 const SEARCH_THRESHOLD = 8
 
-export function MenuSelect<T extends string>({ label, title, aside, value, options, onChange, icon, placeholder, disabled, describedBy, searchable, className }: {
+export function MenuSelect<T extends string>({ label, title, aside, value, options, onChange, icon, placeholder, disabled, describedBy, searchable, className, ghost }: {
   label: string
   title?: string
   aside?: ReactNode
@@ -27,6 +27,7 @@ export function MenuSelect<T extends string>({ label, title, aside, value, optio
   describedBy?: string
   searchable?: boolean
   className?: string
+  ghost?: boolean
 }): JSX.Element {
   const menuId = useId()
   const listId = `${menuId}-list`
@@ -169,7 +170,7 @@ export function MenuSelect<T extends string>({ label, title, aside, value, optio
         disabled={disabled}
         className={cn(
           'flex h-[30px] min-w-0 max-w-full shrink-0 items-center gap-2 border px-2 font-mono text-xs text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:border-line disabled:bg-raised disabled:text-faint',
-          open ? 'border-accent bg-hover' : 'border-line-strong bg-overlay hover:border-dim hover:bg-hover',
+          open ? 'border-accent bg-hover' : cn('border-line-strong hover:border-dim hover:bg-hover', !ghost && 'bg-overlay'),
           className
         )}
         popoverTarget={menuId}

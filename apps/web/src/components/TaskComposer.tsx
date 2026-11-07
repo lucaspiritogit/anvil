@@ -161,6 +161,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
 
   return (
     <div>
+      <h1 className="mb-8 text-center text-3xl font-semibold tracking-tight text-fg max-[700px]:mb-5 max-[700px]:text-2xl">Let’s start building</h1>
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
       {isolated && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">An isolated worktree requires a Git repository. Use the current checkout instead.</p>}
       <ProjectBranchSelector
@@ -247,6 +248,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
               selectedModels={preferences.modelsByAgent}
               value={model}
               onChange={preferences.setSelection}
+              ghost
             />
             <ComposerOverflowOptions containerRef={composerRef}>
               <MenuSelect
@@ -254,6 +256,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 title="Thinking"
                 aside={model.trim() || undefined}
                 icon="brain"
+                ghost
                 value={reasoningEffort ?? ''}
                 placeholder={loadingEfforts ? 'Loading efforts…' : catalogue?.error || (model && !capabilities) ? 'Reasoning unavailable' : 'Agent default'}
                 disabled={loadingEfforts || !reasoningOptions.length}
@@ -266,7 +269,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
                 type="button"
                 aria-label="Attach image"
                 title="Attach image"
-                className="grid h-8 w-9 shrink-0 place-items-center border border-line-strong bg-overlay text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:text-faint"
+                className="grid h-8 w-9 shrink-0 place-items-center border border-line-strong text-dim transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:text-faint"
                 disabled={busy}
                 onClick={() => imageInputRef.current?.click()}
               >

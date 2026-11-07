@@ -238,8 +238,8 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
           anchorRef={projectRef}
           label="Choose project"
           choices={[
-            ...projects.map((project) => ({ id: project.id, label: project.name, description: project.path })),
-            { id: '', label: 'No project', description: 'Start a Quick task in this workspace' }
+            { id: '', label: 'No project', description: 'Start a Quick task in this workspace' },
+            ...projects.map((project) => ({ id: project.id, label: project.name, description: project.path }))
           ]}
           selectedId={activeProjectId ?? ''}
           onClose={() => setNestedPicker(null)}

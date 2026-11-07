@@ -31,7 +31,7 @@ export function ComposerOverflowOptions({ children, containerRef }: {
         aria-label="More task options"
         aria-expanded={open}
         title="More task options"
-        className="grid size-[30px] place-items-center border border-line-strong bg-overlay text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45 @min-[640px]/composer:hidden"
+        className="grid size-[30px] place-items-center border border-line-strong text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45 @min-[640px]/composer:hidden"
         onClick={(event) => {
           event.preventDefault()
           const popover = popoverRef.current
