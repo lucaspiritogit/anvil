@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test, vi } from 'vitest'
 import type { AnvilApi } from '@anvil/client-api'
 import type { AgentAccountTarget, ClaudeRateLimits, CodexRateLimits, WorkspaceAgentAccount } from '@anvil/protocol/types'
-import { emptyWorkspaceUsage, watchWorkspaceUsage, workspaceUsageProviders, type WorkspaceUsageSnapshot } from '../apps/web/src/workspace-usage-limits'
+import { cachedWorkspaceUsage, emptyWorkspaceUsage, subscribeWorkspaceUsage, watchWorkspaceUsage, workspaceUsageProviders, type WorkspaceUsageSnapshot } from '../apps/web/src/workspace-usage-limits'
 import { ProviderLimits } from '../apps/web/src/components/ProviderLimits'
 
 vi.mock('../apps/web/src/components/ProviderIcon', () => ({
@@ -298,4 +298,40 @@ test('discards both providers after workspace cleanup', async () => {
   pendingClaude.resolve(claudeLimits)
   await settle()
   expect(changes).toHaveBeenCalledTimes(count)
+})
+
+test('keeps prior limits while a seeded watch refreshes account status', async () => {
+  const fixture = accountsFixture()
+  const pendingLimits = deferred<CodexRateLimits | ClaudeRateLimits>()
+  fixture.rateLimits.mockImplementation(() => pendingLimits.promise)
+  const seed = { codex: codexLimits, claude: claudeLimits, codexConnected: true, claudeConnected: true }
+  const snapshots: WorkspaceUsageSnapshot[] = []
+  const stop = watchWorkspaceUsage('work', fixture.api, (next) => snapshots.push(next), seed)
+  await settle()
+  expect(snapshots.every((snapshot) => snapshot.codex === codexLimits && snapshot.claude === claudeLimits)).toBe(true)
+  stop()
+})
+
+test('shares one watcher across quick remounts and serves the cached snapshot immediately', async () => {
+  vi.useFakeTimers()
+  try {
+    const fixture = accountsFixture()
+    const first = vi.fn()
+    const stopFirst = subscribeWorkspaceUsage('shared', fixture.api, first, 1_000)
+    await settle()
+    expect(cachedWorkspaceUsage('shared')?.claude).toEqual(claudeLimits)
+    stopFirst()
+    vi.advanceTimersByTime(500)
+    const second = vi.fn()
+    const stopSecond = subscribeWorkspaceUsage('shared', fixture.api, second, 1_000)
+    expect(second).toHaveBeenCalledTimes(1)
+    expect(second.mock.calls[0][0].codex).toEqual(codexLimits)
+    expect(fixture.status).toHaveBeenCalledTimes(2)
+    stopSecond()
+    vi.advanceTimersByTime(1_000)
+    expect(fixture.unsubscribe).toHaveBeenCalledTimes(1)
+    expect(cachedWorkspaceUsage('shared')?.codex).toEqual(codexLimits)
+  } finally {
+    vi.useRealTimers()
+  }
 })

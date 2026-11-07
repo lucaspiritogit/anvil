@@ -63,12 +63,13 @@ export function workspaceUsageProviders(snapshot: WorkspaceUsageSnapshot, now: n
 export function watchWorkspaceUsage(
   workspaceId: string,
   accounts: Pick<AnvilApi['accounts'], 'status' | 'rateLimits' | 'onChanged'>,
-  onChange: (snapshot: WorkspaceUsageSnapshot) => void
+  onChange: (snapshot: WorkspaceUsageSnapshot) => void,
+  initial: WorkspaceUsageSnapshot = emptyWorkspaceUsage()
 ): () => void {
   let active = true
   let codexRequest = 0
   let claudeRequest = 0
-  let snapshot = emptyWorkspaceUsage()
+  let snapshot = initial
   const publish = (patch: Partial<WorkspaceUsageSnapshot>): void => {
     if (!active) return
     snapshot = { ...snapshot, ...patch }
@@ -139,5 +140,57 @@ export function watchWorkspaceUsage(
     active = false
     clearInterval(timer)
     off()
+  }
+}
+
+type UsageAccounts = Pick<AnvilApi['accounts'], 'status' | 'rateLimits' | 'onChanged'>
+
+interface SharedWorkspaceUsage {
+  snapshot: WorkspaceUsageSnapshot | null
+  listeners: Set<(snapshot: WorkspaceUsageSnapshot) => void>
+  stop: (() => void) | null
+  idle: ReturnType<typeof setTimeout> | null
+}
+
+const WORKSPACE_USAGE_LINGER_MS = 60_000
+const sharedUsage = new Map<string, SharedWorkspaceUsage>()
+
+export function cachedWorkspaceUsage(workspaceId: string): WorkspaceUsageSnapshot | null {
+  return sharedUsage.get(workspaceId)?.snapshot ?? null
+}
+
+export function subscribeWorkspaceUsage(
+  workspaceId: string,
+  accounts: UsageAccounts,
+  listener: (snapshot: WorkspaceUsageSnapshot) => void,
+  lingerMs: number = WORKSPACE_USAGE_LINGER_MS
+): () => void {
+  let entry = sharedUsage.get(workspaceId)
+  if (!entry) {
+    entry = { snapshot: null, listeners: new Set(), stop: null, idle: null }
+    sharedUsage.set(workspaceId, entry)
+  }
+  const shared = entry
+  if (shared.idle) {
+    clearTimeout(shared.idle)
+    shared.idle = null
+  }
+  shared.listeners.add(listener)
+  if (shared.snapshot) listener(shared.snapshot)
+  if (!shared.stop) {
+    shared.stop = watchWorkspaceUsage(workspaceId, accounts, (snapshot) => {
+      shared.snapshot = snapshot
+      for (const notify of shared.listeners) notify(snapshot)
+    }, shared.snapshot ?? emptyWorkspaceUsage())
+  }
+  return () => {
+    shared.listeners.delete(listener)
+    if (shared.listeners.size || shared.idle) return
+    shared.idle = setTimeout(() => {
+      shared.idle = null
+      if (shared.listeners.size) return
+      shared.stop?.()
+      shared.stop = null
+    }, lingerMs)
   }
 }
