@@ -1,13 +1,9 @@
 import { expect, test } from '@playwright/test'
-import { chooseMenuOption, restoreComposerSelection } from './composer-setup'
 
-test('composer submits the selected stack parent', async ({ page }) => {
-  await restoreComposerSelection(page)
+test('composer has no manual stack picker', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/')
-  await chooseMenuOption(page.getByRole('combobox', { name: 'Stack on task' }), 'Build streaming support')
-  await page.getByRole('textbox', { name: 'Task prompt' }).fill('Build the next part')
-  await page.getByRole('textbox', { name: 'Task prompt' }).press('Control+Enter')
-  await expect.poll(() => page.evaluate(() => window.composerTest.starts[0]?.parentTaskId)).toBe('running')
+  await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Stack on task' })).toHaveCount(0)
 })
 
 test('legacy suggestions are hidden while an automatic stack links the parent', async ({ page }, testInfo) => {

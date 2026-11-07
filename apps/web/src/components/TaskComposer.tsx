@@ -1,5 +1,4 @@
 import type { JSX } from 'react'
-import { canStackOnTask } from '@anvil/protocol/task-stacks'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../icons'
 import { hasTaskContent } from '@anvil/protocol/task-images'
@@ -32,10 +31,6 @@ export function TaskComposer(): JSX.Element {
 }
 
 function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; draftKey: string }): JSX.Element {
-  const tasks = useStore((state) => state.tasks)
-  const [parentTaskId, setParentTaskId] = useState('')
-  const parents = tasks.filter((task) => task.projectId === projectId && canStackOnTask(task))
-  const parentBranch = parents.find((task) => task.id === parentTaskId)?.branchName
   const agents = useStore((state) => state.agents)
   const startTask = useStore((state) => state.startTask)
   const taskComposerFocusRequest = useStore((state) => state.taskComposerFocusRequest)
@@ -93,9 +88,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   }, [agentId, model, reasoningEffort, savedEffort, setReasoningEffort])
 
   useEffect(() => { setSwitchingBranch(false) }, [projectId])
-  useEffect(() => {
-    if (parentTaskId && !tasks.some((task) => task.id === parentTaskId && canStackOnTask(task))) setParentTaskId('')
-  }, [tasks, parentTaskId])
 
   useLayoutEffect(() => {
     const prompt = promptRef.current
@@ -119,8 +111,7 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         projectId,
         agentId,
         checkoutMode: projectId ? checkoutMode : 'local',
-        parentTaskId: isolated ? parentTaskId || undefined : undefined,
-        ...(isolated && !parentTaskId && startBase ? { startBase } : {}),
+        ...(isolated && startBase ? { startBase } : {}),
         prompt: prompt.trim(),
         ...(mentions.references.length ? { fileReferences: mentions.references } : {}),
         model: model.trim() || undefined,
@@ -130,7 +121,6 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       draft.clearSubmitted()
       if (mounted.current) {
         attachments.reset()
-        setParentTaskId('')
         const project = useStore.getState().projects.find((entry) => entry.id === task?.projectId)?.name ?? 'no project'
         setCreated(task ? { title: task.title, project, offscreen: false } : null)
         setShowSuccess(true)
@@ -158,23 +148,11 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
     <div>
       {preferences.saveError && <p role="alert" className="text-danger">{preferences.saveError}. Change a task option to retry saving.</p>}
       {isolated && isRepository === false && <p role="alert" className="-mt-2 mb-3 text-xs text-danger">An isolated worktree requires a Git repository. Use the current checkout instead.</p>}
-      {isolated && parents.length > 0 && <div className="mb-2 inline-flex items-center gap-2 font-mono text-xs text-dim">
-        <Icon icon="layers" size={14} aria-hidden="true" />
-        <span aria-hidden="true">Stack on task</span>
-        <MenuSelect
-          label="Stack on task"
-          disabled={busy}
-          value={parentTaskId}
-          options={[{ value: '', label: 'Project branch' }, ...parents.map((task) => ({ value: task.id, label: task.title }))]}
-          onChange={setParentTaskId}
-        />
-      </div>}
       <ProjectBranchSelector
         key={projectId ?? 'no-project'}
         projectId={projectId}
         checkoutMode={projectId ? checkoutMode : 'local'}
         onCheckoutModeChange={setCheckoutMode}
-        parentBranch={parentBranch}
         startBase={startBase}
         disabled={busy}
         onStartBaseChange={setStartBase}

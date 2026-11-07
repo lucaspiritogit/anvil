@@ -9,7 +9,6 @@ import { ProjectPicker } from './ProjectPicker'
 interface Props {
   projectId: string | null
   checkoutMode: TaskCheckoutMode
-  parentBranch?: string
   startBase?: string
   disabled: boolean
   onCheckoutModeChange: (checkoutMode: TaskCheckoutMode) => void
@@ -24,7 +23,7 @@ const BRANCH_RECOVERY_INTERVAL_MS = 60_000
 const BRANCH_RETRY_INTERVAL_MS = 1_000
 const BRANCH_RETRY_LIMIT = 5
 
-export function ProjectBranchSelector({ projectId, checkoutMode, parentBranch, startBase, disabled,
+export function ProjectBranchSelector({ projectId, checkoutMode, startBase, disabled,
   onCheckoutModeChange, onStartBaseChange, onTransitioning }: Props): JSX.Element {
   const projects = useStore((state) => state.projects)
   const project = projects.find((project) => project.id === projectId)
@@ -125,9 +124,9 @@ export function ProjectBranchSelector({ projectId, checkoutMode, parentBranch, s
 
   useEffect(() => {
     if (checkoutMode !== 'worktree') return
-    if (parentBranch || startBase || !branches) return
+    if (startBase || !branches) return
     onStartBaseChange(branches.defaultWorktreeBase?.ref)
-  }, [checkoutMode, parentBranch, startBase, branches, onStartBaseChange])
+  }, [checkoutMode, startBase, branches, onStartBaseChange])
 
   const checkout = async (branchName: string): Promise<void> => {
     if (!projectId || changing.current || disabled || branchName === branches?.currentBranch || branches?.branches.find((branch) => branch.name === branchName)?.checkedOut) return
@@ -205,12 +204,12 @@ export function ProjectBranchSelector({ projectId, checkoutMode, parentBranch, s
     : current || (branches ? 'Detached HEAD' : error ? 'Branch unavailable' : 'Loading branch…')
   const base = branches?.worktreeBases?.find((candidate) => candidate.ref === startBase)
     ?? (!startBase ? branches?.defaultWorktreeBase : null) ?? null
-  const baseLabel = parentBranch ?? base?.name ?? (startBase ? 'unavailable branch' : branches ? 'default branch' : 'Loading base…')
+  const baseLabel = base?.name ?? (startBase ? 'unavailable branch' : branches ? 'default branch' : 'Loading base…')
   const worktree = checkoutMode === 'worktree'
   const branchLabel = worktree ? `starting from ${baseLabel}` : localBranchLabel
   const locationLabel = worktree ? 'Isolated worktree' : 'Local checkout'
   const controlsDisabled = disabled || transitioning
-  const branchDisabled = disabled || !projectId || !isRepository || !branches || (worktree && Boolean(parentBranch))
+  const branchDisabled = disabled || !projectId || !isRepository || !branches
 
   return (
     <div className="mb-3 min-w-0">
