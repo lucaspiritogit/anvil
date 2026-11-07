@@ -13,25 +13,26 @@ export function emptyWorkspaceUsage(): WorkspaceUsageSnapshot {
   return { codex: null, claude: null, codexConnected: false, claudeConnected: false }
 }
 
-function resetLabel(timestamp: number | null, now: number): string {
-  if (timestamp === null || !Number.isFinite(timestamp)) return 'Reset time unavailable'
+function resetLabels(timestamp: number | null, now: number): { value: string; reset: string | null } {
+  if (timestamp === null || !Number.isFinite(timestamp)) return { value: 'Reset time unavailable', reset: null }
   const remainingMilliseconds = timestamp * 1000 - now
-  if (!Number.isFinite(remainingMilliseconds)) return 'Reset time unavailable'
-  if (remainingMilliseconds <= 0) return 'Resetting now'
+  if (!Number.isFinite(remainingMilliseconds)) return { value: 'Reset time unavailable', reset: null }
+  if (remainingMilliseconds <= 0) return { value: 'Resetting now', reset: 'now' }
   const minute = 60_000
   const hour = 60 * minute
   const day = 24 * hour
   const unit = remainingMilliseconds >= day ? 'day' : remainingMilliseconds >= hour ? 'hour' : 'minute'
   const duration = unit === 'day' ? day : unit === 'hour' ? hour : minute
   const count = Math.ceil(remainingMilliseconds / duration)
-  return `Resets in ${count} ${unit}${count === 1 ? '' : 's'}`
+  return { value: `Resets in ${count} ${unit}${count === 1 ? '' : 's'}`, reset: `${count}${unit[0]}` }
 }
 
-function limitRow(label: string, limit: { usedPercent: number; resetsAt: number | null } | null, now: number): ProviderLimit {
-  if (!limit || !Number.isFinite(limit.usedPercent)) return { label, value: 'Unavailable', remainingPercent: null }
+function limitRow(label: string, shortLabel: string, limit: { usedPercent: number; resetsAt: number | null } | null, now: number): ProviderLimit {
+  if (!limit || !Number.isFinite(limit.usedPercent)) return { label, shortLabel, value: 'Unavailable', reset: null, remainingPercent: null }
   return {
     label,
-    value: resetLabel(limit.resetsAt, now),
+    shortLabel,
+    ...resetLabels(limit.resetsAt, now),
     remainingPercent: Math.max(0, Math.min(100, 100 - limit.usedPercent))
   }
 }
@@ -43,16 +44,16 @@ export function workspaceUsageProviders(snapshot: WorkspaceUsageSnapshot, now: n
   if (snapshot.codexConnected) {
     providers.push({
       id: 'codex', name: 'ChatGPT', company: 'OpenAI', ariaLabel: 'Codex usage limits',
-      limits: [limitRow('Weekly', weekly, now)]
+      limits: [limitRow('Weekly', 'week', weekly, now)]
     })
   }
   if (snapshot.claudeConnected) {
     providers.push({
       id: 'claude', name: 'Claude', company: 'Anthropic', ariaLabel: 'Claude usage limits',
       limits: [
-        limitRow('5 hours', snapshot.claude?.fiveHour ?? null, now),
-        limitRow('Current week (all models)', snapshot.claude?.weeklyAll ?? null, now),
-        limitRow('Current week (Fable)', snapshot.claude?.weeklyFable ?? null, now)
+        limitRow('5 hours', '5h', snapshot.claude?.fiveHour ?? null, now),
+        limitRow('Current week (all models)', 'week', snapshot.claude?.weeklyAll ?? null, now),
+        limitRow('Current week (Fable)', 'fable', snapshot.claude?.weeklyFable ?? null, now)
       ]
     })
   }

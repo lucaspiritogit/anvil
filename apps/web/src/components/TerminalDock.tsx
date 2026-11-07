@@ -65,14 +65,19 @@ function TerminalSession({ projectId, taskId, active, visible, onExit }: {
   )
 }
 
-export function TerminalDock({ projectId, projectName, task, open, onOpen, onCollapse, onCloseAll }: {
+export interface TerminalDockSummary {
+  sessions: number
+  exit?: number
+}
+
+export function TerminalDock({ projectId, projectName, task, open, onCollapse, onCloseAll, onSummary }: {
   projectId?: string
   projectName: string
   task?: Task
   open: boolean
-  onOpen(): void
   onCollapse(): void
   onCloseAll(): void
+  onSummary(summary: TerminalDockSummary): void
 }): JSX.Element {
   const dockRef = useRef<HTMLElement>(null)
   const nextId = useRef(1)
@@ -143,17 +148,12 @@ export function TerminalDock({ projectId, projectName, task, open, onOpen, onCol
   const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0]
   const activeExit = exits[active.id]
 
+  useEffect(() => {
+    onSummary({ sessions: tabs.length, exit: activeExit })
+  }, [onSummary, tabs.length, activeExit])
+
   return (
     <>
-      {!open && <button type="button" aria-label="Open project terminal" onClick={onOpen}
-        className="flex h-7 w-full shrink-0 items-center gap-2 border-t border-line bg-canvas px-4 font-mono text-[11px] text-dim hover:bg-hover hover:text-fg focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent">
-        <span aria-hidden="true" className="text-ember-400">▸</span>
-        <span>terminal</span>
-        <span aria-hidden="true" className="text-faint">·</span>
-        <span>{tabs.length} {tabs.length === 1 ? 'session' : 'sessions'}</span>
-        {activeExit !== undefined && <span className={activeExit === 0 ? 'text-faint' : 'text-danger-text'}>· {activeExit === 0 ? 'exited' : `✕ exit ${activeExit}`}</span>}
-        <span className="ml-auto text-faint">⌃`</span>
-      </button>}
       <section ref={dockRef} aria-label="Project terminal" hidden={!open}
         style={{ height }}
         className={cn('relative z-10 flex min-h-0 shrink-0 flex-col border-t border-line-strong bg-void',

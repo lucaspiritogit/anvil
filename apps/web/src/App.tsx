@@ -1,4 +1,5 @@
-import { TerminalDock } from './components/TerminalDock'
+import { TerminalDock, type TerminalDockSummary } from './components/TerminalDock'
+import { StatusBar } from './components/StatusBar'
 import type { JSX } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AppSkeleton } from './components/AppSkeleton'
@@ -25,6 +26,7 @@ const SettingsPage = lazy(async () => {
 export function App(): JSX.Element {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalCreated, setTerminalCreated] = useState(false)
+  const [terminalSummary, setTerminalSummary] = useState<TerminalDockSummary | null>(null)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [mobileNavigation, setMobileNavigation] = useState(() => window.matchMedia('(max-width: 700px)').matches)
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
@@ -92,6 +94,11 @@ export function App(): JSX.Element {
     setTerminalCreated(true)
     setTerminalOpen(true)
   }, [])
+
+  const toggleTerminal = useCallback((): void => {
+    if (terminalOpen) setTerminalOpen(false)
+    else openTerminal()
+  }, [openTerminal, terminalOpen])
 
   const cycleThinking = useCallback((): void => {
     const preferences = useComposerPreferences.getState()
@@ -318,8 +325,10 @@ export function App(): JSX.Element {
             mobileNavigationOpen={mobileNavigationOpen} navigationButtonRef={mobileNavigationButtonRef} onToggleNavigation={toggleNavigation} /></div>
           {!settingsOpen && terminalCreated && <TerminalDock key={`${workspaceId}:${projectId ?? ''}`} projectId={projectId ?? undefined}
             projectName={projectId ? activeProject?.name ?? 'project' : '~'} task={terminalTask} open={terminalOpen}
-            onOpen={openTerminal} onCollapse={() => setTerminalOpen(false)}
+            onCollapse={() => setTerminalOpen(false)} onSummary={setTerminalSummary}
             onCloseAll={() => { setTerminalOpen(false); setTerminalCreated(false) }} />}
+          {!settingsOpen && <StatusBar projectName={projectId ? activeProject?.name ?? 'project' : 'no project'}
+            terminalOpen={terminalOpen} terminal={terminalCreated ? terminalSummary : null} onToggleTerminal={toggleTerminal} />}
           {taskMenu && <TaskContextMenu key={`${taskMenu.taskId}:${taskMenu.x}:${taskMenu.y}`} />}
         </div>
         {settingsOpen && <div className="contents" inert={switching}><Suspense fallback={<p role="status" className="p-5 text-sm text-dim">Loading settings…</p>}><SettingsPage key={workspaceId} /></Suspense></div>}

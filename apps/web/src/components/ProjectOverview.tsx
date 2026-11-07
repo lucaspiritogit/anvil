@@ -63,13 +63,17 @@ export function ProjectOverview({ project }: Props): JSX.Element {
   return (
     <div
       data-testid="project-overview"
-      className="relative flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto px-8 py-8 max-[980px]:px-[22px] max-[700px]:px-3 max-[700px]:py-2"
+      className="relative flex h-full min-h-0 flex-col overflow-x-hidden max-[700px]:overflow-y-auto"
     >
-      <div className={cn(SPREAD, 'my-auto')}>
-        {project && <GitAlert project={project} />}
-        <TaskComposer key={project?.id ?? 'no-project'} />
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 py-16 max-[980px]:px-[22px] max-[700px]:flex-none max-[700px]:overflow-visible max-[700px]:px-3 max-[700px]:py-2">
+        <div className={cn(SPREAD, 'my-auto')}>
+          {project && <GitAlert project={project} />}
+          <TaskComposer key={project?.id ?? 'no-project'} />
+        </div>
       </div>
-      <WorkspaceUsageLimits className="mt-8 shrink-0" />
+      <div className="absolute inset-x-0 bottom-3 px-8 max-[980px]:px-[22px] max-[700px]:static max-[700px]:mt-4 max-[700px]:mb-2 max-[700px]:px-3">
+        <WorkspaceUsageLimits />
+      </div>
     </div>
   )
 }

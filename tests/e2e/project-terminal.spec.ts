@@ -78,7 +78,9 @@ test('terminal opens as a full-width bottom dock that keeps the composer visible
   await expect(panel.locator('canvas')).toBeVisible()
   const box = (await panel.boundingBox())!
   const main = (await page.locator('main').first().boundingBox())!
-  expect(Math.round(box.y + box.height)).toBe(720)
+  const statusBar = (await page.getByRole('contentinfo', { name: 'Status bar' }).boundingBox())!
+  expect(Math.round(box.y + box.height)).toBe(Math.round(statusBar.y))
+  expect(Math.round(statusBar.y + statusBar.height)).toBe(720)
   expect(box.width).toBeGreaterThanOrEqual(main.width)
   expect(box.height).toBeGreaterThanOrEqual(120)
   expect(box.height).toBeLessThanOrEqual(720 * 0.7)
@@ -86,6 +88,10 @@ test('terminal opens as a full-width bottom dock that keeps the composer visible
   await expect(page.getByRole('textbox', { name: 'Task prompt' })).toBeInViewport()
   await page.getByRole('button', { name: 'Close project terminal' }).click()
   await expect(page.getByRole('button', { name: 'Open project terminal' })).toContainText('1 session')
+  await page.getByRole('button', { name: 'Open project terminal' }).click()
+  await expect(panel).toBeVisible()
+  await page.getByRole('button', { name: 'Hide project terminal' }).click()
+  await expect(panel).toBeHidden()
   await page.keyboard.press('Control+Backquote')
   await expect(panel).toBeVisible()
 })
