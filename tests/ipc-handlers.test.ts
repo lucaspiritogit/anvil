@@ -64,7 +64,9 @@ function setupIpc(
   const mergeConflictCalls: { operation: string; args: unknown[] }[] = []
   const pushCalls: unknown[][] = []
   const commitPathCalls: unknown[][] = []
+  const pullCalls: unknown[][] = []
   const mergeState = {
+    behind: 0,
     conflict: false,
     validationFailure: false,
     finish: undefined as (() => void) | undefined,
@@ -119,6 +121,14 @@ function setupIpc(
       }
     },
     async push(...args: unknown[]) { pushCalls.push(args) },
+    async getSyncStatus() {
+      return { branch: 'main', localCommit: 'b'.repeat(40), remoteCommit: 'c'.repeat(40), ahead: 0, behind: mergeState.behind, overlappingPaths: [] }
+    },
+    async pull(...args: unknown[]) {
+      pullCalls.push(args)
+      mergeState.behind = 0
+    },
+    async squashMergedCommit() { return '8'.repeat(40) },
     async commitPaths(...args: unknown[]) {
       commitPathCalls.push(args)
       return '9'.repeat(40)
@@ -176,7 +186,7 @@ function setupIpc(
 
   return {
     databaseFile, taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses,
-    gitDelivery, delivery, rebaseCalls, mergeCalls, mergeConflictCalls, pushCalls, commitPathCalls, mergeState, memory,
+    gitDelivery, delivery, rebaseCalls, mergeCalls, mergeConflictCalls, pushCalls, pullCalls, commitPathCalls, mergeState, memory,
     credentials, client, call, tick,
     get prRefreshes() { return prRefreshes },
     get credentialRefreshes() { return credentialRefreshes }
@@ -583,7 +593,7 @@ test('fails worktree tasks without a Git repository', async () => {
 test('executes issues, reviews, handles credentials and PRs, approves, rebases and guards deletion', async () => {
   const comment = { taskId: 'task', file: 'src/file.ts', side: 'additions', lineNumber: 1, body: 'Review' }
   const fixture = setupIpc()
-  const { taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses, gitDelivery, mergeCalls, mergeConflictCalls, pushCalls, mergeState, call, tick } = fixture
+  const { taskEvents, store, tasks, trackers, events, notifications, project, agentProcesses, gitDelivery, mergeCalls, mergeConflictCalls, pushCalls, pullCalls, mergeState, call, tick } = fixture
   const task: Task = await call('tasks:start', { projectId: project.id, agentId: 'codex', model: 'chosen-model', reasoningEffort: 'high', prompt: 'Task title\nDetails' })
   await tick()
   expect(task.title).toBe('Task title')
@@ -804,6 +814,30 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(store.getTaskExecution(task.id)).toStrictEqual(executionBeforeRepair)
   expect(events.some((event) => event.text.includes('Agent completed the paused merge of task into main'))).toBeTruthy()
   store.updateTask(task.id, { deliveryStatus: 'reviewable', mergeConflict: undefined, reviewedAt: undefined })
+  mergeState.behind = 2
+  mergeState.files = [{
+    path: 'src/conflicted.ts', status: 'both_modified', stages: [1, 2, 3], support: 'text',
+    contents: '<<<<<<< HEAD\ntarget\n=======\nsource\n>>>>>>> task\n', contentsHash: '4'.repeat(64)
+  }]
+  const startsBeforeShip = agentProcesses.starts.length
+  const shipConflict: Task = await call('tasks:ship', { taskId: task.id, message: 'fix: ship it' })
+  expect(shipConflict).toMatchObject({ deliveryStatus: 'merge_conflict', mergeConflict: { requestedAction: 'merge_and_push', shipMessage: 'fix: ship it' } })
+  expect(pullCalls.at(-1)?.slice(0, 2), 'Ship pulls the target from origin before merging').toStrictEqual([
+    project.path, { branch: 'main', localCommit: 'b'.repeat(40), remoteCommit: 'c'.repeat(40) }
+  ])
+  expect(events.some((event) => event.text.startsWith('Pulled main from origin before shipping'))).toBeTruthy()
+  await tick()
+  expect(agentProcesses.starts, 'Ship hands conflicts to the agent').toHaveLength(startsBeforeShip + 1)
+  expect(agentProcesses.starts.at(-1).prompt).toBe(mergeConflictRepairPrompt(shipConflict.mergeConflict!, ['src/conflicted.ts']))
+  expect(agentProcesses.starts.at(-1).prompt).toContain('Anvil pushes "main" to origin once the merge is complete.')
+  const pushesBeforeRepair = pushCalls.length
+  mergeState.files = []
+  agentProcesses.finishTurn(task.id, 'Merge repaired')
+  await tick()
+  expect(tasks.get(task.id)).toMatchObject({ deliveryStatus: 'approved', shippedCommit: '8'.repeat(40) })
+  expect(tasks.get(task.id)?.mergeConflict).toBeUndefined()
+  expect(pushCalls, 'Anvil pushes after the agent repairs the merge').toHaveLength(pushesBeforeRepair + 1)
+  store.updateTask(task.id, { deliveryStatus: 'reviewable', mergeConflict: undefined, reviewedAt: undefined })
   mergeState.conflict = false
   const pendingApproval = call('tasks:approve', { taskId: task.id, preview })
   expect(tasks.get(task.id)?.deliveryStatus, 'Approval waits for Git to finish').toBe('reviewable')
@@ -815,6 +849,7 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(mergeCalls.map((args) => args.slice(0, 3))).toStrictEqual([
     [testHome, 'task', preview],
     [testHome, 'task', mergeAndPushPreview],
+    [testHome, 'task', preview],
     [testHome, 'task', preview],
     [testHome, 'task', preview]
   ])

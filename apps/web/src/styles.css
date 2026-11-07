@@ -276,13 +276,18 @@
   }
 
   .task-created-stamp {
-    animation: task-created-stamp 1800ms steps(1, end) both;
+    animation: task-created-stamp-in 240ms steps(3, end) both, task-created-stamp-out 6000ms steps(1, end) both;
   }
 
-  @keyframes task-created-stamp {
-    0%, 80% { opacity: 1; }
-    86% { opacity: 0.66; }
-    92% { opacity: 0.33; }
+  @keyframes task-created-stamp-in {
+    from { clip-path: inset(0 100% 0 0); }
+    to { clip-path: inset(0); }
+  }
+
+  @keyframes task-created-stamp-out {
+    0%, 94% { opacity: 1; }
+    96% { opacity: 0.66; }
+    98% { opacity: 0.33; }
     100% { opacity: 0; }
   }
 
@@ -324,7 +329,8 @@
     }
 
     .sidebar-task-landed,
-    .sidebar-task-landed::before {
+    .sidebar-task-landed::before,
+    .task-created-stamp {
       animation: none;
     }
 

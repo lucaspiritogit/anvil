@@ -17,6 +17,10 @@ import { ProjectBranchSelector } from './ProjectBranchSelector'
 import type { TaskCheckoutMode } from '@anvil/protocol/types'
 
 const successDuration = 1800
+const stampDuration = 6000
+const maxStamps = 2
+
+interface CreatedStamp { id: string; title: string; project: string }
 const CHECKOUT_MODE_KEY = 'anvil.composerCheckoutMode'
 
 function readCheckoutMode(): TaskCheckoutMode {
@@ -61,14 +65,19 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
   const [startBase, setStartBase] = useState<string>()
   const [error, setError] = useState<string | null>(null)
   const [showSuccess, setShowSuccess] = useState(false)
-  const [created, setCreated] = useState<{ id: string; title: string; project: string; offscreen: boolean }[]>([])
+  const [created, setCreated] = useState<CreatedStamp | null>(null)
+  const [stamps, setStamps] = useState<CreatedStamp[]>([])
   const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const createdTimers = useRef(new Set<ReturnType<typeof setTimeout>>())
+  const stampTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   const restorePromptFocus = useRef(false)
   const submitting = useRef(false)
-  useEffect(() => () => {
-    if (successTimer.current) clearTimeout(successTimer.current)
-    for (const timer of createdTimers.current) clearTimeout(timer)
+  useEffect(() => {
+    const timers = stampTimers.current
+    return () => {
+      if (successTimer.current) clearTimeout(successTimer.current)
+      timers.forEach(clearTimeout)
+      timers.clear()
+    }
   }, [])
   useEffect(() => {
     if (busy || (!showSuccess && !error) || !restorePromptFocus.current) return
@@ -124,24 +133,18 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
       if (mounted.current) {
         attachments.reset()
         const project = useStore.getState().projects.find((entry) => entry.id === task?.projectId)?.name ?? 'no project'
+        const stamp = task ? { id: task.id, title: task.title, project } : null
+        setCreated(stamp)
         setShowSuccess(true)
-        if (task) {
-          const entry = { id: `${task.id}:${Date.now()}`, title: task.title, project, offscreen: false }
-          setCreated((current) => [...current, entry])
-          const track = (callback: () => void, delay: number): void => {
-            const timer = setTimeout(() => {
-              createdTimers.current.delete(timer)
-              if (mounted.current) callback()
-            }, delay)
-            createdTimers.current.add(timer)
-          }
-          track(() => {
-            const row = document.querySelector(`[data-task-id="${CSS.escape(task.id)}"]`)
-            const bounds = row?.getBoundingClientRect()
-            const visible = Boolean(bounds && bounds.height > 0 && bounds.bottom > 0 && bounds.top < window.innerHeight)
-            if (!visible) setCreated((current) => current.map((item) => item.id === entry.id ? { ...item, offscreen: true } : item))
-          }, 80)
-          track(() => setCreated((current) => current.filter((item) => item.id !== entry.id)), successDuration)
+        if (stamp) {
+          setStamps((current) => [stamp, ...current.filter((entry) => entry.id !== stamp.id)].slice(0, maxStamps))
+          const timers = stampTimers.current
+          const previous = timers.get(stamp.id)
+          if (previous) clearTimeout(previous)
+          timers.set(stamp.id, setTimeout(() => {
+            timers.delete(stamp.id)
+            setStamps((current) => current.filter((entry) => entry.id !== stamp.id))
+          }, stampDuration))
         }
         successTimer.current = setTimeout(() => {
           successTimer.current = null
@@ -285,12 +288,14 @@ function TaskComposerDraft({ projectId, draftKey }: { projectId: string | null; 
         {error && <p role="alert" className="px-5 pb-4 text-xs text-danger max-[700px]:px-4">{error}</p>}
       </form>
       </div>
-      {created.some((entry) => entry.offscreen) && <div aria-hidden="true" className="mt-2 space-y-0.5">
-        {created.filter((entry) => entry.offscreen).map((entry) => <p key={entry.id} className="task-created-stamp truncate px-1 font-mono text-[11px] text-dim">
-          <span className="text-ember-400">› </span>{entry.title} <span className="text-ember-400">created</span> · queued in {entry.project}
-        </p>)}
-      </div>}
-      {showSuccess && <p role="status" aria-label="Task created" className="sr-only">{created.length ? created.map((entry) => `Task created: ${entry.title}, queued in ${entry.project}`).join('. ') : 'Task created'}</p>}
+      {stamps.length > 0 && <ul aria-hidden="true" data-testid="task-created-stamps" className="mt-2 flex flex-col gap-1 px-1">
+        {stamps.map((stamp) => (
+          <li key={stamp.id} className="task-created-stamp truncate font-mono text-[11px] text-dim">
+            <span className="text-ember-400">› </span>{stamp.title} <span className="text-ember-400">created</span> · queued in {stamp.project}
+          </li>
+        ))}
+      </ul>}
+      {showSuccess && <p role="status" aria-label="Task created" className="sr-only">{created ? `Task created: ${created.title}, queued in ${created.project}` : 'Task created'}</p>}
     </div>
   )
 }

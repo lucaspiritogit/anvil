@@ -68,6 +68,10 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
 
   const requireMergeConflictTask = (taskId: string, conflictId: string) => {
     requireFinishedTask(taskId)
+    return requireMergeConflictState(taskId, conflictId)
+  }
+
+  const requireMergeConflictState = (taskId: string, conflictId: string) => {
     const task = store.getTask(taskId)
     if (!task) throw new Error('Task not found')
     const conflict = task.mergeConflict
@@ -315,12 +319,12 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
         `Completed the paused merge of ${conflict.sourceBranch} into ${conflict.targetBranch} at ${mergedCommit}.`, check, shipOf(conflict))
     }))
 
-  ipc.handle('tasks:merge-conflict-fix-agent', (input): Promise<Task> =>
-    withTaskOperation(store, input.taskId, 'merge-repair', async (check) => {
-      const { task, project, conflict } = requireMergeConflictTask(input.taskId, input.conflictId)
+  const repairMergeConflictWithAgent = (taskId: string, conflictId: string): Promise<Task> =>
+    withTaskOperation(store, taskId, 'merge-repair', async (check) => {
+      const { task, project, conflict } = requireMergeConflictTask(taskId, conflictId)
       const guard = () => {
         check()
-        requireMergeConflictTask(input.taskId, input.conflictId)
+        requireMergeConflictState(taskId, conflictId)
       }
       const snapshot = await gitDelivery.getMergeConflict(project.path, conflict)
       guard()
@@ -378,7 +382,10 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
         send('task:updated', latest)
         return latest
       }
-    }))
+    })
+
+  ipc.handle('tasks:merge-conflict-fix-agent', (input): Promise<Task> =>
+    repairMergeConflictWithAgent(input.taskId, input.conflictId))
 
   ipc.handle('tasks:merge-conflict-abort', (input): Promise<Task> =>
     withTaskOperation(store, input.taskId, 'merge', async (check) => {
@@ -580,7 +587,26 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     return draft.message
   }
 
-  const shipTask: ShipTask = async (taskId, { push, message } = {}) => {
+  const pullTargetBeforeShip = async (task: Task, project: Project, check: () => void): Promise<void> => {
+    const sync = await gitDelivery.getSyncStatus(project.path)
+    check()
+    if (!sync.remoteCommit || !sync.behind) return
+    if (sync.ahead) {
+      throw new Error(`${sync.branch} and origin/${sync.branch} have diverged. Reconcile them before shipping.`)
+    }
+    await gitDelivery.pull(project.path, { branch: sync.branch, localCommit: sync.localCommit, remoteCommit: sync.remoteCommit }, check)
+    recordSystemEvent(task.id, `Pulled ${sync.branch} from origin before shipping, fast-forwarding ${sync.localCommit.slice(0, 8)} to ${sync.remoteCommit.slice(0, 8)}.`)
+  }
+
+  const shipTask: ShipTask = async (taskId, options = {}) => {
+    const shipped = await shipTaskOnce(taskId, options)
+    const conflict = shipped.deliveryStatus === 'merge_conflict' ? shipped.mergeConflict : undefined
+    if (!conflict) return shipped
+    void repairMergeConflictWithAgent(taskId, conflict.id).catch(() => {})
+    return shipped
+  }
+
+  const shipTaskOnce: ShipTask = async (taskId, { push, message } = {}) => {
     return withTaskOperation(store, taskId, 'ship', async (check) => {
       const current = store.getTask(taskId)
       if (!current) throw new Error('Task not found')
@@ -593,6 +619,10 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       }
       const { task, branchName, headCommit } = requireReviewableTask(taskId)
       await requireProjectDeliveryAvailable(project, taskId)
+      if (pushNow) await pullTargetBeforeShip(task, project, () => {
+        check()
+        requireReviewableTask(taskId)
+      })
       const subject = await shipMessage(task, async () => {
         const base = task.baseCommit ?? (await gitDelivery.getMergePreview(project.path, branchName)).targetCommit
         return gitDelivery.getDiff(project.path, base, headCommit)

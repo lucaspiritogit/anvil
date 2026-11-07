@@ -82,17 +82,21 @@ export function issueReworkPrompt(_projectPath: string, issueId: string, comment
 }
 
 export function mergeConflictRepairPrompt(
-  conflict: Pick<TaskMergeConflict, 'sourceBranch' | 'targetBranch'>,
+  conflict: Pick<TaskMergeConflict, 'sourceBranch' | 'targetBranch' | 'requestedAction'>,
   unresolvedFiles: string[]
 ): string {
+  const pushing = conflict.requestedAction === 'merge_and_push'
   return [
     'Repair the existing paused Git merge in this target project checkout.',
     `Source branch: ${JSON.stringify(conflict.sourceBranch)}`,
     `Target branch: ${JSON.stringify(conflict.targetBranch)}`,
+    ...(pushing ? [`Anvil already pulled the latest ${JSON.stringify(conflict.targetBranch)} from origin before merging.`] : []),
     'Unresolved files:',
     ...unresolvedFiles.map((path) => `- ${JSON.stringify(path)}`),
+    'Check for conflicts with `git status` and `git diff --name-only --diff-filter=U`, including any not listed above.',
     'Resolve every conflict while preserving the intended changes from both branches.',
     'Stage every resolved file and finish the existing merge with its current merge message.',
+    ...(pushing ? [`Do not pull or push yourself. Anvil pushes ${JSON.stringify(conflict.targetBranch)} to origin once the merge is complete.`] : []),
     'Do not checkout or switch branches, reset, abort the merge, create another worktree, or change the task or issue status.',
     'Do not use Anvil issue-tracker tools during this repair.',
     'Leave the repository clean with the merge completed.'

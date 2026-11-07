@@ -108,6 +108,13 @@ export class AgentProcessManager extends EventEmitter {
   async startResumed(opts: any): Promise<void> {
     opts.beforeDispatch?.()
     this.start(opts)
+    try {
+      opts.beforeDispatch?.()
+    } catch (error) {
+      this.active.delete(opts.taskId)
+      this.starts.pop()
+      throw error
+    }
   }
   cancel(taskId: string): boolean {
     this.active.delete(taskId)
