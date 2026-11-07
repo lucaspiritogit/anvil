@@ -24,8 +24,10 @@ export function taskIssuePresentation(task: Task, snapshot?: TaskIssueSnapshot |
     ?? snapshot.children.find((issue) => issue.status === 'queued')
     ?? snapshot.children.at(-1)!
   const display = issuePresentation(issue)
-  const status = snapshot.execution?.phase === 'blocked' && issue.status !== 'review' ? 'blocked' : display.status
-  const label = status === 'blocked' ? 'Blocked' : display.label
+  const status = snapshot.execution?.phase === 'blocked' && issue.status !== 'review'
+    ? 'blocked'
+    : task.status === 'running' && display.status === 'review' ? 'working' : display.status
+  const label = status === 'blocked' ? 'Blocked' : status === 'working' ? 'Working' : display.label
   const detail = status === 'review'
     ? 'Waiting for your review…'
     : status === 'complete' ? issue.reviewedAt != null ? 'Subtask approved' : 'Subtask complete' : label

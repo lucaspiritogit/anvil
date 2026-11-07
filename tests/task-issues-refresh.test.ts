@@ -46,11 +46,13 @@ test('parent presentation follows transitions and preserves final delivery seman
   state.children = [{ id: 'child', title: 'Current work', description: '', validation: '', status: 'queued', checklist: [], dependencies: [], labels: [], priority: 'high', parentId: 'task' }]
   for (const status of ['queued', 'working', 'review', 'queued', 'working', 'blocked', 'complete'] as const) {
     state.children[0].status = status
-    expect(taskIssuePresentation(task, state)).toMatchObject({ status, issue: { title: 'Current work' } })
+    expect(taskIssuePresentation(task, state)).toMatchObject({ status: status === 'review' ? 'working' : status, issue: { title: 'Current work' } })
   }
   state.children[0].status = 'review'
+  state.reviewReady = true
+  expect(taskIssuePresentation(task, state)).toMatchObject({ status: 'working', label: 'Working', detail: 'Working' })
   state.reviewReady = false
-  expect(taskIssuePresentation(task, state)?.label).toBe('Review')
+  expect(taskIssuePresentation({ ...task, status: 'pending' }, state)?.label).toBe('Review')
   expect(taskIssuePresentation({ ...task, status: 'failed' }, state)?.status).toBe('review')
   expect(taskIssuePresentation({ ...task, status: 'succeeded', deliveryStatus: 'reviewable' }, state)).toBeNull()
   state.children[0].status = 'complete'
