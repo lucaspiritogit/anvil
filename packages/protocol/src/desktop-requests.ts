@@ -21,6 +21,9 @@ export interface DesktopRequests {
   'desktop:browser-viewport': BrowserViewportRequest
   'desktop:server-target': undefined
   'desktop:set-server-target': ServerTarget
+  'desktop:update-state': undefined
+  'desktop:update-check': undefined
+  'desktop:update-install': undefined
 }
 
 function text(value: unknown): value is string {
@@ -71,7 +74,10 @@ export function isDesktopRequest<C extends keyof DesktopRequests>(channel: C, va
   switch (channel) {
     case 'desktop:pick-wallpaper':
     case 'desktop:pick-project-folder':
-    case 'desktop:server-target': return value === undefined
+    case 'desktop:server-target':
+    case 'desktop:update-state':
+    case 'desktop:update-check':
+    case 'desktop:update-install': return value === undefined
     case 'desktop:read-project-file': return projectFileRead(value)
     case 'desktop:browser-layout': return browserLayout(value)
     case 'desktop:browser-viewport': return browserViewport(value)

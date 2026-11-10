@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, Menu, shell, powerSaveBlocker, WebContentsView } from 'electron'
 import { showNotificationSettings } from './mac-notifications'
 import { join } from 'node:path'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
+import { autoUpdater } from 'electron-updater'
 import { createDesktopIpc, openExternalAnvilUrl, openExternalCodexLogin, openExternalPullRequest, protectRendererWindow } from './renderer-security'
 import { registerAppShutdown } from './app-shutdown'
 import { registerCaffeineMode } from './caffeine-mode'
@@ -14,6 +15,7 @@ import type { ServerTarget } from '@anvil/protocol/server-address'
 import { BrowserSessionManager } from './browser-sessions'
 import { BrowserToolServer } from './browser-tools'
 import { pickProjectFolder, readProjectFile, releaseProjectFolder } from './project-folder'
+import { DesktopUpdates, desktopUpdatesSupported } from './desktop-updates'
 import appIcon from '../../../../build/icon.png?asset'
 
 const dataDirectory = resolveAppDataDirectory(app.getPath('home'), app.isPackaged, process.env.ANVIL_DATA_DIR)
@@ -49,6 +51,21 @@ const browserSessions = new BrowserSessionManager({
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:browser-changed', state)
 })
 const browserTools = new BrowserToolServer(browserSessions)
+const desktopUpdates = new DesktopUpdates(
+  desktopUpdatesSupported({
+    releaseBuild: __ANVIL_RELEASE_BUILD__,
+    packaged: app.isPackaged,
+    platform: process.platform,
+    env: process.env,
+    hasUpdateConfig: app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml'))
+  }) ? autoUpdater : null,
+  app.getVersion(),
+  (state) => {
+    for (const window of [mainWindow, pendingWindow]) {
+      if (window && !window.isDestroyed()) window.webContents.send('desktop:update-changed', state)
+    }
+  }
+)
 
 function rendererAddress(url: string): string {
   return developmentRendererUrl || `${url}/`
@@ -69,7 +86,7 @@ function createRendererWindow(state: ServerConnectionState): BrowserWindow {
     trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 15 } : undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      additionalArguments: [`--anvil-server-url=${state.url}`],
+      additionalArguments: [`--anvil-server-url=${state.url}`, `--anvil-server-mode=${state.target.mode}`],
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false
@@ -268,6 +285,9 @@ if (ownsInstance) app.whenReady().then(async () => {
     desktop.handle('desktop:browser-viewport', (input) => browserSessions.viewport(input.taskId, input.viewport))
     desktop.handle('desktop:server-target', () => connectionManager.state())
     desktop.handle('desktop:set-server-target', (target) => connectionManager.setTarget(target))
+    desktop.handle('desktop:update-state', () => desktopUpdates.state())
+    desktop.handle('desktop:update-check', () => desktopUpdates.check())
+    desktop.handle('desktop:update-install', () => desktopUpdates.install())
     await createWindow()
     const settingsMenu = { label: 'Settings…', accelerator: 'CommandOrControl+,', click: openSettings }
     Menu.setApplicationMenu(Menu.buildFromTemplate([

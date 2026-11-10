@@ -7,6 +7,7 @@ const unitSuites = [
   'tests/agent-models.test.ts',
   'tests/app-lifecycle.test.ts',
   'tests/app-shutdown.test.ts',
+  'tests/desktop-updates.test.ts',
   'tests/github-pull-requests.test.ts',
   'tests/image-headers.test.ts',
   'tests/model-options.test.ts',

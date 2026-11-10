@@ -38,7 +38,8 @@ export default defineConfig({
   publicDir: false,
   define: {
     __ANVIL_BUILD_SHA__: JSON.stringify(resolveBuildSha()),
-    __ANVIL_BUILD_VERSION__: JSON.stringify(resolveBuildVersion())
+    __ANVIL_BUILD_VERSION__: JSON.stringify(resolveBuildVersion()),
+    __ANVIL_RELEASE_BUILD__: JSON.stringify(process.env.ANVIL_RELEASE_BUILD === '1')
   },
   resolve: {
     alias: {

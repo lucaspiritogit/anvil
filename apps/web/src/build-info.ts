@@ -4,6 +4,7 @@ export type BuildInfo = {
   sha: string
   shortSha: string
   version: string
+  releaseBuild: boolean
   updateChecksEnabled: boolean
 }
 
@@ -20,12 +21,15 @@ function readVersion(): string {
 }
 
 const sha = readSha()
+const version = readVersion()
+const releaseBuild = typeof __ANVIL_RELEASE_BUILD__ === 'boolean' && __ANVIL_RELEASE_BUILD__ && version !== UNKNOWN_BUILD_VALUE
 
 export const buildInfo: Readonly<BuildInfo> = Object.freeze({
   sha,
   shortSha: sha === UNKNOWN_BUILD_VALUE ? sha : sha.slice(0, 7),
-  version: readVersion(),
-  updateChecksEnabled: sha !== UNKNOWN_BUILD_VALUE
+  version,
+  releaseBuild,
+  updateChecksEnabled: releaseBuild || sha !== UNKNOWN_BUILD_VALUE
 })
 
 export function isKnownBuildSha(value: string): boolean {

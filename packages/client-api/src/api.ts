@@ -6,6 +6,7 @@ import { createEventLatch } from '@anvil/protocol/event-latch'
 import type { IpcRequests } from '@anvil/protocol/ipc-requests'
 import type { BrowserObservationLayout, BrowserObservationState, BrowserViewportRequest } from '@anvil/protocol/browser-observation'
 import type { DesktopServerConnectionState } from '@anvil/protocol/desktop-requests'
+import type { DesktopUpdateState } from '@anvil/protocol/desktop-updates'
 import type { ServerTarget } from '@anvil/protocol/server-address'
 import type {
   Workspace,
@@ -62,6 +63,15 @@ export interface ClientHost {
   onBrowserChanged(handler: (state: BrowserObservationState) => void): () => void
   serverTarget?(): Promise<DesktopServerConnectionState>
   setServerTarget?(target: ServerTarget): Promise<DesktopServerConnectionState>
+  desktopUpdates?: DesktopUpdatesHost
+}
+
+export interface DesktopUpdatesHost {
+  managesServer: boolean
+  state(): Promise<DesktopUpdateState>
+  check(): Promise<DesktopUpdateState>
+  install(): Promise<void>
+  onChanged(handler: (state: DesktopUpdateState) => void): () => void
 }
 
 export type ProjectFolderSelection =
@@ -156,6 +166,7 @@ export function createAnvilApi(url: string, host: ClientHost) {
       get: host.serverTarget,
       set: host.setServerTarget
     } } : {}),
+    ...(host.desktopUpdates ? { desktopUpdates: host.desktopUpdates } : {}),
     terminals: {
       create: (input: IpcRequests['terminals:create']): Promise<{ sessionId: string }> => invoke('terminals:create', input),
       attach: (sessionId: string): Promise<TerminalSnapshot> => invoke('terminals:attach', sessionId),

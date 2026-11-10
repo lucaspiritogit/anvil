@@ -8,6 +8,8 @@ let consumers = 0
 export function getUpdateChecker(): UpdateChecker {
   checker ??= createUpdateChecker({
     buildSha: buildInfo.updateChecksEnabled ? buildInfo.sha : null,
+    buildVersion: buildInfo.version,
+    source: buildInfo.releaseBuild ? 'releases' : 'commits',
     enabled: buildInfo.updateChecksEnabled && !import.meta.env.DEV,
     fetch: (url, init) => window.fetch(url, { ...init, cache: 'no-cache' }),
     isOnline: () => navigator.onLine,

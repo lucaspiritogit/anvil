@@ -15,7 +15,8 @@ import { useStore } from '../state/store'
 import { useComposerPreferences } from '../state/composer-preferences'
 import { useUpdatePreferences } from '../state/update-preferences'
 import { buildInfo } from '../build-info'
-import { checkForUpdatesNow, type ManualUpdateCheckResult } from './UpdateNotifier'
+import { checkForUpdatesNow, installDesktopUpdate, type ManualUpdateCheckResult } from './UpdateNotifier'
+import { desktopUpdatesActive, desktopUpdatesCoverServer, useDesktopUpdate } from '../hooks/use-desktop-update'
 import { btn, cn, field } from '../ui'
 import { DEFAULT_KEYBINDINGS, formatAccelerator, SHORTCUTS } from '@anvil/protocol/keybindings'
 import type { Keybindings, ShortcutDefinition } from '@anvil/protocol/keybindings'
@@ -24,18 +25,51 @@ import { DEFAULT_EMBEDDING_MODEL, DEFAULT_OLLAMA_BASE_URL } from '@anvil/protoco
 import { DEFAULT_DIFF_THEMES, DIFF_THEME_NAMES, type DiffThemes } from '@anvil/protocol/diff-themes'
 import { serverAddress, type ServerTarget } from '@anvil/protocol/server-address'
 import type { DesktopServerConnectionState } from '@anvil/protocol/desktop-requests'
+import type { DesktopUpdateState } from '@anvil/protocol/desktop-updates'
 import type { ConnectionsStatus, Settings } from '@anvil/protocol/types'
 
 const DiffThemePreview = lazy(async () => ({
   default: (await import('./DiffThemePreview')).DiffThemePreview
 }))
 
+function desktopUpdateText(state: DesktopUpdateState): string {
+  switch (state.status) {
+    case 'checking': return 'Checking for updates…'
+    case 'downloading': return `Downloading Anvil ${state.version ?? ''}${state.progress !== null ? ` (${Math.round(state.progress)}%)` : ''}…`
+    case 'downloaded': return `Anvil ${state.version ?? ''} is ready. Restart to finish updating.`
+    case 'up-to-date': return `Anvil ${state.currentVersion} is the latest version.`
+    case 'error': return `Could not update: ${state.error ?? 'unknown error'}`
+    default: return `Version ${state.currentVersion}. Updates download in the background.`
+  }
+}
+
+function DesktopUpdateRow({ state }: { state: DesktopUpdateState }): JSX.Element {
+  const busy = state.status === 'checking' || state.status === 'downloading'
+  const checkNow = (): void => {
+    void window.anvil.desktopUpdates?.check().catch((error: unknown) => console.warn('Could not check for Anvil updates:', error))
+  }
+  return (
+    <SettingRow
+      title="Desktop app"
+      description={<span role="status" className={state.status === 'error' ? 'text-danger-text' : undefined}>{desktopUpdateText(state)}</span>}
+    >
+      {state.status === 'downloaded'
+        ? <button type="button" className={btn.ghost} onClick={installDesktopUpdate}>Restart to update</button>
+        : <button type="button" className={btn.ghost} disabled={busy} onClick={checkNow}>{busy ? 'Checking…' : 'Check now'}</button>}
+    </SettingRow>
+  )
+}
+
 function UpdateSettings(): JSX.Element {
   const checksEnabled = useUpdatePreferences((s) => s.checksEnabled)
   const setChecksEnabled = useUpdatePreferences((s) => s.setChecksEnabled)
+  const desktop = useDesktopUpdate()
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<ManualUpdateCheckResult | null>(null)
   const available = buildInfo.updateChecksEnabled && !import.meta.env.DEV
+  const desktopActive = desktopUpdatesActive(desktop)
+  const remote = window.anvil.desktopUpdates?.managesServer === false
+  const showServerCheck = !desktopUpdatesCoverServer(desktop)
   const checkNow = (): void => {
     setChecking(true)
     setResult(null)
@@ -44,29 +78,33 @@ function UpdateSettings(): JSX.Element {
       .finally(() => setChecking(false))
   }
   const resultText = result?.kind === 'update-available'
-    ? `${result.aheadBy} new ${result.aheadBy === 1 ? 'commit' : 'commits'} on main.`
+    ? result.version ? `Anvil ${result.version} is available.` : `${result.aheadBy} new ${result.aheadBy === 1 ? 'commit' : 'commits'} on main.`
     : result?.kind === 'up-to-date' ? 'You are on the latest version.'
     : result?.kind === 'unavailable' ? 'Update checks are not available for this build.'
     : result?.kind === 'error' ? `Could not check for updates: ${result.message}` : null
+  const source = buildInfo.releaseBuild ? 'new Anvil releases' : "new commits on Anvil's main branch"
   return (
-    <SettingsPanel title="Updates" aside={<span className="font-mono">build {buildInfo.shortSha}</span>}>
+    <SettingsPanel title="Updates" aside={<span className="font-mono">{buildInfo.releaseBuild ? `v${buildInfo.version}` : `build ${buildInfo.shortSha}`}</span>}>
       <ToggleRow
         title="Automatic update checks"
-        description="Notify me when new commits land on Anvil's main branch."
+        description={desktopActive ? 'Download Anvil updates automatically and notify me when they are ready.' : `Notify me about ${source}.`}
         checked={checksEnabled}
-        disabled={!buildInfo.updateChecksEnabled}
+        disabled={!buildInfo.updateChecksEnabled && !desktopActive}
         onChange={setChecksEnabled}
       />
-      <SettingRow
-        title="Check for updates"
-        description={resultText
-          ? <span role="status" className={result?.kind === 'error' ? 'text-danger-text' : undefined}>{resultText}</span>
-          : available ? 'Check main now and show the update notification if a new version is available.' : 'Update checks are not available for this build.'}
-      >
-        <button type="button" className={btn.ghost} disabled={!available || checking} onClick={checkNow}>
-          {checking ? 'Checking…' : 'Check now'}
-        </button>
-      </SettingRow>
+      {desktopActive && <DesktopUpdateRow state={desktop} />}
+      {showServerCheck && (
+        <SettingRow
+          title={remote ? 'Check server for updates' : 'Check for updates'}
+          description={resultText
+            ? <span role="status" className={result?.kind === 'error' ? 'text-danger-text' : undefined}>{resultText}</span>
+            : available ? `Check for ${source} now and show the update notification if one is available.` : 'Update checks are not available for this build.'}
+        >
+          <button type="button" className={btn.ghost} disabled={!available || checking} onClick={checkNow}>
+            {checking ? 'Checking…' : 'Check now'}
+          </button>
+        </SettingRow>
+      )}
     </SettingsPanel>
   )
 }

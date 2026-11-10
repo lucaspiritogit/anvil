@@ -4,9 +4,11 @@ import {
   UPDATE_CHECK_MAX_BACKOFF_MS,
   UPDATE_CHECK_MIN_BACKOFF_MS,
   backoffDelay,
+  compareVersions,
   createUpdateChecker,
   interpretCompare,
   rateLimitRetryAt,
+  updateKey,
   type UpdateCheckerDeps
 } from '../apps/web/src/update-check'
 
@@ -203,5 +205,43 @@ describe('update checker', () => {
     await vi.waitFor(() => expect(timers).toHaveLength(1))
     expect(fetch).not.toHaveBeenCalled()
     checker.stop()
+  })
+})
+
+describe('release update checks', () => {
+  test('compares semantic versions including prereleases', () => {
+    expect(compareVersions('2.4.0', '2.3.9')).toBe(1)
+    expect(compareVersions('v2.3.0', '2.3.0')).toBe(0)
+    expect(compareVersions('2.3.0', '2.3.0-beta.1')).toBe(1)
+    expect(compareVersions('2.3.0-beta.2', '2.3.0-beta.10')).toBe(-1)
+    expect(compareVersions('2.10.0', '2.9.0')).toBe(1)
+  })
+
+  test('reports a newer GitHub release for release builds', async () => {
+    const { checker, calls } = harness([
+      json({ tag_name: 'v2.4.0', html_url: 'https://github.com/lucaspiritogit/anvil/releases/tag/v2.4.0' }, 200, { etag: '"r1"' })
+    ], { source: 'releases', buildVersion: '2.3.0', buildSha: null })
+    await checker.check()
+    expect(calls[0].url).toBe('https://api.github.com/repos/lucaspiritogit/anvil/releases/latest')
+    expect(checker.getSnapshot()).toMatchObject({
+      status: 'update-available',
+      latestVersion: '2.4.0',
+      latestSha: null,
+      compareUrl: 'https://github.com/lucaspiritogit/anvil/releases/tag/v2.4.0'
+    })
+    expect(updateKey(checker.getSnapshot())).toBe('v2.4.0')
+  })
+
+  test('ignores commits on main when the build matches the latest release', async () => {
+    const { checker } = harness([json({ tag_name: 'v2.3.0' })], { source: 'releases', buildVersion: '2.3.0' })
+    await checker.check()
+    expect(checker.getSnapshot()).toMatchObject({ status: 'up-to-date', latestVersion: '2.3.0' })
+  })
+
+  test('is disabled without a release version', async () => {
+    const { checker, fetch } = harness([], { source: 'releases', buildVersion: 'unknown' })
+    await checker.check()
+    expect(checker.getSnapshot().status).toBe('disabled')
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

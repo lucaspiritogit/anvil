@@ -6,6 +6,9 @@ const desktopDirectory = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   main: {
+    define: {
+      __ANVIL_RELEASE_BUILD__: JSON.stringify(process.env.ANVIL_RELEASE_BUILD === '1')
+    },
     build: {
       outDir: resolve(desktopDirectory, '../../out/main'),
       emptyOutDir: true,

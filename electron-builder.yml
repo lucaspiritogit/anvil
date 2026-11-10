@@ -1,6 +1,9 @@
 appId: dev.anvil.app
 productName: Anvil
 npmRebuild: false
+publish:
+  provider: generic
+  url: https://pub-902a1faca35b4a8a8e268e9829ec6aab.r2.dev
 directories:
   buildResources: build
   output: release
@@ -20,7 +23,10 @@ mac:
   sign: scripts/sign-macos.cjs
   timestamp: none
   category: public.app-category.developer-tools
-  target: dmg
+  artifactName: ${productName}-${version}-${arch}-mac.${ext}
+  target:
+    - dmg
+    - zip
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist

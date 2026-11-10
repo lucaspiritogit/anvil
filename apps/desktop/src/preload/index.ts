@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { createAnvilApi } from '@anvil/client-api'
 import { serverAddress } from '@anvil/protocol/server-address'
 import type { BrowserObservationState } from '@anvil/protocol/browser-observation'
+import type { DesktopUpdateState } from '@anvil/protocol/desktop-updates'
 
 // Keep native-menu requests made while React is still loading.
 let settingsOpenPending = false
@@ -13,6 +14,7 @@ ipcRenderer.on('settings:open-requested', () => {
 
 const argument = process.argv.find((value) => value.startsWith('--anvil-server-url='))
 const url = serverAddress(argument?.slice('--anvil-server-url='.length) ?? 'http://127.0.0.1:4780')
+const localServer = process.argv.includes('--anvil-server-mode=local')
 const api = createAnvilApi(url, {
   platform: process.platform,
   onSettingsOpen(handler) {
@@ -59,6 +61,17 @@ const api = createAnvilApi(url, {
     const listener = (_event: IpcRendererEvent, state: BrowserObservationState): void => handler(state)
     ipcRenderer.on('desktop:browser-changed', listener)
     return () => { ipcRenderer.off('desktop:browser-changed', listener) }
+  },
+  desktopUpdates: {
+    managesServer: localServer,
+    state: () => ipcRenderer.invoke('desktop:update-state'),
+    check: () => ipcRenderer.invoke('desktop:update-check'),
+    install: () => ipcRenderer.invoke('desktop:update-install'),
+    onChanged(handler) {
+      const listener = (_event: IpcRendererEvent, state: DesktopUpdateState): void => handler(state)
+      ipcRenderer.on('desktop:update-changed', listener)
+      return () => { ipcRenderer.off('desktop:update-changed', listener) }
+    }
   }
 })
 

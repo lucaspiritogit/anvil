@@ -11,6 +11,7 @@
     "@anvil/protocol": "*",
     "@hono/node-server": "^2.1.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "electron-updater": "^6.8.11",
     "hono": "^4.13.7"
   }
 }
