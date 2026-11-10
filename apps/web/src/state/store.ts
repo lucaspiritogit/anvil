@@ -3,6 +3,7 @@ import { DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '@anvil/p
 import { hydrateComposer } from './composer-preferences'
 import { carryTaskComposerPrompt } from './task-composer-drafts'
 import { enqueueWorkspaceRequest } from './workspace-requests'
+import { queueApi } from './queue-api'
 import type { SettingsSectionId } from '../settings-sections'
 import type {
   AgentDefinition,
@@ -649,15 +650,15 @@ export const useStore = create<AnvilState>((set, get) => ({
   },
 
   removeQueuedPrompt: async (taskId, id) => {
-    await window.anvil.tasks.removeQueued({ taskId, id })
+    await queueApi().removeQueued({ taskId, id })
   },
 
   editQueuedPrompt: async (taskId, id, message) => {
-    await window.anvil.tasks.editQueued({ taskId, id, message })
+    await queueApi().editQueued({ taskId, id, message })
   },
 
   steerQueuedPrompt: async (taskId, id) => {
-    await window.anvil.tasks.steerQueued({ taskId, id })
+    await queueApi().steerQueued({ taskId, id })
   },
 
   cancelTask: async (taskId) => {

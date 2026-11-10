@@ -10,6 +10,18 @@ type TerminalRequest = (
 
 const TERMINAL_WRITE_LIMIT = 65536
 
+export function createRpcInvoker(url: string) {
+  return async <T>(channel: IpcInvokeChannel, input: unknown): Promise<T> => {
+    const response = await fetch(`${url}/rpc`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, input: encodeRpcInput(channel, input) })
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error ?? `Anvil request failed (${response.status})`)
+    return result as T
+  }
+}
+
 export function createHttpClient(url: string, onReady: () => void, onFailure: (message: string) => void) {
   const terminalRequests = new Map<string, TerminalRequest[]>()
   const listeners = new Map<string, Set<(payload: unknown) => void>>()
@@ -33,15 +45,7 @@ export function createHttpClient(url: string, onReady: () => void, onFailure: (m
     const { channel, payload } = JSON.parse(event.data) as { channel: string; payload: unknown }
     for (const listener of listeners.get(channel) ?? []) listener(payload)
   }
-  const post = async <T>(channel: IpcInvokeChannel, input: unknown): Promise<T> => {
-    const response = await fetch(`${url}/rpc`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel, input: encodeRpcInput(channel, input) })
-    })
-    const result = await response.json()
-    if (!response.ok) throw new Error(result.error ?? `Anvil request failed (${response.status})`)
-    return result as T
-  }
+  const post = createRpcInvoker(url)
   const drainTerminalRequests = async (sessionId: string, queue: TerminalRequest[]): Promise<void> => {
     while (queue.length > 0) {
       // Remove the in-flight request so new input only joins unsent writes.
