@@ -1,4 +1,4 @@
-import type { JSX, PointerEvent as ReactPointerEvent } from 'react'
+import type { HTMLAttributes, JSX, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Task, TaskEvent, TaskEventCategory } from '@anvil/protocol/types'
 import { TASK_EVENT_CATEGORIES } from '@anvil/protocol/types'
@@ -10,6 +10,7 @@ import { useStore } from '../state/store'
 import { btn, cn } from '../ui'
 import { Icon } from '../icons'
 import { TaskActivity } from './TaskActivity'
+import { MessageMarkdown } from './MessageMarkdown'
 
 const PLACEHOLDER = 'py-8 text-center text-dim'
 const BROWSER_HEADER_HEIGHT = 32
@@ -190,6 +191,7 @@ function TaskOutputHistory({ task, visible, presentation, events, onOpenChanges 
     const toggled = expandedIds.has(event.id)
     if (detailIds.edits.has(event.id)) return details.edits !== toggled
     if (detailIds.results.has(event.id)) return details.results !== toggled
+    if (event.category === 'message') return !toggled
     return toggled
   }
   const normalizedQuery = query.trim().toLowerCase()
@@ -824,17 +826,31 @@ const LINE_CLAMP: Record<number, string> = {
   15: 'line-clamp-15'
 }
 
-function ExpandButton({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }): JSX.Element {
-  return (
-    <button type="button" aria-label={expanded ? 'Collapse event' : 'Expand event'} aria-expanded={expanded}
-      onClick={(event) => {
-        event.stopPropagation()
-        onToggle()
-      }}
-      className="flex size-4 shrink-0 items-center justify-center text-faint hover:text-fg">
-      <Icon icon="chevron-right" size={12} aria-hidden="true" className={cn('transition-transform duration-150', expanded && 'rotate-90')} />
-    </button>
-  )
+function toggleFromClick(event: ReactMouseEvent<HTMLElement>, onToggle: () => void): void {
+  if (event.defaultPrevented) return
+  const interactive = (event.target as HTMLElement).closest('a, button, input, textarea, select, summary, [tabindex]')
+  if (interactive && interactive !== event.currentTarget) return
+  const selection = window.getSelection()
+  if (selection && !selection.isCollapsed && event.currentTarget.contains(selection.anchorNode)) return
+  event.stopPropagation()
+  onToggle()
+}
+
+function toggleFromKey(event: ReactKeyboardEvent<HTMLElement>, onToggle: () => void): void {
+  if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+  event.preventDefault()
+  onToggle()
+}
+
+function rowToggleProps(expandable: boolean, expanded: boolean, onToggle: () => void): HTMLAttributes<HTMLElement> {
+  if (!expandable) return {}
+  return {
+    tabIndex: 0,
+    'aria-expanded': expanded,
+    title: expanded ? 'Click to collapse' : 'Click to expand',
+    onClick: (event) => toggleFromClick(event, onToggle),
+    onKeyDown: (event) => toggleFromKey(event, onToggle)
+  }
 }
 
 /* Copies one event's text; revealed on row hover so the stream stays clean. */
@@ -852,14 +868,11 @@ function CopyButton({ copied, onCopy }: { copied: boolean; onCopy: () => void })
   )
 }
 
-function Gutter({ event, label, glyph, tone, expandable, expanded, onToggle }: {
+function Gutter({ event, label, glyph, tone }: {
   event: TaskEvent
   label: string
   glyph: string
   tone: string
-  expandable: boolean
-  expanded: boolean
-  onToggle: () => void
 }): JSX.Element {
   return (
     <>
@@ -867,7 +880,6 @@ function Gutter({ event, label, glyph, tone, expandable, expanded, onToggle }: {
         {timeFormat.format(event.ts)}
       </time>
       <span className="flex min-w-0 select-none items-center gap-1.5 leading-5">
-        {expandable ? <ExpandButton expanded={expanded} onToggle={onToggle} /> : <span aria-hidden="true" className="size-4 shrink-0" />}
         <span aria-hidden="true" className={cn('w-3 shrink-0 text-center', tone)}>{glyph}</span>
         <span className={cn('truncate text-[11px]', tone)}>{label}</span>
       </span>
@@ -878,32 +890,39 @@ function Gutter({ event, label, glyph, tone, expandable, expanded, onToggle }: {
 /* The clamp class is always applied while collapsed and the row measures whether
  * it actually bites, so the fade and expand affordances only appear on genuinely
  * truncated text — never on a single line that merely could wrap. */
-function ClampedText({ text, lines, expanded, className, showMoreLink, onToggle, onTruncated }: {
+function ClampedText({ text, lines, expanded, className, markdown, showMoreLink, onToggle, onTruncated }: {
   text: string
   lines: number
   expanded: boolean
   className?: string
+  markdown?: boolean
   showMoreLink?: boolean
   onToggle?: () => void
   onTruncated?: (truncated: boolean) => void
 }): JSX.Element {
-  const textRef = useRef<HTMLSpanElement>(null)
+  const textRef = useRef<HTMLDivElement>(null)
   const [truncated, setTruncated] = useState(false)
   useLayoutEffect(() => {
-    if (expanded) return
     const element = textRef.current
     if (!element) return
-    const clamped = element.scrollHeight > element.clientHeight + 1
+    const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight)
+    const clamped = expanded
+      ? Number.isFinite(lineHeight) && element.scrollHeight > lineHeight * lines + 1
+      : element.scrollHeight > element.clientHeight + 1
     setTruncated(clamped)
     onTruncated?.(clamped)
   }, [expanded, text, lines, onTruncated])
   return (
     <span className="relative block min-w-0">
-      <span ref={textRef} className={cn('whitespace-pre-wrap break-words [overflow-wrap:anywhere]', expanded ? 'block' : LINE_CLAMP[lines], className)}>
-        {text || ' '}
-      </span>
+      {markdown
+        ? <div ref={textRef} className={cn('break-words [overflow-wrap:anywhere] [&>*+*]:mt-2', expanded ? 'block' : LINE_CLAMP[lines], className)}>
+          {text ? <MessageMarkdown text={text} /> : ' '}
+        </div>
+        : <div ref={textRef} className={cn('whitespace-pre-wrap break-words [overflow-wrap:anywhere]', expanded ? 'block' : LINE_CLAMP[lines], className)}>
+          {text || ' '}
+        </div>}
       {!expanded && truncated && <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-canvas to-transparent" />}
-      {showMoreLink && (truncated || expanded) && onToggle && <button type="button" aria-expanded={expanded}
+      {showMoreLink && truncated && onToggle && <button type="button" aria-expanded={expanded}
         onClick={(event) => {
           event.stopPropagation()
           onToggle()
@@ -1024,9 +1043,8 @@ function ToolResultRow({ result, expanded, hidden, copied, onToggle, onCopy }: {
   const failed = result.category === 'error'
   const lineCount = result.text ? result.text.replace(/\n$/, '').split('\n').length : 0
   return (
-    <div data-event-id={result.id} data-output-category={result.category} aria-expanded={expanded}
-      className={cn('group relative mt-0.5 flex items-start gap-2 border-l border-dashed border-line-strong pl-2.5', hidden && 'hidden')}>
-      <ExpandButton expanded={expanded} onToggle={() => onToggle(result.id)} />
+    <div data-event-id={result.id} data-output-category={result.category} {...rowToggleProps(true, expanded, () => onToggle(result.id))}
+      className={cn('group/result relative mt-0.5 flex cursor-pointer items-start gap-2 border-l border-dashed border-line-strong pl-2.5 outline-none hover:bg-hover/60 focus-visible:bg-hover/60', hidden && 'hidden')}>
       <span aria-hidden="true" className={cn('w-3 shrink-0 select-none text-center leading-5', failed ? 'text-danger' : KIND_TONE.tool_result)}>{failed ? '✕' : '↳'}</span>
       <span className="sr-only">{failed ? 'Error' : 'Result'}</span>
       <span className="min-w-0 flex-1 leading-5">
@@ -1056,11 +1074,10 @@ const ToolRow = memo(function ToolRow({ use, result, cwd, onOpenChanges, useExpa
 }): JSX.Element {
   const mcpTool = isMcpTool(use)
   return (
-    <div data-output-category={mcpTool ? 'mcp_tool' : 'tool_use'} data-event-id={use.id} aria-expanded={useExpanded}
-      className={cn('group relative grid grid-cols-[52px_120px_minmax(0,1fr)] items-start gap-x-3 px-2 py-1 hover:bg-hover/60 max-[700px]:grid-cols-[104px_minmax(0,1fr)]',
+    <div data-output-category={mcpTool ? 'mcp_tool' : 'tool_use'} data-event-id={use.id} {...rowToggleProps(true, useExpanded, () => onToggle(use.id))}
+      className={cn('group relative grid cursor-pointer grid-cols-[52px_120px_minmax(0,1fr)] items-start gap-x-3 px-2 py-1 outline-none hover:bg-hover/60 focus-visible:bg-hover/60 max-[700px]:grid-cols-[104px_minmax(0,1fr)]',
         animate && 'motion-safe:animate-row-in', useHidden && 'hidden')}>
-      <Gutter event={use} label={mcpTool ? 'mcp_tool' : use.edits?.length ? 'edit' : 'tool_use'} glyph={mcpTool ? '◈' : use.edits?.length ? '✎' : KIND_GLYPH.tool_use} tone={mcpTool ? 'text-warn' : KIND_TONE.tool_use}
-        expandable expanded={useExpanded} onToggle={() => onToggle(use.id)} />
+      <Gutter event={use} label={mcpTool ? 'mcp_tool' : use.edits?.length ? 'edit' : 'tool_use'} glyph={mcpTool ? '◈' : use.edits?.length ? '✎' : KIND_GLYPH.tool_use} tone={mcpTool ? 'text-warn' : KIND_TONE.tool_use} />
       <span className="min-w-0">
         <ToolUseContent event={use} expanded={useExpanded} cwd={cwd} onOpenChanges={onOpenChanges} onToggle={onToggle} />
         <ToolResultRow result={result} expanded={resultExpanded} hidden={resultHidden} copied={resultCopied} onToggle={onToggle} onCopy={onCopy} />
@@ -1091,17 +1108,18 @@ const EventRow = memo(function EventRow({ event, expanded, cwd, onOpenChanges, h
   const onTruncated = useCallback((value: boolean): void => setTruncated(value), [])
   const expandable = tool || toolResult || truncated
   return (
-    <div data-output-category={mcpTool ? 'mcp_tool' : event.category} data-event-id={event.id} aria-expanded={expanded}
-      className={cn('group relative grid grid-cols-[52px_120px_minmax(0,1fr)] items-start gap-x-3 px-2 py-1 hover:bg-hover/60 max-[700px]:grid-cols-[104px_minmax(0,1fr)]',
+    <div data-output-category={mcpTool ? 'mcp_tool' : event.category} data-event-id={event.id} {...rowToggleProps(expandable, expanded, () => onToggle(event.id))}
+      className={cn('group relative grid grid-cols-[52px_120px_minmax(0,1fr)] items-start gap-x-3 px-2 py-1 outline-none hover:bg-hover/60 focus-visible:bg-hover/60 max-[700px]:grid-cols-[104px_minmax(0,1fr)]',
+        expandable && 'cursor-pointer',
         animate && 'motion-safe:animate-row-in', hidden && 'hidden')}>
       <Gutter event={event} label={mcpTool ? 'mcp_tool' : event.edits?.length ? 'edit' : CATEGORY_LABEL[event.category]}
         glyph={uncommitted ? '▲' : mcpTool ? '◈' : event.edits?.length ? '✎' : KIND_GLYPH[event.category]}
-        tone={uncommitted ? 'text-warn' : mcpTool ? 'text-warn' : KIND_TONE[event.category]}
-        expandable={expandable} expanded={expanded} onToggle={() => onToggle(event.id)} />
+        tone={uncommitted ? 'text-warn' : mcpTool ? 'text-warn' : KIND_TONE[event.category]} />
       {tool ? <ToolUseContent event={event} expanded={expanded} cwd={cwd} onOpenChanges={onOpenChanges} onToggle={onToggle} /> :
         <span className={cn('min-w-0', event.category === 'message' && 'block border-l-2 border-ember-800 py-0.5 pl-3')}>
           <ClampedText text={event.text} lines={lines} expanded={expanded}
             className={cn(prose, uncommitted ? 'text-warn' : TEXT_TONE[event.category])}
+            markdown={event.category === 'message' || event.category === 'thinking'}
             showMoreLink={event.category === 'message' || event.category === 'thinking'}
             onToggle={() => onToggle(event.id)} onTruncated={onTruncated} />
         </span>}

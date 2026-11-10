@@ -166,7 +166,7 @@ test('prompt, tool rows, delivery messages, empty output and activity retain acc
   await expect(prompt.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true')
   await prompt.getByRole('button', { name: 'Show less' }).click()
   const tool = output(page).locator('[data-output-category="tool_use"]')
-  await tool.getByRole('button', { name: 'Expand event' }).first().click()
+  await tool.getByText('tool_use', { exact: true }).click()
   await expect(tool).toHaveAttribute('aria-expanded', 'true')
   await expect(tool).toContainText('Shell')
   await expect(output(page).locator('[data-output-category="tool_result"]')).toContainText('first.ts')
