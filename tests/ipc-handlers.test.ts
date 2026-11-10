@@ -650,7 +650,7 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(tasks.get(task.id)?.deliveryStatus, 'Review follow-ups finalize without replanning').toBe('reviewable')
   await expect(call('comments:send', task.id)).rejects.toThrow(/no comments/)
   expect(await call('github:credential-status')).toStrictEqual({ configured: false })
-  expect(await call('github:set-token', 'test-token')).toStrictEqual({ configured: true })
+  expect(await call('github:set-token', 'test-token')).toStrictEqual({ configured: true, source: 'settings' })
   expect('githubToken' in store.getSettings(), 'Tokens stay out of ordinary settings').toBe(false)
   const prPreview = await call('github:pr-preview', task.id)
   expect(prPreview.account).toBe('developer')

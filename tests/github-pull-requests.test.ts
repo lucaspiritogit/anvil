@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GitHubClient } from '../apps/server/src/github-client'
 import { GitHubCredentials } from '../apps/server/src/github-credentials'
+import { withGitHubCliCredentials } from '../apps/server/src/github-cli'
 import { GitHubPullRequests } from '../apps/server/src/github-pull-requests'
 import type { PullRequestPreview } from '@anvil/protocol/types'
 
@@ -23,11 +24,17 @@ test('stores encrypted credentials and creates or recovers PRs with account and 
     const credentials = new GitHubCredentials(path, encryption)
     expect(await credentials.status()).toStrictEqual({ configured: false })
     await credentials.setToken(token)
-    expect(await credentials.status()).toStrictEqual({ configured: true })
+    expect(await credentials.status()).toStrictEqual({ configured: true, source: 'settings' })
     expect(await readFile(path)).toStrictEqual(encrypted)
     expect(await new GitHubCredentials(path, encryption).getToken(), 'Encrypted credentials survive restart').toBe(token)
     await expect(new GitHubCredentials(path, { ...encryption, getSelectedStorageBackend: () => 'basic_text' }).setToken(token)).rejects.toThrow(/Secure token storage is unavailable/)
     await expect(new GitHubCredentials(path, { ...encryption, isEncryptionAvailable: () => false }).getToken()).rejects.toThrow(/Secure token storage is unavailable/)
+    expect(await new GitHubCredentials(path, encryption, async () => 'cli-token').getToken(), 'A saved token wins over the GitHub CLI login').toBe(token)
+    const cliPath = join(directory, 'cli-token.enc')
+    const cliCredentials = new GitHubCredentials(cliPath, { ...encryption, isEncryptionAvailable: () => false }, async () => 'cli-token')
+    expect(await cliCredentials.status()).toStrictEqual({ configured: true, source: 'github-cli' })
+    expect(await cliCredentials.getToken(), 'The GitHub CLI login works without secure storage').toBe('cli-token')
+    expect(await cliCredentials.removeToken()).toStrictEqual({ configured: true, source: 'github-cli' })
 
     const preview: PullRequestPreview = {
       sourceBranch: 'task/feature', targetBranch: 'main', sourceCommit: 'source', targetCommit: 'local-base',
@@ -106,5 +113,25 @@ test('stores encrypted credentials and creates or recovers PRs with account and 
     await expect(deniedClient.account(token)).rejects.toSatisfy((error: Error) => /rejected the token/.test(error.message) && !error.message.includes(token))
   } finally {
     await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('GitHub CLI credentials append a github.com Git credential helper', () => {
+  const previous = process.env.GIT_CONFIG_COUNT
+  try {
+    delete process.env.GIT_CONFIG_COUNT
+    expect(withGitHubCliCredentials({ GIT_TERMINAL_PROMPT: '0' })).toStrictEqual({
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'credential.https://github.com.helper',
+      GIT_CONFIG_VALUE_0: '!gh auth git-credential'
+    })
+    process.env.GIT_CONFIG_COUNT = '2'
+    expect(withGitHubCliCredentials(), 'Existing command-line Git configuration is preserved').toMatchObject({
+      GIT_CONFIG_COUNT: '3', GIT_CONFIG_KEY_2: 'credential.https://github.com.helper'
+    })
+  } finally {
+    if (previous === undefined) delete process.env.GIT_CONFIG_COUNT
+    else process.env.GIT_CONFIG_COUNT = previous
   }
 })

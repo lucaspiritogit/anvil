@@ -236,6 +236,7 @@ export type PullRequestField = 'title' | 'description'
 
 export interface GitHubCredentialStatus {
   configured: boolean
+  source?: 'settings' | 'github-cli'
 }
 
 export interface ProjectBranches {

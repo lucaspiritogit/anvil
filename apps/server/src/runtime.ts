@@ -16,6 +16,7 @@ import { registerAgentHandlers } from './handlers/agents'
 import { registerAnalyticsHandlers } from './handlers/analytics'
 import { registerGitHubHandlers } from './handlers/github'
 import { GitHubCredentials, type CredentialEncryption } from './github-credentials'
+import { githubCliToken, githubRemoteGit } from './github-cli'
 import { GitHubPRPolling } from './github-pr-polling'
 import { GitHubClient } from './github-client'
 import { registerProjectHandlers } from './handlers/projects'
@@ -135,7 +136,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     if (!workspaceId) throw new Error('Task workspace not found')
     worktreeOwners.set(taskId, workspaceId)
     return join(store.getWorkspaceDirectory(workspaceId), 'worktrees')
-  })
+  }, githubRemoteGit)
   const taskBranches = new TaskBranches({ store, gitDelivery, send: broadcast })
   const projectMemory = new WorkspaceProjectMemory(store, (workspaceId, settings) => createProjectMemory({
     dataDirectory: join(store.getWorkspaceDirectory(workspaceId), 'memory'),
@@ -283,7 +284,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     })
   }
   void execution.acceptParkedIssueReviews()
-  const credentials = (workspaceId: string): GitHubCredentials => new GitHubCredentials(join(store.getWorkspaceDirectory(workspaceId), 'github-token.enc'), encryption)
+  const credentials = (workspaceId: string): GitHubCredentials => new GitHubCredentials(join(store.getWorkspaceDirectory(workspaceId), 'github-token.enc'), encryption, githubCliToken)
   const githubClient = new GitHubClient()
   const polls = new Map<string, GitHubPRPolling>()
   const workspacePolling = (workspaceId: string): GitHubPRPolling => {

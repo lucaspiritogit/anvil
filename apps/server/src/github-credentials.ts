@@ -12,7 +12,11 @@ export interface CredentialEncryption {
 
 /** The token never enters ordinary settings, renderer responses, or Git configuration. */
 export class GitHubCredentials {
-  constructor(private readonly path: string, private readonly encryption: CredentialEncryption) {}
+  constructor(
+    private readonly path: string,
+    private readonly encryption: CredentialEncryption,
+    private readonly fallbackToken: () => Promise<string | null> = async () => null
+  ) {}
 
   private requireEncryption(): void {
     if (!this.encryption.isEncryptionAvailable() || this.encryption.getSelectedStorageBackend?.() === 'basic_text') {
@@ -20,20 +24,31 @@ export class GitHubCredentials {
     }
   }
 
-  async status(): Promise<GitHubCredentialStatus> {
+  private async saved(): Promise<Buffer | null> {
     try {
-      await readFile(this.path)
-      return { configured: true }
+      return await readFile(this.path)
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { configured: false }
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw new Error('Could not read GitHub credential storage.')
     }
   }
 
+  async status(): Promise<GitHubCredentialStatus> {
+    if (await this.saved()) return { configured: true, source: 'settings' }
+    if (await this.fallbackToken()) return { configured: true, source: 'github-cli' }
+    return { configured: false }
+  }
+
   async getToken(): Promise<string> {
+    const saved = await this.saved()
+    if (!saved) {
+      const token = await this.fallbackToken()
+      if (token) return token
+      throw new Error('Add a GitHub token in Settings, or run gh auth login on the Anvil server.')
+    }
     this.requireEncryption()
     try {
-      return this.encryption.decryptString(await readFile(this.path))
+      return this.encryption.decryptString(saved)
     } catch {
       throw new Error('Add or replace your GitHub token in Settings.')
     }
@@ -49,11 +64,11 @@ export class GitHubCredentials {
     } finally {
       await rm(temporary, { force: true })
     }
-    return { configured: true }
+    return { configured: true, source: 'settings' }
   }
 
   async removeToken(): Promise<GitHubCredentialStatus> {
     await rm(this.path, { force: true })
-    return { configured: false }
+    return this.status()
   }
 }

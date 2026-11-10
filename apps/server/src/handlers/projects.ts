@@ -10,7 +10,7 @@ import type { Project, ProjectFolderListing } from '@anvil/protocol/types'
 import { listProjectFiles, projectFileError } from '../project-files'
 import { usesManagedWorktree, usesProjectCheckout } from '../tasks/checkout'
 import { taskOperationKind } from '../tasks/operations'
-import { git } from '../git/command'
+import { githubRemoteGit } from '../github-cli'
 import { createProjectImporter } from './project-import'
 
 interface ProjectHandlerDependencies extends Pick<TaskContext, 'store' | 'gitDelivery' | 'agentProcesses'> {
@@ -67,7 +67,7 @@ async function browseFolder(input?: string): Promise<ProjectFolderListing> {
 }
 
 async function cloneHttpsRepository(url: string, destination: string): Promise<void> {
-  await git(dirname(destination), ['clone', '--', url, destination], [0], {
+  await githubRemoteGit(dirname(destination), ['clone', '--', url, destination], [0], {
     GIT_TERMINAL_PROMPT: '0',
     GCM_INTERACTIVE: 'Never'
   })
