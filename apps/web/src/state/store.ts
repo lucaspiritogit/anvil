@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { hasRunningTaskDiff } from '@anvil/protocol/task-checkout'
 import { DEFAULT_TASK_EVENT_PAGE_SIZE, MAX_TASK_EVENT_PAGE_SIZE } from '@anvil/protocol/types'
 import { hydrateComposer } from './composer-preferences'
 import { carryTaskComposerPrompt } from './task-composer-drafts'
@@ -785,7 +786,7 @@ export const useStore = create<AnvilState>((set, get) => ({
   loadTaskDiff: async (taskId) => {
     if (get().diffsByTask[taskId]) return
     const task = get().tasks.find((task) => task.id === taskId)
-    if (!task || !['reviewable', 'approved'].includes(task.deliveryStatus)) return
+    if (!task || !['reviewable', 'approved'].includes(task.deliveryStatus) && !hasRunningTaskDiff(task)) return
     const revision = taskDiffRevision(task)
     const view = get().view
     const generation = workspaceGeneration

@@ -275,14 +275,20 @@ export function ShipButton({ task, disabled, disabledReason, onOpenPullRequest }
         onContextMenu={(event) => event.preventDefault()}
       >
         <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 bg-canvas/25" style={{ width: `${hold * 100}%` }} />
-        <span className="relative inline-flex items-center gap-1.5">
-          {shipping
-            ? <><ShippingAscii />Shipping…</>
-            : <>
-              <Icon icon="arrow-big-up" size={14} aria-hidden="true" />
-              {hold > 0 ? 'Keep holding…' : label}
-              {offBase && <Icon icon="git-branch" size={13} aria-label={`Started from ${task.baseBranch}`} className="text-canvas/80" />}
-            </>}
+        <span className="relative grid">
+          <span aria-hidden={hold > 0 || shipping} className={cn('col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5', (hold > 0 || shipping) && 'invisible')}>
+            <Icon icon="arrow-big-up" size={14} aria-hidden="true" />
+            {label}
+            {offBase && <Icon icon="git-branch" size={13} aria-label={`Started from ${task.baseBranch}`} className="text-canvas/80" />}
+          </span>
+          <span aria-hidden="true" className={cn('col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5', (hold === 0 || shipping) && 'invisible')}>
+            <Icon icon="arrow-big-up" size={14} aria-hidden="true" />
+            Keep holding…
+          </span>
+          <span aria-hidden="true" className={cn('col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5', !shipping && 'invisible')}>
+            {shipping ? <ShippingAscii /> : <span className="font-mono text-[11px] leading-none whitespace-pre">[{' '.repeat(TRACK)}]</span>}
+            Shipping…
+          </span>
         </span>
       </button>
       <button

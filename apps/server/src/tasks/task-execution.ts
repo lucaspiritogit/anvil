@@ -30,7 +30,7 @@ export interface TaskExecution {
   deferTaskCleanup(taskId: string, projectPath: string, branchName: string): void
   skipTaskCleanup(taskId: string): void
   finishTaskTurn(info: ExitInfo): Promise<void>
-  runMergeConflictRepair(taskId: string, options: {
+  runSessionTurn(taskId: string, options: {
     cwd: string
     prompt: string
     beforeDispatch: () => void
@@ -69,7 +69,7 @@ export function registerTaskExecution(
   const retries = new Map<string, TaskRetry>()
   const deferredTaskCleanup = new Map<string, { projectPath: string; branchName: string }>()
   const skippedTaskCleanup = new Set<string>()
-  const mergeConflictRepairs = new Map<string, (info: ExitInfo) => void>()
+  const sessionTurns = new Map<string, (info: ExitInfo) => void>()
   let closing = false
   const clearRetry = (taskId: string): void => {
     clearTimeout(retries.get(taskId)?.timer)
@@ -460,11 +460,11 @@ export function registerTaskExecution(
     }
   }
 
-  const runMergeConflictRepair: TaskExecution['runMergeConflictRepair'] = async (taskId, options) => {
+  const runSessionTurn: TaskExecution['runSessionTurn'] = async (taskId, options) => {
     const task = store.getTask(taskId)
     const state = store.getTaskExecution(taskId)
     if (!task || !state) throw new Error('Task execution state is unavailable')
-    if (task.status === 'running' || agentProcesses.isRunning(taskId) || mergeConflictRepairs.has(taskId)) {
+    if (task.status === 'running' || agentProcesses.isRunning(taskId) || sessionTurns.has(taskId)) {
       throw new Error('This task already has an active agent turn')
     }
     const agent = getAgent(task.agentId)
@@ -474,7 +474,7 @@ export function registerTaskExecution(
     requireProjectCheckoutAvailable(store, task, true)
     let resolveExit!: (info: ExitInfo) => void
     const exit = new Promise<ExitInfo>((resolve) => { resolveExit = resolve })
-    mergeConflictRepairs.set(taskId, resolveExit)
+    sessionTurns.set(taskId, resolveExit)
     try {
       await agentProcesses.startResumed({
         taskId,
@@ -492,15 +492,15 @@ export function registerTaskExecution(
       })
       return await exit
     } catch (error) {
-      if (mergeConflictRepairs.get(taskId) === resolveExit) mergeConflictRepairs.delete(taskId)
+      if (sessionTurns.get(taskId) === resolveExit) sessionTurns.delete(taskId)
       throw error
     }
   }
 
   agentProcesses.on('exit', (info: ExitInfo) => {
-    const repair = mergeConflictRepairs.get(info.taskId)
+    const repair = sessionTurns.get(info.taskId)
     if (repair) {
-      mergeConflictRepairs.delete(info.taskId)
+      sessionTurns.delete(info.taskId)
       repair(info)
       return
     }
@@ -591,6 +591,6 @@ export function registerTaskExecution(
   const onTurnSettled = (listener: (taskId: string) => void): void => { settledListeners.push(listener) }
 
   return { turnStopped, onTurnSettled, issueReviewReady, initializeTask, resumeTask, acceptTaskResume, rollbackTaskResume,
-    stopTask, deferTaskCleanup, skipTaskCleanup, finishTaskTurn, runMergeConflictRepair,
+    stopTask, deferTaskCleanup, skipTaskCleanup, finishTaskTurn, runSessionTurn,
     requireFinishedTask, acceptParkedIssueReviews }
 }

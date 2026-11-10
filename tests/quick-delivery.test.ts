@@ -50,7 +50,7 @@ function setup() {
     },
     recordSystemEvent: (taskId: string, text: string) => { events.push({ taskId, text }) },
     requireFinishedTask: () => {},
-    runMergeConflictRepair: (() => {}) as never
+    runSessionTurn: (() => {}) as never
   })
   const events: { taskId: string; text: string }[] = []
   const addQuickTask = (overrides: Partial<Task> = {}): Task => store.addTask({

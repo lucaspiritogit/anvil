@@ -2,7 +2,7 @@ import { TaskStacks, requireStackMergeable } from '../tasks/task-stacks'
 import type { HandlerRegistry } from '../handler-registry'
 import { randomUUID } from 'node:crypto'
 import { getAgent } from '../agents/registry'
-import { draftCommitMessage, draftCommitMessageOrTitle } from '../agents/commit-message-draft'
+import { COMMIT_MESSAGE_INSTRUCTIONS, commitMessagePrompt, draftCommitMessage, draftCommitMessageOrTitle, validCommitMessageDraft } from '../agents/commit-message-draft'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { withTaskOperation } from '../tasks/operations'
 import { resumeTaskTurn } from '../tasks/resume'
@@ -16,17 +16,19 @@ import { isLocalQuickTask } from '@anvil/protocol/task-checkout'
 
 export type ShipTask = (taskId: string, options?: { push?: boolean; message?: string }) => Promise<Task>
 
+const SESSION_COMMIT_MESSAGE_TIMEOUT_MS = 120_000
+
 const subjectLine = (message: string): string => message.trim().split(/\r?\n/, 1)[0]
 
 interface ReviewHandlerDependencies extends TaskContext {
   recordSystemEvent: RecordSystemEvent
   requireFinishedTask: TaskExecution['requireFinishedTask']
-  runMergeConflictRepair: TaskExecution['runMergeConflictRepair']
+  runSessionTurn: TaskExecution['runSessionTurn']
 }
 
 export function registerReviewHandlers(ipc: HandlerRegistry, {
   store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTask,
-  runMergeConflictRepair
+  runSessionTurn
 }: ReviewHandlerDependencies): { shipTask: ShipTask } {
   const shipOf = (conflict: TaskMergeConflict): { targetCommit: string; message: string } | undefined =>
     conflict.shipMessage ? { targetCommit: conflict.targetCommit, message: conflict.shipMessage } : undefined
@@ -336,7 +338,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       send('task:updated', task)
       let exit
       try {
-        exit = await runMergeConflictRepair(task.id, { cwd: project.path, prompt, beforeDispatch: guard })
+        exit = await runSessionTurn(task.id, { cwd: project.path, prompt, beforeDispatch: guard })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         if (message === 'Task operation was cancelled') {
@@ -577,12 +579,48 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       commitLocalTask(taskId, push, async (task) => message?.trim() || task.title, check, false))
   })
 
-  const shipMessage = async (task: Task, diff: () => Promise<TaskDiff>, requested?: string): Promise<string> => {
+  const draftCommitMessageInSession = async (task: Task, project: Project, diff: TaskDiff, check: () => void): Promise<string> => {
+    let abandoned = false
+    let timer: NodeJS.Timeout | undefined
+    recordSystemEvent(task.id, `Anvil (ship):\n${COMMIT_MESSAGE_INSTRUCTIONS}`)
+    const exit = runSessionTurn(task.id, {
+      cwd: project.path,
+      prompt: commitMessagePrompt(task, diff, ''),
+      beforeDispatch: () => {
+        if (abandoned) throw new Error('Commit message draft timed out')
+        check()
+      }
+    })
+    try {
+      const info = await Promise.race([
+        exit,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Commit message draft timed out')), SESSION_COMMIT_MESSAGE_TIMEOUT_MS)
+          timer.unref()
+        })
+      ])
+      if (info.code !== 0) throw new Error(info.error ?? 'The agent could not write a commit message')
+      return validCommitMessageDraft(info.result?.output ?? '')
+    } catch (error) {
+      abandoned = true
+      if (agentProcesses.isRunning(task.id)) agentProcesses.cancel(task.id)
+      await exit.catch(() => undefined)
+      throw error
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  const shipMessage = async (task: Task, project: Project, diff: () => Promise<TaskDiff>, check: () => void, requested?: string): Promise<string> => {
     const message = requested?.trim()
     if (message) return message
+    const agent = getAgent(task.agentId)
+    const inSession = Boolean(task.sessionId && agent && (agent.executionProtocol || agent.resumeArgs))
     const workspace = resolveTaskWorkspace(store, task.id)
-    const draft = await draftCommitMessageOrTitle(async () => draftCommitMessage(agentProcesses, workspace, task, await diff(), '',
-      store.getTaskExecution(task.id)?.reasoningEffort), task)
+    const draft = await draftCommitMessageOrTitle(async () => inSession
+      ? draftCommitMessageInSession(task, project, await diff(), check)
+      : draftCommitMessage(agentProcesses, workspace, task, await diff(), '', store.getTaskExecution(task.id)?.reasoningEffort),
+    task, inSession ? SESSION_COMMIT_MESSAGE_TIMEOUT_MS + 30_000 : undefined)
     if (!draft.generated) recordSystemEvent(task.id, `${task.agentLabel} could not write a commit message, so the task title was used.`)
     return draft.message
   }
@@ -615,7 +653,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       const pushNow = push ?? true
       if (isLocalQuickTask(current)) {
         return commitLocalTask(taskId, pushNow, (task, local) =>
-          shipMessage(task, () => gitDelivery.getWorkingTreeDiff(local.path, task.reviewPaths!), message), check, true)
+          shipMessage(task, local, () => gitDelivery.getWorkingTreeDiff(local.path, task.reviewPaths!), check, message), check, true)
       }
       const { task, branchName, headCommit } = requireReviewableTask(taskId)
       await requireProjectDeliveryAvailable(project, taskId)
@@ -623,10 +661,10 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
         check()
         requireReviewableTask(taskId)
       })
-      const subject = await shipMessage(task, async () => {
+      const subject = await shipMessage(task, project, async () => {
         const base = task.baseCommit ?? (await gitDelivery.getMergePreview(project.path, branchName)).targetCommit
         return gitDelivery.getDiff(project.path, base, headCommit)
-      }, message)
+      }, check, message)
       check()
       const preview = await getReviewableMergePreview(taskId)
       const pushPreview = pushNow ? await gitDelivery.getPushPreview(project.path, preview.targetBranch) : undefined

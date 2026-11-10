@@ -27,7 +27,7 @@ import type {
   TaskStatus
 } from '@anvil/protocol/types'
 import { taskStyle } from '@anvil/protocol/task-style'
-import { isLocalQuickTask, taskCheckoutMode } from '@anvil/protocol/task-checkout'
+import { hasRunningTaskDiff, isLocalQuickTask, taskCheckoutMode } from '@anvil/protocol/task-checkout'
 
 interface Props {
   task: Task
@@ -453,6 +453,8 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   const done = task.status === 'succeeded' && (task.deliveryStatus === 'no_changes' || !work)
   const reviewable = task.deliveryStatus === 'reviewable' || approved
   const shippable = reviewable && (integrates || isLocalQuickTask(task))
+  const previewing = !reviewable && hasRunningTaskDiff(task)
+  const showsDiff = reviewable || previewing
   const finalDiffPending = task.status === 'running' || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit'
   const [activePanel, setActivePanel] = useState<TaskPanel>(initialPanel)
   const openChanges = useCallback(() => setActivePanel('changes'), [])
@@ -471,8 +473,8 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   }, [task.id, task.workingStartedAt])
 
   useEffect(() => {
-    if (reviewable && !diff && !diffError) void loadTaskDiff(task.id)
-  }, [diff, diffError, loadTaskDiff, reviewable, task.id, task.headCommit, task.baseCommit])
+    if (showsDiff && !diff && !diffError) void loadTaskDiff(task.id)
+  }, [diff, diffError, loadTaskDiff, showsDiff, task.id, task.headCommit, task.baseCommit])
 
   useEffect(() => {
     if ((work || reviewable) && !comments) void loadComments(task.id)
@@ -486,7 +488,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   const wide = useWideLayout(rootRef)
   const [paneHidden, setPaneHidden] = useState(() => readPreference(CHANGES_PANE_KEY) === 'hidden')
   const [paneWidth, setPaneWidth] = useState(() => Number(readPreference(CHANGES_WIDTH_KEY)) || 0)
-  const split = wide && reviewable && !paneHidden
+  const split = wide && showsDiff && !paneHidden
   const panels: readonly TaskPanel[] = split
     ? work ? ['output', 'issues'] : ['output']
     : work ? ['output', 'changes', 'issues'] : ['output', 'changes']
@@ -500,13 +502,14 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
 
   const changesSection = (
     <section id="task-panel-changes" aria-label="Code changes" className={cn('flex flex-col min-h-0 min-w-0 flex-1', !split && activePanel !== 'changes' && 'hidden')}>
-      {reviewable ? <>
+      {showsDiff ? <>
+        {previewing && <p className="shrink-0 border-b border-line px-5 py-2 text-xs text-dim">The agent is still working. Showing the latest recorded changes; this view updates when the turn ends.</p>}
         {!diff && !diffError && <p className="p-5 text-sm text-dim">Loading code changes…</p>}
         {diffError && <div role="alert" className="p-5 text-sm text-danger">
           <p>{diffError}</p>
           <button className={cn(btn.ghost, 'mt-3')} onClick={() => void loadTaskDiff(task.id)}>Retry</button>
         </div>}
-        {diff && !approved && <RiskFlags patch={diff.patch} expectedFiles={task.expectedFiles} />}
+        {diff && !approved && !previewing && <RiskFlags patch={diff.patch} expectedFiles={task.expectedFiles} />}
         {diff && <Suspense fallback={<p className="p-5 text-sm text-dim">Loading diff renderer…</p>}>
           <PatchFiles
             key={diff.patch}
@@ -515,9 +518,9 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
             draft={draft}
             themes={settings?.diffThemes ?? DEFAULT_DIFF_THEMES}
             trailing={<>
-              {!approved && <span>{pending.length ? `${pending.length} note${pending.length === 1 ? '' : 's'} waiting in the message box` : 'Select a line to leave a note for the agent'}</span>}
+              {!approved && !previewing && <span>{pending.length ? `${pending.length} note${pending.length === 1 ? '' : 's'} waiting in the message box` : 'Select a line to leave a note for the agent'}</span>}
             </>}
-            onSelectLine={approved ? () => {} : setDraft}
+            onSelectLine={approved || previewing ? () => {} : setDraft}
             onSubmit={(target, body) => {
               void addComment({ taskId: task.id, ...target, body })
               setDraft(null)
@@ -609,15 +612,15 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
               {panel === 'issues' && 'Issues'}
               {panel === 'changes' && <>
                 Changes{' '}
-                <span className="font-mono text-[11px] font-normal tabular-nums text-faint">{reviewable && !diff ? 'Loading…' : task.filesChanged}</span>
-                {(!reviewable || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono text-[11px] font-normal tabular-nums">
+                <span className="font-mono text-[11px] font-normal tabular-nums text-faint">{showsDiff && !diff ? 'Loading…' : task.filesChanged}</span>
+                {(!showsDiff || diff) && task.filesChanged > 0 && <>{' '}<span className="font-mono text-[11px] font-normal tabular-nums">
                   <span className="text-ok">+{task.additions}</span> <span className="text-danger">−{task.deletions}</span>
                 </span></>}
               </>}
             </button>
           )
         })}
-        {wide && reviewable && <button
+        {wide && showsDiff && <button
           type="button"
           className="ml-auto flex items-center gap-1.5 self-center px-2 py-1 font-mono text-[11px] text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
           aria-pressed={split}
