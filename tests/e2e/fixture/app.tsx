@@ -177,7 +177,15 @@ const conflictFiles = (): TaskMergeConflictSnapshot['files'] => [
 let activeConflict: TaskMergeConflict | null = null
 let activeConflictFiles = conflictFiles()
 let conflictReads = 0
-window.mergeConflictTest = { saves: [], fixes: [], completions: [], aborts: [] }
+window.mergeConflictTest = {
+  saves: [], fixes: [], completions: [], aborts: [],
+  resolve: () => {
+    const task = tasks.find((entry) => entry.id === activeConflict?.taskId)
+    if (!task) return
+    activeConflict = null
+    update({ ...task, deliveryStatus: 'approved', mergeConflict: undefined, reviewedAt: Date.now() })
+  }
+}
 const conflictSnapshot = (): TaskMergeConflictSnapshot => ({
   id: activeConflict!.id,
   taskId: activeConflict!.taskId,
@@ -296,6 +304,7 @@ declare global {
       fixes: IpcRequests['tasks:merge-conflict-fix-agent'][]
       completions: IpcRequests['tasks:merge-conflict-complete'][]
       aborts: IpcRequests['tasks:merge-conflict-abort'][]
+      resolve: () => void
     }
   }
 }

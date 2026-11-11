@@ -4,8 +4,9 @@ import type { Task, TaskEvent } from '@anvil/protocol/types'
 import { StatusGlyph } from './StatusGlyph'
 
 function activityLabel(task: Task, event?: TaskEvent): string {
-  switch (task.deliveryStatus) {
-    case 'preparing': return 'Preparing branch…'
+  if (task.deliveryStatus === 'preparing') return 'Preparing branch…'
+  if (task.deliveryStatus === 'merge_conflict' && (!event || event.stream === 'system' || event.ts < (task.mergeConflict?.createdAt ?? 0))) {
+    return `Resolving merge conflicts with ${task.mergeConflict?.targetBranch ?? 'the target branch'}…`
   }
 
   switch (event?.category) {
@@ -22,7 +23,7 @@ function activityLabel(task: Task, event?: TaskEvent): string {
 }
 
 export function TaskActivity({ task, event, presentation }: { presentation?: ReturnType<typeof taskIssuePresentation>; task: Task; event?: TaskEvent }): JSX.Element | null {
-  if (task.status !== 'running' || (presentation && presentation.status !== 'working')) return null
+  if (task.deliveryStatus !== 'merge_conflict' && (task.status !== 'running' || (presentation && presentation.status !== 'working'))) return null
   const label = activityLabel(task, event)
 
   return (

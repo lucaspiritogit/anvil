@@ -21,6 +21,7 @@ const TASK_INDICATORS = {
   reviewedIssue: { glyph: 'done', label: 'Approved', tone: 'text-ok', meta: 'text-ok-text' },
   merged: { glyph: 'done', icon: 'git-branch', label: 'Shipped', tone: 'text-ok', meta: 'text-ok-text' },
   openPullRequest: { glyph: 'done', icon: 'git-branch', label: 'Open PR', tone: 'text-ok', meta: 'text-ok-text' },
+  resolving: { glyph: 'running', label: 'Resolving conflicts', tone: 'text-run', meta: 'text-run-text' },
   reviewable: { glyph: 'review', label: 'Ready to ship', tone: 'text-review', meta: 'text-review-text' },
   failed: { glyph: 'failed', label: 'Failed', tone: 'text-danger', meta: 'text-danger-text' }
 } as const satisfies Record<string, { glyph: StatusGlyphName; icon?: IconName; label: string; tone: string; meta: string }>
@@ -28,6 +29,7 @@ const TASK_INDICATORS = {
 
 function taskIndicator(task: Task, finishedUnseen: boolean): typeof TASK_INDICATORS[keyof typeof TASK_INDICATORS] | undefined {
   if (task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit') return TASK_INDICATORS.running
+  if (task.deliveryStatus === 'merge_conflict') return TASK_INDICATORS.resolving
   if (task.status === 'pending') return TASK_INDICATORS.queued
   if (task.status === 'running') return TASK_INDICATORS.running
   if (task.status === 'failed' || task.deliveryStatus === 'failed' || task.deliveryStatus === 'agent_failed') {

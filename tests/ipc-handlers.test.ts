@@ -838,6 +838,21 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(tasks.get(task.id)?.mergeConflict).toBeUndefined()
   expect(pushCalls, 'Anvil pushes after the agent repairs the merge').toHaveLength(pushesBeforeRepair + 1)
   store.updateTask(task.id, { deliveryStatus: 'reviewable', mergeConflict: undefined, reviewedAt: undefined })
+  mergeState.files = [{
+    path: 'src/conflicted.ts', status: 'both_modified', stages: [1, 2, 3], support: 'text',
+    contents: '<<<<<<< HEAD\ntarget\n=======\nsource\n>>>>>>> task\n', contentsHash: '5'.repeat(64)
+  }]
+  const abortsBeforeFailedShip = mergeConflictCalls.filter((call) => call.operation === 'abort').length
+  const failedShip: Task = await call('tasks:ship', { taskId: task.id, message: 'fix: ship it again' })
+  expect(failedShip.deliveryStatus).toBe('merge_conflict')
+  await tick()
+  agentProcesses.finishTurn(task.id, 'Could not repair', 1)
+  await tick()
+  expect(tasks.get(task.id), 'A failed automatic repair never leaves the merge paused').toMatchObject({ deliveryStatus: 'reviewable' })
+  expect(tasks.get(task.id)?.mergeConflict).toBeUndefined()
+  expect(tasks.get(task.id)?.deliveryError).toMatch(/Could not resolve the merge conflicts.*ship again to retry/)
+  expect(mergeConflictCalls.filter((call) => call.operation === 'abort')).toHaveLength(abortsBeforeFailedShip + 1)
+  store.updateTask(task.id, { deliveryStatus: 'reviewable', mergeConflict: undefined, reviewedAt: undefined, deliveryError: undefined })
   mergeState.conflict = false
   const pendingApproval = call('tasks:approve', { taskId: task.id, preview })
   expect(tasks.get(task.id)?.deliveryStatus, 'Approval waits for Git to finish').toBe('reviewable')
@@ -849,6 +864,7 @@ test('executes issues, reviews, handles credentials and PRs, approves, rebases a
   expect(mergeCalls.map((args) => args.slice(0, 3))).toStrictEqual([
     [testHome, 'task', preview],
     [testHome, 'task', mergeAndPushPreview],
+    [testHome, 'task', preview],
     [testHome, 'task', preview],
     [testHome, 'task', preview],
     [testHome, 'task', preview]

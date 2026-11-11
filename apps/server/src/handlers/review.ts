@@ -29,7 +29,7 @@ interface ReviewHandlerDependencies extends TaskContext {
 export function registerReviewHandlers(ipc: HandlerRegistry, {
   store, agentProcesses, gitDelivery, send, recordSystemEvent, requireFinishedTask,
   runSessionTurn
-}: ReviewHandlerDependencies): { shipTask: ShipTask } {
+}: ReviewHandlerDependencies): { shipTask: ShipTask; resumeMergeConflicts: () => void } {
   const shipOf = (conflict: TaskMergeConflict): { targetCommit: string; message: string } | undefined =>
     conflict.shipMessage ? { targetCommit: conflict.targetCommit, message: conflict.shipMessage } : undefined
 
@@ -321,70 +321,116 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
         `Completed the paused merge of ${conflict.sourceBranch} into ${conflict.targetBranch} at ${mergedCommit}.`, check, shipOf(conflict))
     }))
 
-  const repairMergeConflictWithAgent = (taskId: string, conflictId: string): Promise<Task> =>
+  const repairMergeConflictWithAgent = (taskId: string, conflictId: string, auto = false): Promise<Task> =>
     withTaskOperation(store, taskId, 'merge-repair', async (check) => {
       const { task, project, conflict } = requireMergeConflictTask(taskId, conflictId)
       const guard = () => {
         check()
         requireMergeConflictState(taskId, conflictId)
       }
-      const snapshot = await gitDelivery.getMergeConflict(project.path, conflict)
-      guard()
-      const unresolvedFiles = snapshot.files.map((file) => file.path)
-      if (!unresolvedFiles.length) throw new Error('No unresolved files remain. Complete the paused merge instead.')
-      const prompt = mergeConflictRepairPrompt(conflict, unresolvedFiles)
-      const agent = getAgent(task.agentId)
-      recordSystemEvent(task.id, `Starting ${agent?.label ?? task.agentLabel} to repair ${unresolvedFiles.length} merge conflict${unresolvedFiles.length === 1 ? '' : 's'} in ${conflict.targetBranch}.`)
-      send('task:updated', task)
-      let exit
-      try {
-        exit = await runSessionTurn(task.id, { cwd: project.path, prompt, beforeDispatch: guard })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        if (message === 'Task operation was cancelled') {
-          recordSystemEvent(task.id, `Agent merge repair was cancelled before starting. The merge into ${conflict.targetBranch} remains paused.`)
-          const current = store.getTask(task.id)
-          if (!current) throw new Error('Task was deleted')
-          send('task:updated', current)
-          return current
+      const giveUp = async (reason: string): Promise<Task> => {
+        try {
+          await gitDelivery.abortMergeConflict(project.path, conflict, () => requireMergeConflictState(taskId, conflictId))
+        } catch (error) {
+          recordSystemEvent(task.id, `${reason} Could not abort the merge into ${conflict.targetBranch}: ${error instanceof Error ? error.message : String(error)}`, 'delivery', 'error')
+          const latest = store.getTask(task.id)
+          if (!latest) throw new Error('Task was deleted')
+          send('task:updated', latest)
+          return latest
         }
-        recordSystemEvent(task.id, `Could not start agent merge repair: ${message}`, 'delivery', 'error')
-        const current = store.getTask(task.id)
-        if (current) send('task:updated', current)
-        throw error
+        const reviewable = store.updateTask(task.id, {
+          deliveryStatus: 'reviewable',
+          mergeConflict: undefined,
+          reviewedAt: undefined,
+          deliveryError: `${reason} The merge into ${conflict.targetBranch} was aborted, so ship again to retry.`
+        })
+        if (!reviewable) throw new Error('Task was deleted')
+        recordSystemEvent(task.id, `${reason} Aborted the merge into ${conflict.targetBranch}. The task is ready to ship again.`, 'delivery', 'error')
+        send('task:updated', reviewable)
+        return reviewable
       }
-      const current = store.getTask(task.id)
-      if (!current) throw new Error('Task was deleted')
-      if (exit.cancelled) {
-        recordSystemEvent(task.id, `Agent merge repair was cancelled. The merge into ${conflict.targetBranch} remains paused.`)
-        send('task:updated', current)
-        return current
-      }
-      if (exit.code !== 0) {
-        recordSystemEvent(task.id, `Agent merge repair failed${exit.error ? `: ${exit.error}` : '.'} The merge into ${conflict.targetBranch} remains paused.`, 'delivery', 'error')
-        send('task:updated', current)
-        return current
-      }
-      try {
-        guard()
-        const mergedCommit = await gitDelivery.completeMergeConflict(project.path, conflict, guard)
-        guard()
-        return finishMerge(task, project, mergedCommit, conflict.targetBranch, conflict.sourceCommit,
-          conflict.requestedAction, conflict.pushPreview,
-          `Agent completed the paused merge of ${conflict.sourceBranch} into ${conflict.targetBranch} at ${mergedCommit}.`, check, shipOf(conflict))
-      } catch (error) {
-        const latest = store.getTask(task.id)
-        if (!latest || latest.deliveryStatus !== 'merge_conflict' || latest.mergeConflict?.id !== conflict.id) throw error
-        const message = error instanceof Error ? error.message : String(error)
-        if (message === 'Task operation was cancelled') {
-          recordSystemEvent(task.id, `Agent merge repair was cancelled. The merge into ${conflict.targetBranch} remains paused.`)
-        } else {
-          recordSystemEvent(task.id, `Agent merge repair is incomplete: ${message} The merge into ${conflict.targetBranch} remains paused.`, 'delivery', 'error')
+      if (auto) {
+        try {
+          return await repairConflict(task, project, conflict, guard, check, true)
+        } catch (error) {
+          const latest = store.getTask(task.id)
+          if (!latest || latest.deliveryStatus !== 'merge_conflict' || latest.mergeConflict?.id !== conflict.id) throw error
+          return giveUp(`Could not resolve the merge conflicts: ${error instanceof Error ? error.message : String(error)}`)
         }
-        send('task:updated', latest)
-        return latest
       }
+      return repairConflict(task, project, conflict, guard, check, false)
     })
+
+  const repairConflict = async (
+    task: Task, project: Project, conflict: TaskMergeConflict, guard: () => void, check: (expected?: Task) => Task, auto: boolean
+  ): Promise<Task> => {
+    const snapshot = await gitDelivery.getMergeConflict(project.path, conflict)
+    guard()
+    const unresolvedFiles = snapshot.files.map((file) => file.path)
+    if (!unresolvedFiles.length && !auto) throw new Error('No unresolved files remain. Complete the paused merge instead.')
+    if (!unresolvedFiles.length) {
+      const mergedCommit = await gitDelivery.completeMergeConflict(project.path, conflict, guard)
+      guard()
+      return finishMerge(task, project, mergedCommit, conflict.targetBranch, conflict.sourceCommit,
+        conflict.requestedAction, conflict.pushPreview,
+        `Completed the paused merge of ${conflict.sourceBranch} into ${conflict.targetBranch} at ${mergedCommit}.`, check, shipOf(conflict))
+    }
+    const prompt = mergeConflictRepairPrompt(conflict, unresolvedFiles)
+    const agent = getAgent(task.agentId)
+    recordSystemEvent(task.id, `Starting ${agent?.label ?? task.agentLabel} to repair ${unresolvedFiles.length} merge conflict${unresolvedFiles.length === 1 ? '' : 's'} in ${conflict.targetBranch}.`)
+    send('task:updated', task)
+    let exit
+    try {
+      exit = await runSessionTurn(task.id, { cwd: project.path, prompt, beforeDispatch: guard })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (auto) throw new Error(message === 'Task operation was cancelled' ? 'The agent was stopped before it started.' : `The agent could not start: ${message}`)
+      if (message === 'Task operation was cancelled') {
+        recordSystemEvent(task.id, `Agent merge repair was cancelled before starting. The merge into ${conflict.targetBranch} remains paused.`)
+        const current = store.getTask(task.id)
+        if (!current) throw new Error('Task was deleted')
+        send('task:updated', current)
+        return current
+      }
+      recordSystemEvent(task.id, `Could not start agent merge repair: ${message}`, 'delivery', 'error')
+      const current = store.getTask(task.id)
+      if (current) send('task:updated', current)
+      throw error
+    }
+    const current = store.getTask(task.id)
+    if (!current) throw new Error('Task was deleted')
+    if (auto && exit.cancelled) throw new Error('The agent was stopped.')
+    if (auto && exit.code !== 0) throw new Error(exit.error ?? 'The agent failed.')
+    if (exit.cancelled) {
+      recordSystemEvent(task.id, `Agent merge repair was cancelled. The merge into ${conflict.targetBranch} remains paused.`)
+      send('task:updated', current)
+      return current
+    }
+    if (exit.code !== 0) {
+      recordSystemEvent(task.id, `Agent merge repair failed${exit.error ? `: ${exit.error}` : '.'} The merge into ${conflict.targetBranch} remains paused.`, 'delivery', 'error')
+      send('task:updated', current)
+      return current
+    }
+    try {
+      guard()
+      const mergedCommit = await gitDelivery.completeMergeConflict(project.path, conflict, guard)
+      guard()
+      return finishMerge(task, project, mergedCommit, conflict.targetBranch, conflict.sourceCommit,
+        conflict.requestedAction, conflict.pushPreview,
+        `Agent completed the paused merge of ${conflict.sourceBranch} into ${conflict.targetBranch} at ${mergedCommit}.`, check, shipOf(conflict))
+    } catch (error) {
+      const latest = store.getTask(task.id)
+      if (auto || !latest || latest.deliveryStatus !== 'merge_conflict' || latest.mergeConflict?.id !== conflict.id) throw error
+      const message = error instanceof Error ? error.message : String(error)
+      if (message === 'Task operation was cancelled') {
+        recordSystemEvent(task.id, `Agent merge repair was cancelled. The merge into ${conflict.targetBranch} remains paused.`)
+      } else {
+        recordSystemEvent(task.id, `Agent merge repair is incomplete: ${message} The merge into ${conflict.targetBranch} remains paused.`, 'delivery', 'error')
+      }
+      send('task:updated', latest)
+      return latest
+    }
+  }
 
   ipc.handle('tasks:merge-conflict-fix-agent', (input): Promise<Task> =>
     repairMergeConflictWithAgent(input.taskId, input.conflictId))
@@ -664,8 +710,17 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     const shipped = await shipTaskOnce(taskId, options)
     const conflict = shipped.deliveryStatus === 'merge_conflict' ? shipped.mergeConflict : undefined
     if (!conflict) return shipped
-    void repairMergeConflictWithAgent(taskId, conflict.id).catch(() => {})
+    void repairMergeConflictWithAgent(taskId, conflict.id, true).catch(() => {})
     return shipped
+  }
+
+  const resumeMergeConflicts = (): void => {
+    for (const task of store.getTasks()) {
+      if (task.deliveryStatus !== 'merge_conflict' || !task.mergeConflict) continue
+      void repairMergeConflictWithAgent(task.id, task.mergeConflict.id, true).catch((error: unknown) => {
+        recordSystemEvent(task.id, `Could not resume resolving the merge conflicts: ${error instanceof Error ? error.message : String(error)}`, 'delivery', 'error')
+      })
+    }
   }
 
   const shipTaskOnce: ShipTask = async (taskId, { push, message } = {}) => {
@@ -796,5 +851,5 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       return { task: running, comments: store.getComments(taskId) }
     })
   })
-  return { shipTask }
+  return { shipTask, resumeMergeConflicts }
 }

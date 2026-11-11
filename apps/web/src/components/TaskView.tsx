@@ -274,7 +274,7 @@ const DELIVERY_LABEL: Record<DeliveryStatus, string> = {
   finalizing: 'Branch active',
   did_not_commit: 'Branch active',
   reviewable: 'Ready to ship',
-  merge_conflict: 'Merge conflicts with target branch',
+  merge_conflict: 'Resolving merge conflicts',
   approved: 'Shipped',
   no_changes: 'No code changes',
   agent_failed: 'Nothing to ship',
@@ -546,7 +546,10 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
             <span aria-label="Task status" className="flex min-w-0 flex-wrap items-center gap-2">
-              {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
+              {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : task.deliveryStatus === 'merge_conflict' ? <>
+              <span className={dot('running')} />
+              <span className={cn('font-medium', deliveryTone(task.deliveryStatus))}>Resolving conflicts with {task.mergeConflict?.targetBranch ?? 'the target branch'}</span>
+              </> : <>
               <span className={dot(task.status)} />
               <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : STATUS_LABEL[task.status]}</span>
               {worktree && <><span className="text-dim">·</span>
@@ -554,9 +557,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
                 {openPullRequest && <Icon icon="git-branch" size={14} aria-hidden="true" />}
                 {openPullRequest
                   ? 'Open PR'
-                  : task.deliveryStatus === 'merge_conflict' && task.mergeConflict
-                    ? `Merge conflicts with ${task.mergeConflict.targetBranch}`
-                    : DELIVERY_LABEL[task.deliveryStatus]}
+                  : DELIVERY_LABEL[task.deliveryStatus]}
               </span></>}
               </>}
             </span>

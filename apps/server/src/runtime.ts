@@ -305,6 +305,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     })
   }
   void execution.acceptParkedIssueReviews()
+  review.resumeMergeConflicts()
   const credentials = (workspaceId: string): GitHubCredentials => new GitHubCredentials(join(store.getWorkspaceDirectory(workspaceId), 'github-token.enc'), encryption, githubCliToken)
   const githubClient = new GitHubClient()
   const polls = new Map<string, GitHubPRPolling>()

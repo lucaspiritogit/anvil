@@ -1,5 +1,5 @@
 import type { HTMLAttributes, JSX, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Task, TaskEvent, TaskEventCategory } from '@anvil/protocol/types'
 import { TASK_EVENT_CATEGORIES } from '@anvil/protocol/types'
 import { taskEventEditLines, type TaskEventEdit } from '@anvil/protocol/task-event-edits'
@@ -42,10 +42,6 @@ const timeFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute:
 const scrollBehavior = (): ScrollBehavior =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
 
-const MergeConflictOutput = lazy(async () => ({
-  default: (await import('./TaskMergeConflictOutput')).TaskMergeConflictOutput
-}))
-
 interface TaskOutputProps {
   task: Task
   visible: boolean
@@ -59,11 +55,6 @@ export const TaskOutput = memo(function TaskOutput({ task, visible, presentation
   useLayoutEffect(() => {
     if (visible) frozenEvents.current = events
   }, [events, visible])
-  if (task.deliveryStatus === 'merge_conflict' && task.mergeConflict) {
-    return <Suspense fallback={<section id="task-panel-output" aria-label="Output" className={cn('grid flex-1 place-content-center text-sm text-dim', !visible && 'hidden')}>Loading conflict resolver…</section>}>
-      <MergeConflictOutput task={task} conflict={task.mergeConflict} visible={visible} />
-    </Suspense>
-  }
   return <TaskOutputHistory task={task} visible={visible} presentation={presentation} events={events} onOpenChanges={onOpenChanges} />
 }, (previous, next) => previous.task.id === next.task.id && !previous.visible && !next.visible)
 
