@@ -642,6 +642,7 @@ window.anvil = {
   accounts: fixtureAccounts((id) => workspaceRows.find((workspace) => workspace.id === id)?.name ?? id, query.has('accountBusy')),
   agents: {
     onModelsChanged: () => () => {},
+    versions: async () => ({ opencode: '1.14.2', codex: '0.157.1', claude: '2.1.319' }),
     updates: {
       state: async () => [],
       check: async () => [],

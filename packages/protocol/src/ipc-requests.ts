@@ -34,6 +34,7 @@ export interface IpcRequests {
   'accounts:cancel': AgentAccountTarget & { sessionId: string }
   'agents:list': undefined
   'agents:models': { agentId: string; workspaceId?: string }
+  'agents:versions': undefined
   'agents:update-state': undefined
   'agents:update-check': { force?: boolean } | undefined
   'agents:update-install': { agentId: UpdatableAgentId }

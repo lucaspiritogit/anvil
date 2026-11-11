@@ -183,6 +183,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   },
   'agents:list': none,
   'agents:models': object({ agentId: id, workspaceId: optional(id) }),
+  'agents:versions': none,
   'agents:update-state': none,
   'agents:update-check': optional(object({ force: optional(boolean) })),
   'agents:update-install': object({ agentId: oneOf('codex', 'claude') }),

@@ -8,7 +8,7 @@ import type { AgentAccountConnect, AgentAccountTarget, WorkspaceAgentAccount } f
 import { useStore } from '../state/store'
 import { btn, cn, field } from '../ui'
 
-function AccountRow({ workspaceId, workspaceName, agentId }: AgentAccountTarget & { workspaceName: string }): JSX.Element {
+function AccountRow({ workspaceId, workspaceName, agentId, version }: AgentAccountTarget & { workspaceName: string; version?: string | null }): JSX.Element {
   const [account, setAccount] = useState<WorkspaceAgentAccount | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [accountType, setAccountType] = useState<'apiKey' | 'chatgpt'>('chatgpt')
@@ -65,7 +65,7 @@ function AccountRow({ workspaceId, workspaceName, agentId }: AgentAccountTarget 
         <div className="flex min-w-[120px] flex-1 items-center gap-2.5">
           <AgentIcon agentId={agentId} label={label} size={22} />
           <div className="min-w-0">
-            <h3 className="text-sm font-medium">{label}</h3>
+            <h3 className="flex items-baseline gap-2 text-sm font-medium">{label}{version && <span className="font-mono text-[11px] font-normal text-dim" aria-label={`${label} CLI version ${version}`}>v{version}</span>}</h3>
             <div role="status" className={cn('mt-0.5 flex min-w-0 items-baseline gap-1.5 break-words font-mono text-[11px] before:shrink-0', account?.status === 'connected' ? "text-ok-text before:content-['●']" : account ? "text-dim before:content-['○']" : 'text-dim')}>
               {!account
                 ? <p>Reading account…</p>
@@ -129,8 +129,18 @@ function AccountRow({ workspaceId, workspaceName, agentId }: AgentAccountTarget 
 export function WorkspaceAgentAccounts(): JSX.Element {
   const workspaceId = useStore((state) => state.activeWorkspaceId)
   const workspaceName = useStore((state) => state.workspaces.find((workspace) => workspace.id === workspaceId)?.name ?? 'Workspace')
+  const [versions, setVersions] = useState<Record<string, string | null>>({})
+  useEffect(() => {
+    let active = true
+    void window.anvil.agents.versions().then((next) => { if (active) setVersions(next) }).catch(() => {})
+    const off = window.anvil.agents.updates.onChanged((states) => {
+      if (!active) return
+      setVersions((current) => ({ ...current, ...Object.fromEntries(states.filter((state) => state.currentVersion).map((state) => [state.agentId, state.currentVersion])) }))
+    })
+    return () => { active = false; off() }
+  }, [])
   if (!workspaceId) return <p>Select a workspace to manage accounts.</p>
   return <SettingsPanel title={`Accounts · ${workspaceName}`} aside="Changes apply immediately. Credentials stay in each agent's workspace profile.">
-    {(['codex', 'claude', 'opencode'] as const).map((agentId) => <AccountRow key={`${workspaceId}:${agentId}`} workspaceId={workspaceId} workspaceName={workspaceName} agentId={agentId} />)}
+    {(['codex', 'claude', 'opencode'] as const).map((agentId) => <AccountRow key={`${workspaceId}:${agentId}`} workspaceId={workspaceId} workspaceName={workspaceName} agentId={agentId} version={versions[agentId]} />)}
   </SettingsPanel>
 }

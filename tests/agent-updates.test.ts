@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import type { AgentUpdateState } from '@anvil/protocol/agent-updates'
-import { createAgentUpdates, installedAgentVersion } from '../apps/server/src/agents/agent-updates'
+import { createAgentUpdates, installedAgentVersion, installedAgentVersions } from '../apps/server/src/agents/agent-updates'
 
 function registry(versions: Record<string, string>) {
   return vi.fn(async (url: string) => {
@@ -68,4 +68,14 @@ test('stops offering a release the updater does not install', async () => {
   updates.install('claude')
   await vi.waitFor(() => expect(updates.state().find((entry) => entry.agentId === 'claude')).toMatchObject({ updating: false, available: false, error: null }))
   expect((await updates.check(true)).find((entry) => entry.agentId === 'claude')).toMatchObject({ available: false })
+})
+
+test('reads installed versions for every agent and tolerates missing or failing CLIs', async () => {
+  const run = vi.fn(async (command: string) => {
+    if (command === 'opencode') return '1.14.2\n'
+    if (command === 'codex') throw new Error('broken')
+    return null
+  })
+  await expect(installedAgentVersions([{ id: 'opencode', command: 'opencode' }, { id: 'codex', command: 'codex' }, { id: 'claude', command: 'claude' }], run))
+    .resolves.toEqual({ opencode: '1.14.2', codex: null, claude: null })
 })

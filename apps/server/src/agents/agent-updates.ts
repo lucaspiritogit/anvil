@@ -46,6 +46,18 @@ export function installedAgentVersion(output: string): string | null {
   return match ? parseVersion(match[0]) : null
 }
 
+export async function installedAgentVersions(agents: Array<{ id: string; command: string }>, run: Run = runAgentCommand): Promise<Record<string, string | null>> {
+  const entries = await Promise.all(agents.map(async ({ id, command }) => {
+    try {
+      const output = await run(command, ['--version'], VERSION_TIMEOUT_MS)
+      return [id, output === null ? null : installedAgentVersion(output)] as const
+    } catch {
+      return [id, null] as const
+    }
+  }))
+  return Object.fromEntries(entries)
+}
+
 export function createAgentUpdates(options: AgentUpdatesOptions = {}) {
   const now = options.now ?? Date.now
   const request: Fetch = options.fetch ?? ((url, init) => fetch(url, init))

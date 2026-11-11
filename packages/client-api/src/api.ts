@@ -245,6 +245,7 @@ export function createAnvilApi(url: string, host: ClientHost) {
       list: (): Promise<AgentDefinition[]> => invoke('agents:list'),
       models: (agentId: string, workspaceId?: string): Promise<ProviderModelList> =>
         invoke('agents:models', { agentId, workspaceId }),
+      versions: (): Promise<Record<string, string | null>> => invoke('agents:versions'),
       onModelsChanged: (handler: (workspaceId: string) => void): (() => void) => subscribe('agents:models:changed', handler),
       updates: {
         state: (): Promise<AgentUpdateState[]> => invoke('agents:update-state'),
