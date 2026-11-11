@@ -2,11 +2,11 @@ import { TaskStacks, requireStackMergeable } from '../tasks/task-stacks'
 import type { HandlerRegistry } from '../handler-registry'
 import { randomUUID } from 'node:crypto'
 import { getAgent } from '../agents/registry'
-import { COMMIT_MESSAGE_INSTRUCTIONS, commitMessagePrompt, draftCommitMessage, draftCommitMessageOrTitle, validCommitMessageDraft } from '../agents/commit-message-draft'
+import { draftCommitMessage, draftCommitMessageOrTitle, validCommitMessageDraft } from '../agents/commit-message-draft'
 import { resolveTaskWorkspace } from '../agents/workspace-execution'
 import { withTaskOperation } from '../tasks/operations'
 import { resumeTaskTurn } from '../tasks/resume'
-import { mergeConflictRepairPrompt, reviewPrompt } from '../agents/task-prompts'
+import { mergeConflictRepairPrompt, reviewPrompt, shipInstructions, shipPrompt, type ShipPull } from '../agents/task-prompts'
 import type { RecordSystemEvent, TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
 import type { BranchSyncStatus, Project, Task, TaskDiff, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview } from '@anvil/protocol/types'
@@ -16,6 +16,7 @@ import { isLocalTask } from '@anvil/protocol/task-checkout'
 export type ShipTask = (taskId: string, options?: { push?: boolean; message?: string }) => Promise<Task>
 
 const SESSION_COMMIT_MESSAGE_TIMEOUT_MS = 120_000
+const SESSION_SHIP_PULL_TIMEOUT_MS = 600_000
 
 const subjectLine = (message: string): string => message.trim().split(/\r?\n/, 1)[0]
 
@@ -529,21 +530,36 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
   const commitLocalTask = async (
     taskId: string,
     push: boolean,
-    resolveMessage: (task: Task, project: Project) => Promise<string>,
+    resolveMessage: (task: Task, project: Project, pull?: ShipPull) => Promise<string>,
     check: (expected?: Task) => Task,
     shipped: boolean
   ): Promise<Task> => {
     const { task, project } = requireLocalTask(taskId)
-    if (push) {
+    const requireSynced = async (): Promise<BranchSyncStatus | undefined> => {
+      if (!push) return undefined
       const sync = await gitDelivery.getSyncStatus(project.path)
       check()
-      if (sync.behind > 0) {
-        throw new Error(`origin/${sync.branch} has ${sync.behind} new commit${sync.behind === 1 ? '' : 's'}. Pull before committing and pushing.`)
+      if (sync.behind > 0 && sync.remoteCommit && shipped && !sync.ahead && !sync.overlappingPaths.length) {
+        await gitDelivery.pull(project.path, { branch: sync.branch, localCommit: sync.localCommit, remoteCommit: sync.remoteCommit }, () => {
+          check()
+          requireLocalTask(taskId)
+        })
+        recordSystemEvent(task.id, `Pulled ${sync.branch} from origin before shipping, fast-forwarding ${sync.localCommit.slice(0, 8)} to ${sync.remoteCommit.slice(0, 8)}.`)
+        return undefined
       }
+      return sync.behind > 0 ? sync : undefined
     }
-    const message = await resolveMessage(task, project)
+    const behind = await requireSynced()
+    if (behind && !(shipped && shipsInSession(task))) {
+      throw new Error(`origin/${behind.branch} has ${behind.behind} new commit${behind.behind === 1 ? '' : 's'}. Pull before committing and pushing.`)
+    }
+    const message = await resolveMessage(task, project, behind && { sync: behind, keepUncommitted: true })
     check()
     requireLocalTask(taskId)
+    const stillBehind = behind && await requireSynced()
+    if (stillBehind) {
+      throw new Error(`origin/${stillBehind.branch} has ${stillBehind.behind} new commit${stillBehind.behind === 1 ? '' : 's'}. Pull before committing and pushing.`)
+    }
     const headCommit = await gitDelivery.commitPaths(project.path, task.reviewPaths!, message)
     check()
     const committed = store.updateTask(task.id, {
@@ -578,13 +594,15 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       commitLocalTask(taskId, push, async (task) => message?.trim() || task.title, check, false))
   })
 
-  const draftCommitMessageInSession = async (task: Task, project: Project, diff: TaskDiff, check: () => void): Promise<string> => {
+  const shipTimeout = (pull?: ShipPull): number => pull ? SESSION_SHIP_PULL_TIMEOUT_MS : SESSION_COMMIT_MESSAGE_TIMEOUT_MS
+
+  const draftCommitMessageInSession = async (task: Task, project: Project, diff: TaskDiff, check: () => void, pull?: ShipPull): Promise<string> => {
     let abandoned = false
     let timer: NodeJS.Timeout | undefined
-    recordSystemEvent(task.id, `Anvil (ship):\n${COMMIT_MESSAGE_INSTRUCTIONS}`)
+    recordSystemEvent(task.id, `Anvil (ship):\n${shipInstructions(pull)}`)
     const exit = runSessionTurn(task.id, {
       cwd: project.path,
-      prompt: commitMessagePrompt(task, diff, ''),
+      prompt: shipPrompt(diff.patch, pull),
       beforeDispatch: () => {
         if (abandoned) throw new Error('Commit message draft timed out')
         check()
@@ -594,7 +612,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       const info = await Promise.race([
         exit,
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('Commit message draft timed out')), SESSION_COMMIT_MESSAGE_TIMEOUT_MS)
+          timer = setTimeout(() => reject(new Error('Commit message draft timed out')), shipTimeout(pull))
           timer.unref()
         })
       ])
@@ -610,29 +628,36 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     }
   }
 
-  const shipMessage = async (task: Task, project: Project, diff: () => Promise<TaskDiff>, check: () => void, requested?: string): Promise<string> => {
-    const message = requested?.trim()
-    if (message) return message
+  const shipsInSession = (task: Task): boolean => {
     const agent = getAgent(task.agentId)
-    const inSession = Boolean(task.sessionId && agent && (agent.executionProtocol || agent.resumeArgs))
+    return Boolean(task.sessionId && agent && (agent.executionProtocol || agent.resumeArgs))
+  }
+
+  const shipMessage = async (task: Task, project: Project, diff: () => Promise<TaskDiff>, check: () => void, requested?: string, pull?: ShipPull): Promise<string> => {
+    const message = requested?.trim()
+    const inSession = shipsInSession(task)
+    if (message && !(pull && inSession)) return message
     const workspace = resolveTaskWorkspace(store, task.id)
     const draft = await draftCommitMessageOrTitle(async () => inSession
-      ? draftCommitMessageInSession(task, project, await diff(), check)
+      ? draftCommitMessageInSession(task, project, await diff(), check, pull)
       : draftCommitMessage(agentProcesses, workspace, task, await diff(), '', store.getTaskExecution(task.id)?.reasoningEffort),
-    task, inSession ? SESSION_COMMIT_MESSAGE_TIMEOUT_MS + 30_000 : undefined)
+    task, inSession ? shipTimeout(pull) + 30_000 : undefined)
+    if (message) return message
     if (!draft.generated) recordSystemEvent(task.id, `${task.agentLabel} could not write a commit message, so the task title was used.`)
     return draft.message
   }
 
-  const pullTargetBeforeShip = async (task: Task, project: Project, check: () => void): Promise<void> => {
+  const pullTargetBeforeShip = async (task: Task, project: Project, check: () => void, allowDiverged = false): Promise<BranchSyncStatus | undefined> => {
     const sync = await gitDelivery.getSyncStatus(project.path)
     check()
-    if (!sync.remoteCommit || !sync.behind) return
+    if (!sync.remoteCommit || !sync.behind) return undefined
     if (sync.ahead) {
+      if (allowDiverged) return sync
       throw new Error(`${sync.branch} and origin/${sync.branch} have diverged. Reconcile them before shipping.`)
     }
     await gitDelivery.pull(project.path, { branch: sync.branch, localCommit: sync.localCommit, remoteCommit: sync.remoteCommit }, check)
     recordSystemEvent(task.id, `Pulled ${sync.branch} from origin before shipping, fast-forwarding ${sync.localCommit.slice(0, 8)} to ${sync.remoteCommit.slice(0, 8)}.`)
+    return undefined
   }
 
   const shipTask: ShipTask = async (taskId, options = {}) => {
@@ -651,20 +676,22 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       if (!project) throw new Error('Project not found')
       const pushNow = push ?? true
       if (isLocalTask(current)) {
-        return commitLocalTask(taskId, pushNow, (task, local) =>
-          shipMessage(task, local, () => gitDelivery.getWorkingTreeDiff(local.path, task.reviewPaths!), check, message), check, true)
+        return commitLocalTask(taskId, pushNow, (task, local, pull) =>
+          shipMessage(task, local, () => gitDelivery.getWorkingTreeDiff(local.path, task.reviewPaths!), check, message, pull), check, true)
       }
       const { task, branchName, headCommit } = requireReviewableTask(taskId)
       await requireProjectDeliveryAvailable(project, taskId)
-      if (pushNow) await pullTargetBeforeShip(task, project, () => {
+      const syncCheck = () => {
         check()
         requireReviewableTask(taskId)
-      })
+      }
+      const diverged = pushNow ? await pullTargetBeforeShip(task, project, syncCheck, shipsInSession(task)) : undefined
       const subject = await shipMessage(task, project, async () => {
         const base = task.baseCommit ?? (await gitDelivery.getMergePreview(project.path, branchName)).targetCommit
         return gitDelivery.getDiff(project.path, base, headCommit)
-      }, check, message)
+      }, check, message, diverged && { sync: diverged, keepUncommitted: false })
       check()
+      if (diverged) await pullTargetBeforeShip(task, project, syncCheck)
       const preview = await getReviewableMergePreview(taskId)
       const pushPreview = pushNow ? await gitDelivery.getPushPreview(project.path, preview.targetBranch) : undefined
       if (pushPreview && pushPreview.targetCommit !== preview.targetCommit) {

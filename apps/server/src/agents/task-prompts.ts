@@ -1,4 +1,4 @@
-import type { Issue, Task, TaskComment, TaskExecutionState, TaskMergeConflict } from '@anvil/protocol/types'
+import type { BranchSyncStatus, Issue, Task, TaskComment, TaskExecutionState, TaskMergeConflict } from '@anvil/protocol/types'
 import { hasIssuePlan } from '@anvil/protocol/task-checkout'
 
 const TOOLS = 'Use anvil_issue_tracker tools.'
@@ -101,6 +101,42 @@ export function mergeConflictRepairPrompt(
     'Do not checkout or switch branches, reset, abort the merge, create another worktree, or change the task or issue status.',
     'Do not use Anvil issue-tracker tools during this repair.',
     'Leave the repository clean with the merge completed.'
+  ].join('\n')
+}
+
+export interface ShipPull {
+  sync: BranchSyncStatus
+  keepUncommitted: boolean
+}
+
+export function shipInstructions(pull?: ShipPull): string {
+  const lines = ['Ship this task\'s changes.']
+  if (pull) {
+    const { branch, behind, overlappingPaths } = pull.sync
+    lines.push(
+      `Pull origin/${branch} into ${branch}: it has ${behind} new commit${behind === 1 ? '' : 's'} that ${branch} does not have yet.`,
+      ...(overlappingPaths.length ? [`Incoming changes touch: ${overlappingPaths.join(', ')}`] : []),
+      'Merge them and resolve any conflicts so both the incoming code and this task\'s code keep working. Do not rebase or push.',
+      pull.keepUncommitted
+        ? 'Leave this task\'s changes uncommitted in the working tree; Anvil commits them after the pull.'
+        : 'Commit the merge; Anvil merges the task branch and pushes after the pull.'
+    )
+  }
+  lines.push(
+    'Then write the commit message for the diff below: a subject line of at most 72 characters, optionally followed by a blank line and a short body, describing what the code changes and why.',
+    'End with the commit message alone as your final reply.'
+  )
+  return lines.join('\n')
+}
+
+export function shipPrompt(patch: string, pull?: ShipPull): string {
+  const limit = 60_000
+  return [
+    shipInstructions(pull),
+    '```diff',
+    patch.slice(0, limit),
+    '```',
+    ...(patch.length > limit ? ['The diff is truncated.'] : [])
   ].join('\n')
 }
 
