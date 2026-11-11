@@ -11,8 +11,7 @@ import type { RecordSystemEvent, TaskContext } from '../tasks/context'
 import type { TaskExecution } from '../tasks/task-execution'
 import type { BranchSyncStatus, Project, Task, TaskDiff, TaskMergeAndPushPreview, TaskMergeConflict, TaskMergeConflictSnapshot, TaskMergePreview, TaskPushPreview } from '@anvil/protocol/types'
 import type { MergeConflictResult } from '../git/types'
-import { taskStyle } from '@anvil/protocol/task-style'
-import { isLocalQuickTask } from '@anvil/protocol/task-checkout'
+import { isLocalTask } from '@anvil/protocol/task-checkout'
 
 export type ShipTask = (taskId: string, options?: { push?: boolean; message?: string }) => Promise<Task>
 
@@ -56,11 +55,11 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     return { task, project, headCommit: task.shippedCommit ?? task.headCommit }
   }
 
-  const requireQuickTask = (taskId: string) => {
+  const requireLocalTask = (taskId: string) => {
     requireFinishedTask(taskId)
     const task = store.getTask(taskId)
     if (!task) throw new Error('Task not found')
-    if (!isLocalQuickTask(task)) throw new Error('Only local checkout tasks can be committed directly')
+    if (!isLocalTask(task)) throw new Error('Only local checkout tasks can be committed directly')
     if (task.deliveryStatus !== 'reviewable') throw new Error('This task has nothing to ship')
     if (!task.reviewPaths?.length) throw new Error('This task has no delivered code')
     const project = store.getProjects(task.workspaceId).find((item) => item.id === task.projectId)
@@ -441,10 +440,10 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       if (!current) throw new Error('Task not found')
       let diff: TaskDiff
       let task: Task
-      if (isLocalQuickTask(current)) {
-        const quick = requireQuickTask(taskId)
-        task = quick.task
-        diff = await gitDelivery.getWorkingTreeDiff(quick.project.path, task.reviewPaths!)
+      if (isLocalTask(current)) {
+        const local = requireLocalTask(taskId)
+        task = local.task
+        diff = await gitDelivery.getWorkingTreeDiff(local.project.path, task.reviewPaths!)
       } else {
         const reviewable = requireReviewableTask(taskId)
         task = reviewable.task
@@ -457,10 +456,10 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     })
   })
 
-  const reconcileOverlappingQuickTasks = async (committed: Task, project: Project, headCommit: string): Promise<void> => {
+  const reconcileOverlappingLocalTasks = async (committed: Task, project: Project, headCommit: string): Promise<void> => {
     const committedPaths = new Set(committed.reviewPaths)
     const siblings = store.getTasks(committed.workspaceId).filter((task) => task.id !== committed.id &&
-      task.projectId === committed.projectId && taskStyle(task) === 'quick' && task.checkoutMode === 'local' &&
+      task.projectId === committed.projectId && isLocalTask(task) &&
       task.deliveryStatus === 'reviewable' && task.reviewPaths?.some((path) => committedPaths.has(path)))
     for (const sibling of siblings) {
       try {
@@ -489,9 +488,9 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     }
   }
 
-  const refreshLocalQuickTasks = async (task: Task, project: Project): Promise<void> => {
+  const refreshLocalTasks = async (task: Task, project: Project): Promise<void> => {
     const locals = store.getTasks(task.workspaceId).filter((item) => item.projectId === task.projectId &&
-      taskStyle(item) === 'quick' && item.checkoutMode === 'local' && item.deliveryStatus === 'reviewable' && item.reviewPaths?.length)
+      isLocalTask(item) && item.deliveryStatus === 'reviewable' && item.reviewPaths?.length)
     for (const local of locals) {
       try {
         const diff = await gitDelivery.getWorkingTreeDiff(project.path, local.reviewPaths!)
@@ -510,19 +509,19 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
   }
 
   ipc.handle('tasks:sync-status', async (taskId: string): Promise<BranchSyncStatus> => {
-    const { project } = requireQuickTask(taskId)
+    const { project } = requireLocalTask(taskId)
     return gitDelivery.getSyncStatus(project.path)
   })
 
   ipc.handle('tasks:pull', async ({ taskId, branch, localCommit, remoteCommit }): Promise<BranchSyncStatus> => {
     return withTaskOperation(store, taskId, 'pull', async (check) => {
-      const { task, project } = requireQuickTask(taskId)
+      const { task, project } = requireLocalTask(taskId)
       const status = await gitDelivery.pull(project.path, { branch, localCommit, remoteCommit }, () => {
         check()
-        requireQuickTask(taskId)
+        requireLocalTask(taskId)
       })
       recordSystemEvent(task.id, `Pulled ${branch} from origin, fast-forwarding ${localCommit.slice(0, 8)} to ${remoteCommit.slice(0, 8)}.`)
-      await refreshLocalQuickTasks(task, project)
+      await refreshLocalTasks(task, project)
       return status
     })
   })
@@ -534,7 +533,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     check: (expected?: Task) => Task,
     shipped: boolean
   ): Promise<Task> => {
-    const { task, project } = requireQuickTask(taskId)
+    const { task, project } = requireLocalTask(taskId)
     if (push) {
       const sync = await gitDelivery.getSyncStatus(project.path)
       check()
@@ -544,7 +543,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     }
     const message = await resolveMessage(task, project)
     check()
-    requireQuickTask(taskId)
+    requireLocalTask(taskId)
     const headCommit = await gitDelivery.commitPaths(project.path, task.reviewPaths!, message)
     check()
     const committed = store.updateTask(task.id, {
@@ -560,7 +559,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       ? `Shipped ${task.reviewPaths!.length} task file${task.reviewPaths!.length === 1 ? '' : 's'} as ${headCommit.slice(0, 8)}: ${subjectLine(message)}`
       : `Committed ${task.reviewPaths!.length} task file${task.reviewPaths!.length === 1 ? '' : 's'} as ${headCommit.slice(0, 8)}.`)
     send('task:updated', committed)
-    await reconcileOverlappingQuickTasks(committed, project, headCommit)
+    await reconcileOverlappingLocalTasks(committed, project, headCommit)
     if (!push) return committed
     const preview = await gitDelivery.getPushPreview(project.path, undefined, headCommit)
     await gitDelivery.push(project.path, preview, headCommit, () => {
@@ -574,7 +573,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     return pushed
   }
 
-  ipc.handle('tasks:commit-quick', async ({ taskId, push, message }): Promise<Task> => {
+  ipc.handle('tasks:commit-local', async ({ taskId, push, message }): Promise<Task> => {
     return withTaskOperation(store, taskId, 'commit', (check) =>
       commitLocalTask(taskId, push, async (task) => message?.trim() || task.title, check, false))
   })
@@ -651,7 +650,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       const project = store.getProjects(current.workspaceId).find((item) => item.id === current.projectId)
       if (!project) throw new Error('Project not found')
       const pushNow = push ?? true
-      if (isLocalQuickTask(current)) {
+      if (isLocalTask(current)) {
         return commitLocalTask(taskId, pushNow, (task, local) =>
           shipMessage(task, local, () => gitDelivery.getWorkingTreeDiff(local.path, task.reviewPaths!), check, message), check, true)
       }
@@ -704,7 +703,7 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
       if (dependents.length) {
         throw new Error(`${dependents.length} task${dependents.length === 1 ? ' was' : 's were'} restacked onto this ship, so it cannot be undone.`)
       }
-      const local = isLocalQuickTask(task)
+      const local = isLocalTask(task)
       const { branch, restoredCommit } = await gitDelivery.undoShippedCommit(project.path, task.shippedCommit, local ? task.reviewPaths ?? [] : undefined, () => check())
       const reopened = store.updateTask(task.id, {
         deliveryStatus: 'reviewable',

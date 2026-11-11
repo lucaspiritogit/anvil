@@ -238,7 +238,7 @@ export function CommandPalette({ open, onClose, onOpenTerminal }: CommandPalette
           anchorRef={projectRef}
           label="Choose project"
           choices={[
-            { id: '', label: 'No project', description: 'Start a Quick task in this workspace' },
+            { id: '', label: 'No project', description: 'Start a task in this workspace' },
             ...projects.map((project) => ({ id: project.id, label: project.name, description: project.path }))
           ]}
           selectedId={activeProjectId ?? ''}

@@ -272,7 +272,7 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'tasks:push-preview': id,
   'tasks:sync-status': id,
   'tasks:pull': object({ taskId: id, branch, localCommit: sha, remoteCommit: sha }),
-  'tasks:commit-quick': object({ taskId: id, push: boolean, message: optional(text(65_536)) }),
+  'tasks:commit-local': object({ taskId: id, push: boolean, message: optional(text(65_536)) }),
   'tasks:ship': object({ taskId: id, push: optional(boolean), message: optional(text(65_536)) }),
   'tasks:undo-ship': id,
   'tasks:run-checks': id,

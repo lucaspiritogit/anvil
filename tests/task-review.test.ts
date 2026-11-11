@@ -11,9 +11,9 @@ const makeTask = (patch: Partial<Task> = {}): Task => ({
   ...patch
 })
 
-test('finished tasks of any style need review until they are seen', () => {
-  for (const style of ['quick', 'work'] as const) {
-    const task = makeTask({ style })
+test('finished tasks of any checkout mode need review until they are seen', () => {
+  for (const checkoutMode of ['local', 'worktree'] as const) {
+    const task = makeTask({ checkoutMode })
     expect(taskNeedsReview(task, undefined)).toBe(true)
     expect(taskNeedsReview(task, 150)).toBe(true)
     expect(taskNeedsReview(task, 250)).toBe(false)
@@ -21,13 +21,14 @@ test('finished tasks of any style need review until they are seen', () => {
 })
 
 test('reviewable delivery keeps the review state even after the task is seen', () => {
-  for (const style of ['quick', 'work'] as const) {
-    expect(taskNeedsReview(makeTask({ style, deliveryStatus: 'reviewable' }), 250)).toBe(true)
+  for (const checkoutMode of ['local', 'worktree'] as const) {
+    expect(taskNeedsReview(makeTask({ checkoutMode, deliveryStatus: 'reviewable' }), 250)).toBe(true)
   }
 })
 
 test('approved, settled, and unfinished tasks never need review', () => {
   expect(taskNeedsReview(makeTask({ deliveryStatus: 'approved' }), undefined)).toBe(false)
+  expect(taskNeedsReview(makeTask({ checkoutMode: 'local', deliveryStatus: 'approved' }), undefined)).toBe(false)
   expect(taskNeedsReview(makeTask({ settledAt: 300 }), undefined)).toBe(false)
   expect(taskNeedsReview(makeTask({ status: 'running', endedAt: undefined }), undefined)).toBe(false)
   expect(taskNeedsReview(makeTask({ status: 'failed' }), undefined)).toBe(false)

@@ -14,7 +14,6 @@ import { withTaskOperation, cancelTaskOperation, taskOperationKind } from '../ta
 import { TaskIssues } from '../tasks/task-issues'
 import { titleFor } from '../tasks/task-title'
 import type { Task, TaskDiff, TaskIssueSnapshot, TaskEvent, TaskEventsPage } from '@anvil/protocol/types'
-import { taskStyle } from '@anvil/protocol/task-style'
 import { requireProjectCheckoutAvailable, usesManagedWorktree } from '../tasks/checkout'
 
 interface TaskHandlerDependencies extends TaskContext, TaskEvents, TaskExecution {
@@ -112,7 +111,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       taskId, agent, workspace: resolveWorkspaceExecution(store, task.workspaceId),
       cwd: task.cwd, model: task.model, reasoningEffort: state?.reasoningEffort,
       issueId: state?.currentIssueId ?? undefined, resumeSessionId: task.sessionId, prompt: '',
-      issueTracker: taskStyle(task) === 'work',
+      issueTracker: usesManagedWorktree(task),
       beforeDispatch: () => { check() }
     })
   }))
@@ -176,7 +175,7 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
     if (!task) throw new Error('Task not found')
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
     if (!project) throw new Error('Project not found')
-    if (taskStyle(task) === 'quick' && !usesManagedWorktree(task)) {
+    if (!usesManagedWorktree(task)) {
       if (!task.reviewPaths?.length) throw new Error('This task has no delivered code')
       const { patch, commits } = await gitDelivery.getWorkingTreeDiff(project.path, task.reviewPaths)
       return { patch, commits }
@@ -231,7 +230,6 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       }
       const model = input.model || agent.defaultModel
       const checkoutMode = input.checkoutMode ?? (project ? 'worktree' : 'local')
-      const style = project && checkoutMode === 'worktree' ? 'work' : 'quick'
       if (checkoutMode === 'local' && input.parentTaskId) throw new Error('Only worktree tasks can be stacked')
       if (checkoutMode === 'local' && input.startBase !== undefined) throw new Error('Local checkout tasks cannot choose a worktree start base')
       if (input.parentTaskId && input.startBase !== undefined) throw new Error('Stacked tasks start from their parent task')
@@ -239,7 +237,6 @@ export function registerTaskHandlers(ipc: HandlerRegistry, {
       const cwd = project?.path ?? resolveProjectlessTaskDirectory(store, { id: taskId, workspaceId })
       const task: Task = {
         id: taskId,
-        style,
         checkoutMode,
         ...(input.startBase === undefined ? {} : { startBase: input.startBase }),
         workspaceId,

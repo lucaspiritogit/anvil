@@ -1,14 +1,12 @@
 import type { Task } from '@anvil/protocol/types'
 import { getAgent } from '../agents/registry'
 import { resolveProjectlessTaskDirectory, resolveWorkspaceExecution } from '../agents/workspace-execution'
-import { planningPrompt } from '../agents/task-prompts'
-import { quickTaskPrompt } from '../agents/task-prompts'
-import { taskStyle } from '@anvil/protocol/task-style'
+import { localTaskPrompt, planningPrompt } from '../agents/task-prompts'
 import type { TaskMemory } from '../memory/task-memory'
 import type { RecordSystemEvent, TaskContext } from './context'
 import type { TaskExecution } from './task-execution'
 import { requireStackParent, stackParentIsReady } from './task-stacks'
-import { taskCheckoutMode } from '@anvil/protocol/task-checkout'
+import { isLocalTask } from '@anvil/protocol/task-checkout'
 import { requireProjectCheckoutAvailable, usesManagedWorktree } from './checkout'
 
 interface TaskStartContext extends TaskContext {
@@ -49,9 +47,8 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         const images = state.hasImages ? store.taskImages.read(task.id) : undefined
         if (state.hasImages && !images) throw new Error('The original task images were cleared')
         const workspace = resolveWorkspaceExecution(store, task.workspaceId)
-        const style = taskStyle(task)
         if (!project) {
-          if (style !== 'quick' || taskCheckoutMode(task) !== 'local') throw new Error('Tasks without a project run in a local directory')
+          if (!isLocalTask(task)) throw new Error('Tasks without a project run in a local directory')
           const cwd = resolveProjectlessTaskDirectory(store, task)
           if (state.projectPath !== cwd) throw new Error('Task directory does not match its workspace')
           requireRunningTask()
@@ -61,7 +58,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
             workspace,
             taskId: task.id,
             agent,
-            prompt: quickTaskPrompt(style, task.prompt),
+            prompt: localTaskPrompt(task.prompt),
             images,
             model: task.model,
             reasoningEffort: state.reasoningEffort,
@@ -73,8 +70,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         }
         const git = await gitDelivery.status(project.path)
         requireRunningTask()
-        if (taskCheckoutMode(task) === 'local') {
-          if (style === 'work') throw new Error('Planned tasks require an isolated worktree')
+        if (isLocalTask(task)) {
           const localTask = store.updateTask(task.id, {
             cwd: project.path,
             deliveryStatus: 'unavailable'
@@ -82,7 +78,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
           send('task:updated', localTask)
           recordSystemEvent(task.id, `Using local checkout: ${project.path}`)
           const enrichedPrompt = await promptWithProjectMemory(project.id, task.prompt, task.workspaceId)
-          const prompt = quickTaskPrompt(style, enrichedPrompt)
+          const prompt = localTaskPrompt(enrichedPrompt)
           if (git.isRepository) await gitDelivery.captureWorkingTree(task.id, project.path)
           requireRunningTask()
           agentProcesses.start({
@@ -101,9 +97,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
           return localTask
         }
         if (!git.isRepository) {
-          throw new Error(style === 'work'
-            ? 'An isolated worktree requires a Git repository'
-            : 'A worktree Quick task requires a Git repository so it can run in an isolated branch and worktree')
+          throw new Error('An isolated worktree requires a Git repository')
         }
 
         const parentId = store.getTask(task.id)?.parentTaskId
@@ -132,7 +126,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
         }
         // Memory enriches agent input; it must not hold up branch creation.
         const enrichedPrompt = await promptWithProjectMemory(project.id, task.prompt, task.workspaceId)
-        const prompt = style === 'work' ? planningPrompt(enrichedPrompt, state) : quickTaskPrompt(style, enrichedPrompt)
+        const prompt = planningPrompt(enrichedPrompt, state)
         requireRunningTask()
         agentProcesses.start({
           workspace,
@@ -144,7 +138,7 @@ export function registerTaskStarts(context: TaskStartContext): (taskId: string) 
           reasoningEffort: state.reasoningEffort,
           cwd: prepared.cwd,
           projectPath: project.path,
-          issueTracker: style === 'work',
+          issueTracker: true,
           beforeDispatch: requireRunningTask
         })
         return preparedTask

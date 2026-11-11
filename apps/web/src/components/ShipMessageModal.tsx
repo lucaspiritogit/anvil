@@ -4,7 +4,7 @@ import type { BranchSyncStatus, Task } from '@anvil/protocol/types'
 import { useStore } from '../state/store'
 import { btn, cn, field, modal } from '../ui'
 import { AiGenerateButton } from './AiGenerateButton'
-import { isLocalQuickTask } from '@anvil/protocol/task-checkout'
+import { isLocalTask } from '@anvil/protocol/task-checkout'
 
 type SyncState =
   | { kind: 'checking' }
@@ -55,7 +55,7 @@ function SyncBanner({ sync, push, pulling, onPull }: {
 
 export function ShipMessageModal({ task, push, onClose }: { task: Task; push: boolean; onClose: () => void }): JSX.Element {
   const shipTask = useStore((s) => s.shipTask)
-  const local = isLocalQuickTask(task)
+  const local = isLocalTask(task)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const previousFocus = useRef(document.activeElement)
   const inFlight = useRef(false)
@@ -122,13 +122,13 @@ export function ShipMessageModal({ task, push, onClose }: { task: Task; push: bo
   return (
     <dialog
       ref={dialogRef}
-      aria-labelledby="commit-quick-title"
-      aria-describedby="commit-quick-description"
+      aria-labelledby="ship-message-title"
+      aria-describedby="ship-message-description"
       className={cn(modal.panel, modal.width.normal, 'm-auto text-fg backdrop:bg-black/55')}
       onCancel={(event) => { event.preventDefault(); if (!inFlight.current && busy === null) onClose() }}
     >
-      <h2 id="commit-quick-title" className={modal.title}>{push ? 'Ship & push' : 'Ship'}</h2>
-      <p id="commit-quick-description" className={cn(modal.copy, 'break-words')}>
+      <h2 id="ship-message-title" className={modal.title}>{push ? 'Ship & push' : 'Ship'}</h2>
+      <p id="ship-message-description" className={cn(modal.copy, 'break-words')}>
         {local
           ? <>Commit {fileCount} file{fileCount === 1 ? '' : 's'} this task modified to the current branch{push ? ', then push it to the remote' : ''}. Other staged or working-tree changes are left untouched.</>
           : <>Squash {fileCount} changed file{fileCount === 1 ? '' : 's'} from {task.branchName ?? 'the task branch'} into one commit on the checked-out branch{push ? ', then push it to the remote' : ''}.</>}

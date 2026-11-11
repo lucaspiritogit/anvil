@@ -17,6 +17,7 @@ import * as schema from './db/schema'
 import { canSettleTask, settlementDeadline } from '@anvil/protocol/task-settlement'
 import { advanceTaskWorkingTime, isTaskWorking, type TaskWorkingTime } from '@anvil/protocol/task-timing'
 import { isQueuedStackTask } from '@anvil/protocol/task-stacks'
+import { hasIssuePlan } from '@anvil/protocol/task-checkout'
 import { DEFAULT_KEYBINDINGS, normalizeKeybindings } from '@anvil/protocol/keybindings'
 import type { Project, Task, TaskComment, TaskEvent, Settings, TaskExecutionState, Workspace, WorkspacePreferences, ComposerPreferences, TaskResultNotice, TaskResultNoticeChange, TaskResultNoticeKind } from '@anvil/protocol/types'
 import { DEFAULT_FONT_SIZE, normalizeFontSize, DEFAULT_OVERVIEW_COLOR, OVERVIEW_COLOR_PATTERN, isWallpaperId } from '@anvil/protocol/appearance'
@@ -144,7 +145,6 @@ function toProject(row: ProjectRow): Project {
 function toTask(row: TaskRow): Task {
   return {
     id: row.id,
-    style: row.style,
     checkoutMode: row.checkoutMode,
     ...(row.startBase === null ? {} : { startBase: row.startBase }),
     ...(row.projectId === null ? {} : { projectId: row.projectId }),
@@ -906,7 +906,6 @@ export class Store {
   addTask(task: Omit<Task, 'workspaceId'> & { workspaceId?: string }): Task {
     const ownedTask: Task = {
       ...task,
-      style: task.style ?? (task.projectId === undefined ? 'quick' : 'work'),
       checkoutMode: task.checkoutMode ?? (task.projectId === undefined ? 'local' : 'worktree'),
       workspaceId: task.workspaceId ?? this.getActiveWorkspace().id,
       ...advanceTaskWorkingTime({ workingTimeMs: task.workingTimeMs }, isTaskWorking(task), Date.now())
@@ -1218,11 +1217,10 @@ export class Store {
         const task = this.getTask(row.state.taskId)
         if (task && isQueuedStackTask(task)) continue
         if (row.state.phase === 'planning' || row.state.phase === 'working' || row.state.phase === 'recovering') {
-          const quick = row.state.style === 'quick'
           this.saveTaskExecution({
             ...row.state,
             phase: 'blocked',
-            error: quick ? 'Interrupted by app restart. Send a follow-up to continue.' : 'Interrupted by app restart. Inspect the Anvil issue tracker before requeueing.'
+            error: !hasIssuePlan(row.state) ? 'Interrupted by app restart. Send a follow-up to continue.' : 'Interrupted by app restart. Inspect the Anvil issue tracker before requeueing.'
           })
         }
       }

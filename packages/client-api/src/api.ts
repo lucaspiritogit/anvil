@@ -318,7 +318,7 @@ export function createAnvilApi(url: string, host: ClientHost) {
       push: (input: IpcRequests['tasks:push']): Promise<Task> => invoke('tasks:push', input),
       syncStatus: (taskId: string): Promise<BranchSyncStatus> => invoke('tasks:sync-status', taskId),
       pull: (input: IpcRequests['tasks:pull']): Promise<BranchSyncStatus> => invoke('tasks:pull', input),
-      commitQuick: (input: IpcRequests['tasks:commit-quick']): Promise<Task> => invoke('tasks:commit-quick', input),
+      commitLocal: (input: IpcRequests['tasks:commit-local']): Promise<Task> => invoke('tasks:commit-local', input),
       ship: (input: IpcRequests['tasks:ship']): Promise<Task> => invoke('tasks:ship', input),
       undoShip: (taskId: string): Promise<Task> => invoke('tasks:undo-ship', taskId),
       runChecks: (taskId: string): Promise<Task> => invoke('tasks:run-checks', taskId),

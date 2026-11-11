@@ -931,7 +931,6 @@ window.anvil = {
       const task: Task = {
         ...base, ...input, workspaceId: input.workspaceId ?? selectedWorkspace, id, title: input.prompt || 'Image task',
         projectId: input.projectId,
-        style: localCheckout ? 'quick' : 'work',
         checkoutMode: localCheckout ? 'local' : 'worktree',
         status: 'running', deliveryStatus: project ? 'working' : 'unavailable', endedAt: undefined, reviewedAt: undefined,
         startedAt: Date.now(), workingStartedAt: Date.now(), filesChanged: 0, additions: 0, deletions: 0,
@@ -1038,7 +1037,7 @@ window.anvil = {
       window.dispatchEvent(new CustomEvent('fixture:pull', { detail: input }))
       return { branch: input.branch, localCommit: input.remoteCommit, remoteCommit: input.remoteCommit, ahead: 0, behind: 0, overlappingPaths: [] }
     },
-    commitQuick: async (input) => {
+    commitLocal: async (input) => {
       window.dispatchEvent(new CustomEvent('fixture:quick-commit', { detail: input }))
       await new Promise((resolve) => setTimeout(resolve, 100))
       if (query.has('quickCommitFailure')) throw new Error('The task files no longer have changes to commit')

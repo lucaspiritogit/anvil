@@ -2,11 +2,10 @@ import { requireStackParent, stackParentIsReady } from './task-stacks'
 import { shouldCompactContext } from '@anvil/protocol/task-context'
 import { resolveProjectlessTaskDirectory, resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
-import { taskStyle } from '@anvil/protocol/task-style'
 import type { Task, TaskExecutionState } from '@anvil/protocol/types'
 import type { TaskContext } from './context'
 import { requireProjectCheckoutAvailable, usesManagedWorktree } from './checkout'
-import { taskCheckoutMode } from '@anvil/protocol/task-checkout'
+import { isLocalTask } from '@anvil/protocol/task-checkout'
 
 interface ResumeOptions {
   check: (expected?: Task) => Task
@@ -26,15 +25,15 @@ export async function resumeTaskTurn(
     gitInstructions = true, allowRestack = false }: ResumeOptions
 ): Promise<Task> {
   const task = check()
-  const style = taskStyle(task)
+  const planned = !isLocalTask(task)
   validate(task)
   const requireParentFinished = (current: Task): void => {
     if (!stackParentIsReady({ store, agentProcesses, gitDelivery, send }, current)) {
       throw new Error('Wait for the parent task to finish before resuming')
     }
   }
-  if (style === 'work') requireParentFinished(task)
-  if (style === 'work' && task.restackState && !allowRestack) throw new Error('Finish restacking this task before resuming')
+  if (planned) requireParentFinished(task)
+  if (planned && task.restackState && !allowRestack) throw new Error('Finish restacking this task before resuming')
   const workspace = resolveTaskWorkspace(store, task.id)
   if (task.settledAt !== undefined) throw new Error('This task is archived and cannot be resumed')
   const agent = getAgent(task.agentId)
@@ -42,11 +41,11 @@ export async function resumeTaskTurn(
   if (task.sessionId && !agent.executionProtocol && !agent.resumeArgs) throw new Error('This agent cannot resume its saved session')
   const project = store.getProjects(task?.workspaceId).find((item) => item.id === task.projectId)
   if (task.projectId !== undefined && !project) throw new Error('Project not found')
-  if (!project && (style !== 'quick' || taskCheckoutMode(task) !== 'local')) throw new Error('Tasks without a project run in a local directory')
+  if (!project && planned) throw new Error('Tasks without a project run in a local directory')
   const guard = (): Task => {
     const current = check()
     validate(current)
-    if (style === 'work') requireParentFinished(current)
+    if (planned) requireParentFinished(current)
     if (agentProcesses.isRunning(task.id)) throw new Error('This task is already running')
     requireProjectCheckoutAvailable(store, current)
     return current
@@ -61,8 +60,8 @@ export async function resumeTaskTurn(
     if (!project && savedState && savedState.projectPath !== cwd) throw new Error('Task directory does not match its workspace')
     let location: Partial<Task> = { cwd }
     const git = project ? await gitDelivery.status(project.path) : undefined
-    if (style === 'work' && !usesManagedWorktree(task)) throw new Error('Planned tasks require an isolated worktree')
-    if (style === 'work' && !git?.isRepository) throw new Error('An isolated worktree requires a Git repository')
+    if (planned && !usesManagedWorktree(task)) throw new Error('Planned tasks require an isolated worktree')
+    if (planned && !git?.isRepository) throw new Error('An isolated worktree requires a Git repository')
     if (project && usesManagedWorktree(task) && task.branchName) {
       const checkout = await gitDelivery.checkoutBranch(project.path, task.id, task.branchName, task.baseBranch, guard)
       location = { cwd: checkout.cwd }
@@ -105,12 +104,12 @@ export async function resumeTaskTurn(
         workspace,
         beforeDispatch: () => {
           const dispatching = check(running)
-          if (style === 'work') requireParentFinished(dispatching)
+          if (planned) requireParentFinished(dispatching)
           requireProjectCheckoutAvailable(store, dispatching)
         },
         taskId: task.id, issueId: state?.currentIssueId ?? undefined, agent, cwd: running.cwd,
         ...(project ? { projectPath: project.path } : {}), model: current.model, reasoningEffort: state?.reasoningEffort,
-        issueTracker: style === 'work',
+        issueTracker: planned,
         resumeSessionId: current.sessionId,
         autoCompact: shouldCompactContext(current, store.getSettings(current.workspaceId)),
         prompt: executionPrompt,

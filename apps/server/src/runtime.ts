@@ -34,7 +34,7 @@ import { createTaskMemory } from './memory/task-memory'
 import { createTaskCompletion, type TaskCompletion } from './tasks/completion'
 import { createTaskChecks } from './tasks/task-checks'
 import { taskRiskFlags, type RiskKind } from '@anvil/protocol/task-risk'
-import { isLocalQuickTask } from '@anvil/protocol/task-checkout'
+import { isLocalTask } from '@anvil/protocol/task-checkout'
 import type { Task } from '@anvil/protocol/types'
 
 const AUTO_SHIP_BLOCKERS = new Set<RiskKind>(['secrets', 'migration', 'ci', 'deletion'])
@@ -289,7 +289,7 @@ export function createAnvilRuntime(options: RuntimeOptions) {
     if (!project?.autoShip || task.checks?.status !== 'passed' || task.checks.headCommit !== task.headCommit) return
     if (task.deliveryStatus !== 'reviewable' || task.parentTaskId || task.restackState || task.settledAt !== undefined) return
     void (async () => {
-      const diff = isLocalQuickTask(task)
+      const diff = isLocalTask(task)
         ? await gitDelivery.getWorkingTreeDiff(project.path, task.reviewPaths ?? [])
         : task.baseCommit && task.headCommit ? await gitDelivery.getDiff(project.path, task.baseCommit, task.headCommit) : undefined
       if (!diff) return

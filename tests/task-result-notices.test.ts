@@ -25,7 +25,7 @@ function setup() {
   }
   store.addProject(project)
   const addTask = (id: string, input: Partial<Task> = {}, workspaceId = 'default'): Task => store.addTask({
-    id, workspaceId, projectId: project.id, style: 'work', checkoutMode: 'worktree',
+    id, workspaceId, projectId: project.id, checkoutMode: 'worktree',
     agentId: 'codex', agentLabel: 'Codex', prompt: id, title: id, cwd: project.path,
     status: 'running', startedAt: 1, exitCode: null, inputTokens: 0, outputTokens: 0,
     cachedTokens: 0, totalTokens: 0, costUsd: null, deliveryStatus: 'working',
@@ -38,20 +38,20 @@ test('creates every result kind idempotently and versions later rework results',
   const f = setup()
   f.addTask('review')
   f.addTask('no-changes')
-  f.addTask('quick', { style: 'quick', deliveryStatus: 'unavailable' })
+  f.addTask('plain', { checkoutMode: 'local', deliveryStatus: 'unavailable' })
   f.addTask('non-git', { checkoutMode: 'local', deliveryStatus: 'unavailable' })
 
   f.store.updateTask('review', { status: 'succeeded', deliveryStatus: 'reviewable', headCommit: 'head-one' })
   f.store.updateTask('review', { status: 'succeeded', deliveryStatus: 'reviewable', headCommit: 'head-one', totalTokens: 12 })
   f.store.updateTask('no-changes', { status: 'succeeded', deliveryStatus: 'no_changes', headCommit: 'head-empty' })
-  f.store.updateTask('quick', { status: 'succeeded' })
+  f.store.updateTask('plain', { status: 'succeeded' })
   f.store.updateTask('non-git', { status: 'succeeded' })
 
   expect(f.store.getTaskResultNotices().map(({ taskId, kind, resultVersion, headCommit }) =>
     ({ taskId, kind, resultVersion, headCommit })).sort((a, b) => a.taskId.localeCompare(b.taskId))).toEqual([
     { taskId: 'no-changes', kind: 'no_changes', resultVersion: 1, headCommit: 'head-empty' },
     { taskId: 'non-git', kind: 'completed', resultVersion: 1, headCommit: undefined },
-    { taskId: 'quick', kind: 'completed', resultVersion: 1, headCommit: undefined },
+    { taskId: 'plain', kind: 'completed', resultVersion: 1, headCommit: undefined },
     { taskId: 'review', kind: 'reviewable', resultVersion: 1, headCommit: 'head-one' }
   ])
 
@@ -72,7 +72,7 @@ test('persists acknowledgement timestamps, emits only committed changes, and sur
   const f = setup()
   const changes: TaskResultNoticeChange[] = []
   f.store.subscribeTaskResultNotices((change) => changes.push(change))
-  f.addTask('completed', { style: 'quick', deliveryStatus: 'unavailable' })
+  f.addTask('completed', { checkoutMode: 'local', deliveryStatus: 'unavailable' })
   f.store.updateTask('completed', { status: 'succeeded' })
   const created = f.store.getTaskResultNotices()[0]
   expect(f.store.markTaskResultNoticeSeen(created.id, 'default', 100).seenAt).toBe(100)
@@ -83,7 +83,7 @@ test('persists acknowledgement timestamps, emits only committed changes, and sur
     { id: created.id }, { id: created.id, seenAt: 100 }, { id: created.id, seenAt: 100, dismissedAt: 300 }
   ])
 
-  f.addTask('rolled-back', { style: 'quick', deliveryStatus: 'unavailable' })
+  f.addTask('rolled-back', { checkoutMode: 'local', deliveryStatus: 'unavailable' })
   expect(() => f.store.transaction(() => {
     f.store.updateTask('rolled-back', { status: 'succeeded' })
     throw new Error('rollback')
@@ -99,9 +99,9 @@ test('persists acknowledgement timestamps, emits only committed changes, and sur
 test('enforces notice ownership and cascades task and project deletion', () => {
   const f = setup()
   f.store.addProject({ ...f.project, id: 'other-project', path: join(f.root, 'other-project') })
-  f.addTask('task-delete', { style: 'quick', deliveryStatus: 'unavailable' })
+  f.addTask('task-delete', { checkoutMode: 'local', deliveryStatus: 'unavailable' })
   f.store.updateTask('task-delete', { status: 'succeeded' })
-  f.addTask('project-delete', { projectId: 'other-project', style: 'quick', deliveryStatus: 'unavailable' })
+  f.addTask('project-delete', { projectId: 'other-project', checkoutMode: 'local', deliveryStatus: 'unavailable' })
   f.store.updateTask('project-delete', { status: 'succeeded' })
 
   const sqlite = new DatabaseSync(f.store.getWorkspaceDatabasePath('default'))
@@ -123,11 +123,11 @@ test('enforces notice ownership and cascades task and project deletion', () => {
 
 test('lists and acknowledges notices through workspace-scoped handlers and snapshots', () => {
   const f = setup()
-  f.addTask('default-result', { style: 'quick', deliveryStatus: 'unavailable' })
+  f.addTask('default-result', { checkoutMode: 'local', deliveryStatus: 'unavailable' })
   f.store.updateTask('default-result', { status: 'succeeded' })
   const other = f.store.createWorkspace('Other')
   f.store.addProject(f.project, other.id)
-  f.addTask('other-result', { style: 'quick', deliveryStatus: 'unavailable' }, other.id)
+  f.addTask('other-result', { checkoutMode: 'local', deliveryStatus: 'unavailable' }, other.id)
   f.store.updateTask('other-result', { status: 'succeeded' })
 
   const ipc = createHandlerRegistry()

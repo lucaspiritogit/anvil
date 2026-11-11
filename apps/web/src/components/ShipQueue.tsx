@@ -2,8 +2,6 @@ import type { JSX } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import type { Task } from '@anvil/protocol/types'
 import { isTaskSettled } from '@anvil/protocol/task-settlement'
-import { isLocalQuickTask, taskCheckoutMode } from '@anvil/protocol/task-checkout'
-import { taskStyle } from '@anvil/protocol/task-style'
 import { taskRiskFlags, type RiskFlag } from '@anvil/protocol/task-risk'
 import { useStore } from '../state/store'
 import { btn, cn } from '../ui'
@@ -13,8 +11,7 @@ import { ShipChecks, checksAreCurrent } from './ShipChecks'
 const BLOCKING_RISKS = new Set(['secrets', 'migration', 'ci'])
 
 export function isShipQueueTask(task: Task): boolean {
-  if (task.status !== 'succeeded' || task.deliveryStatus !== 'reviewable' || isTaskSettled(task)) return false
-  return taskStyle(task) === 'work' || taskCheckoutMode(task) === 'worktree' || isLocalQuickTask(task)
+  return task.status === 'succeeded' && task.deliveryStatus === 'reviewable' && !isTaskSettled(task)
 }
 
 function readyForBatch(task: Task, flags: RiskFlag[] | undefined): boolean {

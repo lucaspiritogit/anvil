@@ -10,7 +10,7 @@ import { createHandlerRegistry } from '../apps/server/src/handler-registry'
 import type { Project, Task } from '@anvil/protocol/types'
 
 function setup() {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), 'anvil-quick-delivery-')))
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'anvil-local-delivery-')))
   onTestCleanup(() => rmSync(home, { recursive: true, force: true }))
   const store = new Store(join(home, `${randomUUID()}`, 'config.json'), { migrationsFolder: join(process.cwd(), 'apps/server/src/db/migrations') })
   onTestCleanup(() => store.close())
@@ -53,59 +53,59 @@ function setup() {
     runSessionTurn: (() => {}) as never
   })
   const events: { taskId: string; text: string }[] = []
-  const addQuickTask = (overrides: Partial<Task> = {}): Task => store.addTask({
+  const addLocalTask = (overrides: Partial<Task> = {}): Task => store.addTask({
     id: randomUUID(), projectId: project.id, agentId: 'codex', agentLabel: 'Codex',
-    style: 'quick', checkoutMode: 'local',
+    checkoutMode: 'local',
     prompt: 'Change', title: 'Change thing', cwd: home, status: 'succeeded', startedAt: Date.now(),
-    deliveryStatus: 'reviewable', reviewPaths: ['src/quick.ts'],
+    deliveryStatus: 'reviewable', reviewPaths: ['src/local.ts'],
     inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null,
     filesChanged: 1, additions: 1, deletions: 0,
     ...overrides
   })
-  return { store, registry, headCommit, pushCalls, updated, events, gitDelivery, generateText, project, addQuickTask }
+  return { store, registry, headCommit, pushCalls, updated, events, gitDelivery, generateText, project, addLocalTask }
 }
 
-test('ship commits a local quick task with an agent-written message and records the shipped commit', async () => {
-  const { store, registry, headCommit, pushCalls, gitDelivery, generateText, addQuickTask } = setup()
-  const task = addQuickTask()
+test('ship commits a local task with an agent-written message and records the shipped commit', async () => {
+  const { store, registry, headCommit, pushCalls, gitDelivery, generateText, addLocalTask } = setup()
+  const task = addLocalTask()
 
   const shipped = await registry.invoke('tasks:ship', { taskId: task.id, push: false }) as Task
 
   expect(generateText).toHaveBeenCalledTimes(1)
-  expect(gitDelivery.commitPaths).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/quick.ts'], 'feat: drafted by the agent')
+  expect(gitDelivery.commitPaths).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/local.ts'], 'feat: drafted by the agent')
   expect(shipped).toMatchObject({ deliveryStatus: 'approved', headCommit, shippedCommit: headCommit })
   expect(shipped.pushedCommit).toBeUndefined()
   expect(pushCalls).toHaveLength(0)
 })
 
 test('ship uses the given message without drafting and pushes by default', async () => {
-  const { store, registry, headCommit, pushCalls, gitDelivery, generateText, addQuickTask } = setup()
-  const task = addQuickTask()
+  const { store, registry, headCommit, pushCalls, gitDelivery, generateText, addLocalTask } = setup()
+  const task = addLocalTask()
 
   const shipped = await registry.invoke('tasks:ship', { taskId: task.id, message: 'fix: written by hand' }) as Task
 
   expect(generateText).not.toHaveBeenCalled()
-  expect(gitDelivery.commitPaths).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/quick.ts'], 'fix: written by hand')
+  expect(gitDelivery.commitPaths).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/local.ts'], 'fix: written by hand')
   expect(shipped).toMatchObject({ shippedCommit: headCommit, pushedCommit: headCommit })
   expect(pushCalls).toHaveLength(1)
 })
 
 test('ship falls back to the task title when the agent cannot write a message', async () => {
-  const { store, registry, gitDelivery, generateText, events, addQuickTask } = setup()
+  const { store, registry, gitDelivery, generateText, events, addLocalTask } = setup()
   generateText.mockRejectedValueOnce(new Error('agent offline'))
-  const task = addQuickTask({ title: 'Recolor the header' })
+  const task = addLocalTask({ title: 'Recolor the header' })
 
   await registry.invoke('tasks:ship', { taskId: task.id, push: false })
 
-  expect(gitDelivery.commitPaths).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/quick.ts'], 'Recolor the header')
+  expect(gitDelivery.commitPaths).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/local.ts'], 'Recolor the header')
   expect(events.some((event) => event.taskId === task.id && event.text.includes('could not write a commit message'))).toBe(true)
 })
 
-test('commit-quick with push records the pushed head commit on the task', async () => {
-  const { store, registry, headCommit, pushCalls, updated, addQuickTask } = setup()
-  const task = addQuickTask()
+test('commit-local with push records the pushed head commit on the task', async () => {
+  const { store, registry, headCommit, pushCalls, updated, addLocalTask } = setup()
+  const task = addLocalTask()
 
-  const committed = await registry.invoke('tasks:commit-quick', { taskId: task.id, push: true, message: 'test: push me' }) as Task
+  const committed = await registry.invoke('tasks:commit-local', { taskId: task.id, push: true, message: 'test: push me' }) as Task
 
   expect(committed).toMatchObject({ deliveryStatus: 'approved', headCommit, pushedCommit: headCommit })
   expect(pushCalls).toHaveLength(1)
@@ -113,11 +113,11 @@ test('commit-quick with push records the pushed head commit on the task', async 
   expect(updated.at(-1)).toMatchObject({ id: task.id, pushedCommit: headCommit })
 })
 
-test('commit-quick without push leaves the head commit unpushed', async () => {
-  const { store, registry, headCommit, pushCalls, addQuickTask } = setup()
-  const task = addQuickTask()
+test('commit-local without push leaves the head commit unpushed', async () => {
+  const { store, registry, headCommit, pushCalls, addLocalTask } = setup()
+  const task = addLocalTask()
 
-  const committed = await registry.invoke('tasks:commit-quick', { taskId: task.id, push: false, message: 'test: local only' }) as Task
+  const committed = await registry.invoke('tasks:commit-local', { taskId: task.id, push: false, message: 'test: local only' }) as Task
 
   expect(committed).toMatchObject({ deliveryStatus: 'approved', headCommit })
   expect(committed.pushedCommit).toBeUndefined()
@@ -125,10 +125,10 @@ test('commit-quick without push leaves the head commit unpushed', async () => {
   expect(store.getTask(task.id)?.pushedCommit).toBeUndefined()
 })
 
-test('pushing a committed quick task records the pushed head commit', async () => {
-  const { store, registry, headCommit, pushCalls, updated, addQuickTask } = setup()
-  const task = addQuickTask()
-  await registry.invoke('tasks:commit-quick', { taskId: task.id, push: false, message: 'test: push later' })
+test('pushing a committed local task records the pushed head commit', async () => {
+  const { store, registry, headCommit, pushCalls, updated, addLocalTask } = setup()
+  const task = addLocalTask()
+  await registry.invoke('tasks:commit-local', { taskId: task.id, push: false, message: 'test: push later' })
 
   const preview = await registry.invoke('tasks:push-preview', task.id)
   const pushed = await registry.invoke('tasks:push', { taskId: task.id, preview }) as Task
@@ -139,31 +139,31 @@ test('pushing a committed quick task records the pushed head commit', async () =
   expect(updated.at(-1)).toMatchObject({ id: task.id, pushedCommit: headCommit })
 })
 
-test('commit-quick approves overlapping local quick tasks whose changes it committed', async () => {
-  const { store, registry, headCommit, updated, events, gitDelivery, addQuickTask } = setup()
-  const task = addQuickTask({ title: 'Recolor' })
-  const sibling = addQuickTask()
-  const unrelated = addQuickTask({ reviewPaths: ['src/other.ts'] })
+test('commit-local approves overlapping local tasks whose changes it committed', async () => {
+  const { store, registry, headCommit, updated, events, gitDelivery, addLocalTask } = setup()
+  const task = addLocalTask({ title: 'Recolor' })
+  const sibling = addLocalTask()
+  const unrelated = addLocalTask({ reviewPaths: ['src/other.ts'] })
 
-  await registry.invoke('tasks:commit-quick', { taskId: task.id, push: false, message: 'test: shared file' })
+  await registry.invoke('tasks:commit-local', { taskId: task.id, push: false, message: 'test: shared file' })
 
   expect(gitDelivery.getWorkingTreeDiff).toHaveBeenCalledTimes(1)
-  expect(gitDelivery.getWorkingTreeDiff).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/quick.ts'])
+  expect(gitDelivery.getWorkingTreeDiff).toHaveBeenCalledWith(store.getProjects()[0].path, ['src/local.ts'])
   expect(store.getTask(sibling.id)).toMatchObject({ deliveryStatus: 'approved', headCommit })
   expect(store.getTask(unrelated.id)).toMatchObject({ deliveryStatus: 'reviewable' })
   expect(updated.at(-1)).toMatchObject({ id: sibling.id, deliveryStatus: 'approved' })
   expect(events).toContainEqual({ taskId: sibling.id, text: `Changes were committed with "Recolor" as ${headCommit.slice(0, 8)}.` })
 })
 
-test('commit-quick refreshes overlapping local quick tasks that still have changes', async () => {
-  const { store, registry, gitDelivery, addQuickTask } = setup()
-  const task = addQuickTask()
-  const sibling = addQuickTask({ reviewPaths: ['src/quick.ts', 'src/rest.ts'], filesChanged: 2, additions: 4, deletions: 1 })
+test('commit-local refreshes overlapping local tasks that still have changes', async () => {
+  const { store, registry, gitDelivery, addLocalTask } = setup()
+  const task = addLocalTask()
+  const sibling = addLocalTask({ reviewPaths: ['src/local.ts', 'src/rest.ts'], filesChanged: 2, additions: 4, deletions: 1 })
   gitDelivery.getWorkingTreeDiff.mockResolvedValueOnce({
     patch: 'diff --git a/src/rest.ts b/src/rest.ts', commits: [], paths: ['src/rest.ts'], filesChanged: 1, additions: 2, deletions: 0
   })
 
-  await registry.invoke('tasks:commit-quick', { taskId: task.id, push: false, message: 'test: partial overlap' })
+  await registry.invoke('tasks:commit-local', { taskId: task.id, push: false, message: 'test: partial overlap' })
 
   expect(store.getTask(sibling.id)).toMatchObject({
     deliveryStatus: 'reviewable', reviewPaths: ['src/rest.ts'], filesChanged: 1, additions: 2, deletions: 0
@@ -171,24 +171,24 @@ test('commit-quick refreshes overlapping local quick tasks that still have chang
   expect(store.getTask(sibling.id)?.headCommit).toBeUndefined()
 })
 
-test('commit-quick with push refuses to commit when origin has new commits', async () => {
-  const { store, registry, gitDelivery, addQuickTask } = setup()
-  const task = addQuickTask()
+test('commit-local with push refuses to commit when origin has new commits', async () => {
+  const { store, registry, gitDelivery, addLocalTask } = setup()
+  const task = addLocalTask()
   gitDelivery.getSyncStatus.mockResolvedValueOnce({
     branch: 'main', localCommit: '1'.repeat(40), remoteCommit: '2'.repeat(40), ahead: 0, behind: 2, overlappingPaths: []
   })
 
-  await expect(registry.invoke('tasks:commit-quick', { taskId: task.id, push: true, message: 'test: behind' }))
+  await expect(registry.invoke('tasks:commit-local', { taskId: task.id, push: true, message: 'test: behind' }))
     .rejects.toThrow('origin/main has 2 new commits. Pull before committing and pushing.')
 
   expect(gitDelivery.commitPaths).not.toHaveBeenCalled()
   expect(store.getTask(task.id)).toMatchObject({ deliveryStatus: 'reviewable' })
 })
 
-test('pull fast-forwards the checkout and refreshes local quick task diffs', async () => {
-  const { store, registry, events, gitDelivery, addQuickTask } = setup()
-  const task = addQuickTask()
-  const sibling = addQuickTask({ reviewPaths: ['src/rest.ts'] })
+test('pull fast-forwards the checkout and refreshes local task diffs', async () => {
+  const { store, registry, events, gitDelivery, addLocalTask } = setup()
+  const task = addLocalTask()
+  const sibling = addLocalTask({ reviewPaths: ['src/rest.ts'] })
   gitDelivery.getWorkingTreeDiff.mockImplementation(async (_repoPath: string, paths: string[]) => ({
     patch: 'diff', commits: [], paths, filesChanged: 1, additions: 7, deletions: 3
   }))

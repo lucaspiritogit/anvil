@@ -362,20 +362,25 @@ test('keeps the active workspace when opening another workspace fails', () => {
   expect(JSON.parse(readFileSync(join(directory, 'config.json'), 'utf8')).activeWorkspaceId).toBe('default')
 })
 
-test('migrates the applied Ask and Do task style schema to Quick', () => {
+test('drops the legacy task style column and keeps existing tasks', () => {
   const { open, directory, database } = fixture()
   const migrationNames = readdirSync(migrationsFolder, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
-  expect(migrationNames).toContain('20260914182105_light_kabuki')
-  const quickMigrationIndex = migrationNames.indexOf('20260914190557_classy_goblin_queen')
-  expect(quickMigrationIndex).toBeGreaterThan(0)
+  const dropStyleMigrationIndex = migrationNames.indexOf('20261111134937_drop_task_style')
+  expect(dropStyleMigrationIndex).toBeGreaterThan(0)
 
   const workspaceDirectory = join(directory, 'workspaces', 'Default')
   mkdirSync(workspaceDirectory, { recursive: true })
   const workspaceDatabase = join(workspaceDirectory, 'anvil.db')
-  migrateBefore(workspaceDatabase, quickMigrationIndex)
+  migrateBefore(workspaceDatabase, dropStyleMigrationIndex)
+  const before = rawDatabase(workspaceDatabase)
+  before.prepare("INSERT OR IGNORE INTO workspaces(id, name, name_key, created_at) VALUES ('default', 'Default', 'default', 1)").run()
+  before.prepare("INSERT INTO projects(id, name, path, created_at) VALUES ('project', 'Project', '/test/project', 1)").run()
+  before.prepare("INSERT INTO tasks(id, style, checkout_mode, project_id, agent_id, agent_label, prompt, title, cwd, status, started_at, delivery_status) VALUES ('legacy', 'quick', 'local', 'project', 'codex', 'Codex', 'Task', 'Task', '/test/project', 'succeeded', 1, 'approved')").run()
+  before.prepare("INSERT INTO task_events(id, task_id, ts, stream, kind, category, text) VALUES ('event', 'legacy', 1, 'system', 'delivery', 'system', 'kept')").run()
+  before.close()
   writeFileSync(database, JSON.stringify({
     version: 1,
     workspaces: [{ id: 'default', name: 'Default', createdAt: 1 }],
@@ -383,14 +388,12 @@ test('migrates the applied Ask and Do task style schema to Quick', () => {
   }))
 
   const store = open()
-  addProject(store)
-  expect(store.addTask({ ...taskInput('quick'), style: 'quick' }).style).toBe('quick')
+  expect(store.getTask('legacy')).toMatchObject({ checkoutMode: 'local', deliveryStatus: 'approved' })
+  expect(store.getTask('legacy')).not.toHaveProperty('style')
   store.close()
-
   const migrated = rawDatabase(workspaceDatabase)
-  const taskSchema = migrated.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'tasks'").get() as { sql: string }
-  expect(taskSchema.sql).toContain("CHECK(\"style\" IN ('work', 'quick'))")
-  expect(migrated.prepare('SELECT style FROM tasks WHERE id = ?').get('quick')).toEqual({ style: 'quick' })
+  expect(migrated.prepare("SELECT name FROM pragma_table_info('tasks') WHERE name = 'style'").all()).toEqual([])
+  expect(migrated.prepare('SELECT count(*) AS count FROM task_events WHERE task_id = ?').get('legacy')).toEqual({ count: 1 })
 })
 
 test('migrates legacy tasks to the worktree checkout strategy', () => {

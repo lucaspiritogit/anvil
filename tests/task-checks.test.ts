@@ -17,7 +17,7 @@ function setup(checkCommand: string | null, timeoutMs?: number) {
     monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
   if (checkCommand !== null) store.updateProject('project', { checkCommand })
   const task = store.addTask({
-    id: randomUUID(), projectId: 'project', agentId: 'codex', agentLabel: 'Codex', style: 'work', checkoutMode: 'worktree',
+    id: randomUUID(), projectId: 'project', agentId: 'codex', agentLabel: 'Codex', checkoutMode: 'worktree',
     prompt: 'Change', title: 'Change', cwd: home, status: 'succeeded', startedAt: 0, deliveryStatus: 'reviewable',
     headCommit: 'a'.repeat(40), filesChanged: 1, additions: 1, deletions: 0,
     inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, costUsd: null

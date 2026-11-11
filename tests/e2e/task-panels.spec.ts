@@ -40,12 +40,12 @@ test('switching to another task resets the active tab to Output', async ({ page 
   await expect(page.getByText('The task diff will appear here when the agent finishes.')).toBeVisible()
 })
 
-test('quick tasks keep the Changes panel available', async ({ page }) => {
+test('local tasks keep the Changes panel available', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=output')
   await page.evaluate(async () => {
     const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
-      tasks: state.tasks.map((task) => task.id === 'output' ? { ...task, style: 'quick' } : task)
+      tasks: state.tasks.map((task) => task.id === 'output' ? { ...task, checkoutMode: 'local' } : task)
     }))
   })
 
@@ -57,13 +57,13 @@ test('quick tasks keep the Changes panel available', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Code changes' })).toBeVisible()
 })
 
-test('completed quick tasks ship and push their scoped changes', async ({ page }) => {
+test('completed local tasks ship and push their scoped changes', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'review'
-        ? { ...task, style: 'quick', checkoutMode: 'local', reviewPaths: ['src/sidebar.ts', 'README.md'] }
+        ? { ...task, checkoutMode: 'local', reviewPaths: ['src/sidebar.ts', 'README.md'] }
         : task)
     }))
     window.addEventListener('fixture:ship', (event) => {
@@ -81,13 +81,13 @@ test('completed quick tasks ship and push their scoped changes', async ({ page }
   await expect(page.getByRole('region', { name: 'src/sidebar.ts' })).toBeVisible()
 })
 
-test('shipped quick tasks push their shipped commit and hide the push action', async ({ page }) => {
+test('shipped local tasks push their shipped commit and hide the push action', async ({ page }) => {
   await page.goto('/tests/e2e/fixture/?scenario=review')
   await page.evaluate(async () => {
     const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'review'
-        ? { ...task, style: 'quick', checkoutMode: 'local', deliveryStatus: 'approved', headCommit: 'quick-head', shippedCommit: 'quick-head', reviewPaths: ['src/sidebar.ts'] }
+        ? { ...task, checkoutMode: 'local', deliveryStatus: 'approved', headCommit: 'quick-head', shippedCommit: 'quick-head', reviewPaths: ['src/sidebar.ts'] }
         : task)
     }))
     window.addEventListener('fixture:push', (event) => {
@@ -110,7 +110,7 @@ test('ship message drafts fail without losing the typed message', async ({ page 
     const { useStore } = await import('/apps/web/src/state/store.ts')
     useStore.setState((state) => ({
       tasks: state.tasks.map((task) => task.id === 'review'
-        ? { ...task, style: 'quick', checkoutMode: 'local', reviewPaths: ['src/sidebar.ts'] }
+        ? { ...task, checkoutMode: 'local', reviewPaths: ['src/sidebar.ts'] }
         : task)
     }))
   })

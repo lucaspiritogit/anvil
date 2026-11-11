@@ -17,7 +17,6 @@ export interface TaskIssueSnapshot {
 export interface TaskExecutionState {
   taskId: string
   projectPath: string
-  style?: TaskStyle
   parentIssueId: string
   phase: 'planning' | 'working' | 'reviewing' | 'recovering' | 'complete' | 'blocked'
   issueIds: string[]
@@ -50,7 +49,6 @@ export const TASK_IMAGE_LIMITS = {
 } as const
 
 export type TaskStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'
-export type TaskStyle = 'work' | 'quick'
 export type TaskCheckoutMode = 'worktree' | 'local'
 
 export type TaskResultNoticeKind = 'reviewable' | 'no_changes' | 'completed'
@@ -462,7 +460,6 @@ export interface TaskStackTarget {
 }
 
 export interface Task {
-  style?: TaskStyle
   checkoutMode?: TaskCheckoutMode
   startBase?: string
   parentTaskId?: string

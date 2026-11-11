@@ -80,10 +80,10 @@ test('tracks tasks in background workspaces without notifying for workspace sele
 
 test('notifies completion of tasks without a project without opening an issue tracker', () => {
   const { store, task, notifications } = setup()
-  store.addTask({ ...task, id: 'unassigned', projectId: undefined, style: 'quick', checkoutMode: 'local',
+  store.addTask({ ...task, id: 'unassigned', projectId: undefined, checkoutMode: 'local',
     deliveryStatus: 'unavailable' })
   const tracker = vi.spyOn(store, 'issueTracker')
-  store.saveTaskExecution({ taskId: 'unassigned', projectPath: task.cwd, style: 'quick',
+  store.saveTaskExecution({ taskId: 'unassigned', projectPath: task.cwd,
     parentIssueId: '', phase: 'working', issueIds: [], currentIssueId: null, error: null })
   store.updateTask('unassigned', { status: 'running' })
   store.updateTask('unassigned', { status: 'succeeded' })

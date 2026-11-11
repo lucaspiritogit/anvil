@@ -80,14 +80,14 @@ test('runs tasks without a project in their own workspace directory without proj
   const second = await f.start()
   const expectedCwd = join(f.store.getWorkspaceDirectory('default'), 'tasks', task.id)
 
-  expect(task).toMatchObject({ style: 'quick', checkoutMode: 'local', deliveryStatus: 'unavailable', cwd: expectedCwd })
+  expect(task).toMatchObject({ checkoutMode: 'local', deliveryStatus: 'unavailable', cwd: expectedCwd })
   expect(task.projectId).toBeUndefined()
   expect(task.branchName).toBeUndefined()
   expect(second.cwd).not.toBe(task.cwd)
   expect(existsSync(expectedCwd)).toBe(true)
   expect(f.agentProcesses.starts[0]).toMatchObject({ taskId: task.id, cwd: expectedCwd, issueTracker: false, reasoningEffort: 'high' })
   expect(f.agentProcesses.starts[0].projectPath).toBeUndefined()
-  expect(f.store.getTaskExecution(task.id)).toMatchObject({ style: 'quick', projectPath: expectedCwd, parentIssueId: '', issueIds: [] })
+  expect(f.store.getTaskExecution(task.id)).toMatchObject({ projectPath: expectedCwd, parentIssueId: '', issueIds: [] })
   expect(f.registry.invoke('tasks:issues', task.id)).toBeNull()
   const snapshot = callIssueTool(f.store, task.id, task.workspaceId, 'anvil_get_task', { taskId: task.id }) as { issueSummary: { total: number } }
   expect(snapshot.issueSummary.total).toBe(0)
@@ -225,7 +225,7 @@ test('preserves project tasks, executions, events, comments, stack references an
   }
   const rebuiltTables = [...readFileSync(join(migrationsFolder, migrationDirectories[projectlessMigration], 'migration.sql'), 'utf8')
     .matchAll(/CREATE TABLE `__new_(\w+)`/g)].map((match) => match[1])
-  for (const migrationDirectory of migrationDirectories.slice(projectlessMigration + 1)) {
+  for (const migrationDirectory of migrationDirectories.slice(projectlessMigration + 1).filter((name) => !name.endsWith('_drop_task_style'))) {
     const migration = readFileSync(join(migrationsFolder, migrationDirectory, 'migration.sql'), 'utf8')
     const rerun = rebuiltTables.some((table) => migration.includes(`\`${table}\``))
     cpSync(join(migrationsFolder, migrationDirectory), join(olderMigrationsFolder, rerun ? `${migrationDirectory}_before_projectless` : migrationDirectory), { recursive: true })
@@ -238,14 +238,14 @@ test('preserves project tasks, executions, events, comments, stack references an
   })
   store.addProject({ id: 'project', name: 'Project', path: join(root, 'project'), createdAt: 1,
     monthlyTokenLimit: null, monthlyCostLimitUsd: null, finishOnPush: false, shipPushes: false, gitPlatform: 'github' })
-  const parent = store.addTask({ id: randomUUID(), projectId: 'project', style: 'work', checkoutMode: 'worktree',
+  const parent = store.addTask({ id: randomUUID(), projectId: 'project', checkoutMode: 'worktree',
     agentId: 'codex', agentLabel: 'Codex', title: 'Parent', prompt: 'Parent task', cwd: join(root, 'project'),
     status: 'running', startedAt: 1, deliveryStatus: 'working', branchName: 'task/parent', baseCommit: 'base',
     inputTokens: 1, outputTokens: 2, cachedTokens: 0, totalTokens: 3, costUsd: null, filesChanged: 1, additions: 1, deletions: 0 })
   store.updateTask(parent.id, { status: 'succeeded', deliveryStatus: 'reviewable', headCommit: 'head' })
   const child = store.addTask({ ...parent, id: randomUUID(), title: 'Child', parentTaskId: parent.id, status: 'pending',
     deliveryStatus: 'reviewable', branchName: 'task/child', headCommit: 'child-head' })
-  const state: TaskExecutionState = { taskId: parent.id, projectPath: parent.cwd, style: 'work', parentIssueId: '',
+  const state: TaskExecutionState = { taskId: parent.id, projectPath: parent.cwd, parentIssueId: '',
     phase: 'complete', issueIds: [], currentIssueId: null, error: null, reasoningEffort: 'high' }
   store.saveTaskExecution(state)
   store.addComment({ id: 'comment', taskId: parent.id, file: 'src/app.ts', side: 'additions', lineNumber: 1,

@@ -219,7 +219,7 @@ export function ProjectPicker({ anchorRef, projects, value, onChange, onImport, 
   return <ChoicePickerDialog
     anchorRef={anchorRef} label="Choose project" noun="projects" value={value ?? ''}
     choices={[
-      { id: '', label: 'No project', description: 'Start a Quick task in this workspace',
+      { id: '', label: 'No project', description: 'Start a task in this workspace',
         icon: <Icon icon="pencil" size={16} className="shrink-0 text-dim" /> },
       ...projects.map((project) => ({ id: project.id, label: project.name, description: project.path,
         icon: <Icon icon="folder" size={16} className="shrink-0 text-dim" />, onDelete: () => setDeleting(project) }))

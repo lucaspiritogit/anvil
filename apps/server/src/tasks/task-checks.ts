@@ -1,6 +1,6 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import type { Task, TaskChecks } from '@anvil/protocol/types'
-import { isLocalQuickTask } from '@anvil/protocol/task-checkout'
+import { isLocalTask } from '@anvil/protocol/task-checkout'
 import type { RecordSystemEvent, TaskContext } from './context'
 
 const OUTPUT_LIMIT = 64 * 1024
@@ -50,7 +50,7 @@ export function createTaskChecks(
     const command = project.checkCommand?.trim()
     if (!command) throw new Error('Set a check command for this project in Settings → Source control first.')
     if (task.status === 'running') throw new Error('Wait for the agent to finish before running checks.')
-    const cwd = isLocalQuickTask(task) ? project.path : task.cwd
+    const cwd = isLocalTask(task) ? project.path : task.cwd
     running.get(taskId)?.removeAllListeners('close')
     const previous = running.get(taskId)
     if (previous) killTree(previous)

@@ -10,7 +10,7 @@ import { useStore } from '../state/store'
 import { IS_MAC } from '../keys'
 import { cn } from '../ui'
 import { openTaskContextMenu } from './TaskContextMenu'
-import { taskStyle } from '@anvil/protocol/task-style'
+import { isLocalTask } from '@anvil/protocol/task-checkout'
 import { StatusGlyph, type StatusGlyphName } from './StatusGlyph'
 import type { SidebarStackTree } from './sidebar-task-stacks'
 
@@ -36,10 +36,10 @@ function taskIndicator(task: Task, finishedUnseen: boolean): typeof TASK_INDICAT
   if (task.status === 'succeeded') {
     if (task.deliveryStatus === 'reviewable' && task.pullRequest) return TASK_INDICATORS.openPullRequest
     if (task.deliveryStatus === 'reviewable') return TASK_INDICATORS.reviewable
-    if (taskStyle(task) !== 'work' || task.deliveryStatus === 'no_changes') {
+    if (task.deliveryStatus === 'approved') return TASK_INDICATORS.merged
+    if (isLocalTask(task) || task.deliveryStatus === 'no_changes') {
       return finishedUnseen ? TASK_INDICATORS.reviewable : TASK_INDICATORS.done
     }
-    if (task.deliveryStatus === 'approved') return TASK_INDICATORS.merged
   }
   return undefined
 }

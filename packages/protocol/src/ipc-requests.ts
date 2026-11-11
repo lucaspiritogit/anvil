@@ -96,7 +96,7 @@ export interface IpcRequests {
   'tasks:push': { taskId: string; preview: TaskPushPreview }
   'tasks:sync-status': string
   'tasks:pull': { taskId: string; branch: string; localCommit: string; remoteCommit: string }
-  'tasks:commit-quick': { taskId: string; push: boolean; message?: string }
+  'tasks:commit-local': { taskId: string; push: boolean; message?: string }
   'tasks:ship': { taskId: string; push?: boolean; message?: string }
   'tasks:undo-ship': string
   'tasks:run-checks': string

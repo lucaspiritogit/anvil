@@ -136,7 +136,7 @@ test('finished tasks of any style show a review state, sort first, and badge the
 
   await page.evaluate(async () => {
     const current = (await window.anvil.tasks.list()).find((task) => task.id === 'output')!
-    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...current, style: 'quick', checkoutMode: 'local' } }))
+    window.dispatchEvent(new CustomEvent('fixture:task-updated', { detail: { ...current, checkoutMode: 'local' } }))
   })
   await expect(output.getByRole('img', { name: 'Ready to ship', exact: true })).toBeVisible()
 

@@ -1,5 +1,5 @@
 import type { Task } from './types'
-import { taskStyle } from './task-style'
+import { isLocalTask } from './task-checkout'
 
 export function isTaskFinishedUnseen(task: Task, seenAt: number | undefined): boolean {
   if (task.status !== 'succeeded' || task.settledAt !== undefined) return false
@@ -9,7 +9,8 @@ export function isTaskFinishedUnseen(task: Task, seenAt: number | undefined): bo
 export function taskNeedsReview(task: Task, seenAt: number | undefined): boolean {
   if (task.status !== 'succeeded' || task.settledAt !== undefined) return false
   if (task.deliveryStatus === 'reviewable') return true
-  if (taskStyle(task) !== 'work' || task.deliveryStatus === 'no_changes') return isTaskFinishedUnseen(task, seenAt)
+  if (task.deliveryStatus === 'approved') return false
+  if (isLocalTask(task) || task.deliveryStatus === 'no_changes') return isTaskFinishedUnseen(task, seenAt)
   return false
 }
 

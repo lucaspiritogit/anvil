@@ -3,7 +3,7 @@ import { shouldCompactContext } from '@anvil/protocol/task-context'
 import { resolveProjectlessTaskDirectory, resolveTaskWorkspace } from '../agents/workspace-execution'
 import { GIT_SYSTEM_PROMPT, getAgent } from '../agents/registry'
 import { implementationPrompt, taskRecoveryPrompt } from '../agents/task-prompts'
-import { taskStyle } from '@anvil/protocol/task-style'
+import { hasIssuePlan, isLocalTask } from '@anvil/protocol/task-checkout'
 import type { ExitInfo } from '../agents/process-manager'
 import type { TaskContext } from './context'
 import type { RecordSystemEvent } from './context'
@@ -87,12 +87,10 @@ export function registerTaskExecution(
     const saved = store.transaction(() => {
       const task = store.getTask(taskId)
       if (!task) throw new Error('Task not found')
-      const style = taskStyle(task)
-      if (style !== 'work') {
+      if (isLocalTask(task)) {
         return store.saveTaskExecution({
           taskId,
           projectPath,
-          style,
           parentIssueId: '',
           phase: 'working',
           issueIds: [],
@@ -110,7 +108,7 @@ export function registerTaskExecution(
   const stopTask = (taskId: string, error: string): void => {
     clearRetry(taskId)
     const state = store.getTaskExecution(taskId)
-    if (state?.style === 'quick') {
+    if (state && !hasIssuePlan(state)) {
       if (state.phase !== 'complete') store.saveTaskExecution({ ...state, phase: 'blocked', error })
     } else {
       issues.stop(taskId, error)
@@ -139,7 +137,7 @@ export function registerTaskExecution(
       if (store.getTask(taskId)?.restackState) throw new Error('Resolve the task restack before continuing')
       const task = store.getTask(taskId)
       const state = store.getTaskExecution(taskId)
-      if (!task || taskStyle(task) !== 'work' || task.status !== 'running' || state?.phase !== 'working') return
+      if (!task || isLocalTask(task) || task.status !== 'running' || state?.phase !== 'working') return
       const project = store.getProjects(task?.workspaceId).find((entry) => entry.id === task.projectId)
       if (!project) throw new Error('Project not found')
       const agent = getAgent(task.agentId)
@@ -252,8 +250,8 @@ export function registerTaskExecution(
         }
         try {
           if (agentProcesses.isRunning(task.id)) return
-          const quick = state.style === 'quick'
-          const issue = !quick && state.currentIssueId ? issues.list(task.id).find((item) => item.id === state.currentIssueId) : undefined
+          const local = !hasIssuePlan(state)
+          const issue = !local && state.currentIssueId ? issues.list(task.id).find((item) => item.id === state.currentIssueId) : undefined
           if (issue?.status === 'review' || issue?.status === 'complete') {
             await finishTaskTurn({ ...info, code: 0, error: undefined })
             return
@@ -265,14 +263,14 @@ export function registerTaskExecution(
           const cwd = project?.path ?? resolveProjectlessTaskDirectory(store, task)
           if (cwd !== state.projectPath) throw new Error('Task project or directory is unavailable')
           requireProjectCheckoutAvailable(store, task)
-          if (!quick && (!usesManagedWorktree(task) || !task.branchName)) throw new Error('Planned tasks require an isolated worktree')
-          const guidance = quick ? '' : GIT_SYSTEM_PROMPT
+          if (!local && (!usesManagedWorktree(task) || !task.branchName)) throw new Error('Planned tasks require an isolated worktree')
+          const guidance = local ? '' : GIT_SYSTEM_PROMPT
           recordSystemEvent(task.id, `Resuming the saved agent session, attempt ${attempt}/${MAX_RECOVERY_ATTEMPTS}.`)
           agentProcesses.start({
             taskId: task.id, issueId: state.currentIssueId ?? undefined,
             workspace: resolveTaskWorkspace(store, task.id), agent, cwd: task.cwd,
             ...(project ? { projectPath: project.path } : {}), model: task.model, reasoningEffort: state.reasoningEffort,
-            issueTracker: !quick,
+            issueTracker: !local,
             resumeSessionId: sessionId,
             autoCompact: shouldCompactContext(store.getTask(task.id) ?? task, store.getSettings(task.workspaceId)),
             beforeDispatch: () => {
@@ -322,12 +320,12 @@ export function registerTaskExecution(
     const state = store.getTaskExecution(info.taskId)
     const initialTask = store.getTask(info.taskId)
     if (!state || !initialTask || initialTask.status !== 'running') return
-    const quick = taskStyle(initialTask) === 'quick'
+    const local = isLocalTask(initialTask)
     if (finishing.has(info.taskId)) {
       if (info.cancelled) cancelledFinishes.add(info.taskId)
       return
     }
-    if (!quick && store.getTask(info.taskId)?.restackState === 'conflict' && !agentProcesses.isRunning(info.taskId)) {
+    if (!local && store.getTask(info.taskId)?.restackState === 'conflict' && !agentProcesses.isRunning(info.taskId)) {
       store.updateTask(info.taskId, { status: info.code === 0 && state.phase === 'complete' ? 'succeeded' : 'pending', endedAt: Date.now() })
       await stacks.apply(info.taskId, true)
       notify(info.taskId)
@@ -335,7 +333,7 @@ export function registerTaskExecution(
     }
     if (state.phase === 'reviewing' && !info.cancelled) return
     if (agentProcesses.isRunning(info.taskId)) return
-    if (!quick && state.phase === 'working' && !state.currentIssueId && !info.cancelled) {
+    if (!local && state.phase === 'working' && !state.currentIssueId && !info.cancelled) {
       if (info.result?.issueId) {
         clearRetry(info.taskId)
         setImmediate(() => { void startNextTurn(info.taskId) })
@@ -367,7 +365,7 @@ export function registerTaskExecution(
       if (state.phase === 'blocked') return
       if (info.cancelled) throw new Error('Task cancelled.')
       if (info.code !== 0) {
-        const currentIssue = !quick && info.result?.retry && state.currentIssueId
+        const currentIssue = !local && info.result?.retry && state.currentIssueId
           ? issues.list(info.taskId).find((issue) => issue.id === state.currentIssueId) : undefined
         if (currentIssue?.status === 'review' || currentIssue?.status === 'complete') {
           recordSystemEvent(info.taskId, 'The issue was submitted before the connection failed. Preserving its review state.')
@@ -378,7 +376,7 @@ export function registerTaskExecution(
         }
       }
       clearRetry(info.taskId)
-      if (quick) {
+      if (local) {
         store.saveTaskExecution({ ...state, phase: 'complete', error: null })
         await finishTask(info)
         return
@@ -446,8 +444,8 @@ export function registerTaskExecution(
       if (wasRunning) await finishTask({ ...info, code: 1, error: message }, { finalize: !finalizing })
     } finally {
       const completed = store.getTask(info.taskId)
-      if (!quick && completed && (completed.deliveryStatus === 'no_changes' || completed.status === 'cancelled')) await stacks.restackChildren(info.taskId, true).catch(console.warn)
-      if (!quick) await stacks.apply(info.taskId, true).catch((error) => recordSystemEvent(info.taskId, String(error)))
+      if (!local && completed && (completed.deliveryStatus === 'no_changes' || completed.status === 'cancelled')) await stacks.restackChildren(info.taskId, true).catch(console.warn)
+      if (!local) await stacks.apply(info.taskId, true).catch((error) => recordSystemEvent(info.taskId, String(error)))
       finishing.delete(info.taskId)
       cancelledFinishes.delete(info.taskId)
       // Observers must receive a snapshot after the readiness guard is released.
@@ -546,7 +544,7 @@ export function registerTaskExecution(
       throw new Error('This task has not finished executing')
     }
     const state = store.getTaskExecution(taskId)
-    if (task && taskStyle(task) !== 'work' && state?.phase === 'complete') return
+    if (task && isLocalTask(task) && state?.phase === 'complete') return
     if (state?.phase !== 'complete' || issues.list(taskId).some((issue) => issue.status !== 'complete')) {
       throw new Error('This task has not finished executing')
     }
@@ -556,7 +554,7 @@ export function registerTaskExecution(
     requireStoppedTurn(taskId)
     clearRetry(taskId)
     const state = store.getTaskExecution(taskId)
-    if (state?.style === 'quick') {
+    if (state && !hasIssuePlan(state)) {
       return store.saveTaskExecution({ ...state, phase: 'recovering', error: null })
     }
     return issues.resume(taskId)
@@ -564,10 +562,10 @@ export function registerTaskExecution(
 
   const acceptTaskResume = (taskId: string): void => {
     const state = store.getTaskExecution(taskId)
-    if (state?.style !== 'quick') issues.acceptResume(taskId)
+    if (!state || hasIssuePlan(state)) issues.acceptResume(taskId)
   }
   const rollbackTaskResume = (taskId: string, previousState: TaskExecutionState): void => {
-    if (previousState.style === 'quick') store.saveTaskExecution(previousState)
+    if (!hasIssuePlan(previousState)) store.saveTaskExecution(previousState)
     else issues.rollbackResume(taskId, previousState)
   }
 
@@ -575,7 +573,7 @@ export function registerTaskExecution(
     try {
       requireStoppedTurn(taskId)
       const state = store.getTaskExecution(taskId)
-      if (state?.style === 'quick') return false
+      if (state && !hasIssuePlan(state)) return false
       if (state?.phase !== 'reviewing' || !state.currentIssueId) return false
       const task = store.getTask(taskId)
       if (!task || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'failed') return false

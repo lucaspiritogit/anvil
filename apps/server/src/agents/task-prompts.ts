@@ -1,4 +1,5 @@
-import type { Issue, Task, TaskComment, TaskExecutionState, TaskMergeConflict, TaskStyle } from '@anvil/protocol/types'
+import type { Issue, Task, TaskComment, TaskExecutionState, TaskMergeConflict } from '@anvil/protocol/types'
+import { hasIssuePlan } from '@anvil/protocol/task-checkout'
 
 const TOOLS = 'Use anvil_issue_tracker tools.'
 export const BROWSER_TOOL_INSTRUCTION = "Use anvil_browser when the user asks to see, preview, or interact with the UI."
@@ -26,7 +27,7 @@ export function implementationPrompt(task: string, issue: Issue, _projectPath: s
   ].join('\n')
 }
 
-export function quickTaskPrompt(_style: Exclude<TaskStyle, 'work'>, task: string): string {
+export function localTaskPrompt(task: string): string {
   return [
     'Answer or complete the request directly in the current working directory in one turn.',
     'Do not create an issue plan or another worktree. Do not commit or push unless the request explicitly asks for it.',
@@ -35,17 +36,17 @@ export function quickTaskPrompt(_style: Exclude<TaskStyle, 'work'>, task: string
 }
 
 export function taskFollowupPrompt(state: TaskExecutionState, message: string): string {
-  if (state.style === 'quick') return quickTaskPrompt(state.style, message)
+  if (!hasIssuePlan(state)) return localTaskPrompt(message)
   if (state.phase === 'complete') return message
   const instruction = state.currentIssueId ? `Resume issue ${state.currentIssueId}` : 'Resume task with anvil_get_plan'
   return `${instruction}\n\n${message}`
 }
 
 export function taskRecoveryPrompt(task: Task, state: TaskExecutionState): string {
-  if (state.style === 'quick') {
+  if (!hasIssuePlan(state)) {
     return [
       'Continue after the connection failure. Preserve completed work and follow the latest request.',
-      quickTaskPrompt(state.style, task.prompt)
+      localTaskPrompt(task.prompt)
     ].join('\n')
   }
   const work = state.phase === 'planning'

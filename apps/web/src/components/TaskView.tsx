@@ -26,8 +26,7 @@ import type {
   TaskComment,
   TaskStatus
 } from '@anvil/protocol/types'
-import { taskStyle } from '@anvil/protocol/task-style'
-import { hasRunningTaskDiff, isLocalQuickTask, taskCheckoutMode } from '@anvil/protocol/task-checkout'
+import { hasRunningTaskDiff, isLocalTask } from '@anvil/protocol/task-checkout'
 
 interface Props {
   task: Task
@@ -416,10 +415,8 @@ function ResizeHandle({ containerRef, width, onResize }: {
 }
 
 export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element {
-  const style = taskStyle(task)
-  const work = style === 'work'
-  const integrates = work || taskCheckoutMode(task) === 'worktree'
-  const { snapshot } = useTaskIssues(task.id, work)
+  const worktree = !isLocalTask(task)
+  const { snapshot } = useTaskIssues(task.id, worktree)
   const workspaceName = useStore((s) => s.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? task.workspaceId)
   const project = useStore((s) => s.projects.find((item) => item.id === task.projectId))
   const diff = useStore((s) => s.diffsByTask[task.id])
@@ -450,9 +447,8 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   const openPullRequest = task.deliveryStatus === 'reviewable' ? task.pullRequest : undefined
 
   const [now, setNow] = useState(Date.now())
-  const done = task.status === 'succeeded' && (task.deliveryStatus === 'no_changes' || !work)
+  const done = task.status === 'succeeded' && (task.deliveryStatus === 'no_changes' || !worktree)
   const reviewable = task.deliveryStatus === 'reviewable' || approved
-  const shippable = reviewable && (integrates || isLocalQuickTask(task))
   const previewing = !reviewable && hasRunningTaskDiff(task)
   const showsDiff = reviewable || previewing
   const finalDiffPending = task.status === 'running' || task.deliveryStatus === 'finalizing' || task.deliveryStatus === 'did_not_commit'
@@ -477,8 +473,8 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   }, [diff, diffError, loadTaskDiff, showsDiff, task.id, task.headCommit, task.baseCommit])
 
   useEffect(() => {
-    if ((work || reviewable) && !comments) void loadComments(task.id)
-  }, [comments, loadComments, reviewable, task.id, work])
+    if ((worktree || reviewable) && !comments) void loadComments(task.id)
+  }, [comments, loadComments, reviewable, task.id, worktree])
 
   const pending = (comments ?? []).filter((comment) => comment.sentAt === null)
   // Submission is visible immediately, even while the turn is still stopping.
@@ -490,8 +486,8 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   const [paneWidth, setPaneWidth] = useState(() => Number(readPreference(CHANGES_WIDTH_KEY)) || 0)
   const split = wide && showsDiff && !paneHidden
   const panels: readonly TaskPanel[] = split
-    ? work ? ['output', 'issues'] : ['output']
-    : work ? ['output', 'changes', 'issues'] : ['output', 'changes']
+    ? worktree ? ['output', 'issues'] : ['output']
+    : worktree ? ['output', 'changes', 'issues'] : ['output', 'changes']
   const visiblePanel = split && activePanel === 'changes' ? 'output' : activePanel
   const togglePane = (): void => {
     const next = !paneHidden
@@ -551,7 +547,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
               {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : <>
               <span className={dot(task.status)} />
               <span className={cn('font-medium', statusTone(task.status))}>{done ? 'Done' : STATUS_LABEL[task.status]}</span>
-              {integrates && <><span className="text-dim">·</span>
+              {worktree && <><span className="text-dim">·</span>
               <span className={cn('flex items-center gap-1.5', openPullRequest ? 'text-ok' : deliveryTone(task.deliveryStatus))}>
                 {openPullRequest && <Icon icon="git-branch" size={14} aria-hidden="true" />}
                 {openPullRequest
@@ -562,14 +558,14 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
               </span></>}
               </>}
             </span>
-            {shippable && <span className="relative ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
-              {shippable && !approved && <ShipChecks task={task} />}
-              {shippable && <ShipButton
+            {reviewable && <span className="relative ml-2 flex flex-wrap items-center gap-2 @max-[760px]:ml-0">
+              {!approved && <ShipChecks task={task} />}
+              <ShipButton
                 task={task}
                 disabled={!diff || sending || compactBusy || Boolean(task.parentTaskId || task.restackState)}
                 disabledReason={task.restackState ? 'Finish restacking before shipping' : task.parentTaskId ? 'Ship the parent task first' : undefined}
-                onOpenPullRequest={integrates && !approved ? () => setPullRequestTaskId(task.id) : undefined}
-              />}
+                onOpenPullRequest={worktree && !approved ? () => setPullRequestTaskId(task.id) : undefined}
+              />
             </span>}
           </div>
         </div>
@@ -633,7 +629,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
       </div>
 
       <div className="flex flex-1 min-h-0 min-w-0">
-        {work && <TaskIssues taskId={task.id} active={visiblePanel === 'issues'} />}
+        {worktree && <TaskIssues taskId={task.id} active={visiblePanel === 'issues'} />}
 
         {!split && changesSection}
 

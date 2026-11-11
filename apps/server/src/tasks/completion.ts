@@ -1,8 +1,8 @@
 import type { ExitInfo } from '../agents/process-manager'
 import type { TaskMemory } from '../memory/task-memory'
 import type { RecordSystemEvent, TaskContext } from './context'
-import { taskStyle } from '@anvil/protocol/task-style'
 import { usesManagedWorktree } from './checkout'
+import { isLocalTask } from '@anvil/protocol/task-checkout'
 
 interface TaskCompletionOptions {
   finalize: boolean
@@ -40,7 +40,7 @@ export function createTaskCompletion(
     }
     const project = store.getProjects(task?.workspaceId).find((item) => item.id === task?.projectId)
     if (!project || !task) return
-    if (taskStyle(task) !== 'work' && !managed) {
+    if (isLocalTask(task)) {
       if (status !== 'succeeded') return
       let reviewPaths = [...new Set([...(task.reviewPaths ?? []), ...(info.result?.changedFiles ?? [])])]
       try {

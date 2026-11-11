@@ -1,13 +1,13 @@
 import type { Task, TaskExecutionState } from './types'
-import { taskStyle } from './task-style'
+import { isLocalTask } from './task-checkout'
 
 export type TaskWorkingTime = Pick<Task, 'workingTimeMs' | 'workingStartedAt'>
 
 /** Execution completion describes the issue plan; a running follow-up can still work. */
-export function isTaskWorking(task: Pick<Task, 'status' | 'deliveryStatus' | 'style'>, execution?: TaskExecutionState): boolean {
+export function isTaskWorking(task: Pick<Task, 'status' | 'deliveryStatus' | 'checkoutMode'>, execution?: TaskExecutionState): boolean {
   if (task.status !== 'running' || !['working', 'unavailable'].includes(task.deliveryStatus)) return false
   if (execution?.phase === 'reviewing' || execution?.phase === 'blocked') return false
-  if (taskStyle(task) !== 'work') return true
+  if (isLocalTask(task)) return true
   // Between claimed issues the scheduler may retain running/working task state.
   return execution?.phase !== 'working' || Boolean(execution.currentIssueId)
 }

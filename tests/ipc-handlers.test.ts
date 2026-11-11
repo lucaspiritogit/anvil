@@ -411,7 +411,7 @@ test('rejects malformed IPC requests before accessing dependencies or files', as
     await invalidRequest('github:open-pr', { taskId: 'task', preview: null, title: 'Title', description: '' })
     await invalidRequest('github:draft-pr-field', { taskId: 'task', field: 'command', title: '', description: '' })
     await invalidRequest('tasks:draft-commit-message', { taskId: 'task', message: 42 })
-    await invalidRequest('tasks:commit-quick', { taskId: 'task', push: 'yes' })
+    await invalidRequest('tasks:commit-local', { taskId: 'task', push: 'yes' })
     await invalidRequest('github:set-token', 'x'.repeat(1025))
     expect(touched, 'Invalid requests cannot reach store, terminal, Git, credentials, filesystem openers or agents').toStrictEqual([])
     expect(files(), 'Invalid requests leave filesystem contents unchanged').toStrictEqual(beforeFiles)
@@ -526,55 +526,54 @@ test('runs local checkout tasks directly without issue plans', async () => {
   const prepareBranch = vi.spyOn(delivery, 'prepareBranch')
   const getWorkingTreeDiff = vi.spyOn(delivery, 'getWorkingTreeDiff')
 
-  const quick: Task = await call('tasks:start', {
+  const local: Task = await call('tasks:start', {
     checkoutMode: 'local', projectId: project.id, agentId: 'codex', prompt: 'Explain the current architecture or make a focused change'
   })
   await tick()
-  expect(quick.style).toBe('quick')
-  expect(store.getTask(quick.id)).toMatchObject({ checkoutMode: 'local', cwd: project.path, deliveryStatus: 'unavailable' })
-  expect(call('tasks:issues', quick.id)).toBeNull()
+  expect(store.getTask(local.id)).toMatchObject({ checkoutMode: 'local', cwd: project.path, deliveryStatus: 'unavailable' })
+  expect(call('tasks:issues', local.id)).toBeNull()
   expect(agentProcesses.starts.at(-1)).toMatchObject({
-    taskId: quick.id, cwd: project.path, issueTracker: false
+    taskId: local.id, cwd: project.path, issueTracker: false
   })
   expect(agentProcesses.starts.at(-1)).not.toHaveProperty('readOnly')
   expect(agentProcesses.starts.at(-1).prompt).toContain('Answer or complete the request directly')
   expect(prepareBranch).not.toHaveBeenCalled()
-  agentProcesses.emit('session', { taskId: quick.id, sessionId: 'quick-session' })
-  agentProcesses.finishTurn(quick.id, 'Architecture answer')
+  agentProcesses.emit('session', { taskId: local.id, sessionId: 'local-session' })
+  agentProcesses.finishTurn(local.id, 'Architecture answer')
   await tick()
-  expect(store.getTask(quick.id)?.status).toBe('succeeded')
-  expect(store.getTask(quick.id)?.deliveryStatus).toBe('no_changes')
-  expect(store.getTaskExecution(quick.id)?.phase).toBe('complete')
+  expect(store.getTask(local.id)?.status).toBe('succeeded')
+  expect(store.getTask(local.id)?.deliveryStatus).toBe('no_changes')
+  expect(store.getTaskExecution(local.id)?.phase).toBe('complete')
 
-  await call('tasks:steer', { taskId: quick.id, message: 'Make the focused change' })
+  await call('tasks:steer', { taskId: local.id, message: 'Make the focused change' })
   expect(agentProcesses.starts.at(-1)).toMatchObject({
-    taskId: quick.id, cwd: project.path, issueTracker: false, resumeSessionId: 'quick-session'
+    taskId: local.id, cwd: project.path, issueTracker: false, resumeSessionId: 'local-session'
   })
-  expect(store.getTask(quick.id)?.branchName).toBeUndefined()
+  expect(store.getTask(local.id)?.branchName).toBeUndefined()
   const parallelQuick: Task = await call('tasks:start', {
-    checkoutMode: 'local', projectId: project.id, agentId: 'codex', prompt: 'Run another quick task'
+    checkoutMode: 'local', projectId: project.id, agentId: 'codex', prompt: 'Run another local task'
   })
   await tick()
   expect(store.getTask(parallelQuick.id)).toMatchObject({ cwd: project.path, checkoutMode: 'local', status: 'running' })
   await expect(call('projects:checkout', { projectId: project.id, branchName: 'main' })).rejects.toThrow('active task using this project checkout')
   await expect(call('tasks:start', {
-    checkoutMode: 'local', parentTaskId: quick.id, projectId: project.id, agentId: 'codex', prompt: 'Stack this'
+    checkoutMode: 'local', parentTaskId: local.id, projectId: project.id, agentId: 'codex', prompt: 'Stack this'
   })).rejects.toThrow('Only worktree tasks can be stacked')
-  agentProcesses.finishTurn(quick.id, 'Focused change complete', 0, ['src/quick.ts'])
+  agentProcesses.finishTurn(local.id, 'Focused change complete', 0, ['src/local.ts'])
   await tick()
-  expect(store.getTask(quick.id)).toMatchObject({
-    status: 'succeeded', deliveryStatus: 'reviewable', reviewPaths: ['src/quick.ts'],
+  expect(store.getTask(local.id)).toMatchObject({
+    status: 'succeeded', deliveryStatus: 'reviewable', reviewPaths: ['src/local.ts'],
     filesChanged: 1, additions: 1, deletions: 1
   })
-  expect(getWorkingTreeDiff).toHaveBeenLastCalledWith(project.path, ['src/quick.ts'])
-  expect((await call('tasks:diff', quick.id)).patch).toContain('src/quick.ts')
+  expect(getWorkingTreeDiff).toHaveBeenLastCalledWith(project.path, ['src/local.ts'])
+  expect((await call('tasks:diff', local.id)).patch).toContain('src/local.ts')
   expect(prepareBranch).not.toHaveBeenCalled()
-  await expect(async () => call('tasks:commit-quick', { taskId: quick.id, push: false, message: ' ' })).rejects.toThrow(/Invalid IPC request/)
-  const committed: Task = await call('tasks:commit-quick', { taskId: quick.id, push: false, message: 'test: scoped quick commit' })
-  expect(commitPathCalls).toEqual([[project.path, ['src/quick.ts'], 'test: scoped quick commit']])
+  await expect(async () => call('tasks:commit-local', { taskId: local.id, push: false, message: ' ' })).rejects.toThrow(/Invalid IPC request/)
+  const committed: Task = await call('tasks:commit-local', { taskId: local.id, push: false, message: 'test: scoped local commit' })
+  expect(commitPathCalls).toEqual([[project.path, ['src/local.ts'], 'test: scoped local commit']])
   expect(committed).toMatchObject({ deliveryStatus: 'approved', headCommit: '9'.repeat(40) })
-  call('tasks:settle', quick.id)
-  expect(store.getTask(quick.id)?.settledAt).toBeTypeOf('number')
+  call('tasks:settle', local.id)
+  expect(store.getTask(local.id)?.settledAt).toBeTypeOf('number')
 })
 
 test('fails worktree tasks without a Git repository', async () => {
