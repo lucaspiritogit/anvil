@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { ProviderModelList } from '@anvil/protocol/types'
 import { useStore } from './store'
+import { describeModel } from '../model-options'
 
 export function useAgentModels(agentId: string): ProviderModelList | undefined {
   const workspaceId = useStore((state) => state.activeWorkspaceId)
@@ -16,4 +17,10 @@ export function useAgentModels(agentId: string): ProviderModelList | undefined {
   }, [workspaceId, switching, agentId, modelsByAgent, loadAgentModels])
 
   return modelsByAgent[agentId]
+}
+
+export function useModelLabel(agentId: string, model: string | undefined): string {
+  const catalogue = useAgentModels(model ? agentId : '')
+  if (!model) return ''
+  return describeModel(model, agentId, catalogue?.displayByModel?.[model]).name || model
 }

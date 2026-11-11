@@ -5,6 +5,7 @@ import { Icon } from '../icons'
 import { formatCost, formatDuration, formatTokens, tokenBreakdown } from '../format'
 import { TaskStackStatus } from './TaskStackStatus'
 import { useStore, type TaskPanel } from '../state/store'
+import { useModelLabel } from '../state/agent-models'
 import { btn, cn, deliveryTone, dot, field, ISSUE_STATUS, statusTone } from '../ui'
 import { AgentIcon } from './AgentIcon'
 import { OpenPullRequestModal } from './OpenPullRequestModal'
@@ -302,6 +303,7 @@ function TaskDetails({ task, workspaceName, projectName, projectPath, now, mobil
   now: number
   mobile?: boolean
 }): JSX.Element {
+  const modelLabel = useModelLabel(task.agentId, task.model)
   return (
     <div className={mobile ? 'grid gap-3 pt-2' : 'flex flex-wrap items-center justify-between gap-x-5 gap-y-1'}>
       <div className={mobile ? 'grid min-w-0 gap-2' : 'flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1'}>
@@ -313,7 +315,7 @@ function TaskDetails({ task, workspaceName, projectName, projectPath, now, mobil
         <span className={cn('flex items-center gap-1.5', mobile && 'min-w-0')}>
           <AgentIcon agentId={task.agentId} label={task.agentLabel} size={14} />
           <span className={mobile ? 'shrink-0' : undefined}>{task.agentLabel}</span>
-          {task.model && <span className={mobile ? 'min-w-0 break-all' : '[overflow-wrap:anywhere]'}>· {task.model}</span>}
+          {modelLabel && <span className={mobile ? 'min-w-0 break-all' : '[overflow-wrap:anywhere]'} title={task.model}>· {modelLabel}</span>}
         </span>
         {task.branchName && (
           <span className="flex min-w-0 items-center gap-1.5">

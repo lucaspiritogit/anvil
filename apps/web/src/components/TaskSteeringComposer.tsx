@@ -1,6 +1,7 @@
 import { useRef, useState, type JSX } from 'react'
 import type { Task, TaskComment, TaskQueuedPrompt, TaskSteerMode } from '@anvil/protocol/types'
 import { useStore } from '../state/store'
+import { useModelLabel } from '../state/agent-models'
 import { TaskContextControl, type TaskContextControlProps } from './TaskContextControl'
 import { StatusGlyph } from './StatusGlyph'
 
@@ -124,6 +125,7 @@ export function TaskSteeringComposer({ task, contextControl, notes = [], onRemov
 }): JSX.Element {
   const supported = useStore((state) => state.agents.find((agent) => agent.id === task.agentId)?.supportsSteering)
   const steerTask = useStore((state) => state.steerTask)
+  const modelLabel = useModelLabel(task.agentId, task.model)
   const cancelTask = useStore((state) => state.cancelTask)
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
@@ -206,7 +208,7 @@ export function TaskSteeringComposer({ task, contextControl, notes = [], onRemov
           }}
         />
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-dashed border-line px-3 py-1.5 font-mono text-[11px] text-dim">
-          <span className="min-w-0 truncate">{task.agentLabel}{task.model && <> · {task.model}</>}</span>
+          <span className="min-w-0 truncate">{task.agentLabel}{modelLabel && <> · {modelLabel}</>}</span>
           <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
             {contextControl && <TaskContextControl {...contextControl} />}
             {canSteer && <button
