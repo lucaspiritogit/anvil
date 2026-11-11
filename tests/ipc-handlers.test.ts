@@ -15,6 +15,7 @@ import type { AgentProcessManager as RealAgentProcessManager } from '../apps/ser
 import { mergeConflictRepairPrompt } from '../apps/server/src/agents/task-prompts'
 import type { GitDeliveryManager as RealGitDeliveryManager } from '../apps/server/src/git'
 import { registerAgentHandlers } from '../apps/server/src/handlers/agents'
+import { createAgentUpdates } from '../apps/server/src/agents/agent-updates'
 import { registerGitHubHandlers } from '../apps/server/src/handlers/github'
 import { GitHubClient } from '../apps/server/src/github-client'
 import { GitHubCredentials } from '../apps/server/src/github-credentials'
@@ -176,7 +177,7 @@ function setupIpc(
   registerRebaseHandlers(rendererIpc, reviewContext)
   registerWorkspaceHandlers(rendererIpc, store, context.send)
   registerSettingsHandlers(rendererIpc, context.store, new WallpaperLibrary(testHome))
-  registerAgentHandlers(rendererIpc, store)
+  registerAgentHandlers(rendererIpc, store, createAgentUpdates({ run: async () => null }))
   registerProjectHandlers(rendererIpc, { ...context, stopTask: execution.stopTask, deferTaskCleanup: execution.deferTaskCleanup, skipTaskCleanup: execution.skipTaskCleanup,
     ...(cloneRepository ? { cloneRepository } : {}) })
   const call = (name: string, input?: unknown): any => handlers.get(name)!(rendererEvent, name === 'settings:set' ? { workspaceId: 'default', patch: input } : input)

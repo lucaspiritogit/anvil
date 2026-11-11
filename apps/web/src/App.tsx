@@ -11,6 +11,7 @@ import { TaskContextMenu } from './components/TaskContextMenu'
 import { CommandPalette } from './components/CommandPalette'
 import { Toaster } from './components/Toaster'
 import { UpdateNotifier } from './components/UpdateNotifier'
+import { AgentUpdateNotifier } from './components/AgentUpdateNotifier'
 import { matchesAccelerator, isTerminalShortcut } from './keys'
 import { cn } from './ui'
 import { useStore } from './state/store'
@@ -340,6 +341,7 @@ export function App(): JSX.Element {
       </div>}
       <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onOpenTerminal={openTerminal} />
       <UpdateNotifier />
+      <AgentUpdateNotifier />
       <Toaster />
     </>
   )

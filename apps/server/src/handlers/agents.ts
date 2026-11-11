@@ -4,8 +4,13 @@ import type { HandlerRegistry } from '../handler-registry'
 import { listModels } from '../agents/models'
 import { BUILTIN_AGENTS, getAgent } from '../agents/registry'
 import type { ProviderModelList } from '@anvil/protocol/types'
+import type { AgentUpdates } from '../agents/agent-updates'
 
-export function registerAgentHandlers(ipc: HandlerRegistry, store: Store): void {
+export function registerAgentHandlers(ipc: HandlerRegistry, store: Store, updates: AgentUpdates): void {
+  ipc.handle('agents:update-state', () => updates.state())
+  ipc.handle('agents:update-check', (input) => updates.check(input?.force === true))
+  ipc.handle('agents:update-install', ({ agentId }) => updates.install(agentId))
+
   ipc.handle('agents:list', () => BUILTIN_AGENTS)
 
   ipc.handle('agents:models', ({ agentId, workspaceId }): Promise<ProviderModelList> => {
