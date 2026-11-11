@@ -1,9 +1,13 @@
+import type { UpdatableAgentId } from './agent-updates'
 import type { AnalyticsRange, TaskEventsRequest, AgentAccountTarget, AgentAccountConnect, AgentRateLimitTarget, TaskImageAttachment, WallpaperUpload, PullRequestField, PullRequestPreview, Settings, WorkspacePreferences, TaskComment, TaskMergeAndPushPreview, TaskMergePreview, TaskPushPreview, ConnectionsConfigure, TaskCheckoutMode, TaskSteerMode } from './types'
 import type { BrowserHostResponse } from './browser-host'
 
 /** Shared domain request contracts for the runtime and HTTP clients. */
 export interface IpcRequests {
   'app:caffeine': undefined
+  'app:update-state': undefined
+  'app:update-check': { force?: boolean } | undefined
+  'app:update-install': undefined
   'browser-host:register': { addresses: string[] }
   'browser-host:response': BrowserHostResponse
   'wallpapers:directory': string | undefined
@@ -30,6 +34,9 @@ export interface IpcRequests {
   'accounts:cancel': AgentAccountTarget & { sessionId: string }
   'agents:list': undefined
   'agents:models': { agentId: string; workspaceId?: string }
+  'agents:update-state': undefined
+  'agents:update-check': { force?: boolean } | undefined
+  'agents:update-install': { agentId: UpdatableAgentId }
   'analytics:get': AnalyticsRange
   'projects:list': undefined
   'projects:add': { path: string; workspaceId?: string }

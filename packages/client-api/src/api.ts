@@ -7,7 +7,9 @@ import type { IpcRequests } from '@anvil/protocol/ipc-requests'
 import type { BrowserObservationLayout, BrowserObservationState, BrowserViewportRequest } from '@anvil/protocol/browser-observation'
 import type { DesktopServerConnectionState } from '@anvil/protocol/desktop-requests'
 import type { DesktopUpdateState } from '@anvil/protocol/desktop-updates'
+import type { ServerUpdateState } from '@anvil/protocol/server-updates'
 import type { ServerTarget } from '@anvil/protocol/server-address'
+import type { AgentUpdateState, UpdatableAgentId } from '@anvil/protocol/agent-updates'
 import type {
   Workspace,
   WorkspaceSnapshot,
@@ -92,7 +94,8 @@ export function createAnvilApi(url: string, host: ClientHost) {
   const appReadiness = createEventLatch<AppReadiness>()
   const client = createHttpClient(url,
     () => appReadiness.deliver({ ok: true }),
-    (message) => appReadiness.deliver({ ok: false, message }))
+    (message) => appReadiness.deliver({ ok: false, message }),
+    () => window.location.reload())
   const { invoke, subscribe } = client
   subscribe<string>('open-url', (value) => {
     void host.openLoginUrl(value).catch((error) => console.error('Could not open sign-in:', error))
@@ -154,7 +157,13 @@ export function createAnvilApi(url: string, host: ClientHost) {
         appReadiness.subscribe((readiness) => { if (readiness.ok) handler() }),
       onInitFailed: (handler: (message: string) => void): (() => void) =>
         appReadiness.subscribe((readiness) => { if (!readiness.ok) handler(readiness.message) }),
-      openRepositoryUrl: host.openAnvilUrl
+      openRepositoryUrl: host.openAnvilUrl,
+      serverUpdates: {
+        state: (): Promise<ServerUpdateState> => invoke('app:update-state'),
+        check: (force = false): Promise<ServerUpdateState> => invoke('app:update-check', { force }),
+        install: (): Promise<ServerUpdateState> => invoke('app:update-install'),
+        onChanged: (handler: (state: ServerUpdateState) => void): (() => void) => subscribe('app:update-changed', handler)
+      }
     },
     browser: {
       state: host.browserState,
@@ -236,7 +245,13 @@ export function createAnvilApi(url: string, host: ClientHost) {
       list: (): Promise<AgentDefinition[]> => invoke('agents:list'),
       models: (agentId: string, workspaceId?: string): Promise<ProviderModelList> =>
         invoke('agents:models', { agentId, workspaceId }),
-      onModelsChanged: (handler: (workspaceId: string) => void): (() => void) => subscribe('agents:models:changed', handler)
+      onModelsChanged: (handler: (workspaceId: string) => void): (() => void) => subscribe('agents:models:changed', handler),
+      updates: {
+        state: (): Promise<AgentUpdateState[]> => invoke('agents:update-state'),
+        check: (force = false): Promise<AgentUpdateState[]> => invoke('agents:update-check', { force }),
+        install: (agentId: UpdatableAgentId): Promise<AgentUpdateState[]> => invoke('agents:update-install', { agentId }),
+        onChanged: (handler: (states: AgentUpdateState[]) => void): (() => void) => subscribe('agents:update-changed', handler)
+      }
     },
     analytics: {
       get: (range: AnalyticsRange): Promise<WorkspaceAnalytics> => invoke('analytics:get', range)

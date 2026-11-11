@@ -5,6 +5,7 @@ import { defineConfig } from 'vitest/config'
 const unitSuites = [
   'tests/agent-failure.test.ts',
   'tests/agent-models.test.ts',
+  'tests/agent-updates.test.ts',
   'tests/app-lifecycle.test.ts',
   'tests/app-shutdown.test.ts',
   'tests/desktop-updates.test.ts',
@@ -16,6 +17,7 @@ const unitSuites = [
   'tests/server-connection-settings.test.ts',
   'tests/server-connection-manager.test.ts',
   'tests/server-process.test.ts',
+  'tests/server-update.test.ts',
   'tests/http-client.test.ts',
   'tests/task-duration.test.ts',
   'tests/update-check.test.ts',

@@ -133,6 +133,9 @@ const composer = object({
 
 const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   'app:caffeine': none,
+  'app:update-state': none,
+  'app:update-check': optional(object({ force: optional(boolean) })),
+  'app:update-install': none,
   'browser-host:register': object({ addresses: array(text(64, true, /^[0-9a-f:.]+$/i), 32) }),
   'browser-host:response': (value, field) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) invalid(field, 'must be a browser host response')
@@ -180,6 +183,9 @@ const contracts: { [C in IpcChannel]: Check<IpcRequests[C]> } = {
   },
   'agents:list': none,
   'agents:models': object({ agentId: id, workspaceId: optional(id) }),
+  'agents:update-state': none,
+  'agents:update-check': optional(object({ force: optional(boolean) })),
+  'agents:update-install': object({ agentId: oneOf('codex', 'claude') }),
   'analytics:get': (value, field) => {
     const range = object<IpcRequests['analytics:get']>({
       startAt: number(Number.MIN_SAFE_INTEGER),

@@ -11,6 +11,9 @@ import type { HttpRuntime } from './http'
 import { configureHeadlessPassword } from './headless-password'
 import type { HeadlessAccessMode } from '@anvil/protocol/types'
 import { BrowserHostClient } from './browser-host-client'
+import { createArchiveInstaller } from './server-update'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 
 async function main(): Promise<void> {
   const serverArguments = process.argv.slice(2)
@@ -43,8 +46,15 @@ async function main(): Promise<void> {
       return () => { listeners.delete(listener) }
     }
   }
+  let build: string | undefined
+  try {
+    build = createHash('sha256').update(version).update(readFileSync(join(__dirname, 'public', 'index.html'))).digest('hex').slice(0, 16)
+  } catch {
+    build = undefined
+  }
   const httpOptions = {
     version,
+    build,
     rendererOrigin: process.env.ANVIL_RENDERER_ORIGIN ?? 'http://localhost:5173',
     rendererDirectory: join(__dirname, 'public'),
     auth: serverAuth,
@@ -113,7 +123,10 @@ async function main(): Promise<void> {
       rebindHttp: http.rebind,
       tailscale,
       headlessAccess,
-      browserTools
+      browserTools,
+      serverInstaller: headlessAccess && !process.send && process.env.ANVIL_PACKAGED === '1'
+        ? createArchiveInstaller({ entry: process.argv[1], arguments: serverArguments, close })
+        : undefined
     })
     runtime.subscribeAll((channel, payload) => {
       for (const listener of listeners) listener(channel, payload)

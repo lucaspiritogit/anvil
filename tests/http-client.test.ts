@@ -41,6 +41,26 @@ test('client gates readiness on health and SSE, reconnects and unsubscribes', as
   expect(events.close).toHaveBeenCalledOnce()
 })
 
+test('client asks for a reload when it reconnects to a different server build', async () => {
+  vi.stubGlobal('EventSource', FakeEventSource)
+  const health = vi.fn(async () => Response.json({ ok: true, build: 'one' }))
+  vi.stubGlobal('fetch', health)
+  const ready = vi.fn()
+  const changed = vi.fn()
+  const client = createHttpClient('http://127.0.0.1:4780', ready, vi.fn(), changed)
+  const events = FakeEventSource.current
+  events.onopen!()
+  await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce())
+  events.onopen!()
+  await vi.waitFor(() => expect(ready).toHaveBeenCalledTimes(2))
+  expect(changed).not.toHaveBeenCalled()
+  health.mockImplementation(async () => Response.json({ ok: true, build: 'two' }))
+  events.onopen!()
+  await vi.waitFor(() => expect(changed).toHaveBeenCalledOnce())
+  expect(ready).toHaveBeenCalledTimes(2)
+  client.close()
+})
+
 test('client posts terminal input and preserves server error messages', async () => {
   vi.stubGlobal('EventSource', FakeEventSource)
   const request = vi.fn(async () => Response.json(null))

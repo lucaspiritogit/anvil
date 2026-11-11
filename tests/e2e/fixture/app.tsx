@@ -10,6 +10,7 @@ import { canSettleTask } from '@anvil/protocol/task-settlement'
 import type { IpcRequests } from '@anvil/protocol/ipc-requests'
 import type { DesktopServerConnectionState } from '@anvil/protocol/desktop-requests'
 import { serverAddress, type ServerTarget } from '@anvil/protocol/server-address'
+import type { ServerUpdateState } from '@anvil/protocol/server-updates'
 import { useStore } from '../../../apps/web/src/state/store'
 import '../../../apps/web/src/styles.css'
 
@@ -491,6 +492,10 @@ window.composerTest = {
 
 let projectTerminalSequence = 0
 window.terminalTest = { creates: [], attaches: [], disposes: [] }
+const fixtureServerUpdate: ServerUpdateState = {
+  currentVersion: '0.0.0', latestVersion: null, available: false, installable: false, phase: 'idle', progress: null, error: null, checkedAt: null
+}
+
 window.anvil = {
   terminals: {
     create: async (input) => {
@@ -511,7 +516,13 @@ window.anvil = {
   app: {
     onReady: (handler: () => void) => subscribeReadiness((value) => { if (value.ok) handler() }),
     onInitFailed: (handler: (message: string) => void) => subscribeReadiness((value) => { if (!value.ok) handler(value.message) }),
-    openRepositoryUrl: async () => {}
+    openRepositoryUrl: async () => {},
+    serverUpdates: {
+      state: async () => fixtureServerUpdate,
+      check: async () => fixtureServerUpdate,
+      install: async () => fixtureServerUpdate,
+      onChanged: () => () => {}
+    }
   },
   browser: {
     state: async (taskId) => ({ taskId, open: query.has('browser'), viewport: 'desktop' }),
@@ -631,6 +642,12 @@ window.anvil = {
   accounts: fixtureAccounts((id) => workspaceRows.find((workspace) => workspace.id === id)?.name ?? id, query.has('accountBusy')),
   agents: {
     onModelsChanged: () => () => {},
+    updates: {
+      state: async () => [],
+      check: async () => [],
+      install: async () => [],
+      onChanged: () => () => {}
+    },
     list: async () => [
       { id: 'codex', label: 'Codex', description: 'Codex agent', command: 'codex', args: [], defaultModel: 'gpt-5', supportsSteering: true, supportsCompaction: true },
       { id: 'opencode', label: 'OpenCode', description: 'OpenCode agent', command: 'opencode', args: [], defaultModel: 'provider/model', supportsSteering: true, supportsCompaction: true },

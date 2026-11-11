@@ -52,6 +52,7 @@ async function authorized(header: string | undefined, auth: HttpServerAuth | und
 
 export function createAnvilHttpServer(runtime: HttpRuntime, options: {
   version: string
+  build?: string
   rendererOrigin?: string
   rendererDirectory?: string
   auth?: HttpServerAuth
@@ -125,6 +126,7 @@ export function createAnvilHttpServer(runtime: HttpRuntime, options: {
     ok: true,
     service: 'anvil',
     version: options.version,
+    build: options.build ?? options.version,
     ready: options.isReady?.() ?? true
   }))
   app.get('/events', (context) => {

@@ -66,7 +66,7 @@ function UpdateSettings(): JSX.Element {
   const desktop = useDesktopUpdate()
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<ManualUpdateCheckResult | null>(null)
-  const available = buildInfo.updateChecksEnabled && !import.meta.env.DEV
+  const available = !import.meta.env.DEV
   const desktopActive = desktopUpdatesActive(desktop)
   const remote = window.anvil.desktopUpdates?.managesServer === false
   const showServerCheck = !desktopUpdatesCoverServer(desktop)
@@ -78,18 +78,18 @@ function UpdateSettings(): JSX.Element {
       .finally(() => setChecking(false))
   }
   const resultText = result?.kind === 'update-available'
-    ? result.version ? `Anvil ${result.version} is available.` : `${result.aheadBy} new ${result.aheadBy === 1 ? 'commit' : 'commits'} on main.`
+    ? `Anvil ${result.version} is available.`
     : result?.kind === 'up-to-date' ? 'You are on the latest version.'
     : result?.kind === 'unavailable' ? 'Update checks are not available for this build.'
     : result?.kind === 'error' ? `Could not check for updates: ${result.message}` : null
-  const source = buildInfo.releaseBuild ? 'new Anvil releases' : "new commits on Anvil's main branch"
+  const source = 'new Anvil releases'
   return (
-    <SettingsPanel title="Updates" aside={<span className="font-mono">{buildInfo.releaseBuild ? `v${buildInfo.version}` : `build ${buildInfo.shortSha}`}</span>}>
+    <SettingsPanel title="Updates" aside={<span className="font-mono">{buildInfo.releaseBuild ? `v${buildInfo.version}` : `v${buildInfo.version} · build ${buildInfo.shortSha}`}</span>}>
       <ToggleRow
         title="Automatic update checks"
         description={desktopActive ? 'Download Anvil updates automatically and notify me when they are ready.' : `Notify me about ${source}.`}
         checked={checksEnabled}
-        disabled={!buildInfo.updateChecksEnabled && !desktopActive}
+        disabled={!available && !desktopActive}
         onChange={setChecksEnabled}
       />
       {desktopActive && <DesktopUpdateRow state={desktop} />}

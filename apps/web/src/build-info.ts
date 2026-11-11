@@ -5,7 +5,6 @@ export type BuildInfo = {
   shortSha: string
   version: string
   releaseBuild: boolean
-  updateChecksEnabled: boolean
 }
 
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i
@@ -28,8 +27,7 @@ export const buildInfo: Readonly<BuildInfo> = Object.freeze({
   sha,
   shortSha: sha === UNKNOWN_BUILD_VALUE ? sha : sha.slice(0, 7),
   version,
-  releaseBuild,
-  updateChecksEnabled: releaseBuild || sha !== UNKNOWN_BUILD_VALUE
+  releaseBuild
 })
 
 export function isKnownBuildSha(value: string): boolean {

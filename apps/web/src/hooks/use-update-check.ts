@@ -1,5 +1,4 @@
 import { useEffect, useSyncExternalStore } from 'react'
-import { buildInfo } from '../build-info'
 import { createUpdateChecker, type UpdateChecker } from '../update-check'
 
 let checker: UpdateChecker | null = null
@@ -7,11 +6,9 @@ let consumers = 0
 
 export function getUpdateChecker(): UpdateChecker {
   checker ??= createUpdateChecker({
-    buildSha: buildInfo.updateChecksEnabled ? buildInfo.sha : null,
-    buildVersion: buildInfo.version,
-    source: buildInfo.releaseBuild ? 'releases' : 'commits',
-    enabled: buildInfo.updateChecksEnabled && !import.meta.env.DEV,
-    fetch: (url, init) => window.fetch(url, { ...init, cache: 'no-cache' }),
+    enabled: !import.meta.env.DEV,
+    check: (force) => window.anvil.app.serverUpdates.check(force),
+    onChanged: (listener) => window.anvil.app.serverUpdates.onChanged(listener),
     isOnline: () => navigator.onLine,
     onFocus: (listener) => {
       const onVisibility = () => { if (document.visibilityState === 'visible') listener() }

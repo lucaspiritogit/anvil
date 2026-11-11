@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { AgentProcessManager } from './agents/process-manager'
 import { GitDeliveryManager } from './git'
 import { registerAgentHandlers } from './handlers/agents'
+import { createAgentUpdates } from './agents/agent-updates'
 import { registerAnalyticsHandlers } from './handlers/analytics'
 import { registerGitHubHandlers } from './handlers/github'
 import { GitHubCredentials, type CredentialEncryption } from './github-credentials'
@@ -47,6 +48,8 @@ import type { HeadlessAccessMode } from '@anvil/protocol/types'
 import { IssueToolServer } from './issue-tools/server'
 import { BrowserHostClient, type BrowserCapabilityConnection } from './browser-host-client'
 import { RemoteBrowserHostTransport } from './remote-browser-host'
+import { createServerUpdates, type ServerInstaller } from './server-update'
+import { version } from '../package.json'
 
 export interface BrowserCapabilityProvider {
   open(taskId: string, title: string): Promise<BrowserCapabilityConnection>
@@ -64,6 +67,7 @@ export interface RuntimeOptions {
   tailscale?: TailscaleConnection
   headlessAccess?: HeadlessAccessMode
   browserTools?: BrowserCapabilityProvider
+  serverInstaller?: ServerInstaller
 }
 
 /** Owns the domain services independently of Electron and HTTP. */
@@ -89,6 +93,14 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   const caffeineActivity = createCaffeineActivity(store)
   ipc.handle('app:caffeine', () => caffeineActivity.snapshot())
   const stopCaffeineActivity = caffeineActivity.subscribe((state) => broadcast('app:caffeine', state))
+  const serverUpdates = createServerUpdates({
+    currentVersion: version,
+    installer: options.serverInstaller,
+    onChange: (state) => broadcast('app:update-changed', state)
+  })
+  ipc.handle('app:update-state', () => serverUpdates.state())
+  ipc.handle('app:update-check', (input) => serverUpdates.check(input?.force === true))
+  ipc.handle('app:update-install', () => serverUpdates.install())
   const terminals = new TerminalSessionManager(store, broadcast)
   ipc.handle('terminals:create', (input) => terminals.createProject(input))
   ipc.handle('terminals:attach', (id) => terminals.attach(id))
@@ -226,7 +238,16 @@ export function createAnvilRuntime(options: RuntimeOptions) {
       release()
     }
   })
-  registerAgentHandlers(ipc, store)
+  const agentUpdates = createAgentUpdates({
+    onChange: (states) => broadcast('agents:update-changed', states),
+    onUpdated: () => {
+      for (const workspace of store.getWorkspaces()) {
+        invalidateWorkspaceModels(workspace.id)
+        broadcast('agents:models:changed', workspace.id)
+      }
+    }
+  })
+  registerAgentHandlers(ipc, store, agentUpdates)
   registerAnalyticsHandlers(ipc, store)
   const accounts = new WorkspaceAccounts(store, {
     acquire: (workspaceId) => agentProcesses.acquireAccountChange(workspaceId),

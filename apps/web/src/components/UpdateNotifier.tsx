@@ -1,26 +1,28 @@
 import type { JSX } from 'react'
 import { useEffect } from 'react'
-import { ANVIL_RELEASES_URL, ANVIL_REPOSITORY_URL, isAnvilRepositoryUrl } from '@anvil/protocol/external-links'
+import { ANVIL_RELEASES_URL } from '@anvil/protocol/external-links'
 import type { DesktopUpdateState } from '@anvil/protocol/desktop-updates'
+import type { ServerUpdateState } from '@anvil/protocol/server-updates'
 import { getUpdateChecker, useUpdateCheck } from '../hooks/use-update-check'
 import { desktopUpdatesActive, desktopUpdatesCoverServer, useDesktopUpdate } from '../hooks/use-desktop-update'
 import { dismissToast, showToast } from '../state/toasts'
 import { useUpdatePreferences } from '../state/update-preferences'
-import { updateKey, type UpdateCheckState } from '../update-check'
+import { updateKey } from '../update-check'
 
 export const UPDATE_TOAST_ID = 'anvil-update-available'
 export const DESKTOP_UPDATE_TOAST_ID = 'anvil-desktop-update-ready'
 export const DESKTOP_UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60_000
 
 export type ManualUpdateCheckResult =
-  | { kind: 'update-available'; aheadBy: number; version: string | null }
+  | { kind: 'update-available'; version: string }
   | { kind: 'up-to-date' }
   | { kind: 'unavailable' }
   | { kind: 'error'; message: string }
 
-let shownKey: string | null = null
+let shownSignature: string | null = null
 let shownDesktopVersion: string | null = null
 let dismissedDesktopVersion: string | null = null
+let installError: string | null = null
 
 function openRepositoryUrl(url: string): void {
   void window.anvil.app.openRepositoryUrl(url).catch((error: unknown) => {
@@ -28,50 +30,60 @@ function openRepositoryUrl(url: string): void {
   })
 }
 
-export function updateToastTitle(aheadBy: number, version: string | null = null): string {
-  if (version) return `Anvil ${version} is available`
-  return `A new version of Anvil is available (${aheadBy} new ${aheadBy === 1 ? 'commit' : 'commits'})`
+export function updateToastTitle(version: string): string {
+  return `Anvil ${version} is available`
 }
 
 function connectedToRemoteServer(): boolean {
   return window.anvil.desktopUpdates?.managesServer === false
 }
 
-function presentUpdateToast(state: UpdateCheckState, key: string): void {
-  shownKey = key
-  const remote = connectedToRemoteServer()
-  if (state.latestVersion) {
-    const releaseUrl = state.compareUrl && isAnvilRepositoryUrl(state.compareUrl) ? state.compareUrl : ANVIL_RELEASES_URL
-    showToast({
-      id: UPDATE_TOAST_ID,
-      title: updateToastTitle(0, state.latestVersion),
-      body: remote ? 'A new Anvil server release is available. Update the server to get it.' : 'Download the new release to update.',
-      persistent: true,
-      actions: [
-        { label: 'View release', onClick: () => openRepositoryUrl(releaseUrl), dismiss: false },
-        { label: 'Later', onClick: () => useUpdatePreferences.getState().snooze(key) }
-      ]
-    })
-    return
-  }
-  const changesUrl = state.compareUrl && isAnvilRepositoryUrl(state.compareUrl)
-    ? state.compareUrl
-    : `${ANVIL_REPOSITORY_URL}/compare/${state.buildSha}...${key}`
+function installServerUpdate(): void {
+  installError = null
+  void window.anvil.app.serverUpdates.install().catch((error: unknown) => {
+    installError = error instanceof Error ? error.message : String(error)
+    shownSignature = null
+    void getUpdateChecker().check(true)
+  })
+}
+
+function presentProgressToast(server: ServerUpdateState): void {
+  const version = server.latestVersion ?? ''
+  const signature = `progress|${version}|${server.phase}|${server.progress}`
+  if (shownSignature === signature) return
+  shownSignature = signature
+  const body = server.phase === 'downloading'
+    ? `Downloading the update${server.progress === null ? '…' : ` (${Math.round(server.progress)}%)`}`
+    : server.phase === 'installing' ? 'Installing the update…'
+    : 'Restarting the Anvil server. This page reloads when it is back.'
+  showToast({ id: UPDATE_TOAST_ID, title: `Updating Anvil to ${version}`.trim(), body, persistent: true, dismissible: false })
+}
+
+function presentUpdateToast(server: ServerUpdateState, key: string): void {
+  const version = server.latestVersion ?? ''
+  const error = server.error ?? installError
+  const signature = `available|${key}|${server.installable}|${error}`
+  if (shownSignature === signature) return
+  shownSignature = signature
+  const body = error ? `The update could not be installed: ${error}`
+    : server.installable ? 'Updating restarts the Anvil server and reloads this page. Agents that are still running are interrupted.'
+    : connectedToRemoteServer() ? 'A new Anvil server release is available. Update the server to get it.'
+    : 'Download the new release to update.'
   showToast({
     id: UPDATE_TOAST_ID,
-    title: updateToastTitle(state.aheadBy),
-    body: remote ? 'New commits landed on main. Update the Anvil server to get them.' : 'Update to get the latest changes from main.',
+    title: updateToastTitle(version),
+    body,
     persistent: true,
     actions: [
-      ...(remote ? [] : [{ label: 'Update', onClick: () => openRepositoryUrl(ANVIL_RELEASES_URL), dismiss: false }]),
-      { label: 'View changes', onClick: () => openRepositoryUrl(changesUrl), dismiss: false },
+      ...(server.installable ? [{ label: error ? 'Try again' : 'Update and restart', onClick: installServerUpdate, dismiss: false }] : []),
+      { label: 'View release', onClick: () => openRepositoryUrl(ANVIL_RELEASES_URL), dismiss: false },
       { label: 'Later', onClick: () => useUpdatePreferences.getState().snooze(key) }
     ]
   })
 }
 
 function hideUpdateToast(): void {
-  shownKey = null
+  shownSignature = null
   dismissToast(UPDATE_TOAST_ID)
 }
 
@@ -79,18 +91,18 @@ export async function checkForUpdatesNow(): Promise<ManualUpdateCheckResult> {
   const checker = getUpdateChecker()
   if (checker.getSnapshot().status === 'disabled') return { kind: 'unavailable' }
   const before = checker.getSnapshot().lastCheckedAt
-  await checker.check()
+  await checker.check(true)
   const state = checker.getSnapshot()
   if (state.error && state.lastCheckedAt !== before) return { kind: 'error', message: state.error }
   const key = updateKey(state)
-  if (state.status !== 'update-available' || !key) {
+  if (!state.server || !key) {
     hideUpdateToast()
     return { kind: 'up-to-date' }
   }
   const preferences = useUpdatePreferences.getState()
   if (preferences.snoozedUpdate === key) preferences.clearSnooze()
-  presentUpdateToast(state, key)
-  return { kind: 'update-available', aheadBy: state.aheadBy, version: state.latestVersion }
+  if (state.server.phase === 'idle') presentUpdateToast(state.server, key)
+  return { kind: 'update-available', version: state.server.latestVersion ?? '' }
 }
 
 export function installDesktopUpdate(): void {
@@ -121,17 +133,20 @@ function hideDesktopUpdateToast(): void {
 function UpdateChecks(): null {
   const state = useUpdateCheck()
   const snoozedUpdate = useUpdatePreferences((s) => s.snoozedUpdate)
-  const { status } = state
+  const { server, status } = state
   const key = updateKey(state)
 
   useEffect(() => {
-    if (status !== 'update-available' || !key || key === snoozedUpdate) {
+    if (server && server.phase !== 'idle') {
+      presentProgressToast(server)
+      return
+    }
+    if (!server || !key || key === snoozedUpdate) {
       if (status !== 'checking') hideUpdateToast()
       return
     }
-    if (shownKey === key) return
-    presentUpdateToast(state, key)
-  }, [state, status, key, snoozedUpdate])
+    presentUpdateToast(server, key)
+  }, [server, status, key, snoozedUpdate])
 
   useEffect(() => hideUpdateToast, [])
 

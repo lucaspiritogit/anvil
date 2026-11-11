@@ -22,17 +22,25 @@ export function createRpcInvoker(url: string) {
   }
 }
 
-export function createHttpClient(url: string, onReady: () => void, onFailure: (message: string) => void) {
+export function createHttpClient(url: string, onReady: () => void, onFailure: (message: string) => void, onBuildChanged: () => void = () => {}) {
   const terminalRequests = new Map<string, TerminalRequest[]>()
   const listeners = new Map<string, Set<(payload: unknown) => void>>()
   const events = new EventSource(`${url}/events`)
   let disposed = false
   let hasBeenReady = false
+  let serverBuild: string | undefined
   events.onopen = () => {
     void fetch(`${url}/health`).then(async (response) => {
-      const health = await response.json() as { ok?: boolean }
+      const health = await response.json() as { ok?: boolean; build?: unknown }
       if (!response.ok || health.ok !== true) throw new Error('Anvil server is unavailable')
       if (!disposed && events.readyState === EventSource.OPEN) {
+        if (typeof health.build === 'string') {
+          if (serverBuild !== undefined && serverBuild !== health.build) {
+            onBuildChanged()
+            return
+          }
+          serverBuild = health.build
+        }
         hasBeenReady = true
         onReady()
       }
