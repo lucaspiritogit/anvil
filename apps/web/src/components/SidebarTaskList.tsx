@@ -1,6 +1,7 @@
 import { isQueuedStackTask } from '@anvil/protocol/task-stacks'
 import type { JSX } from 'react'
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { TaskIssueSnapshot } from '@anvil/protocol/types'
 import type { CenterView } from '../state/store'
@@ -8,6 +9,7 @@ import { Icon } from '../icons'
 import { cn } from '../ui'
 import type { SidebarTaskEntry } from './sidebar-task-projects'
 import { SidebarTask } from './SidebarTask'
+import { ProjectContextMenu, type ProjectMenuState } from './ProjectContextMenu'
 
 interface Props {
   entries: SidebarTaskEntry[]
@@ -24,6 +26,7 @@ interface Props {
 
 export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId, onSelectProject, onToggleProject, onToggleSettled, onToggleStack, onNavigate }: Props): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [projectMenu, setProjectMenu] = useState<ProjectMenuState | null>(null)
   const layoutKey = JSON.stringify(entries.map((entry) => entry.kind === 'task' ? [
     entry.task.id, entry.task.restackTarget?.parentTaskId ?? entry.task.parentTaskId,
     isQueuedStackTask(entry.task), entry.compact, entry.stackStart, entry.stackEnd, entry.tree?.collapsed
@@ -109,7 +112,13 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
           if (entry.kind === 'project') {
             const { project, expanded, taskCount } = entry
             return <li key={entry.key} {...rowProps}>
-              <div className={cn('flex min-h-9 items-center px-2 pt-1 font-mono text-[11px] tracking-[0.12em]', activeProjectId === project.id ? 'text-fg' : 'text-dim')}>
+              <div className={cn('flex min-h-9 items-center px-2 pt-1 font-mono text-[11px] tracking-[0.12em]', activeProjectId === project.id ? 'text-fg' : 'text-dim')}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const bounds = event.currentTarget.getBoundingClientRect()
+                  setProjectMenu({ project, x: event.clientX || bounds.left, y: event.clientY || bounds.bottom })
+                }}>
                 <button type="button" aria-label={`${expanded ? 'Collapse' : 'Expand'} project: ${project.name}`}
                   aria-expanded={expanded} onClick={() => onToggleProject(project.id, expanded)}
                   className="grid size-7 shrink-0 place-items-center hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent">
@@ -140,6 +149,7 @@ export function SidebarTaskList({ entries, snapshots, now, view, activeProjectId
           return <li key={entry.key} {...rowProps}><p className="px-4 py-3 font-mono text-[11px] text-faint">{entry.message}</p></li>
         })}
       </ul>
+      {projectMenu && createPortal(<ProjectContextMenu key={projectMenu.project.id} menu={projectMenu} onClose={() => setProjectMenu(null)} />, document.body)}
     </div>
   )
 }
