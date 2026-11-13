@@ -1,11 +1,12 @@
 import type { MouseInputEvent, Rectangle, WebContents, WebPreferences } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { BROWSER_VIEWPORTS, clampBrowserZoom, type BrowserObservationLayout, type BrowserObservationState, type BrowserViewport } from '@anvil/protocol/browser-observation'
+import { BROWSER_VIEWPORTS, clampBrowserZoom, type BrowserNavigationAction, type BrowserObservationLayout, type BrowserObservationState, type BrowserViewport } from '@anvil/protocol/browser-observation'
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
 const MAX_EXPRESSION_LENGTH = 20_000
 const MAX_RESULT_LENGTH = 100_000
 const MAX_TEXT_LENGTH = 20_000
+const MAX_SESSIONS = 8
 export interface BrowserSessionView {
   webContents: WebContents
   setBounds(bounds: Rectangle): void
@@ -49,7 +50,7 @@ export function browserUrl(value: string, remoteHost?: string): string {
     throw new Error('Browser URL is invalid')
   }
   if (!['http:', 'https:'].includes(url.protocol) || (!LOOPBACK_HOSTS.has(url.hostname) && url.hostname !== remoteHost) || url.username || url.password) {
-    throw new Error('The agent browser only opens task-server HTTP or HTTPS URLs')
+    throw new Error('The task browser only opens localhost HTTP or HTTPS URLs')
   }
   return url.href
 }
@@ -90,11 +91,57 @@ export class BrowserSessionManager {
 
   private session(taskId: string): BrowserSession {
     const session = this.sessions.get(taskId)
-    if (!session || session.view.webContents.isDestroyed()) throw new Error('Open a page in the agent browser first')
+    if (!session || session.view.webContents.isDestroyed()) throw new Error('Open a page in the task browser first')
+    this.sessions.delete(taskId)
+    this.sessions.set(taskId, session)
     return session
   }
 
+  private describe(taskId: string, session: BrowserSession | undefined): BrowserObservationState {
+    if (!session || session.view.webContents.isDestroyed()) return { taskId, open: false, viewport: session?.viewport ?? 'desktop' }
+    const contents = session.view.webContents
+    const history = contents.navigationHistory
+    return {
+      taskId,
+      open: true,
+      viewport: session.viewport,
+      url: contents.getURL(),
+      title: contents.getTitle?.() ?? '',
+      loading: contents.isLoading?.() ?? false,
+      canGoBack: history?.canGoBack() ?? false,
+      canGoForward: history?.canGoForward() ?? false
+    }
+  }
+
+  private notify(taskId: string): void {
+    const session = this.sessions.get(taskId)
+    if (session) this.changed(this.describe(taskId, session))
+  }
+
+  resolveUrl(value: string): string {
+    if (!this.remoteHost) return value
+    let url: URL
+    try {
+      url = new URL(value)
+    } catch {
+      return value
+    }
+    if (!LOOPBACK_HOSTS.has(url.hostname)) return value
+    url.hostname = this.remoteHost.includes(':') ? `[${this.remoteHost}]` : this.remoteHost
+    return url.toString()
+  }
+
+  private evict(): void {
+    if (this.sessions.size < MAX_SESSIONS) return
+    for (const [taskId, session] of this.sessions) {
+      if (session.layout?.visible) continue
+      this.close(taskId)
+      if (this.sessions.size < MAX_SESSIONS) return
+    }
+  }
+
   private create(taskId: string): BrowserSession {
+    this.evict()
     const view = this.host.create({
       partition: `anvil-browser-${randomUUID()}`,
       sandbox: true,
@@ -124,6 +171,14 @@ export class BrowserSessionManager {
     contents.on('will-redirect', (event, url, _inPlace, isMainFrame) => {
       if (isMainFrame && !allowedNavigation(url)) event.preventDefault()
     })
+    const notify = (): void => {
+      if (this.sessions.get(taskId)?.view === view) this.notify(taskId)
+    }
+    contents.on('did-navigate', notify)
+    contents.on('did-navigate-in-page', notify)
+    contents.on('page-title-updated', notify)
+    contents.on('did-start-loading', notify)
+    contents.on('did-stop-loading', notify)
     contents.on('destroyed', () => {
       if (this.sessions.get(taskId)?.view === view) {
         this.sessions.delete(taskId)
@@ -136,18 +191,43 @@ export class BrowserSessionManager {
     return session
   }
 
-  async open(taskId: string, _title: string, urlValue: string): Promise<BrowserSnapshot> {
-    const url = browserUrl(urlValue, this.remoteHost)
+  private async load(taskId: string, urlValue: string): Promise<void> {
+    const url = browserUrl(this.resolveUrl(urlValue), this.remoteHost)
     let session = this.sessions.get(taskId)
     if (!session || session.view.webContents.isDestroyed()) session = this.create(taskId)
-    await session.view.webContents.loadURL(url)
-    this.changed({ taskId, open: true, viewport: session.viewport })
+    this.notify(taskId)
+    try {
+      await session.view.webContents.loadURL(url)
+    } finally {
+      this.notify(taskId)
+    }
+  }
+
+  async open(taskId: string, _title: string, urlValue: string): Promise<BrowserSnapshot> {
+    await this.load(taskId, urlValue)
     return this.snapshot(taskId)
   }
 
+  async navigate(taskId: string, action: BrowserNavigationAction, url?: string): Promise<BrowserObservationState> {
+    if (action === 'open') {
+      if (!url) throw new Error('Enter a URL to open')
+      await this.load(taskId, url)
+      return this.state(taskId)
+    }
+    if (action === 'close') {
+      this.close(taskId)
+      return this.state(taskId)
+    }
+    const contents = this.session(taskId).view.webContents
+    if (action === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack()
+    if (action === 'forward' && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward()
+    if (action === 'reload') contents.reload()
+    if (action === 'stop') contents.stop()
+    return this.state(taskId)
+  }
+
   state(taskId: string): BrowserObservationState {
-    const session = this.sessions.get(taskId)
-    return { taskId, open: Boolean(session && !session.view.webContents.isDestroyed()), viewport: session?.viewport ?? 'desktop' }
+    return this.describe(taskId, this.sessions.get(taskId))
   }
 
   layout(input: BrowserObservationLayout): void {
@@ -166,7 +246,7 @@ export class BrowserSessionManager {
     if (!BROWSER_VIEWPORTS[viewport]) throw new Error('Browser viewport must be desktop or mobile')
     session.viewport = viewport
     if (session.layout?.visible) this.place(session)
-    const state = { taskId, open: true, viewport }
+    const state = this.state(taskId)
     this.changed(state)
     return state
   }

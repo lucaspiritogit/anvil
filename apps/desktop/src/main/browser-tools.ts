@@ -15,8 +15,8 @@ interface BrowserToolOwner {
 const selector = { type: 'string', description: 'CSS selector from browser_snapshot.' }
 
 export const BROWSER_TOOLS: Tool[] = [
-  { name: 'browser_open', description: 'Open a loopback HTTP or HTTPS URL in the browser pane beside Anvil task output.', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'], additionalProperties: false } },
-  { name: 'browser_snapshot', description: 'Read the current page URL, title, visible text and interactive elements.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'browser_open', description: 'Open a loopback HTTP or HTTPS URL in this task\'s browser pane. The user sees the same browser and can navigate it too, and it stays open between turns.', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'], additionalProperties: false } },
+  { name: 'browser_snapshot', description: 'Read the current page URL, title, visible text and interactive elements. Call this first to see what the user has open.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'browser_screenshot', description: 'Capture the current visible browser viewport as PNG.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'browser_click', description: 'Click an element by CSS selector or viewport coordinates.', inputSchema: { type: 'object', properties: { selector, x: { type: 'number' }, y: { type: 'number' } }, additionalProperties: false } },
   { name: 'browser_type', description: 'Replace the value of an input, textarea or contenteditable element.', inputSchema: { type: 'object', properties: { selector, text: { type: 'string' } }, required: ['selector', 'text'], additionalProperties: false } },
@@ -24,7 +24,7 @@ export const BROWSER_TOOLS: Tool[] = [
   { name: 'browser_scroll', description: 'Scroll the current page by pixel deltas.', inputSchema: { type: 'object', properties: { deltaX: { type: 'number' }, deltaY: { type: 'number' } }, required: ['deltaX', 'deltaY'], additionalProperties: false } },
   { name: 'browser_evaluate', description: 'Evaluate JavaScript in the current page and return a JSON-compatible result.', inputSchema: { type: 'object', properties: { expression: { type: 'string' } }, required: ['expression'], additionalProperties: false } },
   { name: 'browser_viewport', description: 'Switch the browser between desktop 1280x800 and mobile 390x844.', inputSchema: { type: 'object', properties: { viewport: { type: 'string', enum: ['desktop', 'mobile'] } }, required: ['viewport'], additionalProperties: false } },
-  { name: 'browser_close', description: 'Close this task\'s visible agent browser.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } }
+  { name: 'browser_close', description: 'Close this task\'s browser pane for both the agent and the user.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } }
 ]
 
 function object(value: unknown): Record<string, unknown> {
@@ -90,12 +90,9 @@ export class BrowserToolServer {
   private server?: ServerType
   private starting?: Promise<string>
   private closed = false
-  private remoteHost?: string
-
   constructor(private readonly manager: BrowserSessionManager) {}
 
   setRemoteHost(host: string | undefined): void {
-    this.remoteHost = host
     this.manager.setRemoteHost(host)
   }
 
@@ -136,15 +133,7 @@ export class BrowserToolServer {
       protocol.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
         try {
           if (this.closed || !owner.active || owner.turn !== turn || this.owners.get(authorization) !== owner) throw new Error('Agent turn has ended')
-          let args = params.arguments ?? {}
-          if (params.name === 'browser_open' && this.remoteHost && typeof args.url === 'string') {
-            const url = new URL(args.url)
-            if (['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname)) {
-              url.hostname = this.remoteHost.includes(':') ? `[${this.remoteHost}]` : this.remoteHost
-              args = { ...args, url: url.toString() }
-            }
-          }
-          const result = await callBrowserTool(this.manager, owner, params.name, args)
+          const result = await callBrowserTool(this.manager, owner, params.name, params.arguments ?? {})
           if (params.name === 'browser_screenshot') {
             const screenshot = result as Awaited<ReturnType<BrowserSessionManager['screenshot']>>
             return { content: [{ type: 'image', data: screenshot.data, mimeType: screenshot.mimeType }, { type: 'text', text: JSON.stringify({ url: screenshot.url }) }] }
@@ -195,7 +184,6 @@ export class BrowserToolServer {
   release(taskId: string): void {
     const owner = [...this.owners.values()].find((candidate) => candidate.taskId === taskId)
     if (owner) owner.active = false
-    this.manager.close(taskId)
   }
 
   async close(): Promise<void> {

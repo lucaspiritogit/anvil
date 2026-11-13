@@ -2,7 +2,7 @@ import type { BranchSyncStatus, Issue, Task, TaskComment, TaskExecutionState, Ta
 import { hasIssuePlan } from '@anvil/protocol/task-checkout'
 
 const TOOLS = 'Use anvil_issue_tracker tools.'
-export const BROWSER_TOOL_INSTRUCTION = "Use anvil_browser when the user asks to see, preview, or interact with the UI."
+export const BROWSER_TOOL_INSTRUCTION = "Use anvil_browser when the user asks to see, preview, or interact with the UI. The browser is shared with the user and keeps its page between turns, so call browser_snapshot to see what they have open before acting."
 
 const FINISH_ISSUE = 'Commit finished work and call anvil_submit_review. Call anvil_block_issue if unfinished.'
 

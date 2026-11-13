@@ -283,6 +283,7 @@ if (ownsInstance) app.whenReady().then(async () => {
     desktop.handle('desktop:browser-state', (taskId) => browserSessions.state(taskId))
     desktop.handle('desktop:browser-layout', (layout) => browserSessions.layout(layout))
     desktop.handle('desktop:browser-viewport', (input) => browserSessions.viewport(input.taskId, input.viewport))
+    desktop.handle('desktop:browser-navigate', (input) => browserSessions.navigate(input.taskId, input.action, input.url))
     desktop.handle('desktop:server-target', () => connectionManager.state())
     desktop.handle('desktop:set-server-target', (target) => connectionManager.setTarget(target))
     desktop.handle('desktop:update-state', () => desktopUpdates.state())

@@ -4,7 +4,7 @@ import type { WorkspaceAgentAccount } from '@anvil/protocol/types'
 import { type AppReadiness } from '@anvil/protocol/app-lifecycle'
 import { createEventLatch } from '@anvil/protocol/event-latch'
 import type { IpcRequests } from '@anvil/protocol/ipc-requests'
-import type { BrowserObservationLayout, BrowserObservationState, BrowserViewportRequest } from '@anvil/protocol/browser-observation'
+import type { BrowserNavigationRequest, BrowserObservationLayout, BrowserObservationState, BrowserViewportRequest } from '@anvil/protocol/browser-observation'
 import type { DesktopServerConnectionState } from '@anvil/protocol/desktop-requests'
 import type { DesktopUpdateState } from '@anvil/protocol/desktop-updates'
 import type { ServerUpdateState } from '@anvil/protocol/server-updates'
@@ -62,6 +62,7 @@ export interface ClientHost {
   browserState(taskId: string): Promise<BrowserObservationState>
   browserLayout(layout: BrowserObservationLayout): Promise<void>
   browserViewport(input: BrowserViewportRequest): Promise<BrowserObservationState>
+  browserNavigate?(input: BrowserNavigationRequest): Promise<BrowserObservationState>
   onBrowserChanged(handler: (state: BrowserObservationState) => void): () => void
   serverTarget?(): Promise<DesktopServerConnectionState>
   setServerTarget?(target: ServerTarget): Promise<DesktopServerConnectionState>
@@ -169,6 +170,7 @@ export function createAnvilApi(url: string, host: ClientHost) {
       state: host.browserState,
       layout: host.browserLayout,
       viewport: host.browserViewport,
+      ...(host.browserNavigate ? { navigate: host.browserNavigate } : {}),
       onChanged: host.onBrowserChanged
     },
     ...(host.serverTarget && host.setServerTarget ? { serverConnection: {
