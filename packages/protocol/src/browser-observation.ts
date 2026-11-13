@@ -51,9 +51,15 @@ export interface BrowserNavigationRequest {
   url?: string
 }
 
+const SEARCH_URL = 'https://duckduckgo.com/?q='
+
 export function browserAddress(value: string): string {
   const trimmed = value.trim()
-  if (/^\d{1,5}(?:\/.*)?$/.test(trimmed)) return `http://localhost:${trimmed}`
+  if (/^\d{1,5}(?:[/?#].*)?$/.test(trimmed)) return `http://localhost:${trimmed}`
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed
-  return `http://${trimmed}`
+  const match = /^(\[[\da-f:]+\]|[^\s/?#:]+)(:\d{1,5})?(?:[/?#]\S*)?$/i.exec(trimmed)
+  const host = match?.[1].toLowerCase()
+  if (!host || !match?.[2] && host !== 'localhost' && !host.includes('.')) return `${SEARCH_URL}${encodeURIComponent(trimmed)}`
+  const local = !host.includes('.') || host.startsWith('[') || /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) || /\.(?:local|localhost)$/.test(host)
+  return `${local ? 'http' : 'https'}://${trimmed}`
 }

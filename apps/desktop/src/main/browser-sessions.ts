@@ -55,6 +55,20 @@ export function browserUrl(value: string, remoteHost?: string): string {
   return url.href
 }
 
+export function webUrl(value: string): string {
+  if (value.length > 4_096) throw new Error('Browser URL is too long')
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error('Browser URL is invalid')
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    throw new Error('The browser only opens HTTP or HTTPS URLs')
+  }
+  return url.href
+}
+
 function selectorScript(selector: string): string {
   if (!selector || selector.length > 2_000) throw new Error('Selector must contain between 1 and 2000 characters')
   return JSON.stringify(selector)
@@ -155,7 +169,7 @@ export class BrowserSessionManager {
     const contents = view.webContents
     const allowedNavigation = (value: string): boolean => {
       try {
-        browserUrl(value, this.remoteHost)
+        webUrl(value)
         return true
       } catch {
         return false
@@ -164,7 +178,10 @@ export class BrowserSessionManager {
     contents.session.setPermissionCheckHandler(() => false)
     contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
     contents.session.on('will-download', (event) => event.preventDefault())
-    contents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    contents.setWindowOpenHandler(({ url }) => {
+      if (allowedNavigation(url)) void contents.loadURL(url).catch(() => {})
+      return { action: 'deny' }
+    })
     contents.on('will-navigate', (event, url) => {
       if (!allowedNavigation(url)) event.preventDefault()
     })
@@ -191,8 +208,9 @@ export class BrowserSessionManager {
     return session
   }
 
-  private async load(taskId: string, urlValue: string): Promise<void> {
-    const url = browserUrl(this.resolveUrl(urlValue), this.remoteHost)
+  private async load(taskId: string, urlValue: string, restricted: boolean): Promise<void> {
+    const resolved = this.resolveUrl(urlValue)
+    const url = restricted ? browserUrl(resolved, this.remoteHost) : webUrl(resolved)
     let session = this.sessions.get(taskId)
     if (!session || session.view.webContents.isDestroyed()) session = this.create(taskId)
     this.notify(taskId)
@@ -204,14 +222,14 @@ export class BrowserSessionManager {
   }
 
   async open(taskId: string, _title: string, urlValue: string): Promise<BrowserSnapshot> {
-    await this.load(taskId, urlValue)
+    await this.load(taskId, urlValue, true)
     return this.snapshot(taskId)
   }
 
   async navigate(taskId: string, action: BrowserNavigationAction, url?: string): Promise<BrowserObservationState> {
     if (action === 'open') {
       if (!url) throw new Error('Enter a URL to open')
-      await this.load(taskId, url)
+      await this.load(taskId, url, false)
       return this.state(taskId)
     }
     if (action === 'close') {

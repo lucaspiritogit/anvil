@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { useStore } from '../state/store'
 import { TaskComposer } from './TaskComposer'
 import { WorkspaceUsageLimits } from './WorkspaceUsageLimits'
+import { BrowserPane, BrowserToggle, useBrowserPane } from './TaskBrowser'
 import { cn } from '../ui'
 import type { Project } from '@anvil/protocol/types'
 
@@ -60,20 +61,26 @@ function GitAlert({ project }: { project: Project }): JSX.Element | null {
 }
 
 export function ProjectOverview({ project }: Props): JSX.Element {
+  const browser = useBrowserPane(`new-task:${project?.id ?? 'none'}`)
   return (
-    <div
-      data-testid="project-overview"
-      className="relative flex h-full min-h-0 flex-col overflow-x-hidden max-[700px]:overflow-y-auto"
-    >
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 py-16 max-[980px]:px-[22px] max-[700px]:flex-none max-[700px]:overflow-visible max-[700px]:px-3 max-[700px]:py-2">
-        <div className={cn(SPREAD, 'my-auto')}>
-          {project && <GitAlert project={project} />}
-          <TaskComposer key={project?.id ?? 'no-project'} />
+    <div className="relative flex h-full min-h-0 min-w-0">
+      <div
+        data-testid="project-overview"
+        className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden max-[700px]:overflow-y-auto"
+      >
+        {browser.available && <BrowserToggle className="absolute right-3 top-2 z-10" shown={browser.shown} open={browser.state.open}
+          onToggle={() => browser.setShown((value) => !value)} />}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 py-16 max-[980px]:px-[22px] max-[700px]:flex-none max-[700px]:overflow-visible max-[700px]:px-3 max-[700px]:py-2">
+          <div className={cn(SPREAD, 'my-auto')}>
+            {project && <GitAlert project={project} />}
+            <TaskComposer key={project?.id ?? 'no-project'} />
+          </div>
+        </div>
+        <div className="absolute inset-x-0 bottom-3 px-8 max-[980px]:px-[22px] max-[700px]:static max-[700px]:mt-4 max-[700px]:mb-2 max-[700px]:px-3">
+          <WorkspaceUsageLimits />
         </div>
       </div>
-      <div className="absolute inset-x-0 bottom-3 px-8 max-[980px]:px-[22px] max-[700px]:static max-[700px]:mt-4 max-[700px]:mb-2 max-[700px]:px-3">
-        <WorkspaceUsageLimits />
-      </div>
+      {browser.shown && <BrowserPane state={browser.state} visible onClose={() => browser.setShown(false)} />}
     </div>
   )
 }

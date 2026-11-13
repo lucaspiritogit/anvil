@@ -189,7 +189,7 @@ test('exposes browser actions through a turn-scoped MCP connection', async () =>
 
 test('lets the user open and navigate the same task browser the agent uses', async () => {
   const fixture = browserFixture()
-  await expect(fixture.manager.navigate('task-a', 'open', 'https://example.com/')).rejects.toThrow('only opens localhost')
+  await expect(fixture.manager.navigate('task-a', 'open', 'file:///etc/passwd')).rejects.toThrow('only opens HTTP or HTTPS')
   expect(fixture.views).toHaveLength(0)
 
   expect(await fixture.manager.navigate('task-a', 'open', 'http://localhost:5173/')).toMatchObject({
@@ -218,4 +218,20 @@ test('keeps a bounded number of task browsers alive', async () => {
   expect(fixture.views[0].webContents.destroyed).toBe(true)
   expect(fixture.views.slice(1).every((view) => !view.webContents.destroyed)).toBe(true)
   fixture.manager.closeAll()
+})
+
+test('lets the user browse any web URL while the agent stays on local pages', async () => {
+  const fixture = browserFixture()
+  expect(await fixture.manager.navigate('draft', 'open', 'https://example.com/docs')).toMatchObject({ open: true, url: 'https://example.com/docs' })
+  await expect(fixture.manager.open('draft', 'Agent', 'https://example.com/')).rejects.toThrow('only opens localhost')
+  const contents = fixture.views[0].webContents
+  const navigation = { preventDefault: vi.fn() }
+  contents.emit('will-navigate', navigation, 'https://example.org/')
+  expect(navigation.preventDefault).not.toHaveBeenCalled()
+  contents.emit('will-navigate', navigation, 'file:///etc/passwd')
+  expect(navigation.preventDefault).toHaveBeenCalledOnce()
+  const openHandler = contents.setWindowOpenHandler.mock.calls[0][0] as (details: { url: string }) => { action: string }
+  expect(openHandler({ url: 'https://example.org/popup' })).toEqual({ action: 'deny' })
+  await Promise.resolve()
+  expect(contents.getURL()).toBe('https://example.org/popup')
 })
