@@ -22,6 +22,7 @@ const TASK_INDICATORS = {
   merged: { glyph: 'done', icon: 'git-branch', label: 'Shipped', tone: 'text-ok', meta: 'text-ok-text' },
   openPullRequest: { glyph: 'done', icon: 'git-branch', label: 'Open PR', tone: 'text-ok', meta: 'text-ok-text' },
   resolving: { glyph: 'running', label: 'Resolving conflicts', tone: 'text-run', meta: 'text-run-text' },
+  shipping: { glyph: 'running', label: 'Shipping', tone: 'text-run', meta: 'text-run-text' },
   reviewable: { glyph: 'review', label: 'Ready to ship', tone: 'text-review', meta: 'text-review-text' },
   failed: { glyph: 'failed', label: 'Failed', tone: 'text-danger', meta: 'text-danger-text' }
 } as const satisfies Record<string, { glyph: StatusGlyphName; icon?: IconName; label: string; tone: string; meta: string }>
@@ -97,6 +98,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const seenAt = useStore((state) => state.taskSeenAt[task.id])
   const markTaskSeen = useStore((state) => state.markTaskSeen)
   const finishedUnseen = isTaskFinishedUnseen(task, seenAt)
+  const shipping = useStore((state) => Boolean(state.shippingTaskIds[task.id]))
   const [settling, setSettling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(() => expandedSubtasks.has(task.id))
@@ -117,7 +119,7 @@ export function SidebarTask({ task, snapshot, project, now, active, compact = fa
   const blocked = Boolean(task.parentTaskId) && task.deliveryStatus === 'reviewable'
   const deadline = settlementDeadline(task)
   const presentation = taskIssuePresentation(task, snapshot)
-  const indicator = queuedStack ? TASK_INDICATORS.queued : presentation ? taskIssueIndicator(presentation) : taskIndicator(task, finishedUnseen)
+  const indicator = shipping ? TASK_INDICATORS.shipping : queuedStack ? TASK_INDICATORS.queued : presentation ? taskIssueIndicator(presentation) : taskIndicator(task, finishedUnseen)
   const createdAt = useStore((state) => state.createdTask?.id === task.id ? state.createdTask.at : null)
   const [landing, setLanding] = useState(false)
   useEffect(() => {

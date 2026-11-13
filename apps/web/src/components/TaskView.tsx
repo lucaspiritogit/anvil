@@ -14,6 +14,7 @@ import { TaskSteeringComposer } from './TaskSteeringComposer'
 import { TaskIssues } from './TaskIssues'
 import { useTaskIssues } from '../hooks/use-task-issues'
 import { TaskOutput } from './TaskOutput'
+import { BrowserPane, BrowserToggle, useBrowserPane } from './TaskBrowser'
 import { ShipButton } from './ShipButton'
 import { ShipChecks } from './ShipChecks'
 import { RiskFlags } from './RiskFlags'
@@ -447,6 +448,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
   const [pullRequestTaskId, setPullRequestTaskId] = useState<string | null>(null)
   const approved = task.deliveryStatus === 'approved'
   const openPullRequest = task.deliveryStatus === 'reviewable' ? task.pullRequest : undefined
+  const shipping = useStore((s) => Boolean(s.shippingTaskIds[task.id]))
 
   const [now, setNow] = useState(Date.now())
   const done = task.status === 'succeeded' && (task.deliveryStatus === 'no_changes' || !worktree)
@@ -491,6 +493,7 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
     ? worktree ? ['output', 'issues'] : ['output']
     : worktree ? ['output', 'changes', 'issues'] : ['output', 'changes']
   const visiblePanel = split && activePanel === 'changes' ? 'output' : activePanel
+  const browser = useBrowserPane(task.id)
   const togglePane = (): void => {
     const next = !paneHidden
     setPaneHidden(next)
@@ -546,7 +549,10 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs @max-[760px]:w-full @max-[760px]:min-w-0 @max-[760px]:justify-start">
             <span aria-label="Task status" className="flex min-w-0 flex-wrap items-center gap-2">
-              {presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : task.deliveryStatus === 'merge_conflict' ? <>
+              {shipping ? <>
+              <span className={dot('running')} />
+              <span className="font-medium text-run">{worktree && task.baseBranch ? `Shipping to ${task.baseBranch}` : 'Shipping'}</span>
+              </> : presentation ? <span className={ISSUE_STATUS[presentation.status].tone}>{presentation.label}: {presentation.issue.title}</span> : task.deliveryStatus === 'merge_conflict' ? <>
               <span className={dot('running')} />
               <span className={cn('font-medium', deliveryTone(task.deliveryStatus))}>Resolving conflicts with {task.mergeConflict?.targetBranch ?? 'the target branch'}</span>
               </> : <>
@@ -629,14 +635,19 @@ export function TaskView({ task, initialPanel = 'output' }: Props): JSX.Element 
           <Icon icon={split ? 'arrow-right-to-line' : 'arrow-left-to-line'} size={13} aria-hidden="true" />
           {split ? 'Hide changes' : 'Changes beside output'}
         </button>}
+        {browser.available && <BrowserToggle className={cn('self-center', !(wide && showsDiff) && 'ml-auto')} shown={browser.shown} open={browser.state.open}
+          onToggle={() => browser.setShown((value) => !value)} />}
       </div>
 
-      <div className="flex flex-1 min-h-0 min-w-0">
+      <div className="relative flex flex-1 min-h-0 min-w-0">
         {worktree && <TaskIssues taskId={task.id} active={visiblePanel === 'issues'} />}
 
         {!split && changesSection}
 
         <TaskOutput key={task.id} task={task} visible={visiblePanel === 'output'} presentation={presentation} onOpenChanges={openChanges} />
+
+        {browser.shown && <BrowserPane state={browser.state} visible onClose={() => browser.setShown(false)}
+          hint="The agent shares this browser through anvil_browser." />}
       </div>
 
       {!isTaskSettled(task) && <TaskSteeringComposer
