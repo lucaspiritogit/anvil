@@ -1,4 +1,4 @@
-import type { BrowserObservationLayout, BrowserViewportRequest } from './browser-observation'
+import { BROWSER_NAVIGATION_ACTIONS, type BrowserNavigationRequest, type BrowserObservationLayout, type BrowserViewportRequest } from './browser-observation'
 import type { ServerTarget } from './server-address'
 import { isAnvilRepositoryUrl } from './external-links'
 
@@ -19,6 +19,7 @@ export interface DesktopRequests {
   'desktop:browser-state': string
   'desktop:browser-layout': BrowserObservationLayout
   'desktop:browser-viewport': BrowserViewportRequest
+  'desktop:browser-navigate': BrowserNavigationRequest
   'desktop:server-target': undefined
   'desktop:set-server-target': ServerTarget
   'desktop:update-state': undefined
@@ -54,6 +55,14 @@ function browserViewport(value: unknown): value is BrowserViewportRequest {
     && (input.viewport === 'desktop' || input.viewport === 'mobile')
 }
 
+function browserNavigation(value: unknown): value is BrowserNavigationRequest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const input = value as Partial<BrowserNavigationRequest>
+  if (Object.keys(input).some((key) => !['taskId', 'action', 'url'].includes(key))) return false
+  if (!text(input.taskId) || !BROWSER_NAVIGATION_ACTIONS.includes(input.action as BrowserNavigationRequest['action'])) return false
+  return input.action === 'open' ? text(input.url) : input.url === undefined
+}
+
 function serverTarget(value: unknown): value is ServerTarget {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const input = value as Partial<ServerTarget>
@@ -81,6 +90,7 @@ export function isDesktopRequest<C extends keyof DesktopRequests>(channel: C, va
     case 'desktop:read-project-file': return projectFileRead(value)
     case 'desktop:browser-layout': return browserLayout(value)
     case 'desktop:browser-viewport': return browserViewport(value)
+    case 'desktop:browser-navigate': return browserNavigation(value)
     case 'desktop:set-server-target': return serverTarget(value)
     case 'desktop:open-anvil-url': return isAnvilRepositoryUrl(value)
     default: return text(value)

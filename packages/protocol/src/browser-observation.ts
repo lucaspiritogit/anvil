@@ -16,6 +16,11 @@ export interface BrowserObservationState {
   taskId: string
   open: boolean
   viewport: BrowserViewport
+  url?: string
+  title?: string
+  loading?: boolean
+  canGoBack?: boolean
+  canGoForward?: boolean
 }
 
 export interface BrowserObservationLayout {
@@ -34,4 +39,21 @@ export interface BrowserObservationLayout {
 export interface BrowserViewportRequest {
   taskId: string
   viewport: BrowserViewport
+}
+
+export type BrowserNavigationAction = 'open' | 'back' | 'forward' | 'reload' | 'stop' | 'close'
+
+export const BROWSER_NAVIGATION_ACTIONS: readonly BrowserNavigationAction[] = ['open', 'back', 'forward', 'reload', 'stop', 'close']
+
+export interface BrowserNavigationRequest {
+  taskId: string
+  action: BrowserNavigationAction
+  url?: string
+}
+
+export function browserAddress(value: string): string {
+  const trimmed = value.trim()
+  if (/^\d{1,5}(?:\/.*)?$/.test(trimmed)) return `http://localhost:${trimmed}`
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed
+  return `http://${trimmed}`
 }

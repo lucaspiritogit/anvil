@@ -16,6 +16,16 @@ class FakeWebContents extends EventEmitter {
   sendInputEvent = vi.fn()
   setZoomFactor = vi.fn()
   setWindowOpenHandler = vi.fn()
+  reload = vi.fn()
+  stop = vi.fn()
+  entries: string[] = []
+  index = -1
+  navigationHistory = {
+    canGoBack: () => this.index > 0,
+    canGoForward: () => this.index < this.entries.length - 1,
+    goBack: () => { this.index--; this.currentUrl = this.entries[this.index]; this.emit('did-navigate') },
+    goForward: () => { this.index++; this.currentUrl = this.entries[this.index]; this.emit('did-navigate') }
+  }
   capturePage = vi.fn(async () => ({ toPNG: () => Buffer.from('png') }))
   currentUrl = ''
   destroyed = false
@@ -25,7 +35,18 @@ class FakeWebContents extends EventEmitter {
   }
 
   async loadURL(url: string): Promise<void> {
+    this.entries = [...this.entries.slice(0, this.index + 1), url]
+    this.index = this.entries.length - 1
     this.currentUrl = url
+    this.emit('did-navigate')
+  }
+
+  getTitle(): string {
+    return 'Fixture'
+  }
+
+  isLoading(): boolean {
+    return false
   }
 
   close(): void {
@@ -82,14 +103,14 @@ test('places isolated task browsers inside the renderer-provided output pane', a
   expect(fixture.options[0].partition).not.toBe(fixture.options[1].partition)
   expect(fixture.views[0].setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 0, height: 0 })
   expect(fixture.views[0].setVisible).toHaveBeenCalledWith(false)
-  expect(fixture.changes).toContainEqual({ taskId: 'task-a', open: true, viewport: 'desktop' })
+  expect(fixture.changes).toContainEqual(expect.objectContaining({ taskId: 'task-a', open: true, viewport: 'desktop', url: 'http://localhost:4173/settings' }))
 
   const bounds = { x: 500, y: 120, width: 640, height: 844 }
   fixture.manager.layout({ taskId: 'task-a', visible: true, bounds })
   expect(fixture.views[0].webContents.setZoomFactor).toHaveBeenLastCalledWith(0.5)
   expect(fixture.views[0].setBounds).toHaveBeenLastCalledWith({ x: 500, y: 342, width: 640, height: 400 })
   expect(fixture.views[0].setVisible).toHaveBeenLastCalledWith(true)
-  expect(fixture.manager.viewport('task-a', 'mobile')).toEqual({ taskId: 'task-a', open: true, viewport: 'mobile' })
+  expect(fixture.manager.viewport('task-a', 'mobile')).toMatchObject({ taskId: 'task-a', open: true, viewport: 'mobile' })
   expect(fixture.views[0].webContents.setZoomFactor).toHaveBeenLastCalledWith(1)
   expect(fixture.views[0].setBounds).toHaveBeenLastCalledWith({ x: 625, y: 120, width: 390, height: 844 })
   fixture.manager.layout({ taskId: 'task-b', visible: true, bounds })
@@ -154,5 +175,47 @@ test('exposes browser actions through a turn-scoped MCP connection', async () =>
 
   server.release('task-a')
   await expect(client.callTool({ name: 'browser_snapshot', arguments: {} })).rejects.toThrow('Streamable HTTP error')
+  expect(fixture.views[0].webContents.destroyed).toBe(false)
+  expect(fixture.manager.state('task-a')).toMatchObject({ open: true, url: 'http://100.64.0.10:4173/' })
+
+  const next = await server.open('task-a', 'Browser task')
+  const nextClient = new Client({ name: 'browser-test', version: '1' })
+  onTestFinished(async () => { await nextClient.close().catch(() => {}) })
+  await nextClient.connect(new StreamableHTTPClientTransport(new URL(next.url), { requestInit: { headers: next.headers } }))
+  const snapshot = await nextClient.callTool({ name: 'browser_snapshot', arguments: {} })
+  expect(snapshot.isError).not.toBe(true)
+  expect(fixture.views).toHaveLength(1)
+})
+
+test('lets the user open and navigate the same task browser the agent uses', async () => {
+  const fixture = browserFixture()
+  await expect(fixture.manager.navigate('task-a', 'open', 'https://example.com/')).rejects.toThrow('only opens localhost')
+  expect(fixture.views).toHaveLength(0)
+
+  expect(await fixture.manager.navigate('task-a', 'open', 'http://localhost:5173/')).toMatchObject({
+    open: true, url: 'http://localhost:5173/', title: 'Fixture', canGoBack: false, canGoForward: false
+  })
+  await fixture.manager.open('task-a', 'Agent', 'http://localhost:5173/settings')
+  expect(fixture.views).toHaveLength(1)
+  expect(fixture.manager.state('task-a')).toMatchObject({ url: 'http://localhost:5173/settings', canGoBack: true })
+
+  expect(await fixture.manager.navigate('task-a', 'back')).toMatchObject({ url: 'http://localhost:5173/', canGoBack: false, canGoForward: true })
+  expect(fixture.changes.at(-1)).toMatchObject({ taskId: 'task-a', url: 'http://localhost:5173/' })
+  expect(await fixture.manager.navigate('task-a', 'forward')).toMatchObject({ url: 'http://localhost:5173/settings' })
+  await fixture.manager.navigate('task-a', 'reload')
+  expect(fixture.views[0].webContents.reload).toHaveBeenCalledOnce()
+
+  fixture.manager.setRemoteHost('100.64.0.10')
+  expect(await fixture.manager.navigate('task-a', 'open', 'http://localhost:5173/')).toMatchObject({ url: 'http://100.64.0.10:5173/' })
+
+  expect(await fixture.manager.navigate('task-a', 'close')).toMatchObject({ open: false })
   expect(fixture.views[0].webContents.destroyed).toBe(true)
+})
+
+test('keeps a bounded number of task browsers alive', async () => {
+  const fixture = browserFixture()
+  for (let index = 0; index < 9; index++) await fixture.manager.open(`task-${index}`, 'Task', 'http://localhost:4173/')
+  expect(fixture.views[0].webContents.destroyed).toBe(true)
+  expect(fixture.views.slice(1).every((view) => !view.webContents.destroyed)).toBe(true)
+  fixture.manager.closeAll()
 })
