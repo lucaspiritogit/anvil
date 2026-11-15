@@ -76,7 +76,7 @@ export function ProjectOverview({ project }: Props): JSX.Element {
             <TaskComposer key={project?.id ?? 'no-project'} />
           </div>
         </div>
-        <div className="absolute inset-x-0 bottom-3 px-8 max-[980px]:px-[22px] max-[700px]:static max-[700px]:mt-4 max-[700px]:mb-2 max-[700px]:px-3">
+        <div className="absolute inset-x-0 bottom-0 px-8 max-[980px]:px-[22px] max-[700px]:static max-[700px]:mt-auto max-[700px]:pt-4 max-[700px]:px-3">
           <WorkspaceUsageLimits />
         </div>
       </div>

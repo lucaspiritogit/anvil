@@ -57,7 +57,7 @@ export function ProviderLimits({ providers, className }: {
     <div
       aria-label="Usage"
       role="group"
-      className={cn('mx-auto flex w-full max-w-[1040px] flex-wrap items-center gap-x-6 gap-y-1.5 border-t border-dashed border-line-strong pt-2.5 font-mono text-[11px] text-dim animate-fade-in', className)}
+      className={cn('mx-auto flex w-full max-w-[1040px] flex-wrap items-center gap-x-6 gap-y-1.5 border-t border-dashed border-line-strong py-1.5 font-mono text-[11px] text-dim animate-fade-in', className)}
     >
       <span className="tracking-[0.12em] text-faint uppercase">Usage</span>
       {providers.map((provider) => (
@@ -75,7 +75,7 @@ export function ProviderLimits({ providers, className }: {
                 : <>
                   <LimitMeter label={limit.label} remainingPercent={limit.remainingPercent} />
                   <span className="tabular-nums text-fg">{Math.round(limit.remainingPercent)}% left</span>
-                  {limit.reset && <span aria-hidden="true" className="text-faint max-[1180px]:hidden">↻ {limit.reset}</span>}
+                  {limit.reset && <span aria-hidden="true" className="text-faint max-[1180px]:hidden">{limit.reset}</span>}
                 </>}
             </span>
           ))}

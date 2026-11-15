@@ -29,7 +29,7 @@ export function Workspace({ mobileNavigation, mobileNavigationOpen, navigationBu
 
   return (
     <main className={cn('relative flex flex-col min-w-0 min-h-0 h-full overflow-hidden',
-      page && 'py-11'
+      page && (overview ? 'pt-11' : 'py-11')
     )}>
       {(mobileNavigation || sidebarCollapsed) && (page
         ? <div className="absolute inset-x-0 top-0"><NavigationHeader expanded={mobileNavigationOpen}
