@@ -171,6 +171,21 @@ test('commit-local refreshes overlapping local tasks that still have changes', a
   expect(store.getTask(sibling.id)?.headCommit).toBeUndefined()
 })
 
+test('ship failures are written to the task log and shown on the task', async () => {
+  const { store, registry, events, gitDelivery, addLocalTask } = setup()
+  const task = addLocalTask()
+  gitDelivery.commitPaths.mockRejectedValueOnce(new Error('Git has no author name and email for this commit.'))
+
+  await expect(registry.invoke('tasks:ship', { taskId: task.id, push: false, message: 'feat: ship' }))
+    .rejects.toThrow('Git has no author name and email for this commit.')
+
+  expect(events).toContainEqual({ taskId: task.id, text: 'Could not ship: Git has no author name and email for this commit.' })
+  expect(store.getTask(task.id)).toMatchObject({ deliveryStatus: 'reviewable', deliveryError: 'Could not ship: Git has no author name and email for this commit.' })
+
+  const shipped = await registry.invoke('tasks:ship', { taskId: task.id, push: false, message: 'feat: ship' }) as Task
+  expect(shipped.deliveryError).toBeUndefined()
+})
+
 test('commit-local with push refuses to commit when origin has new commits', async () => {
   const { store, registry, gitDelivery, addLocalTask } = setup()
   const task = addLocalTask()

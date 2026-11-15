@@ -706,8 +706,25 @@ export function registerReviewHandlers(ipc: HandlerRegistry, {
     return undefined
   }
 
+  const recordShipFailure = (taskId: string, error: unknown): void => {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/^(This task is already busy|A message is already being sent|Task not found|Task was deleted)/.test(message)) return
+    const task = store.getTask(taskId)
+    if (!task) return
+    recordSystemEvent(taskId, `Could not ship: ${message}`, 'delivery', 'error')
+    if (task.deliveryStatus !== 'reviewable') return
+    const updated = store.updateTask(taskId, { deliveryError: `Could not ship: ${message}` })
+    if (updated) send('task:updated', updated)
+  }
+
   const shipTask: ShipTask = async (taskId, options = {}) => {
-    const shipped = await shipTaskOnce(taskId, options)
+    let shipped: Task
+    try {
+      shipped = await shipTaskOnce(taskId, options)
+    } catch (error) {
+      recordShipFailure(taskId, error)
+      throw error
+    }
     const conflict = shipped.deliveryStatus === 'merge_conflict' ? shipped.mergeConflict : undefined
     if (!conflict) return shipped
     void repairMergeConflictWithAgent(taskId, conflict.id, true).catch(() => {})

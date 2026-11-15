@@ -7,7 +7,7 @@ import { WorkspaceAccounts } from './agents/workspace-accounts'
 import { registerAccountHandlers } from './handlers/agent-accounts'
 import { invalidateWorkspaceModels, closeModelDiscovery, pauseWorkspaceModelDiscovery } from './agents/models'
 import { watchWorkspaceAuthChanges } from './agents/workspace-auth-changes'
-import { resolveTaskWorkspace } from './agents/workspace-execution'
+import { resolveTaskWorkspace, setWorkspaceCredentialEnvironment } from './agents/workspace-execution'
 import { WallpaperLibrary } from './wallpapers'
 import { join } from 'node:path'
 import { AgentProcessManager } from './agents/process-manager'
@@ -17,7 +17,9 @@ import { createAgentUpdates } from './agents/agent-updates'
 import { registerAnalyticsHandlers } from './handlers/analytics'
 import { registerGitHubHandlers } from './handlers/github'
 import { GitHubCredentials, type CredentialEncryption } from './github-credentials'
-import { githubCliToken, githubRemoteGit } from './github-cli'
+import { githubCliAgentEnvironment, githubCliToken, githubRemoteGit } from './github-cli'
+import { setGitIdentityFallback } from './git/command'
+import { WorkspaceGitIdentity } from './git-identity'
 import { GitHubPRPolling } from './github-pr-polling'
 import { GitHubClient } from './github-client'
 import { registerProjectHandlers } from './handlers/projects'
@@ -308,6 +310,21 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   review.resumeMergeConflicts()
   const credentials = (workspaceId: string): GitHubCredentials => new GitHubCredentials(join(store.getWorkspaceDirectory(workspaceId), 'github-token.enc'), encryption, githubCliToken)
   const githubClient = new GitHubClient()
+  const gitIdentity = new WorkspaceGitIdentity({
+    workspaces: () => store.getOpenedWorkspaces().map((workspace) => ({
+      id: workspace.id,
+      directory: store.getWorkspaceDirectory(workspace.id),
+      projectPaths: store.getProjects(workspace.id).map((project) => project.path)
+    })),
+    token: (workspaceId) => credentials(workspaceId).getToken(),
+    identity: (token) => githubClient.identity(token)
+  })
+  setGitIdentityFallback((cwd) => gitIdentity.forPath(cwd))
+  const agentGitHubEnvironment = githubCliAgentEnvironment()
+  setWorkspaceCredentialEnvironment(() => agentGitHubEnvironment)
+  for (const workspace of store.getOpenedWorkspaces()) {
+    void gitIdentity.prepareAgentHome(workspace.id, store.getWorkspaceDirectory(workspace.id)).catch(() => {})
+  }
   const polls = new Map<string, GitHubPRPolling>()
   const workspacePolling = (workspaceId: string): GitHubPRPolling => {
     let polling = polls.get(workspaceId)
@@ -338,7 +355,11 @@ export function createAnvilRuntime(options: RuntimeOptions) {
   registerGitHubHandlers(ipc, {
     ...reviewContext, credentials, client: githubClient,
     refreshPullRequests: (workspaceId) => { void workspacePolling(workspaceId).refresh() },
-    githubCredentialsChanged: (workspaceId) => { void workspacePolling(workspaceId).credentialsChanged() }
+    githubCredentialsChanged: (workspaceId) => {
+      gitIdentity.invalidate(workspaceId)
+      void gitIdentity.prepareAgentHome(workspaceId, store.getWorkspaceDirectory(workspaceId)).catch(() => {})
+      void workspacePolling(workspaceId).credentialsChanged()
+    }
   })
   registerRebaseHandlers(ipc, reviewContext)
 
@@ -350,6 +371,8 @@ export function createAnvilRuntime(options: RuntimeOptions) {
       stopPollingUpdates()
       stopRememberingWorktreeOwners()
       stopTaskResultNotices()
+      setGitIdentityFallback(undefined)
+      setWorkspaceCredentialEnvironment(undefined)
       const results = await Promise.allSettled([
         closeProjectImports(),
         connections.close(),

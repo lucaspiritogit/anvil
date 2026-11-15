@@ -265,13 +265,22 @@ export class GitDeliveryManager {
     return withRepoLock(this.context, repoPath, async () => {
       const scoped = scopedPaths(repoPath, paths)
       if (!scoped.length) throw new Error('This task has no files to commit')
-      const pathspecs = scoped.map((path) => `./${path}`)
       const env = { GIT_LITERAL_PATHSPECS: '1' }
-      await git(repoPath, ['add', '-A', '--', ...pathspecs], [0], env)
-      const staged = await git(repoPath, ['diff', '--cached', '--quiet', '--', ...pathspecs], [0, 1], env)
-      if (staged.exitCode === 0) throw new Error('The task files no longer have changes to commit')
-      await git(repoPath, ['commit', '--only', '-m', message, '--', ...pathspecs], [0], env)
-      return (await git(repoPath, ['rev-parse', 'HEAD'])).stdout.trim()
+      const root = (await git(repoPath, ['rev-parse', '--show-toplevel'])).stdout.trim()
+      const status = await git(repoPath, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames', '--',
+        ...scoped.map((path) => `./${path}`)], [0], env)
+      const unstaged = new Set<string>()
+      const changed = new Set<string>()
+      for (const entry of status.stdout.split('\0')) {
+        if (entry.length < 4) continue
+        const path = entry.slice(3)
+        changed.add(path)
+        if (entry[1] !== ' ') unstaged.add(path)
+      }
+      if (!changed.size) throw new Error('The task files have no uncommitted changes. They may already be committed.')
+      if (unstaged.size) await git(root, ['add', '-A', '--', ...[...unstaged].map((path) => `./${path}`)], [0], env)
+      await git(root, ['commit', '--only', '-m', message, '--', ...[...changed].map((path) => `./${path}`)], [0], env)
+      return (await git(root, ['rev-parse', 'HEAD'])).stdout.trim()
     })
   }
 

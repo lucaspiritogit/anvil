@@ -19,6 +19,12 @@ export interface WorkspaceExecutionContext {
 // credential chains, NODE_OPTIONS, or an external agent's session pointers.
 const RUNTIME_VARIABLE = /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|COMSPEC|TEMP|TMP|TMPDIR|LANG|LANGUAGE|LC_[A-Z_]+|TZ|TERM|COLORTERM|USER|USERNAME|LOGNAME|SHELL|SSH_AUTH_SOCK|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|SSL_CERT_FILE|SSL_CERT_DIR|NODE_EXTRA_CA_CERTS|CODEX_CA_CERTIFICATE|OPENCODE_GIT_BASH_PATH|GIT_AUTHOR_NAME|GIT_AUTHOR_EMAIL|GIT_COMMITTER_NAME|GIT_COMMITTER_EMAIL)$/i
 
+let credentialEnvironment: (workspaceId: string) => NodeJS.ProcessEnv = () => ({})
+
+export function setWorkspaceCredentialEnvironment(provider: ((workspaceId: string) => NodeJS.ProcessEnv) | undefined): void {
+  credentialEnvironment = provider ?? (() => ({}))
+}
+
 function seedGitIdentity(home: string, inherited: NodeJS.ProcessEnv): void {
   const path = join(home, '.gitconfig')
   if (existsSync(path)) return
@@ -69,7 +75,7 @@ export function resolveWorkspaceExecution(
     APPDATA: join(directory, 'config'),
     LOCALAPPDATA: join(directory, 'data'),
     OPENCODE_DISABLE_AUTOUPDATE: 'true'
-  })
+  }, credentialEnvironment(workspaceId))
   for (const path of [home, codexHome, claudeHome, environment.XDG_CONFIG_HOME!, environment.XDG_DATA_HOME!, environment.XDG_CACHE_HOME!, environment.XDG_STATE_HOME!]) {
     mkdirSync(path, { recursive: true, mode: 0o700 })
   }

@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { git } from './git/command'
 
@@ -46,3 +48,29 @@ export function withGitHubCliCredentials(env: NodeJS.ProcessEnv = {}): NodeJS.Pr
 
 export const githubRemoteGit: typeof git = async (cwd, args, acceptedCodes, env) =>
   git(cwd, args, acceptedCodes, (await githubCliAvailable()) ? withGitHubCliCredentials(env) : env)
+
+function githubCliConfigDirectory(inherited: NodeJS.ProcessEnv, home: string, platform: NodeJS.Platform): string {
+  if (inherited.GH_CONFIG_DIR) return inherited.GH_CONFIG_DIR
+  if (inherited.XDG_CONFIG_HOME) return join(inherited.XDG_CONFIG_HOME, 'gh')
+  if (platform === 'win32' && inherited.APPDATA) return join(inherited.APPDATA, 'GitHub CLI')
+  return join(home, '.config', 'gh')
+}
+
+export function githubCliAgentEnvironment(
+  inherited: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+  platform: NodeJS.Platform = process.platform
+): NodeJS.ProcessEnv {
+  const keyring = Object.fromEntries(['DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR']
+    .flatMap((key) => inherited[key] ? [[key, inherited[key]]] : []))
+  return {
+    ...keyring,
+    GH_CONFIG_DIR: githubCliConfigDirectory(inherited, home, platform),
+    GH_PROMPT_DISABLED: '1',
+    GIT_CONFIG_COUNT: '2',
+    GIT_CONFIG_KEY_0: GITHUB_CREDENTIAL_KEY,
+    GIT_CONFIG_VALUE_0: '',
+    GIT_CONFIG_KEY_1: GITHUB_CREDENTIAL_KEY,
+    GIT_CONFIG_VALUE_1: GITHUB_CREDENTIAL_HELPER
+  }
+}

@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { onTestCleanup } from './test-cleanup'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, realpath, symlink } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GitDeliveryManager, type PreparedCheckout } from '../apps/server/src/git'
+import { setGitIdentityFallback } from '../apps/server/src/git/command'
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 
@@ -442,6 +443,50 @@ test('ignored task files survive finalization and restart', async () => {
   expect(await readFile(join(task.cwd, 'local.env'), 'utf8')).toBe('KEEP=task-local\n')
   await restarted.releaseWorktree('ignored')
   expect(existsSync(task.cwd)).toBe(false)
+})
+
+test('commits the remaining task paths when the agent already committed or deleted some of them', async () => {
+  const { repo, manager } = await fixture()
+  await writeFile(join(repo, 'app', 'gone.ts'), 'gone\n')
+  await writeFile(join(repo, 'app', 'staged-delete.ts'), 'delete me\n')
+  git(repo, 'add', '.')
+  git(repo, 'commit', '-m', 'Add files')
+  git(repo, 'rm', '-q', 'app/gone.ts')
+  git(repo, 'commit', '-m', 'Agent removed a file')
+  git(repo, 'rm', '-q', 'app/staged-delete.ts')
+  await writeFile(join(repo, 'app', 'source.ts'), 'still changed\n')
+
+  const commit = await manager.commitPaths(repo, ['app/gone.ts', 'app/staged-delete.ts', 'app/source.ts', 'app/never.ts'], 'Ship remaining')
+
+  expect(git(repo, 'show', '--format=', '--name-only', commit).split('\n').sort()).toEqual(['app/source.ts', 'app/staged-delete.ts'])
+  expect(git(repo, 'status', '--porcelain=v1')).toBe('')
+  await expect(manager.commitPaths(repo, ['app/gone.ts', 'app/source.ts'], 'Nothing left'))
+    .rejects.toThrow('The task files have no uncommitted changes. They may already be committed.')
+})
+
+test('commits with the fallback identity when Git has no author configured', async () => {
+  const { directory, repo, manager } = await fixture()
+  const globalConfig = join(directory, 'empty-gitconfig')
+  await writeFile(globalConfig, '')
+  vi.stubEnv('GIT_CONFIG_GLOBAL', globalConfig)
+  vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1')
+  for (const variable of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']) vi.stubEnv(variable, undefined)
+  onTestCleanup(() => { vi.unstubAllEnvs(); setGitIdentityFallback(undefined) })
+  git(repo, 'config', '--unset', 'user.name')
+  git(repo, 'config', '--unset', 'user.email')
+  git(repo, 'config', 'user.useConfigOnly', 'true')
+  await writeFile(join(repo, 'app', 'source.ts'), 'needs an author\n')
+
+  await expect(manager.commitPaths(repo, ['app/source.ts'], 'No identity'))
+    .rejects.toThrow('Git has no author name and email for this commit.')
+
+  const fallback = vi.fn(async () => ({ name: 'Octo Cat', email: '1+octocat@users.noreply.github.com' }))
+  setGitIdentityFallback(fallback)
+  const commit = await manager.commitPaths(repo, ['app/source.ts'], 'With identity')
+
+  expect(git(repo, 'show', '-s', '--format=%an <%ae>|%cn <%ce>', commit))
+    .toBe('Octo Cat <1+octocat@users.noreply.github.com>|Octo Cat <1+octocat@users.noreply.github.com>')
+  expect(fallback).toHaveBeenCalledWith(repo)
 })
 
 test('commits only the paths attributed to a Quick task', async () => {

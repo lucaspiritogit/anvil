@@ -84,6 +84,15 @@ export class GitHubClient {
     return user.login
   }
 
+  async identity(token: string): Promise<{ name: string; email: string }> {
+    const user = object(await this.request(token, '/user'))
+    if (typeof user.login !== 'string' || !/^[a-zA-Z0-9-]+$/.test(user.login) || typeof user.id !== 'number' || !Number.isSafeInteger(user.id)) {
+      throw new Error('GitHub did not return a user account for this token.')
+    }
+    const name = typeof user.name === 'string' && user.name.trim() && !/[<>\n]/.test(user.name) ? user.name.trim() : user.login
+    return { name, email: `${user.id}+${user.login}@users.noreply.github.com` }
+  }
+
   private pullRequest(value: unknown, repository: string, existing: boolean): PullRequestInfo {
     const response = object(value)
     const user = object(response.user)
