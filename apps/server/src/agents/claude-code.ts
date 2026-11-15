@@ -215,6 +215,8 @@ export class ClaudeCodeClient implements AgentExecutor {
       const steered = new Map<string, boolean>()
       let settleTimer: ReturnType<typeof setTimeout> | undefined
       let settled = false
+      let lifecycle = false
+      let promptState: 'pending' | 'queued' | 'started' | 'completed' = 'pending'
       const clearSettle = (): void => {
         if (settleTimer) clearTimeout(settleTimer)
         settleTimer = undefined
@@ -252,6 +254,18 @@ export class ClaudeCodeClient implements AgentExecutor {
           noSessionPersistence: input.readOnly, safeMode: input.readOnly }, {
           message: (message) => {
             if (message.type === 'system') trackBackgroundTask(backgroundTasks, message)
+            if (message.type === 'system' && message.subtype === 'init' && Array.isArray(message.capabilities) &&
+              message.capabilities.includes('msg_lifecycle_v1')) lifecycle = true
+            if (message.type === 'command_lifecycle' && message.command_uuid === userMessageId && dispatched && !settled) {
+              lifecycle = true
+              if (message.state === 'queued' && promptState === 'pending') promptState = 'queued'
+              else if (message.state === 'started') promptState = 'started'
+              else if (message.state === 'completed') promptState = 'completed'
+              else if (message.state === 'cancelled' || message.state === 'dropped') {
+                finishTurn(terminal = { type: 'result', subtype: 'error_during_execution', is_error: true,
+                  errors: ['Claude did not run this message. Send it again.'] })
+              }
+            }
             if (message.type === 'command_lifecycle' && typeof message.command_uuid === 'string' && steered.has(message.command_uuid)) {
               if (message.state === 'started') {
                 steered.set(message.command_uuid, true)
@@ -261,7 +275,9 @@ export class ClaudeCodeClient implements AgentExecutor {
               }
             }
             if (settleTimer && (message.type === 'assistant' || message.type === 'stream_event' || message.type === 'system' && message.subtype === 'init')) clearSettle()
-            if (message.type === 'result' && !settled) {
+            const priorTurn = message.type === 'result' && message.subtype === 'success' && message.is_error !== true &&
+              (!dispatched || lifecycle && promptState !== 'started' && promptState !== 'completed')
+            if (message.type === 'result' && !settled && !priorTurn) {
               terminal = message
               if (dispatched) startedTurn()
               const failed = message.subtype !== 'success' || message.is_error === true

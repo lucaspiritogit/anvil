@@ -76,6 +76,14 @@ test('subtracts resumed session usage rather than charging old model requests ag
   expect((await f.entries())[0].args).toEqual(expect.arrayContaining(['--resume', 'saved-session']))
 })
 
+test('waits for the dispatched prompt when a resumed session first finishes an earlier queued turn', async () => {
+  const f = await fixture('prior-turn')
+  const events: TaskEvent[] = []
+  const result = await f.client.execute({ ...f.input, resumeSessionId: 'saved-session' }, (event) => { events.push(event) })
+  expect(result.status, result.error).toBe('succeeded')
+  expect(result.output).toContain('Worked on it')
+})
+
 test('slash-leading ordinary prompts remain user requests while Claude loads native project context', async () => {
   const f = await fixture()
   const result = await f.client.execute({ ...f.input, prompt: '  /compact this is an ordinary user request' }, () => {})

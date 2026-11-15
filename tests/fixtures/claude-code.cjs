@@ -32,6 +32,11 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       subtype: 'success', request_id: message.request_id, response
     } })
     if (request.subtype === 'initialize') {
+      if (scenario === 'prior-turn' && resumed) {
+        write({ type: 'system', subtype: 'task_notification', task_id: 'leftover', status: 'stopped', session_id: sessionId })
+        write({ type: 'system', subtype: 'init', session_id: sessionId, capabilities: ['msg_lifecycle_v1'] })
+        write({ type: 'result', subtype: 'success', is_error: false, result: '', session_id: sessionId, modelUsage: usage() })
+      }
       if (scenario === 'missing-stderr' && resumed) {
         process.stderr.write(`No conversation found with session ID: ${sessionId}\n`)
         process.exit(1)
@@ -64,6 +69,19 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   }
   if (message.type !== 'user') return
   write({ type: 'command_lifecycle', command_uuid: message.uuid, state: 'queued', session_id: sessionId })
+  if (scenario === 'prior-turn' && resumed && !userTurns.length) {
+    userTurns.push(message.uuid)
+    write({ type: 'system', subtype: 'init', session_id: sessionId, capabilities: ['msg_lifecycle_v1'] })
+    write({ type: 'result', subtype: 'success', is_error: false, result: '', session_id: sessionId, modelUsage: usage() })
+    setTimeout(() => {
+      write({ type: 'command_lifecycle', command_uuid: message.uuid, state: 'started', session_id: sessionId })
+      write({ type: 'assistant', session_id: sessionId, message: { id: 'answer', content: [{ type: 'text', text: 'Worked on it' }] } })
+      write({ type: 'result', subtype: 'success', is_error: false, result: 'Worked on it', session_id: sessionId, modelUsage: usage(5) })
+      write({ type: 'command_lifecycle', command_uuid: message.uuid, state: 'completed', session_id: sessionId })
+    }, 50)
+    return
+  }
+  if (scenario !== 'steer' && scenario !== 'steer-folded') write({ type: 'command_lifecycle', command_uuid: message.uuid, state: 'started', session_id: sessionId })
   if (scenario === 'steer' || scenario === 'steer-folded') {
     userTurns.push(message.uuid)
     const text = message.message.content[0]?.text
